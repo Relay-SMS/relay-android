@@ -1,4 +1,4 @@
-# Privacy Policy — SMS Tech
+# Privacy Policy — SMS Relay
 
 _Last updated: 26 October 2026_ · 🇫🇷 [Français](PRIVACY.fr.md) · 🇩🇪 [Deutsch](PRIVACY.de.md) · 🇮🇹 [Italiano](PRIVACY.it.md) · 🇪🇸 [Español](PRIVACY.es.md)
 
@@ -6,12 +6,12 @@ _Last updated: 26 October 2026_ · 🇫🇷 [Français](PRIVACY.fr.md) · 🇩�
 > authoritative. The German, Italian and Spanish translations are provided for information; in case
 > of discrepancy, the English and French versions prevail.
 
-SMS Tech (`com.filestech.sms`) is part of the **Files Tech** suite, published by **Patrice
+SMS Relay (`com.filestech.sms`) is part of the **Files Tech** suite, published by **Patrice
 Haltaya**. See also the [terms of use](TERMS.md).
 
 ## What we collect
 
-**Nothing.** SMS Tech does not collect, transmit or aggregate any personal data of any kind.
+**Nothing.** SMS Relay does not collect, transmit or aggregate any personal data of any kind.
 
 There is no analytics SDK, no crash reporter, no telemetry endpoint, no advertising identifier, no
 fingerprinting library. The binary contains no third-party tracking code.
@@ -28,7 +28,7 @@ fingerprinting library. The binary contains no third-party tracking code.
 - If you set them up, your emergency contacts and the settings of the emergency mode and of Safety
   call.
 
-Like any default SMS app, SMS Tech also writes your messages to Android's own message store, which
+Like any default SMS app, SMS Relay also writes your messages to Android's own message store, which
 keeps them independently of the app.
 
 The Android system backup is **disabled** so this data does not get synced to Google Drive or to a
@@ -36,7 +36,7 @@ device transfer without your explicit consent.
 
 ## Network use
 
-SMS Tech makes no network call. Since 1.28.13 it does not even hold the `INTERNET` permission, so
+SMS Relay makes no network call. Since 1.28.13 it does not even hold the `INTERNET` permission, so
 its process cannot open a network connection. MMS are carried by Android's own MMS service, which
 talks to your carrier's MMSC when you send or receive one. No update check, no remote configuration,
 no analytics ping.
@@ -46,7 +46,7 @@ never receives them.
 
 ## Emergency features (off until you turn them on)
 
-- **Emergency mode.** When you hold the emergency button for three seconds, SMS Tech sends an SMS
+- **Emergency mode.** When you hold the emergency button for three seconds, SMS Relay sends an SMS
   to the emergency contacts **you** chose. If you granted the location permission, precise or
   approximate, and left "include my location" on (it is on by default in this mode), the app asks
   Android for **one** position at that moment: it reuses a position less than five minutes old if
@@ -57,7 +57,7 @@ never receives them.
   after the link. If a contact opens that link, their browser contacts Google Maps; the app itself
   sends nothing to Google. If location is refused or unavailable, the SMS says so and leaves without
   coordinates.
-- **Safety call.** If you do not use the app before the delay you set, SMS Tech sends a check-in
+- **Safety call.** If you do not use the app before the delay you set, SMS Relay sends a check-in
   SMS to the same contacts. It carries no location.
 - **Emergency call.** The call tiles of the Emergency screen offer the emergency numbers of the
   country where your phone is registered on the network (112 is always there). When you tap one,
@@ -74,7 +74,7 @@ See [PERMISSIONS.md](PERMISSIONS.md) for the justification of every permission u
 ## Your rights
 
 Since no personal data leaves your device, there is nothing for you to access, rectify, transfer or
-delete from any remote system. To remove data from SMS Tech, either uninstall the app (Android
+delete from any remote system. To remove data from SMS Relay, either uninstall the app (Android
 wipes its data automatically) or use **Settings → Delete all my data** which performs a panic-wipe
 of the encrypted database, Keystore aliases, cached attachments and PDF exports. Messages kept by
 Android's own message store are managed from Android or from any SMS app.

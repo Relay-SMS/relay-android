@@ -1,4 +1,4 @@
-# SMS Tech — Architecture
+# SMS Relay — Architecture
 
 ## Layers
 
@@ -86,7 +86,7 @@ at the UI/data boundary.
 ## Lifecycle of an incoming SMS
 
 1. The carrier sends the SMS to the modem.
-2. Android dispatches a `SMS_DELIVER` broadcast to SMS Tech (because it is the default SMS app
+2. Android dispatches a `SMS_DELIVER` broadcast to SMS Relay (because it is the default SMS app
    declared in the manifest with the `BROADCAST_SMS` permission).
 3. `SmsDeliverReceiver.onReceive` is invoked. It calls `goAsync()` to keep the process alive while
    the work runs on the application coroutine scope.
@@ -106,7 +106,7 @@ at the UI/data boundary.
 
 1. UI builds an outgoing message in `ThreadViewModel.send` and calls `SendSmsUseCase`.
 2. The use case:
-   - Verifies SMS Tech is still the default app.
+   - Verifies SMS Relay is still the default app.
    - Skips recipients in the blocklist (defense in depth).
    - Inserts the row in the system Sent box.
    - Mirrors a `MessageEntity` with `status = PENDING` into Room.
@@ -132,7 +132,7 @@ at the UI/data boundary.
        blacklist), persists the encoded bytes to `cache/mms_outgoing/`, shares them via
        FileProvider, and hands the Uri to `SmsManager.sendMultimediaMessage` together with
        a result `PendingIntent`.
-   - The OS routes the PDU to the carrier MMSC; SMS Tech does not touch HTTP / APN itself.
+   - The OS routes the PDU to the carrier MMSC; SMS Relay does not touch HTTP / APN itself.
 4. `MmsSentReceiver` flips the row to `SENT` or `FAILED` based on the broadcast resultCode and
    deletes the transient `.pdu` cache file.
 
@@ -140,7 +140,7 @@ at the UI/data boundary.
 
 1. The carrier pushes a `WAP_PUSH_DELIVER` intent. `MmsWapPushReceiver` parses the
    `m-notification.ind` PDU via `PduParser`, extracts the `contentLocation` URL + `transactionId`,
-   and refuses anything larger than 1 MiB (defence-in-depth — SMS Tech only consumes ≤ 300 KB clips).
+   and refuses anything larger than 1 MiB (defence-in-depth — SMS Relay only consumes ≤ 300 KB clips).
    The receiver resolves its Hilt dependencies on-demand via `EntryPointAccessors.fromApplication`
    rather than `@AndroidEntryPoint` field injection — the latter crashes silently during the
    Hilt-generated wrapper on certain Android 10 OEM ROMs when the receiver is dispatched at
