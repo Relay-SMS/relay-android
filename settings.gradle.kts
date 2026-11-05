@@ -37,7 +37,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SMS Tech"
+rootProject.name = "SMS Relay"
 include(":app")
 include(":core")
 include(":domain")
