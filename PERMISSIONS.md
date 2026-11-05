@@ -1,6 +1,6 @@
-# Permissions used by SMS Tech
+# Permissions used by SMS Relay
 
-Each permission is declared with a clear reason. SMS Tech never escalates privileges, never holds
+Each permission is declared with a clear reason. SMS Relay never escalates privileges, never holds
 permissions "just in case", and degrades gracefully if any of them is refused.
 
 | Permission                                   | Why we need it                                                                 |
@@ -23,7 +23,7 @@ permissions "just in case", and degrades gracefully if any of them is refused.
 | `RECORD_AUDIO`                               | Record audio clips attached to outgoing MMS (mic only while the user is actively recording).|
 | `HIDE_OVERLAY_WINDOWS` (API 31+)             | Hide other apps' overlays while you type a PIN or passphrase, so a malicious window cannot harvest your keystrokes. Grants **no** access to any data — it only asks that third-party overlays be hidden above **our own** windows. Protection level `normal`: granted at install, no prompt. |
 
-Three more permissions are declared by AndroidX libraries, not by SMS Tech's own manifest: `WAKE_LOCK`
+Three more permissions are declared by AndroidX libraries, not by SMS Relay's own manifest: `WAKE_LOCK`
 (WorkManager, to finish a background job), `ACCESS_NETWORK_STATE` (WorkManager, which can read
 whether a connection exists; it opens none) and `USE_FINGERPRINT` (the Biometric library, for
 Android 8). All are install-time permissions that give access to no data.

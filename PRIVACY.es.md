@@ -1,4 +1,4 @@
-# Política de privacidad — SMS Tech
+# Política de privacidad — SMS Relay
 
 _Última actualización: 26 de octubre de 2026_ · 🇬🇧 [English](PRIVACY.md) · 🇫🇷 [Français](PRIVACY.fr.md) · 🇩🇪 [Deutsch](PRIVACY.de.md) · 🇮🇹 [Italiano](PRIVACY.it.md)
 
@@ -6,12 +6,12 @@ _Última actualización: 26 de octubre de 2026_ · 🇬🇧 [English](PRIVACY.md
 > [inglesa](PRIVACY.md) y [francesa](PRIVACY.fr.md) de esta política hacen fe; en caso de
 > discrepancia, prevalecen las versiones inglesa y francesa.
 
-SMS Tech (`com.filestech.sms`) forma parte de la suite **Files Tech**, editada por **Patrice
+SMS Relay (`com.filestech.sms`) forma parte de la suite **Files Tech**, editada por **Patrice
 Haltaya**. Véanse también las [condiciones de uso](TERMS.es.md).
 
 ## Lo que recopilamos
 
-**Nada.** SMS Tech no recopila, no transmite ni agrega ningún dato personal.
+**Nada.** SMS Relay no recopila, no transmite ni agrega ningún dato personal.
 
 Ningún SDK de analítica, ningún notificador de fallos, ningún endpoint de telemetría, ningún
 identificador publicitario, ninguna biblioteca de fingerprinting. El binario no contiene ningún
@@ -29,7 +29,7 @@ código de rastreo de terceros.
 - Los PDF de conversación que se hayan generado localmente, en `<files>/exports/`.
 - Si los configura, sus contactos de emergencia y los ajustes del modo emergencia y de Safety call.
 
-Como toda aplicación de SMS predeterminada, SMS Tech también escribe sus mensajes en el almacén de
+Como toda aplicación de SMS predeterminada, SMS Relay también escribe sus mensajes en el almacén de
 mensajes del sistema de Android, que los conserva con independencia de la aplicación.
 
 La copia de seguridad del sistema de Android está **desactivada**: estos datos no se envían ni a
@@ -37,7 +37,7 @@ Google Drive ni en una transferencia de dispositivo sin su consentimiento explí
 
 ## Red
 
-SMS Tech no realiza ninguna solicitud de red. Desde la 1.28.13, ni siquiera tiene ya el permiso
+SMS Relay no realiza ninguna solicitud de red. Desde la 1.28.13, ni siquiera tiene ya el permiso
 `INTERNET`: su proceso no puede abrir ninguna conexión de red. Los MMS se encaminan a través del
 servicio MMS de Android, que se comunica con el MMSC de su operador cuando usted envía o recibe uno.
 Ninguna comprobación de actualizaciones, ninguna configuración remota, ningún ping analítico.
@@ -47,7 +47,7 @@ El desarrollador nunca los recibe.
 
 ## Funciones de emergencia (inactivas mientras usted no las active)
 
-- **Modo emergencia.** Cuando mantiene pulsado el botón de emergencia tres segundos, SMS Tech envía
+- **Modo emergencia.** Cuando mantiene pulsado el botón de emergencia tres segundos, SMS Relay envía
   un SMS a los contactos de emergencia que **usted** ha elegido. Si ha concedido el permiso de
   ubicación, precisa o aproximada, y ha dejado «incluir mi ubicación» (activado de forma
   predeterminada en este modo), la aplicación pide a Android **una** posición en ese momento:
@@ -59,7 +59,7 @@ El desarrollador nunca los recibe.
   «(+/-N km)» después del enlace. Si un contacto abre ese enlace, es su navegador el que se comunica
   con Google Maps; la aplicación, por su parte, no envía nada a Google. Si la ubicación se deniega o
   no está disponible, el SMS lo indica y se envía sin coordenadas.
-- **Safety call.** Si no utiliza la aplicación antes del plazo que ha fijado, SMS Tech envía un SMS
+- **Safety call.** Si no utiliza la aplicación antes del plazo que ha fijado, SMS Relay envía un SMS
   de comprobación a los mismos contactos. No contiene ninguna posición.
 - **Llamada de emergencia.** Los botones de llamada de la pantalla de emergencia proponen los
   números de emergencia del país en el que su teléfono está registrado en la red (el 112 figura
@@ -77,7 +77,7 @@ Consulte [PERMISSIONS.md](PERMISSIONS.md) para ver la justificación de cada per
 ## Sus derechos
 
 Como ningún dato personal sale de su dispositivo, no hay nada que consultar, rectificar o suprimir en
-ningún sistema remoto. Para borrar sus datos en SMS Tech: desinstale la aplicación (Android elimina
+ningún sistema remoto. Para borrar sus datos en SMS Relay: desinstale la aplicación (Android elimina
 sus datos automáticamente) o utilice **Ajustes → Eliminar todos mis datos**, que borra la base de
 datos cifrada, los alias del Keystore, los archivos adjuntos en caché y los PDF exportados. Los
 mensajes conservados por el almacén de mensajes del sistema de Android se gestionan desde Android o

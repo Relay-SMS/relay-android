@@ -1,14 +1,15 @@
-# SMS Tech
+# SMS Relay
 
 🇬🇧 [English](README.md) · Version française
 
-Une application SMS &amp; MMS moderne et privée pour Android — écrite en Kotlin, avec Jetpack Compose
-et Material 3. Sans publicité, sans traceur, sans analytique, **sans permission Internet**. Elle fait
-partie de la suite **Files Tech**. Licence Apache 2.0.
+Une application SMS & MMS moderne et privée pour Android — écrite en Kotlin, avec Jetpack Compose
+et Material 3. Sans publicité, sans traceur, sans analytique, **sans permission Internet**.
+Licence Apache 2.0.
 
-Source : [github.com/gitubpatrice/SMS-TECH](https://github.com/gitubpatrice/SMS-TECH) ·
-Site : [files-tech.com/sms-tech.php](https://files-tech.com/sms-tech.php) ·
-Versions : [GitHub Releases](https://github.com/gitubpatrice/SMS-TECH/releases/latest)
+> **Note sur ce fork :** SMS Relay est un fork de [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) par Patrice Haltaya (Files Tech). Il reprend le moteur de SMS Tech et y ajoute le jumelage d'appareils et un service de synchronisation pour ordinateur.
+
+Source : [github.com/realquink/relay](https://github.com/realquink/relay) ·
+Versions : [GitHub Releases](https://github.com/realquink/relay/releases/latest)
 
 ## ✨ Fonctions
 
@@ -49,12 +50,12 @@ Versions : [GitHub Releases](https://github.com/gitubpatrice/SMS-TECH/releases/l
 ## 🔐 Confidentialité
 
 Nous ne collectons **rien**. Aucune analytique, aucun rapport de plantage, aucune journalisation à
-distance. SMS Tech n'émet aucune requête réseau : elle ne détient pas la permission `INTERNET`, son
+distance. SMS Relay n'émet aucune requête réseau : elle ne détient pas la permission `INTERNET`, son
 processus ne peut donc ouvrir aucune connexion. Les MMS sont acheminés par le service MMS d'Android,
 qui contacte le MMSC de votre opérateur.
 
 Le SMS n'est **pas** chiffré de bout en bout au niveau du protocole — c'est une limite du réseau des
-opérateurs, pas un choix. SMS Tech protège ce qui est stocké sur votre appareil, avec SQLCipher et
+opérateurs, pas un choix. SMS Relay protège ce qui est stocké sur votre appareil, avec SQLCipher et
 l'AndroidKeyStore. Pour un vrai chiffrement de bout en bout, utilisez Signal ou Matrix.
 
 Voir la [politique de confidentialité](PRIVACY.fr.md), les [conditions d'utilisation](TERMS.fr.md) et

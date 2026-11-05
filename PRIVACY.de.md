@@ -1,4 +1,4 @@
-# Datenschutzerklärung — SMS Tech
+# Datenschutzerklärung — SMS Relay
 
 _Zuletzt aktualisiert: 26. Oktober 2026_ · 🇬🇧 [English](PRIVACY.md) · 🇫🇷 [Français](PRIVACY.fr.md) · 🇮🇹 [Italiano](PRIVACY.it.md) · 🇪🇸 [Español](PRIVACY.es.md)
 
@@ -6,12 +6,12 @@ _Zuletzt aktualisiert: 26. Oktober 2026_ · 🇬🇧 [English](PRIVACY.md) · �
 > wird. Verbindlich sind die [englische](PRIVACY.md) und die [französische](PRIVACY.fr.md) Fassung
 > dieser Erklärung; bei Abweichungen gehen diese beiden Fassungen vor.
 
-SMS Tech (`com.filestech.sms`) gehört zur Suite **Files Tech**, herausgegeben von **Patrice
+SMS Relay (`com.filestech.sms`) gehört zur Suite **Files Tech**, herausgegeben von **Patrice
 Haltaya**. Siehe auch die [Nutzungsbedingungen](TERMS.de.md).
 
 ## Was wir erheben
 
-**Nichts.** SMS Tech erhebt, übermittelt und aggregiert keinerlei personenbezogene Daten.
+**Nichts.** SMS Relay erhebt, übermittelt und aggregiert keinerlei personenbezogene Daten.
 
 Kein Analyse-SDK, kein Absturzmelder, kein Telemetrie-Endpunkt, keine Werbe-ID, keine
 Fingerprinting-Bibliothek. Die Binärdatei enthält keinen Tracking-Code von Dritten.
@@ -29,7 +29,7 @@ Fingerprinting-Bibliothek. Die Binärdatei enthält keinen Tracking-Code von Dri
 - Sofern Sie sie einrichten, Ihre Notfallkontakte sowie die Einstellungen des Notfallmodus und von
   Safety call.
 
-Wie jede Standard-SMS-App schreibt SMS Tech Ihre Nachrichten außerdem in den Nachrichtenspeicher des
+Wie jede Standard-SMS-App schreibt SMS Relay Ihre Nachrichten außerdem in den Nachrichtenspeicher des
 Android-Systems, der sie unabhängig von der App aufbewahrt.
 
 Die Android-Systemsicherung ist **deaktiviert**: Ohne Ihre ausdrückliche Zustimmung werden diese
@@ -37,7 +37,7 @@ Daten weder auf Google Drive übertragen noch bei einer Geräteübertragung mitg
 
 ## Netzwerk
 
-SMS Tech sendet keine Netzwerkanfragen. Seit Version 1.28.13 besitzt die App nicht einmal mehr die
+SMS Relay sendet keine Netzwerkanfragen. Seit Version 1.28.13 besitzt die App nicht einmal mehr die
 Berechtigung `INTERNET`: Der Prozess der App kann keine Netzwerkverbindung öffnen. MMS werden über
 den MMS-Dienst von Android übertragen, der das MMSC Ihres Mobilfunkanbieters kontaktiert, wenn Sie
 eine MMS senden oder empfangen. Keine Update-Prüfung, keine Fernkonfiguration, kein Analyse-Ping.
@@ -61,7 +61,7 @@ Mobilfunkanbieters. Der Entwickler erhält sie nie.
   selbst sendet nichts an Google. Wird der Standort verweigert oder ist er nicht verfügbar, weist die
   SMS darauf hin und wird ohne Koordinaten gesendet.
 - **Safety call.** Wenn Sie die App nicht vor Ablauf der von Ihnen festgelegten Frist verwenden,
-  sendet SMS Tech eine Kontroll-SMS an dieselben Kontakte. Sie enthält keinen Standort.
+  sendet SMS Relay eine Kontroll-SMS an dieselben Kontakte. Sie enthält keinen Standort.
 - **Notruf.** Die Anrufkacheln der Notrufseite bieten die Notrufnummern des Landes an, in dem Ihr
   Telefon im Netz registriert ist (die 112 ist immer dabei). Wenn Sie eine davon antippen, fragt die
   App nach der Anrufberechtigung (`CALL_PHONE`) und führt den Anruf, wenn Sie sie erteilen, selbst
@@ -78,7 +78,7 @@ Die Begründung jeder Berechtigung finden Sie in [PERMISSIONS.md](PERMISSIONS.md
 ## Ihre Rechte
 
 Da keine personenbezogenen Daten Ihr Gerät verlassen, gibt es bei keinem entfernten System etwas
-einzusehen, zu berichtigen oder zu löschen. So löschen Sie Ihre Daten in SMS Tech: Deinstallieren
+einzusehen, zu berichtigen oder zu löschen. So löschen Sie Ihre Daten in SMS Relay: Deinstallieren
 Sie die App (Android löscht ihre Daten automatisch) oder verwenden Sie **Einstellungen → Alle meine
 Daten löschen**; dies löscht die verschlüsselte Datenbank, die Keystore-Aliase, die
 zwischengespeicherten Anhänge und die exportierten PDF-Dateien. Die im Nachrichtenspeicher des
