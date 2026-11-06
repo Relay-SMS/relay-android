@@ -174,7 +174,13 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                 label = stringResource(R.string.about_report_issue),
                 onClick = {
                     // Fork: issues go to the SMS Relay repo, not to the upstream author's inbox.
-                    safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/realquink/relay/issues/new")))
+                    safeStartActivity(
+                        context,
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/realquink/relay/issues/new")
+                        )
+                    )
                 },
             )
             LinkItem(
@@ -589,6 +595,7 @@ private const val AUTHOR_NAME = "Patrice Haltaya"
 // qui a masque le defaut : une des trois surfaces marchait.
 private const val REPO_URL = "https://github.com/realquink/relay"
 private const val RELEASES_URL = "https://github.com/realquink/relay/releases/latest"
+
 // SMS Relay has no standalone website yet; the repo is the project page for now.
 private const val WEBSITE_URL = "https://github.com/realquink/relay"
 private const val LICENSE_URL = "https://www.apache.org/licenses/LICENSE-2.0"
