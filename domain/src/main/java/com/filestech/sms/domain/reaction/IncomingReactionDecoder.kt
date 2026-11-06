@@ -2,22 +2,32 @@ package com.filestech.sms.domain.reaction
 
 /**
  * v1.4.1 — pure-Kotlin decoder for incoming SMS bodies that look like a reaction sent
- * back by another SMS Tech instance (or by Apple Messages / Google Messages, which use
- * the same Tapback wire format).
+ * back by another SMS Tech instance, by Apple Messages, or by Google Messages.
  *
- * Two formats produced by SMS Tech's own [com.filestech.sms.domain.usecase
- * .SendReactionUseCase.buildTapbackBody] are decoded :
+ * Formats decoded (see [decode] and [decodeGoogleFormat]) :
  *
- *   - **`Reacted <emoji> to «<preview>»`** — the standard Tapback shape. The preview
- *     may end with `…` if SMS Tech had to truncate the original body to fit the
- *     UCS-2 70-char segment cap. The trailing `…` is stripped before exposing
- *     [DecodedReaction.previewPrefix] so the caller can match it as a `LIKE prefix%`
- *     against stored outgoing message bodies.
+ *   - **`Reacted <emoji> to «<preview>»`** — the standard Tapback shape produced by
+ *     SMS Tech's own [com.filestech.sms.domain.usecase.SendReactionUseCase
+ *     .buildTapbackBody]. The preview may end with `…` if SMS Tech had to truncate
+ *     the original body to fit the UCS-2 70-char segment cap. The trailing `…` is
+ *     stripped before exposing [DecodedReaction.previewPrefix] so the caller can
+ *     match it as a `LIKE prefix%` against stored outgoing message bodies.
  *
  *   - **`Reacted <emoji>`** (no `to «…»` tail) — produced by SMS Tech when reacting to
  *     a message with no text body (a voice MMS / image without caption). The caller
  *     should match the most recent outgoing message in the conversation (ordered by
  *     date desc) as the target.
+ *
+ *   - **Apple Messages tapbacks** — `Loved / Liked / Disliked / Laughed at /
+ *     Emphasized / Questioned "…"` (and their `Removed … from "…"` forms). Apple does
+ *     NOT use the `Reacted … to …` shape, which is why these used to arrive as plain
+ *     text bubbles saying e.g. `Loved "your text"`.
+ *
+ *   - **Google Messages reactions** — framed with invisible characters (U+200A
+ *     framing, U+200B separators for an add, U+200C for a removal). Decoded by
+ *     [decodeGoogleFormat], which MUST be called on the raw SMS body: the receiver
+ *     strips U+200B from the body before [decode] runs, and the framing would be
+ *     gone by then.
  *
  * **Pure emojis are NOT decoded.** SMS Tech's "emoji only" reaction mode (cf.
  * `SendingSettings.reactionEmojiOnly`) sends just the emoji byte sequence — but a
@@ -64,6 +74,13 @@ object IncomingReactionDecoder {
          * `false` pour [Kind.EmojiOnly] (pas de preview).
          */
         val wasTruncated: Boolean = false,
+        /**
+         * `true` when the remote user REMOVED a reaction (`Removed a heart from
+         * "…"`, Google Messages U+200C framing…). The [emoji] is the one being
+         * removed. The caller clears the badge instead of setting it, and must
+         * not post a "reacted" notification for it.
+         */
+        val isRemoval: Boolean = false,
     ) {
         enum class Kind { Tapback, EmojiOnly }
     }
@@ -167,6 +184,50 @@ object IncomingReactionDecoder {
                 emoji = emoji,
                 previewPrefix = null,
                 kind = DecodedReaction.Kind.Tapback,
+            )
+        }
+
+        // Apple Messages tapbacks (English) : `Loved / Liked / Disliked /
+        // Laughed at / Emphasized / Questioned "…"` and their `Removed … from
+        // "…"` forms. Apple does NOT emit the `Reacted … to …` shape, so these
+        // need their own patterns — tried BEFORE the generic emoji+quote shape.
+        // Quotes: curly “ ” and straight " (carriers strip punctuation).
+        // The verb table is data, not code: adding a locale means adding rows,
+        // not new regexes.
+        IOS_TAPBACK_REGEXES.firstNotNullOfOrNull { (regex, emoji, isRemoval) ->
+            regex.matchEntire(trimmed)?.let { m ->
+                val rawPreview = m.groupValues[1]
+                val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
+                val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
+                if (preview.isEmpty()) null
+                else {
+                    DecodedReaction(
+                        emoji = emoji,
+                        previewPrefix = preview,
+                        kind = DecodedReaction.Kind.Tapback,
+                        wasTruncated = wasTruncated,
+                        isRemoval = isRemoval,
+                    )
+                }
+            }
+        }?.let { return it }
+
+        // Apple Messages generic removal : `Removed <emoji> from "…"`.
+        // The captured token must look like an emoji (same guard as the
+        // no-preview Tapback below) so `Removed the meeting from "…"`.
+        GENERIC_REMOVED_REGEX.matchEntire(trimmed)?.let { m ->
+            val emoji = m.groupValues[1]
+            val rawPreview = m.groupValues[2]
+            if (emoji.isEmpty() || emoji.all { it.code < 128 }) return@let
+            val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
+            val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
+            if (preview.isEmpty()) return@let
+            return DecodedReaction(
+                emoji = emoji,
+                previewPrefix = preview,
+                kind = DecodedReaction.Kind.Tapback,
+                wasTruncated = wasTruncated,
+                isRemoval = true,
             )
         }
 
@@ -277,6 +338,81 @@ object IncomingReactionDecoder {
     }
 
     /**
+     * Google Messages reaction format, decoded from the RAW SMS body.
+     *
+     * The body is framed with invisible characters: it starts and ends with
+     * U+200A (hair space), the emoji sits between two separator chars, and the
+     * quoted original text sits between the next two U+200A. The separator is
+     * U+200B for an add and U+200C for a removal:
+     *
+     *   add:     `\u200A…\u200B<emoji>\u200B…\u200A<original>\u200A…\u200A`
+     *   removal: `\u200A…\u200C<emoji>\u200C…\u200A<original>\u200A…\u200A`
+     *
+     * MUST be called on the raw body: the receiver strips U+200B (via
+     * `stripInvisibleChars`) before [decode] runs, which destroys the
+     * framing. Returns `null` when the body is not Google-framed. The
+     * segment checks (no separator / framing char inside a skipped segment)
+     * keep stray invisible-char soup from misclassifying as a reaction.
+     */
+    fun decodeGoogleFormat(body: String): DecodedReaction? {
+        if (body.length > MAX_DECODE_INPUT_LENGTH) return null
+        if (!body.startsWith(GOOGLE_FRAME) || !body.endsWith(GOOGLE_FRAME)) {
+            return null
+        }
+        return parseGoogleFramed(body, GOOGLE_ADD_SEPARATOR, isRemoval = false)
+            ?: parseGoogleFramed(body, GOOGLE_REMOVE_SEPARATOR, isRemoval = true)
+    }
+
+    private fun parseGoogleFramed(
+        body: String,
+        separator: Char,
+        isRemoval: Boolean,
+    ): DecodedReaction? {
+        val firstSep = body.indexOf(separator, startIndex = 1)
+        if (firstSep < 0) return null
+        val secondSep = body.indexOf(separator, startIndex = firstSep + 1)
+        if (secondSep < 0) return null
+        // Skipped segments must contain neither the separator nor the frame.
+        if (body.substring(1, firstSep).any { it == separator || it == GOOGLE_FRAME }) {
+            return null
+        }
+        val emoji = body.substring(firstSep + 1, secondSep)
+        if (emoji.isEmpty() || emoji.none { isLikelyEmojiChar(it) }) return null
+        if (emoji.any { it == GOOGLE_FRAME }) return null
+        val openQuote = body.indexOf(GOOGLE_FRAME, startIndex = secondSep + 1)
+        if (openQuote < 0) return null
+        if (
+            body.substring(secondSep + 1, openQuote)
+                .any { it == separator || it == GOOGLE_FRAME }
+        ) {
+            return null
+        }
+        val closeQuote = body.indexOf(GOOGLE_FRAME, startIndex = openQuote + 1)
+        // The framing requires a trailing segment AND a final frame char after
+        // the quoted text: a body ending right at the closing quote is not a
+        // complete Google reaction (and the trailing-segment slice below would
+        // throw on it).
+        if (closeQuote < 0 || closeQuote >= body.length - 1) return null
+        val rawPreview = body.substring(openQuote + 1, closeQuote)
+        val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
+        val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
+        if (preview.isEmpty()) return null
+        if (
+            body.substring(closeQuote + 1, body.length - 1)
+                .any { it == separator || it == GOOGLE_FRAME }
+        ) {
+            return null
+        }
+        return DecodedReaction(
+            emoji = emoji,
+            previewPrefix = preview,
+            kind = DecodedReaction.Kind.Tapback,
+            wasTruncated = wasTruncated,
+            isRemoval = isRemoval,
+        )
+    }
+
+    /**
      * Pure-emoji heuristic — no third-party emoji regex dep. Accepted iff :
      *   - non-empty, no whitespace anywhere (a sentence with an emoji is rejected),
      *   - length ≤ [EMOJI_ONLY_MAX_UNITS] UTF-16 units (≈ 2 ZWJ clusters max),
@@ -296,6 +432,73 @@ object IncomingReactionDecoder {
 
     /** Lone Unicode horizontal ellipsis SMS Tech appends when the preview was truncated. */
     private const val TRUNCATION_MARKER: String = "…"
+
+    /** Google Messages framing char (U+200A hair space): opens and closes the body. */
+    private const val GOOGLE_FRAME: Char = '\u200A'
+
+    /** Google Messages separator for an added reaction (U+200B zero width space). */
+    private const val GOOGLE_ADD_SEPARATOR: Char = '\u200B'
+
+    /** Google Messages separator for a removed reaction (U+200C zero width non-joiner). */
+    private const val GOOGLE_REMOVE_SEPARATOR: Char = '\u200C'
+
+    /**
+     * Apple Messages tapbacks (English), as data: the verb the add uses, the
+     * emoji it maps to, and the verb the removal uses. Adding a locale means
+     * adding rows here, not new regexes. Wordings are the ones Apple Messages
+     * sends over SMS to non-iMessage recipients.
+     */
+    private data class IosTapback(
+        val addVerb: String,
+        val emoji: String,
+        val removeVerb: String,
+    )
+
+    private val IOS_TAPBACKS = listOf(
+        IosTapback("Loved", "❤️", "Removed a heart from"),
+        IosTapback("Liked", "👍", "Removed a like from"),
+        IosTapback("Disliked", "👎", "Removed a dislike from"),
+        IosTapback("Laughed at", "😂", "Removed a laugh from"),
+        IosTapback("Emphasized", "‼️", "Removed an exclamation from"),
+        IosTapback("Questioned", "❓", "Removed a question from"),
+    )
+
+    /**
+     * Compiled from [IOS_TAPBACKS]: one (regex, emoji, isRemoval) triple per
+     * add/remove form. The preview group is non-greedy with `DOT_MATCHES_ALL`
+     * (same as the Tapback regex); the 400-char input cap bounds backtracking.
+     */
+    private val IOS_TAPBACK_REGEXES: List<Triple<Regex, String, Boolean>> =
+        IOS_TAPBACKS.flatMap { tapback ->
+            listOf(
+                Triple(
+                    Regex(
+                        "^${Regex.escape(tapback.addVerb)}\\s+[“\"](.+?)[”\"]$",
+                        RegexOption.DOT_MATCHES_ALL,
+                    ),
+                    tapback.emoji,
+                    false,
+                ),
+                Triple(
+                    Regex(
+                        "^${Regex.escape(tapback.removeVerb)}\\s+[“\"](.+?)[”\"]$",
+                        RegexOption.DOT_MATCHES_ALL,
+                    ),
+                    tapback.emoji,
+                    true,
+                ),
+            )
+        }
+
+    /**
+     * Apple Messages generic removal: `Removed <emoji> from "…"`. The emoji
+     * slot is guarded in [decode] (must contain a non-ASCII codepoint) so a
+     * sentence like `Removed the meeting from "Friday"` cannot match.
+     */
+    private val GENERIC_REMOVED_REGEX = Regex(
+        """^Removed\s+(\S+)\s+from\s+[“"](.+?)[”"]$""",
+        RegexOption.DOT_MATCHES_ALL,
+    )
 
     /**
      * Matches `Reacted <emoji> to «<preview>»` with both standard Unicode guillemets

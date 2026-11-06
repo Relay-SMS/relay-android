@@ -402,6 +402,53 @@ interface MessageDao {
     suspend fun findMostRecentOutgoing(conversationId: Long): MessageEntity?
 
     /**
+     * Reactions can target ANY message in the thread — not only one we sent.
+     * In a group thread the other participants react to each other's texts,
+     * and on iPhone you can even react to your own. These three queries are
+     * the direction-agnostic twins of the outgoing-only ones above, used by
+     * [com.filestech.sms.data.repository.ConversationMirror
+     * .applyIncomingReaction] for Tapback kinds. The emoji-only path keeps
+     * its outgoing-only queries: a bare "❤️" is ambiguous with a real message
+     * and must never be folded onto a message the sender received.
+     */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE conversation_id = :conversationId
+          AND body LIKE :bodyPrefix || '%' ESCAPE '\'
+        ORDER BY date DESC
+        LIMIT 1
+        """
+    )
+    suspend fun findMostRecentByBodyPrefix(
+        conversationId: Long,
+        bodyPrefix: String,
+    ): MessageEntity?
+
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE conversation_id = :conversationId
+        ORDER BY date DESC
+        LIMIT 1
+        """
+    )
+    suspend fun findMostRecent(conversationId: Long): MessageEntity?
+
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE conversation_id = :conversationId
+        ORDER BY date DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun findRecentForConversation(
+        conversationId: Long,
+        limit: Int,
+    ): List<MessageEntity>
+
+    /**
      * v1.6.2 (Tapback fold bugfix) — returns the [limit] most recent OUTGOING messages of
      * [conversationId]. Used as a fallback by [com.filestech.sms.data.repository
      * .ConversationMirror.applyIncomingReaction] when the SQL `LIKE prefix%` match fails

@@ -97,11 +97,15 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                 val ts = messages.firstOrNull()?.timestampMillis ?: System.currentTimeMillis()
                 // Audit F22: strip bidi overrides + zero-width chars that would let a spam SMS
                 // spoof its visible origin or sneak past content moderation.
-                val body = buildString {
+                // Keep the RAW body too: Google Messages reactions are framed with
+                // U+200A/U+200B, and stripping removes U+200B — the framing the
+                // decoder needs. The raw body is only used for that one decode.
+                val rawBody = buildString {
                     messages.forEach { sm ->
                         append(sm.displayMessageBody.orEmpty())
                     }
-                }.stripInvisibleChars()
+                }
+                val body = rawBody.stripInvisibleChars()
                 salvageAddress = address
                 salvageBody = body
                 salvageTs = ts
@@ -140,12 +144,14 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                 }
                 // v1.4.1 — if the body looks like a Tapback reaction back from another
                 // SMS Tech / iMessage / Google Messages, try to fold it onto the
-                // original outgoing message instead of inserting a noisy "Reacted ❤️
-                // to «…»" text bubble. The decoder is intentionally strict (only
-                // accepts the `Reacted <emoji> [to «…»]` shape — a real one-emoji SMS
-                // like "❤️" is left alone). On miss, fall through to the standard
-                // insert path so legitimate text SMS are never swallowed.
-                val decoded = IncomingReactionDecoder.decode(body)
+                // original message instead of inserting a noisy "Reacted ❤️
+                // to «…»" text bubble. The decoder is intentionally strict (a real
+                // one-emoji SMS like "❤️" is left alone). On miss, fall through to
+                // the standard insert path so legitimate text SMS are never swallowed.
+                // Google Messages reactions are decoded from the RAW body first:
+                // their U+200A/U+200B framing does not survive `stripInvisibleChars`.
+                val decoded = IncomingReactionDecoder.decodeGoogleFormat(rawBody)
+                    ?: IncomingReactionDecoder.decode(body)
                 if (decoded != null) {
                     // v1.27.2 (audit externe 2026-08-04 #2) — un échec du fold (base
                     // indisponible) retombe sur le chemin d'insert standard au lieu de remonter
@@ -161,6 +167,8 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                             // v1.6.2 — propage le flag de troncature pour que le matcher
                             // choisisse entre exact match (court) et préfixe (long tronqué).
                             wasTruncated = decoded.wasTruncated,
+                            isRemoval = decoded.isRemoval,
+                            reactionDateMs = ts,
                         )
                     } catch (ce: kotlinx.coroutines.CancellationException) {
                         throw ce
@@ -184,6 +192,12 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                             telephonyUri = sysUri?.toString(),
                             date = ts,
                         )
+                        if (decoded.isRemoval) {
+                            // A removal only clears the badge — there is nothing to
+                            // notify about, and the carrier text must still not
+                            // surface as a bubble.
+                            return@launch
+                        }
                         // v1.6.1 — fix : poste une notification système pour que
                         // l'expéditeur du message d'origine sache qu'on a réagi à son
                         // message (parité iMessage / Google Messages). Avant v1.6.1 le

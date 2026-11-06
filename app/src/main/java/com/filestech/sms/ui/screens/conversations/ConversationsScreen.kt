@@ -280,26 +280,12 @@ fun ConversationsScreen(
             }
             TopAppBar(
                 title = {
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Brand logo in front of the title. Hidden on the archived sub-page so the
-                        // crumb stays unambiguous (logo = home). cacheWidth equivalent: the image
-                        // is fixed at 28 dp on screen, Coil/painterResource decodes once.
-                        if (!archived) {
-                            androidx.compose.foundation.Image(
-                                painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_app_logo),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .padding(end = 10.dp),
-                            )
-                        }
-                        Text(
-                            text = if (archived) stringResource(R.string.tab_archived)
-                            else stringResource(R.string.app_name),
-                        )
-                    }
+                    // Title only — no logo next to it (Kristin, 2026-11-06). The old
+                    // ic_app_logo image used to sit here in front of the name.
+                    Text(
+                        text = if (archived) stringResource(R.string.tab_archived)
+                        else stringResource(R.string.app_name),
+                    )
                 },
                 navigationIcon = {
                     onBack?.let {
