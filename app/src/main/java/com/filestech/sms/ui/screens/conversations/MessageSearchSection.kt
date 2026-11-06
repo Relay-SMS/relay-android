@@ -3,11 +3,9 @@ package com.filestech.sms.ui.screens.conversations
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
@@ -25,7 +23,6 @@ internal fun LazyListScope.messageHitsSection(
     hits: List<MessageSearchHit>,
     showAvatars: Boolean,
     selectionMode: Boolean,
-    dividerColor: Color,
     onOpenThread: (Long) -> Unit,
 ) {
     if (hits.isEmpty()) return
@@ -37,13 +34,14 @@ internal fun LazyListScope.messageHitsSection(
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 6.dp),
         )
     }
+    // Signal-style — pas de ligne de séparation entre les résultats, comme entre
+    // les conversations.
     items(hits, key = { "message-${it.messageId}" }, contentType = { "message-hit" }) { hit ->
         MessageSearchRow(
             hit = hit,
             onClick = if (selectionMode) null else { { onOpenThread(hit.conversation.id) } },
             showAvatars = showAvatars,
         )
-        HorizontalDivider(color = dividerColor)
     }
 }
 

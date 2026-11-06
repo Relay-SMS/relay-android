@@ -502,12 +502,8 @@ fun ConversationsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
                 ) {
-                    // Audit PERF-L4 (v1.14.8) — Couleur divider extraite hors loop pour éviter
-                    // l'allocation `Color.copy(alpha=...)` à chaque recomposition d'item. Sur une
-                    // liste de 200 conv qui se met à jour à chaque SMS entrant, on évite ~200
-                    // allocations Color/frame → moindre pression GC sur low-end.
-                    val dividerColor = cs.outlineVariant.copy(alpha = 0.4f)
-
+                    // Signal-style — AUCUNE ligne de séparation entre les conversations :
+                    // la liste se lit sans filets, comme dans Signal.
                     // v1.25.3 — les conversations dont tous les numéros sont bloqués ne sont plus
                     // ni supprimées ni masquées : elles descendent en fin de liste sous un
                     // en-tête dédié. Le tri d'origine est conservé à l'intérieur de chaque groupe
@@ -580,7 +576,6 @@ fun ConversationsScreen(
                             selected = isSelected,
                             selectionMode = state.selectionMode,
                         )
-                        HorizontalDivider(color = dividerColor)
                     }
 
                     if (blockedConversations.isNotEmpty()) {
@@ -621,7 +616,6 @@ fun ConversationsScreen(
                                 onLongClick = { blockedActionsFor = conv },
                                 onDelete = { pendingDeleteBlocked = conv },
                             )
-                            HorizontalDivider(color = dividerColor)
                         }
                     }
 
@@ -631,7 +625,6 @@ fun ConversationsScreen(
                         hits = messageHits,
                         showAvatars = state.settings.conversations.showAvatars,
                         selectionMode = state.selectionMode,
-                        dividerColor = dividerColor,
                         onOpenThread = onOpenThread,
                     )
                 }

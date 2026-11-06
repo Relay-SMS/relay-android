@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,7 +66,7 @@ import java.io.File
  * fichier que celui partagé. Cohérent avec l'audit F1 PDF Tech (allowed roots).
  *
  * Cohérence visuelle : reuse [outgoingBubbleColor] / [bubbleIncomingColor] et le
- * [BubbleMenuTrigger] (delete/reply/react) du pattern existant — l'utilisateur a
+ * [BubbleMenu] (delete/reply/react) du pattern existant — l'utilisateur a
  * les mêmes actions que sur les bulles texte/audio.
  */
 @Composable
@@ -116,6 +120,12 @@ fun MediaAttachmentBubble(
         fun(cible: Attachment) = ouvrirPieceJointe(context, cible)
     }
 
+    // Signal-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
+    // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe (le
+    // `clickable` interne consomme le geste avant ce parent) ; l'appui long garde la
+    // sélection libre de la légende quand il y en a une.
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .padding(horizontal = 12.dp, vertical = 3.dp)
@@ -123,20 +133,12 @@ fun MediaAttachmentBubble(
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isOut) {
-            BubbleMenuTrigger(
-                onCopy = onCopy,
-                onSelectText = onSelectText,
-                onForward = onForward,
-                onReply = onReply,
-                onReact = onReact,
-                starred = message.starred,
-                onToggleStar = onToggleStar,
-                onDelete = onDelete,
-            )
-        }
         Column(
             horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
+            modifier = Modifier.combinedClickable(
+                onClick = { menuExpanded = true },
+                onLongClick = onSelectText,
+            ),
         ) {
             if (repliedToPreview != null) {
                 ReplyQuoteCard(
@@ -195,9 +197,18 @@ fun MediaAttachmentBubble(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
-        }
-        if (!isOut) {
-            BubbleMenuTrigger(
+            // Signal-style — heure (+ statut sortant) en petit, en bas à droite de la
+            // bulle. Pour une pièce jointe sans légende, elle se place sous la vignette,
+            // faute de fond de bulle où l'inscrire.
+            BubbleTimestamp(
+                message = message,
+                showTimestamp = showTimestamp,
+                textColor = cs.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, end = 4.dp),
+            )
+            BubbleMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
                 onCopy = onCopy,
                 onSelectText = onSelectText,
                 onForward = onForward,
@@ -209,15 +220,6 @@ fun MediaAttachmentBubble(
             )
         }
     }
-    // 2026-10-29 (issue #53) — une photo n'affichait AUCUN statut : `showTimestamp` était reçu et
-    // jamais lu, et un envoi en échec ne se distinguait pas d'un envoi parti. Mêmes marges que la
-    // bulle texte.
-    MessageStatusLine(
-        message = message,
-        isOut = isOut,
-        showTimestamp = showTimestamp,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp),
-    )
 }
 
 /** Une pièce jointe, selon son type : vignette, icône vidéo ou icône de fichier. */

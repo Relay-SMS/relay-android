@@ -7,8 +7,8 @@ import com.filestech.sms.domain.model.SendErrorCode
 import java.util.Locale
 
 /**
- * 2026-10-29 (issue #53) — ce que dit la ligne sous une bulle ([MessageStatusLine]) : un libellé,
- * et le statut de l'opérateur (« 0x87 ») s'il a refusé le message.
+ * 2026-10-29 (issue #53) — ce que dit l'horodatage dans une bulle ([BubbleTimestamp]) : un
+ * libellé, et le statut de l'opérateur (« 0x87 ») s'il a refusé le message.
  *
  * Un MMS en échec dit « Non envoyé », sans promettre « appuyer pour réessayer » :
  * `RetrySendUseCase` refuse de relancer un MMS (`MmsRetryUnsupported`), et la bulle vocale le
