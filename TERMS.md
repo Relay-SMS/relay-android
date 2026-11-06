@@ -1,4 +1,4 @@
-# Terms of use — SMS Tech
+# Terms of use — SMS Relay
 
 _Last updated: 26 October 2026_ · 🇫🇷 [Français](TERMS.fr.md) · 🇩🇪 [Deutsch](TERMS.de.md) · 🇮🇹 [Italiano](TERMS.it.md) · 🇪🇸 [Español](TERMS.es.md)
 
@@ -8,14 +8,14 @@ _Last updated: 26 October 2026_ · 🇫🇷 [Français](TERMS.fr.md) · 🇩🇪
 
 ## Publisher
 
-SMS Tech (`com.filestech.sms`) is part of the **Files Tech** suite, published by **Patrice
+SMS Relay (`com.filestech.sms`) is part of the **Files Tech** suite, published by **Patrice
 Haltaya**. Contact: **contact@files-tech.com**.
 
 ## Licence
 
-SMS Tech is free software released under the **Apache License 2.0**. You may use, modify and
+SMS Relay is free software released under the **Apache License 2.0**. You may use, modify and
 redistribute it under the terms of that licence. The full text is in the `LICENSE` file of the source
-repository (https://github.com/gitubpatrice/SMS-TECH). Only the English text of the licence is
+repository (https://github.com/realquink/relay). Only the English text of the licence is
 authoritative.
 
 ## Use
@@ -43,7 +43,7 @@ country's emergency number directly.
 
 ## Limitations
 
-- SMS Tech is **in no way** a substitute for medical, legal, financial or professional advice or
+- SMS Relay is **in no way** a substitute for medical, legal, financial or professional advice or
   follow-up.
 - Scam detection works offline, on rules: it may flag a legitimate message and miss a fraudulent one.
   It does not replace your own vigilance.
@@ -60,7 +60,7 @@ back — including on our side:
   only derives the encryption key. Backups do not contain attachments.
 - **A forgotten vault PIN** cannot be recovered: the only way back into the vault without it
   **empties** it, conversations and messages included, on the phone and in the system message store.
-- **"Delete all my data"** erases every conversation in SMS Tech **and** in the phone's message store,
+- **"Delete all my data"** erases every conversation in SMS Relay **and** in the phone's message store,
   with attachments, scheduled messages, settings and the vault.
 - **Uninstalling the app, or clearing its data from Android,** deletes its encrypted database,
   vault included.
@@ -70,7 +70,7 @@ An encrypted backup, kept off the phone, is the only protection against a loss.
 ## Data
 
 All your data is stored **locally and encrypted** on your phone — see the
-[privacy policy](PRIVACY.md). SMS Tech sends nothing over the Internet and has no technical
+[privacy policy](PRIVACY.md). SMS Relay sends nothing over the Internet and has no technical
 permission to do so (no Android `INTERNET` permission); your SMS and MMS travel through your
 carrier's network, as with any SMS app.
 

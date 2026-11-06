@@ -1,15 +1,15 @@
-# SMS Tech — Security model
+# SMS Relay — Security model
 
 English · 🇫🇷 [Version française](SECURITY.fr.md)
 
 Current release : **v1.29.2** (2026-11-03)
 
-This document describes the threat model SMS Tech protects against, the cryptographic
+This document describes the threat model SMS Relay protects against, the cryptographic
 primitives it uses, the architectural choices that make those primitives meaningful, and the
 known limits beyond which the app cannot defend (because no app can).
 
 If you find a vulnerability, please disclose it to **contact@files-tech.com** with the subject
-`SMS Tech security report`. We respond within 5 working days.
+`SMS Relay security report`. We respond within 5 working days.
 
 ---
 
@@ -32,7 +32,7 @@ If you find a vulnerability, please disclose it to **contact@files-tech.com** wi
 | Carrier-side / MITM | Intercept message bytes in flight | **Not in scope.** SMS / MMS is unencrypted by protocol; we cannot fix that. Users who need transport encryption should use Signal or similar. |
 | Unwanted automatic Safety call SMS during coercion (v1.9.0) | The deadman feature firing while the victim is forced into the `PanicDecoy` session — which would reveal her emergency contacts to the attacker | `SafetyCallTriggerService` and `SafetyCallWorker` both check `AppLockManager.LockState.PanicDecoy` and short-circuit before any send. Worker tick retries automatically once decoy state is left. |
 | Spoofed Safety call reset intent (v1.9.0) | A third-party app on the device crafting `ACTION_SAFETY_CALL_RESET` (the activity is `exported=true` because of the SMS role) to neutralise the deadman remotely | `SafetyCallIntentToken` rotates a `SecureRandom` 63-bit nonce on every warning notification; `MainActivity` validates the extra against the in-process token and burns it on consume. A forged intent with no/wrong token is logged and ignored. |
-| Coerced reset of Safety call timer via app opening (v1.9.0) | An attacker who knows the app icon could open SMS Tech repeatedly (without PIN) to neutralise the deadman | `MainActivity.onResume` only resets `lastActivityAt` when `AppLockManager.LockState` is `Unlocked` or `Disabled`. `Locked` / `PanicDecoy` sessions never reset the timer. |
+| Coerced reset of Safety call timer via app opening (v1.9.0) | An attacker who knows the app icon could open SMS Relay repeatedly (without PIN) to neutralise the deadman | `MainActivity.onResume` only resets `lastActivityAt` when `AppLockManager.LockState` is `Unlocked` or `Disabled`. `Locked` / `PanicDecoy` sessions never reset the timer. |
 | User-triggered emergency SMS during coercion (v1.10.0) | The new Emergency mode (hold-3s button) could reveal the victim's emergency contacts if the attacker forces an unlock to `PanicDecoy` and sees the URGENCE button | Three layers of defence : (a) `AppRoot` navigation guard pops both `Emergency` and `EmergencySetup` routes the moment `PanicDecoy` becomes active, (b) `SettingsScreen` hides both "Mode urgence" and "Safety call" sections when `isPanicDecoy = true` (the attacker doesn't learn the feature exists), (c) `TriggerEmergencyUseCase` checks the same lock state and short-circuits before any SMS is sent. |
 | Wall-clock manipulation to bypass anti-spam cooldown (v1.10.0) | A rooted attacker advances `Settings.Global.AUTO_TIME=0; date <future>` to skip the 60 s emergency-mode cooldown and re-trigger the SMS to harass the contacts | `EmergencyConfig.isInAntiSpamWindow()` checks both wall-clock AND `SystemClock.elapsedRealtime()`. Cooldown is active if EITHER clock is still in window. A negative monotonic delta (post-reboot before drift recovery) is also treated as "still in cooldown" — fail-safe against root + reboot + clock-forward. Same defence on `SafetyCallConfig.isExpired()` (SEC-11) — required both clocks to expire before the deadman fires. |
 | Wall-clock manipulation to fire Safety call early (v1.10.0 SEC-11) | A rooted attacker advances the wall-clock to make `lastActivityAt + timeoutMs < now()` evaluate `true` immediately and trigger the SMS to expose the support network | `SafetyCallConfig.isExpired()` now requires BOTH wall-clock AND monotonic clock to have crossed `timeoutMs`. `SystemClock.elapsedRealtime()` is not manipulable via Settings → Date/time. The drift between the two clocks defeats the attack. Drift recovery in `MainApplication.onCreate` realigns monotonic post-reboot if the stored value exceeds current uptime. |
@@ -877,7 +877,7 @@ Since 1.25.0, the database is opened with the **raw key** (`SupportOpenHelperFac
 iterations).
 
 **Why it is neutral for security.** PBKDF2 is used to *stretch* a low-entropy secret (a human
-password) to make it costly to brute-force. But SMS Tech's passphrase is already **32 random
+password) to make it costly to brute-force. But SMS Relay's passphrase is already **32 random
 bytes (256 bits) sealed by the Keystore** (since the null-key fix in v1.24.0): on a key already at
 full entropy, PBKDF2 iterations add **no** resistance — they only slow down opening (~490 ms → a
 few ms). Encryption at rest, the algorithm (AES-256) and the threat model are **unchanged**; only
@@ -907,12 +907,12 @@ file — the claim "32-byte random passphrase wrapped by Keystore" in the primit
 was therefore never true before 1.24.0.
 
 **Actual scope of the risk.** It must be stated honestly in both directions:
-- as the default SMS application, SMS Tech is **required** to mirror all messages into
+- as the default SMS application, SMS Relay is **required** to mirror all messages into
   `content://sms`, in cleartext, including those of vault conversations (`in_vault` is a simple
   Room flag). The SQLCipher database is defence in depth, never the only copy;
-- what the null key exposed **in addition**: SMS Tech's own metadata — vault membership, drafts,
+- what the null key exposed **in addition**: SMS Relay's own metadata — vault membership, drafts,
   scheduled messages, reactions, anti-smishing verdicts — and any message deleted by the user in
-  SMS Tech.
+  SMS Relay.
 
 **Fix (`LegacyZeroKeyRekey`).** On the first launch of 1.24.0, before Room opens the file: WAL
 checkpoint, copy to a temporary file, re-encryption of the **copy** with the real passphrase,
@@ -1055,7 +1055,7 @@ PATCH release after v1.14.0 responding to user feedback asking for the emergency
 
 ### v1.14.0 — Vault auto-lock + Emergency hold-3s call (CALL_PHONE) + kill-switch "I am OK" + dry-run preview + 4 audit fixes
 
-MINOR release capping SMS Tech's emergency mode before the release of a dedicated app, **SOS Tech** (Files Tech no. 8), for the extended features (voice, siren, live GPS). Four topics delivered:
+MINOR release capping SMS Relay's emergency mode before the release of a dedicated app, **SOS Tech** (Files Tech no. 8), for the extended features (voice, siren, live GPS). Four topics delivered:
 
 1. **Vault auto-lock on explicit exit from VaultScreen**. Tap back arrow / system back / cancel PIN dialog / biometric refused → immediate `VaultManager.lock()`. Preserves the v1.13.1 fix on ThreadScreen ↔ VaultScreen navigation: the Singleton `sessionUnlocked` AtomicBoolean persists while a vault conversation is opened and closed again (the VaultScreen composable stays in the back stack), but locks as soon as one really leaves. Coexists with the existing `lockVaultOnLeave` (lock when the process goes to background) — both are idempotent and orthogonal. New helper `VaultViewModel.lockVaultSession()`.
 
@@ -1090,9 +1090,9 @@ A **LOW ARCH-1** was also fixed: redundant nested double `if (emergency.enabled)
 
 New permission `<uses-permission android:name="android.permission.CALL_PHONE" />`. Requested at RUNTIME only when the user opts in to `HOLD_3S_DIRECT_CALL` in Settings. Denial → automatic fallback to `DIALER_ONLY`. No automatic call: hold-3s is the anti-pocket-dial guard.
 
-#### Strategic note — emergency mode cap in SMS Tech
+#### Strategic note — emergency mode cap in SMS Relay
 
-v1.14.0 is deliberately the **upper cap** of emergency mode in SMS Tech. The extended features (Vosk voice mode, siren + flash, live GPS sharing, encrypted audio recording, webhook broadcast) are delegated to a new app, **SOS Tech** (Files Tech no. 8), which will be scaffolded separately. The shared code (`LocationResolver`, `EmergencyConfig`, `SafetyCallContact`, `PasswordKdf`, `Outcome`) will be progressively factored into an AAR module `files-tech-emergency-core` consumed by SMS Tech and SOS Tech. Rationale: for 95 % of SMS users, these features would mean useless weight (permanent foreground service, Vosk model ~50 MB, aggressive permissions BACKGROUND_LOCATION / continuous RECORD_AUDIO).
+v1.14.0 is deliberately the **upper cap** of emergency mode in SMS Relay. The extended features (Vosk voice mode, siren + flash, live GPS sharing, encrypted audio recording, webhook broadcast) are delegated to a new app, **SOS Tech** (Files Tech no. 8), which will be scaffolded separately. The shared code (`LocationResolver`, `EmergencyConfig`, `SafetyCallContact`, `PasswordKdf`, `Outcome`) will be progressively factored into an AAR module `files-tech-emergency-core` consumed by SMS Relay and SOS Tech. Rationale: for 95 % of SMS users, these features would mean useless weight (permanent foreground service, Vosk model ~50 MB, aggressive permissions BACKGROUND_LOCATION / continuous RECORD_AUDIO).
 
 ### v1.13.1 — Hotfix UX on top of v1.13.0
 
@@ -1142,7 +1142,7 @@ MINOR release with UX-focused polish on the Emergency mode (accessibility on loc
 
 A pre-release final audit (3-axes + coherence) surfaced **2 HIGH and 1 MEDIUM blockers**, all fixed before tag :
 
-- **HIGH S1** — `MainApplication.kt` emergency-shortcut observation now `combine(settings.flow, appLock.state)` and cancels the persistent lock-screen notification whenever `LockState.PanicDecoy` becomes active. Without this guard, an attacker who coerces a panic-PIN unlock would still see the "URGENCE / 112 / 17" notification on the lock screen, learning that SMS Tech has an Emergency mode configured (info leak + lateral attack vector — the URGENCE action itself is already gated by `TriggerEmergencyUseCase`'s PanicDecoy check, but the *presence* of the shortcut was leaking).
+- **HIGH S1** — `MainApplication.kt` emergency-shortcut observation now `combine(settings.flow, appLock.state)` and cancels the persistent lock-screen notification whenever `LockState.PanicDecoy` becomes active. Without this guard, an attacker who coerces a panic-PIN unlock would still see the "URGENCE / 112 / 17" notification on the lock screen, learning that SMS Relay has an Emergency mode configured (info leak + lateral attack vector — the URGENCE action itself is already gated by `TriggerEmergencyUseCase`'s PanicDecoy check, but the *presence* of the shortcut was leaking).
 - **HIGH S2** — `SettingsScreen` Toggle "Appel police FR (17)" is now gated behind `if (state.security.emergencyShortcutEnabled)` so it cannot be configured as an orphan. Without the shortcut enabled, the toggle had no observable effect (the in-app EmergencyScreen 17 button reads the same flag, so it stayed visible, but the lock-screen notification — the only consumer that visibly differs — wasn't posted) — confusing UX + spurious DataStore writes.
 - **MEDIUM U2** — Emergency 112 and 17 buttons in `EmergencyScreen` now catch `ActivityNotFoundException` (no dialer installed — rare but possible on stripped AOSP builds and corporate MDM profiles) and surface a snackbar `emergency_shortcut_no_app_to_dial`. Without feedback, the user would believe the call is in progress while nothing happens — a silent failure in an emergency context. Also added `FLAG_ACTIVITY_NEW_TASK` defensively (currently invoked from Activity context, so non-blocking, but matches the BroadcastReceiver path which strictly requires it).
 
@@ -1894,7 +1894,7 @@ User-facing fixes :
 - **Bug #1 (HIGH)** : voice send failed on SFR. `BITRATE_BPS` 24 → 16
   kbps + `MAX_SIZE_BYTES` 450 → 280 KB. 120 s now fits in one MMS segment
   for all French carriers.
-- **Bug #4 (MEDIUM)** : SMS Tech absent from system Share chooser. Added
+- **Bug #4 (MEDIUM)** : SMS Relay absent from system Share chooser. Added
   `<intent-filter ACTION_SEND>` to MainActivity with **strict MIME
   whitelist** (`image/*`, `video/*`, `audio/*`, `text/plain`,
   `text/x-vcard`, `text/vcard`, `application/pdf`). New `IncomingShareHolder`
@@ -2050,7 +2050,7 @@ bubble, no notification" failure mode — and the fixes are layered:
 
 **Reception attachment pipeline modernized** (`MmsDownloadedReceiver`,
 `ConversationMirror.upsertIncomingMms`) :
-- SMS Tech v1.3.9 only kept `audio/*` parts; every incoming image / video / file
+- SMS Relay v1.3.9 only kept `audio/*` parts; every incoming image / video / file
   MMS landed as a `[MMS]` placeholder bubble with no attachment, the file silently
   discarded. The receiver now extracts the first non-text non-`application/smil`
   part of ANY MIME (image, video, audio, application) and persists it to
@@ -2504,5 +2504,5 @@ with a one-sentence rationale.
 
 ## Reporting
 
-`contact@files-tech.com` — subject `SMS Tech security report`. PGP key available on request.
+`contact@files-tech.com` — subject `SMS Relay security report`. PGP key available on request.
 Please give us 90 days before public disclosure for any unpatched issue.

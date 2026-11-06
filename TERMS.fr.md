@@ -1,4 +1,4 @@
-# Conditions d'utilisation — SMS Tech
+# Conditions d'utilisation — SMS Relay
 
 _Dernière mise à jour : 26 octobre 2026_ · 🇬🇧 [English](TERMS.md) · 🇩🇪 [Deutsch](TERMS.de.md) · 🇮🇹 [Italiano](TERMS.it.md) · 🇪🇸 [Español](TERMS.es.md)
 
@@ -8,14 +8,14 @@ _Dernière mise à jour : 26 octobre 2026_ · 🇬🇧 [English](TERMS.md) · �
 
 ## Éditeur
 
-SMS Tech (`com.filestech.sms`) fait partie de la suite **Files Tech**, éditée par **Patrice
+SMS Relay (`com.filestech.sms`) fait partie de la suite **Files Tech**, éditée par **Patrice
 Haltaya**. Contact : **contact@files-tech.com**.
 
 ## Licence
 
-SMS Tech est un logiciel libre publié sous **licence Apache 2.0**. Vous pouvez l'utiliser, le
+SMS Relay est un logiciel libre publié sous **licence Apache 2.0**. Vous pouvez l'utiliser, le
 modifier et le redistribuer dans les conditions de cette licence. Le texte complet est dans le
-fichier `LICENSE` du dépôt source (https://github.com/gitubpatrice/SMS-TECH). Seul le texte anglais
+fichier `LICENSE` du dépôt source (https://github.com/realquink/relay). Seul le texte anglais
 de la licence fait foi.
 
 ## Usage
@@ -46,7 +46,7 @@ appelez directement le 112 ou le numéro d'urgence de votre pays.
 
 ## Limitations
 
-- SMS Tech ne se substitue **en aucun cas** à un avis ou à un suivi médical, juridique, financier ou
+- SMS Relay ne se substitue **en aucun cas** à un avis ou à un suivi médical, juridique, financier ou
   professionnel.
 - La détection d'arnaque fonctionne hors ligne, sur des règles : elle peut signaler un message
   légitime et laisser passer un message frauduleux. Elle ne dispense pas de votre vigilance.
@@ -64,7 +64,7 @@ sans retour possible — y compris de notre côté :
   pas les pièces jointes.
 - **Un PIN de coffre oublié** ne se retrouve pas : la seule façon de revenir au coffre sans lui le
   **vide**, conversations et messages compris, sur le téléphone et dans la messagerie du système.
-- **« Supprimer toutes mes données »** efface toutes les conversations dans SMS Tech **et** dans la
+- **« Supprimer toutes mes données »** efface toutes les conversations dans SMS Relay **et** dans la
   messagerie du téléphone, avec les pièces jointes, les envois programmés, les réglages et le coffre.
 - **Désinstaller l'application, ou effacer ses données depuis Android,** supprime sa base chiffrée,
   coffre compris.
@@ -74,7 +74,7 @@ Une sauvegarde chiffrée, conservée hors du téléphone, est la seule protectio
 ## Données
 
 Toutes vos données sont stockées **localement et chiffrées** sur votre téléphone — voir la
-[politique de confidentialité](PRIVACY.fr.md). SMS Tech n'envoie rien sur Internet et n'a pas la
+[politique de confidentialité](PRIVACY.fr.md). SMS Relay n'envoie rien sur Internet et n'a pas la
 permission technique de le faire (pas de permission `INTERNET` Android) ; vos SMS et MMS passent par
 le réseau de votre opérateur, comme avec toute application de SMS.
 

@@ -173,10 +173,8 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                 icon = Icons.Outlined.BugReport,
                 label = stringResource(R.string.about_report_issue),
                 onClick = {
-                    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:contact@files-tech.com")).apply {
-                        putExtra(Intent.EXTRA_SUBJECT, "SMS Tech ${BuildConfig.VERSION_NAME}")
-                    }
-                    safeStartActivity(context, intent)
+                    // Fork: issues go to the SMS Relay repo, not to the upstream author's inbox.
+                    safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/realquink/relay/issues/new")))
                 },
             )
             LinkItem(
@@ -589,11 +587,12 @@ private const val AUTHOR_NAME = "Patrice Haltaya"
 // ces deux liens rendaient 404 depuis toujours. Ce n'est pas une affaire de casse (GitHub
 // l'ignore) mais de separateur, tiret contre soulignement. Seul RELEASES_URL etait juste, ce
 // qui a masque le defaut : une des trois surfaces marchait.
-private const val REPO_URL = "https://github.com/gitubpatrice/SMS-TECH"
-private const val RELEASES_URL = "https://github.com/gitubpatrice/SMS-TECH/releases/latest"
-private const val WEBSITE_URL = "https://files-tech.com"
+private const val REPO_URL = "https://github.com/realquink/relay"
+private const val RELEASES_URL = "https://github.com/realquink/relay/releases/latest"
+// SMS Relay has no standalone website yet; the repo is the project page for now.
+private const val WEBSITE_URL = "https://github.com/realquink/relay"
 private const val LICENSE_URL = "https://www.apache.org/licenses/LICENSE-2.0"
-private const val LEGAL_BASE_URL = "https://github.com/gitubpatrice/SMS-TECH/blob/main/"
+private const val LEGAL_BASE_URL = "https://github.com/realquink/relay/blob/main/"
 
 /** Langues dans lesquelles PRIVACY et TERMS ont une traduction ; l'anglais est `PRIVACY.md`. */
 private val LANGUES_DES_TEXTES_JURIDIQUES = setOf("fr", "de", "it", "es")
