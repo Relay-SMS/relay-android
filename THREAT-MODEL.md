@@ -1,4 +1,4 @@
-# SMS Tech — Modèle de menace opérationnel
+# SMS Relay — Modèle de menace opérationnel
 
 > **Ce document ne remplace pas `SECURITY.md`.** Celui-ci catalogue *adversaire → protection →
 > comment* : il répond à « contre quoi l'app défend ». Le présent document répond à une question

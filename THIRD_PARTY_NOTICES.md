@@ -1,6 +1,6 @@
-# Third-party notices — SMS Tech
+# Third-party notices — SMS Relay
 
-SMS Tech (`com.filestech.sms`) is licensed under the Apache License 2.0 ([LICENSE](LICENSE)). It
+SMS Relay (`com.filestech.sms`) is licensed under the Apache License 2.0 ([LICENSE](LICENSE)). It
 ships the open-source libraries listed below. The list was read on 2026-09-26 from the resolved
 `releaseRuntimeClasspath` of the `:app` module at `v1.28.12`, and each licence from the POM that
 the library publishes — not from memory.
@@ -28,7 +28,7 @@ the library publishes — not from memory.
 | Timber | 5.0.1 | Jake Wharton | Apache 2.0 |
 | **SQLCipher for Android** | 4.19.0 | Zetetic LLC | **BSD-3-Clause** — full text below |
 
-OkHttp is present because Coil depends on it. SMS Tech uses Coil to display contact photos and
+OkHttp is present because Coil depends on it. SMS Relay uses Coil to display contact photos and
 attachments stored on the phone; its one network use is MMS transport through your carrier (see
 [PRIVACY.md](PRIVACY.md)).
 
@@ -39,7 +39,7 @@ authors.
 
 ### Apache License 2.0
 
-Every library marked "Apache 2.0" above is distributed under the same text as SMS Tech itself:
+Every library marked "Apache 2.0" above is distributed under the same text as SMS Relay itself:
 [LICENSE](LICENSE), also at <https://www.apache.org/licenses/LICENSE-2.0>. Of all these libraries,
 only `jakarta.inject-api` ships a `NOTICE` file; its attribution is reproduced below.
 
@@ -119,5 +119,5 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## Build and test tools (not shipped in the APK)
 
 Gradle, the Android Gradle Plugin, KSP, the Room and Hilt compilers, R8, detekt, ktlint, JUnit,
-Robolectric, MockK, Turbine and the AndroidX test libraries are used to build and test SMS Tech.
+Robolectric, MockK, Turbine and the AndroidX test libraries are used to build and test SMS Relay.
 They are not part of the APK.

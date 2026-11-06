@@ -490,7 +490,7 @@ class BackupService @Inject constructor(
         if (bytes.size < minLen) error("invalid backup: too short for header")
         val magicBytes = MAGIC.toByteArray(Charsets.US_ASCII)
         for (i in magicBytes.indices) {
-            if (bytes[i] != magicBytes[i]) error("invalid magic — not a SMS Tech backup")
+            if (bytes[i] != magicBytes[i]) error("invalid magic — not a SMS Relay backup")
         }
         val version = bytes[MAGIC.length].toInt() and 0xFF
         if (version != VERSION) error("unsupported version $version (expected $VERSION)")
@@ -833,7 +833,7 @@ class BackupService @Inject constructor(
 
         const val MAGIC = "SMBK"
         const val VERSION = 1
-        private const val APP_TAG = "SMS Tech"
+        private const val APP_TAG = "SMS Relay"
         // v1.15.2 — Cap de sécurité sur la taille d'un .smsbk à restaurer. 50 MB couvre des
         // archives très volumineuses (centaines de milliers de SMS) tout en bloquant un
         // fichier hostile qui tenterait un OOM. Lecture en streaming chunked (SECU-H1).

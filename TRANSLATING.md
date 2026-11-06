@@ -1,6 +1,6 @@
-# Translating SMS Tech
+# Translating SMS Relay
 
-SMS Tech ships in **English** (the source), **French**, **German**, **Italian** and **Spanish**.
+SMS Relay ships in **English** (the source), **French**, **German**, **Italian** and **Spanish**.
 This page is for anyone adding or correcting a language — no Android knowledge required beyond
 editing an XML file.
 
@@ -36,9 +36,9 @@ written down here.
    Without this line the Android Gradle Plugin **strips your resources out of the APK** and the
    app silently falls back to English.
 3. **Add the locale** to `app/src/main/res/xml/locales_config.xml`. This is what puts your
-   language in *Settings → Apps → SMS Tech → Language* on Android 13 and later.
+   language in *Settings → Apps → SMS Relay → Language* on Android 13 and later.
 4. **Create** `app/src/debug/res/values-<lang>/strings.xml` with just `app_name`, set to
-   `SMS Tech (debug)` — the exact spelling the four existing twins use. Without it, a debug
+   `SMS Relay (debug)` — the exact spelling the four existing twins use. Without it, a debug
    build installed on a device in your language is named exactly like the release build, and
    the two become impossible to tell apart.
 5. **Add your language code** to `LANGUES` in
@@ -81,7 +81,7 @@ Italian and Spanish also use `many`. If you are unsure, add the category the bui
 
 **Emoji, and the `&#8230;` / `&amp;` entities, are content.** Keep them as they are.
 
-**Do not translate these**, they are names: `SMS Tech`, `Safety call`, and protocol words that are
+**Do not translate these**, they are names: `SMS Relay`, `Safety call`, and protocol words that are
 the same everywhere in a phone's UI (`SMS`, `MMS`, `PIN`, `GPS`, `PDF`).
 `Safety call` is spelled exactly that way in every language — one feature, one spelling.
 

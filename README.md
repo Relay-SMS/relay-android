@@ -1,14 +1,14 @@
-# SMS Tech
+# SMS Relay
 
 English · 🇫🇷 [Version française](README.fr.md)
 
-A modern, private SMS &amp; MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
-No ads, no trackers, no analytics, **no Internet permission**. Part of the **Files Tech** suite.
-Apache-2.0 licensed.
+A modern, private SMS & MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
+No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licensed.
 
-Source: [github.com/gitubpatrice/SMS-TECH](https://github.com/gitubpatrice/SMS-TECH) ·
-Website: [files-tech.com/sms-tech.php](https://files-tech.com/sms-tech.php) ·
-Releases: [GitHub Releases](https://github.com/gitubpatrice/SMS-TECH/releases/latest)
+> **Fork note:** SMS Relay is a fork of [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine and adds device pairing and a synchronization service for desktop.
+
+Source: [github.com/realquink/relay](https://github.com/realquink/relay) ·
+Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
 
 ## ✨ Features
 
@@ -45,11 +45,11 @@ Releases: [GitHub Releases](https://github.com/gitubpatrice/SMS-TECH/releases/la
 ## 🔐 Privacy
 
 We collect **nothing**. No analytics, no crash reporting, no remote logging.
-SMS Tech makes no network call: it does not hold the `INTERNET` permission, so its process cannot
+SMS Relay makes no network call: it does not hold the `INTERNET` permission, so its process cannot
 open a connection. MMS are carried by Android's own MMS service, which talks to your carrier's MMSC.
 
 SMS is **not** end-to-end encrypted at the protocol level — this is a limitation of the carrier
-network, not a choice. SMS Tech protects what's stored on your device, with SQLCipher + the
+network, not a choice. SMS Relay protects what's stored on your device, with SQLCipher + the
 AndroidKeyStore. For true end-to-end encryption, use Signal or Matrix.
 
 See the [privacy policy](PRIVACY.md), the [terms of use](TERMS.md) and

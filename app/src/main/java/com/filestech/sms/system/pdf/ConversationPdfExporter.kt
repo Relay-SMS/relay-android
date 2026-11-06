@@ -68,7 +68,7 @@ class ConversationPdfExporter @Inject constructor(
         val safeName = (conversation.customName ?: conversation.displayName ?: conversation.addresses.toCsv())
             .replace(Regex("[^A-Za-z0-9_-]+"), "_").take(48)
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val out = File(dir, "smstech_conversation_${safeName}_$ts.pdf")
+        val out = File(dir, "smsrelay_conversation_${safeName}_$ts.pdf")
         var abouti = false
         try {
             val pages = renderPages(doc, conversation, messages)

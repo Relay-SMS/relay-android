@@ -2,19 +2,19 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="en">
 
     <!-- Core -->
-    <string name="app_name">SMS Tech</string>
+    <string name="app_name">SMS Relay</string>
 
     <!-- v1.3.7 — First-launch splash screen (animated logo + tagline). -->
     <string name="splash_tagline">The app that doesn\'t read your messages and respects your privacy.</string>
-    <string name="splash_logo_content_description">SMS Tech logo</string>
+    <string name="splash_logo_content_description">SMS Relay logo</string>
     <string name="splash_skip_hint">Tap anywhere to continue</string>
     <string name="splash_skip_label">Skip splash</string>
 
     <!-- v1.3.10 — Foreground KeepAliveService (opt-in mode for aggressive OEM ROMs). -->
-    <string name="keep_alive_notification_title">SMS Tech is active</string>
+    <string name="keep_alive_notification_title">SMS Relay is active</string>
     <string name="keep_alive_notification_text">Required to receive SMS / MMS reliably on your phone.</string>
     <string name="settings_keep_alive_title">Resistant mode (Xiaomi / Huawei…)</string>
-    <string name="settings_keep_alive_desc">Keeps SMS Tech alive in the background via a permanent notification in the status bar (mandatory Android contract for any foreground service — it cannot be dismissed while the toggle is ON). Useful on aggressive ROMs (Xiaomi MIUI/HyperOS, Huawei EMUI/HarmonyOS, Honor MagicOS, Oppo/Realme/OnePlus ColorOS, Vivo/iQOO FunTouch, Meizu Flyme, ASUS Zen UI) which otherwise kill third-party SMS apps and block MMS/notifications. Useless on Pixel, Samsung Galaxy, Sony, Fairphone, Motorola, Nokia, Nothing Phone — leave OFF on these.</string>
+    <string name="settings_keep_alive_desc">Keeps SMS Relay alive in the background via a permanent notification in the status bar (mandatory Android contract for any foreground service — it cannot be dismissed while the toggle is ON). Useful on aggressive ROMs (Xiaomi MIUI/HyperOS, Huawei EMUI/HarmonyOS, Honor MagicOS, Oppo/Realme/OnePlus ColorOS, Vivo/iQOO FunTouch, Meizu Flyme, ASUS Zen UI) which otherwise kill third-party SMS apps and block MMS/notifications. Useless on Pixel, Samsung Galaxy, Sony, Fairphone, Motorola, Nokia, Nothing Phone — leave OFF on these.</string>
 
 
     <!-- Common -->
@@ -89,7 +89,7 @@
     <string name="settings_purge_blocked_result">Purged %1$d conversation(s)</string>
     <string name="settings_purge_blocked_none">No blocked conversation to purge</string>
     <string name="lock_mode_biometric">Biometric + PIN fallback</string>
-    <string name="lock_biometric_title">Unlock SMS Tech</string>
+    <string name="lock_biometric_title">Unlock SMS Relay</string>
     <string name="lock_biometric_subtitle">Use your fingerprint or face</string>
     <string name="lock_use_pin">Use PIN</string>
     <string name="lock_biometric_unavailable">Biometric not available on this device — set a PIN first</string>
@@ -144,7 +144,7 @@
     <string name="conversations_delete_confirm_title">Delete this conversation?</string>
     <string name="conversations_delete_confirm_body">All messages in this conversation will be permanently removed from this device. Other conversations are not affected.</string>
     <!-- v1.28.9 — une conversation du coffre n'est plus supprimee si sa copie systeme resiste : elle reviendrait hors du coffre. -->
-    <string name="conversations_delete_vault_kept_system">This vault conversation was not deleted: its copy in the phone’s message store could not be removed, and it would have come back outside the vault at the next sync. Make SMS Tech your default SMS app, then try again. If it keeps failing, move the conversation out of the vault first: it may then come back in the main list.</string>
+    <string name="conversations_delete_vault_kept_system">This vault conversation was not deleted: its copy in the phone’s message store could not be removed, and it would have come back outside the vault at the next sync. Make SMS Relay your default SMS app, then try again. If it keeps failing, move the conversation out of the vault first: it may then come back in the main list.</string>
     <string name="conversations_delete_kept_local">The conversation was not deleted: part of it could not be removed from this phone. Try again.</string>
     <string name="conversations_draft_prefix">Draft: %1$s</string>
     <string name="conversations_preview_attachment">Attachment</string>
@@ -272,16 +272,16 @@
     <string name="settings_vault_pin_forgot_confirm_body">Every conversation in the vault is deleted, messages included, on this phone and from the system SMS store. Nothing is recovered — this is the price of getting back in without the PIN. Conversations outside the vault are untouched. This cannot be undone.</string>
     <string name="settings_vault_pin_forgot_confirm_action">Empty and remove</string>
     <string name="settings_vault_pin_forgot_done">Vault emptied: %1$d conversation(s) deleted. Its PIN is removed.</string>
-    <string name="settings_vault_pin_forgot_incomplete">Purge incomplete: %1$d conversation(s) deleted, %2$d left. The vault PIN was NOT removed. Make SMS Tech your default SMS app, then try again.</string>
+    <string name="settings_vault_pin_forgot_incomplete">Purge incomplete: %1$d conversation(s) deleted, %2$d left. The vault PIN was NOT removed. Make SMS Relay your default SMS app, then try again.</string>
     <!-- v1.28.3 — echec LOCAL : pas de sortie forcee, et la raison est dite. -->
     <string name="settings_vault_pin_forgot_local_failure">%1$d conversation(s) deleted, but %2$d could not be removed from this phone. The PIN stays in place: removing it would open a vault that is still full. Free up some storage and try again.</string>
     <string name="settings_vault_pin_forgot_residue">Vault emptied and PIN removed. But %2$d conversation(s) left their copy in the phone’s SMS store: they stay readable by another messaging app. %1$d conversation(s) were deleted in full.</string>
     <string name="settings_vault_pin_force_title">Empty it anyway?</string>
-    <string name="settings_vault_pin_force_body">The copy of %1$d conversation(s) could not be removed from the phone’s SMS store, and trying again will give the same result. SMS Tech can empty the vault and remove the PIN regardless: you get access back, but those copies stay on the phone and remain readable by another messaging app. This cannot be undone.</string>
+    <string name="settings_vault_pin_force_body">The copy of %1$d conversation(s) could not be removed from the phone’s SMS store, and trying again will give the same result. SMS Relay can empty the vault and remove the PIN regardless: you get access back, but those copies stay on the phone and remain readable by another messaging app. This cannot be undone.</string>
     <string name="settings_vault_pin_force_action">Empty and remove the PIN</string>
     <!-- v1.25.3 (audit M23) — turning the app lock off used to happen on a single tap. -->
     <string name="settings_lock_clear_confirm_title">Turn off app lock?</string>
-    <string name="settings_lock_clear_confirm_body">Your PIN will be deleted and SMS Tech will open without asking for anything. Biometric unlock is turned off too. This cannot be undone.</string>
+    <string name="settings_lock_clear_confirm_body">Your PIN will be deleted and SMS Relay will open without asking for anything. Biometric unlock is turned off too. This cannot be undone.</string>
     <string name="settings_lock_clear_confirm_action">Turn off</string>
     <string name="action_disable">Disable</string>
     <string name="vault_actions_title">Vault actions</string>
@@ -304,7 +304,7 @@
     <string name="smishing_banner_title">⚠️ Possibly fraudulent</string>
     <string name="smishing_banner_subtitle">Tap to see why</string>
     <string name="smishing_dialog_title">Why this warning?</string>
-    <string name="smishing_dialog_intro">SMS Tech detected the following suspicious signals in this message. No SMS content was sent anywhere — everything is computed locally.</string>
+    <string name="smishing_dialog_intro">SMS Relay detected the following suspicious signals in this message. No SMS content was sent anywhere — everything is computed locally.</string>
     <string name="smishing_reason_url_shortener">Shortened URL (bit.ly, t.co, tinyurl…). Shorteners can hide the real destination — verify before tapping.</string>
     <string name="smishing_reason_urgency">Urgency or pressure wording (urgent, expires, click here…). A common social-engineering tactic to trigger panic.</string>
     <string name="smishing_reason_premium">Premium-rate phone number (3xxx or 0899 in France, 0900 in Germany, 899 in Italy, 806 in Spain…). Calling these numbers is expensive and often part of a scam.</string>
@@ -330,7 +330,7 @@
     <!-- v1.14.8 audit P2 — texte mis à jour : depuis v1.14.2 l'action "URGENCE" en un tap a été retirée (risque de déclenchement accidentel). Seules les actions 112/17 restent. -->
     <!-- v1.28.12 - the police number changes from country to country: neither description names it. -->
     <string name="channel_emergency_shortcut_desc">Silent persistent notification with quick-dial actions (112 and, where there is one, the emergency number for your country). Tap the body to open the Emergency screen, then hold 3 s to send the alert.</string>
-    <string name="emergency_shortcut_notif_title">SMS Tech — emergency shortcut</string>
+    <string name="emergency_shortcut_notif_title">SMS Relay — emergency shortcut</string>
     <string name="emergency_shortcut_notif_text">Tap to open the emergency page, or dial 112.</string>
     <!-- v1.28.12 — one label for both quick actions: the police number changes from country to
          country, so it can no longer be written into the string. -->
@@ -362,7 +362,7 @@
 
     <!-- Migration -->
     <string name="migration_title">Import existing SMS</string>
-    <string name="migration_body">Reads from the system SMS provider and mirrors messages into the encrypted database. SMS Tech must already be the default SMS app.</string>
+    <string name="migration_body">Reads from the system SMS provider and mirrors messages into the encrypted database. SMS Relay must already be the default SMS app.</string>
     <string name="migration_run">Start import</string>
     <string name="migration_rerun">Re-run</string>
     <string name="migration_imported">Imported: %1$d</string>
@@ -373,7 +373,7 @@
     <string name="about_easter_egg">✨ Thanks to those who care about their privacy. ✨</string>
 
     <!-- Lock screen -->
-    <string name="lock_title">SMS Tech is locked</string>
+    <string name="lock_title">SMS Relay is locked</string>
     <string name="lock_pin_hint">Enter your PIN</string>
     <string name="lock_lockout_message">Too many attempts. Try again in %1$d s.</string>
 
@@ -400,7 +400,7 @@
 
     <string name="settings_section_locale">Language &amp; region</string>
     <string name="settings_language">App language</string>
-    <string name="settings_language_desc">Opens the Android per-app language screen. SMS Tech follows your system language unless you pick one here.</string>
+    <string name="settings_language_desc">Opens the Android per-app language screen. SMS Relay follows your system language unless you pick one here.</string>
 
     <string name="settings_section_conversations">Conversations</string>
     <string name="settings_show_avatars">Show avatars</string>
@@ -441,7 +441,7 @@
     <string name="settings_auto_delete_purge_now_disabled">Pick a duration to enable</string>
     <string name="settings_auto_delete_purge_confirm_title">Confirm cleanup</string>
     <string name="settings_auto_delete_purge_confirm_zero">No messages to delete for this duration.</string>
-    <string name="settings_auto_delete_purge_confirm_body">%1$d message(s) older than %2$d days will be deleted from the phone, not just from SMS Tech. Starred messages are kept. This cannot be undone.</string>
+    <string name="settings_auto_delete_purge_confirm_body">%1$d message(s) older than %2$d days will be deleted from the phone, not just from SMS Relay. Starred messages are kept. This cannot be undone.</string>
     <string name="settings_auto_delete_purge_done">%1$d message(s) deleted.</string>
     <string name="action_delete_now">Delete</string>
     <string name="settings_resync_title">Resync from phone</string>
@@ -453,7 +453,7 @@
          Title kept (was already pointing to "reaction format"). Desc legacy kept for downgrade. -->
     <string name="settings_reaction_format_title">Reaction format</string>
     <string name="settings_reaction_format_fr">Readable French</string>
-    <string name="settings_reaction_format_fr_hint">"Réagi par ❤️ à votre message : «preview»". Natural and understandable for any French-speaking Android recipient. Decoded by SMS Tech as a native reaction badge.</string>
+    <string name="settings_reaction_format_fr_hint">"Réagi par ❤️ à votre message : «preview»". Natural and understandable for any French-speaking Android recipient. Decoded by SMS Relay as a native reaction badge.</string>
     <string name="settings_reaction_format_en">Tapback (iMessage compat)</string>
     <string name="settings_reaction_format_en_hint">"Reacted ❤️ to «preview»". Detected automatically by iMessage (iPhone) and recent Google Messages as a native reaction bubble. Less natural for French recipients.</string>
     <string name="settings_reaction_format_emoji">Emoji only</string>
@@ -470,7 +470,7 @@
     <!-- v1.9.0 — Safety call -->
     <string name="settings_section_safety_call">Safety call</string>
     <string name="settings_safety_call_title">Safety call</string>
-    <string name="settings_safety_call_desc">Send an automatic SMS to your emergency contacts if you don\'t open SMS Tech for a configured duration. Designed for solo travel, isolated living, professions at risk.</string>
+    <string name="settings_safety_call_desc">Send an automatic SMS to your emergency contacts if you don\'t open SMS Relay for a configured duration. Designed for solo travel, isolated living, professions at risk.</string>
     <string name="settings_safety_call_disabled">Disabled</string>
     <string name="settings_safety_call_disabled_after_alert">Disabled — an alert was triggered</string>
     <string name="settings_safety_call_im_ok_snack">Timer reset.</string>
@@ -500,7 +500,7 @@
     <string name="safety_call_setup_section_contacts">Emergency contacts (max 4)</string>
     <string name="safety_call_setup_section_template">Message</string>
     <string name="safety_call_setup_toggle_enable">Enable Safety call</string>
-    <string name="safety_call_setup_toggle_desc">When enabled, opening SMS Tech resets the timer. If you don\'t open it within the chosen duration, your contacts receive an automatic SMS.</string>
+    <string name="safety_call_setup_toggle_desc">When enabled, opening SMS Relay resets the timer. If you don\'t open it within the chosen duration, your contacts receive an automatic SMS.</string>
     <string name="safety_call_setup_duration_24h">24 hours</string>
     <string name="safety_call_setup_duration_48h">48 hours</string>
     <string name="safety_call_setup_duration_72h">72 hours</string>
@@ -524,21 +524,21 @@
     <string name="safety_call_setup_save_validation_no_contacts">Add at least one contact before enabling.</string>
     <string name="safety_call_setup_shared_with_emergency">These contacts are also used by Emergency mode, which is still armed. Emptying the list would leave it with no one to alert. Turn Emergency mode off first, or keep at least one contact.</string>
     <string name="safety_call_setup_save_validation_custom_empty">Custom message cannot be empty.</string>
-    <string name="safety_call_warning_title">SMS Tech — confirm you\'re OK</string>
+    <string name="safety_call_warning_title">SMS Relay — confirm you\'re OK</string>
     <string name="safety_call_warning_body_hours">Safety call will trigger in about %1$d hours. Tap to reset the timer.</string>
     <string name="safety_call_warning_body_imminent">Safety call will trigger in less than 2 hours. Tap to reset now.</string>
     <string name="safety_call_cannot_send_title">Safety call cannot send</string>
-    <string name="safety_call_cannot_send_body">SMS Tech is not your default SMS app, so the alert would not be sent. Your contacts will not be warned. Tap to fix it.</string>
+    <string name="safety_call_cannot_send_body">SMS Relay is not your default SMS app, so the alert would not be sent. Your contacts will not be warned. Tap to fix it.</string>
     <string name="safety_role_missing_title">This protection cannot send</string>
-    <string name="safety_role_missing_body">SMS Tech is not your default SMS app. You can arm this, but nothing will be sent when it fires, and no one will be warned.</string>
-    <string name="safety_call_sequence_title">SMS Tech — alert sent</string>
+    <string name="safety_role_missing_body">SMS Relay is not your default SMS app. You can arm this, but nothing will be sent when it fires, and no one will be warned.</string>
+    <string name="safety_call_sequence_title">SMS Relay — alert sent</string>
     <plurals name="safety_call_sequence_body">
         <item quantity="one">%1$d of %2$d message sent to your contacts. Tap if you\'re OK: the follow-ups will stop.</item>
         <item quantity="other">%1$d of %2$d messages sent to your contacts. Tap if you\'re OK: the follow-ups will stop.</item>
     </plurals>
-    <string name="safety_call_sequence_title_sending">SMS Tech — sending alert</string>
+    <string name="safety_call_sequence_title_sending">SMS Relay — sending alert</string>
     <string name="safety_call_sequence_body_sending">The alert is being sent to your contacts. Tap if you\'re OK: sending will stop.</string>
-    <string name="safety_call_sequence_title_done">SMS Tech — alert sent, Safety call off</string>
+    <string name="safety_call_sequence_title_done">SMS Relay — alert sent, Safety call off</string>
     <plurals name="safety_call_sequence_body_done">
         <item quantity="one">%1$d of %2$d message was sent to your contacts. Safety call is now off — tap “Turn back on” to arm it again.</item>
         <item quantity="other">All %1$d messages were sent to your contacts. Safety call is now off — tap “Turn back on” to arm it again.</item>
@@ -549,8 +549,8 @@
          settings_safety_call_im_ok_stops_relances) on purpose: the same gesture must read the same
          way wherever it is made. -->
     <string name="safety_call_ack_rearmed">Safety call is back on. The timer starts over.</string>
-    <string name="safety_call_reset_warning_title">The timer restarts when you open SMS Tech</string>
-    <string name="safety_call_reset_warning_body">Once Safety call is on, the timer restarts as soon as you open this app and unlock it. Using your phone for anything else makes no difference: if you do not open SMS Tech within the chosen delay, the alert goes out to your contacts.</string>
+    <string name="safety_call_reset_warning_title">The timer restarts when you open SMS Relay</string>
+    <string name="safety_call_reset_warning_body">Once Safety call is on, the timer restarts as soon as you open this app and unlock it. Using your phone for anything else makes no difference: if you do not open SMS Relay within the chosen delay, the alert goes out to your contacts.</string>
     <string name="safety_call_history_title">Trigger history</string>
     <string name="safety_call_history_empty">No trigger recorded.</string>
     <plurals name="safety_call_history_count">
@@ -702,21 +702,21 @@
     <string name="settings_section_advanced">Advanced</string>
     <string name="settings_default_sms_app">Default SMS app</string>
     <string name="settings_set_default">Set as default</string>
-    <string name="settings_is_default">SMS Tech is the default SMS app.</string>
+    <string name="settings_is_default">SMS Relay is the default SMS app.</string>
     <string name="settings_reset_all">Reset all settings</string>
     <string name="settings_nuke_data">Delete all my data</string>
-    <string name="settings_nuke_confirm">All conversations will be erased in SMS Tech AND in the phone’s message store, along with attachments, scheduled sends and every setting. The vault is erased too. This cannot be undone, and nothing comes back at the next sync.</string>
-    <string name="settings_nuke_confirm_not_default">⚠️ SMS Tech is not your default SMS app: the system will refuse to delete the phone’s messages. They will stay in place and come back at the next sync. Only SMS Tech’s own data will be erased.</string>
+    <string name="settings_nuke_confirm">All conversations will be erased in SMS Relay AND in the phone’s message store, along with attachments, scheduled sends and every setting. The vault is erased too. This cannot be undone, and nothing comes back at the next sync.</string>
+    <string name="settings_nuke_confirm_not_default">⚠️ SMS Relay is not your default SMS app: the system will refuse to delete the phone’s messages. They will stay in place and come back at the next sync. Only SMS Relay’s own data will be erased.</string>
     <string name="settings_nuke_done_title">Data erased</string>
-    <string name="settings_nuke_done_body">Conversations and settings have been erased, both in SMS Tech and in the phone’s message store. Nothing will come back at the next sync. SMS Tech is about to restart.</string>
+    <string name="settings_nuke_done_body">Conversations and settings have been erased, both in SMS Relay and in the phone’s message store. Nothing will come back at the next sync. SMS Relay is about to restart.</string>
     <string name="settings_nuke_residue_title">Incomplete deletion</string>
     <plurals name="settings_nuke_residue_body">
-        <item quantity="one">%1$d conversation stayed in the phone’s message store: the system refused to delete it, and it will come back at the next sync. The usual cause is that SMS Tech is not the default SMS app.</item>
-        <item quantity="other">%1$d conversations stayed in the phone’s message store: the system refused to delete them, and they will come back at the next sync. The usual cause is that SMS Tech is not the default SMS app.</item>
+        <item quantity="one">%1$d conversation stayed in the phone’s message store: the system refused to delete it, and it will come back at the next sync. The usual cause is that SMS Relay is not the default SMS app.</item>
+        <item quantity="other">%1$d conversations stayed in the phone’s message store: the system refused to delete them, and they will come back at the next sync. The usual cause is that SMS Relay is not the default SMS app.</item>
     </plurals>
     <!-- v1.28.9 (septieme note d'Andrew, constat 2) — ne pas savoir n'est pas « rien a effacer ». -->
     <string name="settings_nuke_list_unreadable">The conversation list could not be read: their copies in the phone’s message store were not deleted and will come back at the next sync.</string>
-    <string name="settings_nuke_local_failure">Some of SMS Tech’s own data could not be erased from this phone. Run “Delete all my data” again.</string>
+    <string name="settings_nuke_local_failure">Some of SMS Relay’s own data could not be erased from this phone. Run “Delete all my data” again.</string>
 
     <!-- About -->
     <string name="about_title">About</string>
@@ -744,7 +744,7 @@
     <string name="about_perm_call_phone">Emergency call tiles: call directly. Refused, they open the dialer instead.</string>
     <string name="about_permissions_title">Permissions we use</string>
     <string name="about_security_title">Security &amp; limits</string>
-    <string name="about_security_body">SMS and MMS travel unencrypted across the carrier network — this is a protocol limitation, not a choice. SMS Tech only protects what is stored on your device. For end-to-end encrypted messaging, use Signal or Matrix.</string>
+    <string name="about_security_body">SMS and MMS travel unencrypted across the carrier network — this is a protocol limitation, not a choice. SMS Relay only protects what is stored on your device. For end-to-end encrypted messaging, use Signal or Matrix.</string>
     <string name="about_credits_body">Created by %1$s. UI inspired by Material 3 motion principles. Built with Kotlin, Compose, Hilt, Room and SQLCipher.</string>
     <string name="about_legal_body">© %1$s %2$s. Released under the Apache License 2.0.</string>
     <string name="about_source_code">Source code</string>
@@ -761,13 +761,13 @@
     <string name="channel_incoming_desc">Notifications for SMS and MMS you receive.</string>
     <!-- v1.8.0 — silent channel for NotificationStyle.SILENT -->
     <string name="channel_incoming_silent_label">Incoming messages (silent)</string>
-    <string name="channel_incoming_silent_desc">Notifications when SMS Tech is set to "Silent" mode. No heads-up, no sound.</string>
+    <string name="channel_incoming_silent_desc">Notifications when SMS Relay is set to "Silent" mode. No heads-up, no sound.</string>
     <string name="channel_sent_label">Sent messages</string>
     <string name="channel_sent_desc">Status of messages you sent.</string>
     <string name="channel_failed_label">Failed messages</string>
     <string name="channel_failed_desc">Errors and retry suggestions.</string>
     <string name="channel_keep_alive_label">Resistant mode</string>
-    <string name="channel_keep_alive_desc">Keeps SMS Tech running on phones whose manufacturer shuts down background apps.</string>
+    <string name="channel_keep_alive_desc">Keeps SMS Relay running on phones whose manufacturer shuts down background apps.</string>
     <string name="channel_safety_call_warning_label">Safety call warning</string>
     <string name="channel_safety_call_warning_desc">Reminder before automatic SMS to your emergency contacts.</string>
     <string name="channel_safety_call_receipt_label">Safety call alert finished</string>
@@ -780,10 +780,10 @@
 
     <!-- PDF export -->
     <string name="pdf_header_subtitle">Exported %1$s • %2$d participant(s)</string>
-    <string name="pdf_footer">Page %1$d — SMS Tech</string>
+    <string name="pdf_footer">Page %1$d — SMS Relay</string>
 
     <!-- Errors -->
-    <string name="error_not_default_app">SMS Tech is not the default SMS app yet.</string>
+    <string name="error_not_default_app">SMS Relay is not the default SMS app yet.</string>
     <string name="error_send_failed">Failed to send the message.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
     <string name="send_failure_notification_title">Message not sent</string>
@@ -834,7 +834,7 @@
     <string name="backup_restore_in_progress">Restoring…</string>
     <string name="backup_restore_success">%1$d conversations (%2$d new), %3$d messages imported (%4$d already present)</string>
     <string name="backup_restore_failed_wrong_pass">Wrong passphrase or corrupted file</string>
-    <string name="backup_restore_failed_format">Not a valid SMS Tech backup file</string>
+    <string name="backup_restore_failed_format">Not a valid SMS Relay backup file</string>
     <string name="backup_restore_failed_storage">Could not read the file</string>
 
     <!-- v1.15.1 — Scheduled messages screen + Thread schedule flow. -->
@@ -915,7 +915,7 @@
     <!-- Help recipes (7 titles + steps) -->
     <string name="about_help_default_title">Set as default SMS app</string>
     <string name="about_help_default_step1">Blue button \"Set as default\" at the top of the conversation list</string>
-    <string name="about_help_default_step2">Or Android Settings → Default apps → SMS → SMS Tech</string>
+    <string name="about_help_default_step2">Or Android Settings → Default apps → SMS → SMS Relay</string>
     <string name="about_help_voice_title">Send a voice message</string>
     <string name="about_help_voice_step1">Long-press the mic to the right of the composer</string>
     <string name="about_help_voice_step2">Speak, then release to send (slide left = cancel)</string>
@@ -940,7 +940,7 @@
     <string name="about_help_emergency_step4">\"I am OK\" in the conversation list resets the cooldown and, unless you turned the SMS off, tells your contacts it was a false alert</string>
     <string name="about_help_update_title">Check for an update</string>
     <string name="about_help_update_step1">\"View updates\" button at the top of this page</string>
-    <string name="about_help_update_step2">Opens the SMS Tech GitHub Releases page</string>
+    <string name="about_help_update_step2">Opens the SMS Relay GitHub Releases page</string>
     <string name="about_help_update_step3">The app never attempts to auto-update without your consent</string>
 
     <!-- v1.14.8 R1/R2 — incoming MMS failure notification (size cap or MMSC error). -->
@@ -978,9 +978,9 @@
     <string name="thread_load_older">Load older messages</string>
     <string name="thread_load_older_remaining">Load older messages (%1$d)</string>
     <!-- v1.24.0 : ecran de recuperation quand la base ne peut pas etre ouverte -->
-    <string name="db_recovery_title">SMS Tech cannot open its database</string>
-    <string name="db_recovery_body">Your messages are still on this device — Android keeps its own copy, and SMS Tech has not deleted anything. Only SMS Tech’s own encrypted database is unreadable right now.</string>
-    <string name="db_recovery_hint">This usually happens after the screen lock is changed or the device is restored, which invalidates the key that protects the database. Restarting the phone is worth trying first. If this screen keeps appearing, reinstalling SMS Tech will rebuild its database from the messages Android already holds.</string>
+    <string name="db_recovery_title">SMS Relay cannot open its database</string>
+    <string name="db_recovery_body">Your messages are still on this device — Android keeps its own copy, and SMS Relay has not deleted anything. Only SMS Relay’s own encrypted database is unreadable right now.</string>
+    <string name="db_recovery_hint">This usually happens after the screen lock is changed or the device is restored, which invalidates the key that protects the database. Restarting the phone is worth trying first. If this screen keeps appearing, reinstalling SMS Relay will rebuild its database from the messages Android already holds.</string>
     <string name="action_add">Add</string>
     <string name="action_discard">Discard</string>
     <string name="safety_call_saved_enabled">Safety call enabled</string>
@@ -1046,9 +1046,9 @@
          plurals: the value is the follow-up interval times the index, so 15, 30 or 45 — never 1.
          Making them plurals would ask every translator to write a singular form that can never
          appear on screen. -->
-    <string name="safety_sms_relance_first">SMS Tech automatic alert: still no activity on my phone, %1$d minutes later. Please try to reach me.</string>
-    <string name="safety_sms_relance_middle">SMS Tech automatic alert: %1$d minutes with no activity from me. If you cannot reach me, please tell someone close to me.</string>
-    <string name="safety_sms_relance_last">Last SMS Tech automatic alert: %1$d minutes with no activity. No further message will follow. Please check that I am all right.</string>
+    <string name="safety_sms_relance_first">SMS Relay automatic alert: still no activity on my phone, %1$d minutes later. Please try to reach me.</string>
+    <string name="safety_sms_relance_middle">SMS Relay automatic alert: %1$d minutes with no activity from me. If you cannot reach me, please tell someone close to me.</string>
+    <string name="safety_sms_relance_last">Last SMS Relay automatic alert: %1$d minutes with no activity. No further message will follow. Please check that I am all right.</string>
 
     <string name="safety_duration_less_than_hour">less than an hour</string>
     <plurals name="safety_duration_hours">

@@ -1,4 +1,4 @@
-# Condizioni d'uso — SMS Tech
+# Condizioni d'uso — SMS Relay
 
 _Ultimo aggiornamento: 26 ottobre 2026_ · 🇬🇧 [English](TERMS.md) · 🇫🇷 [Français](TERMS.fr.md) · 🇩🇪 [Deutsch](TERMS.de.md) · 🇪🇸 [Español](TERMS.es.md)
 
@@ -8,14 +8,14 @@ _Ultimo aggiornamento: 26 ottobre 2026_ · 🇬🇧 [English](TERMS.md) · 🇫�
 
 ## Editore
 
-SMS Tech (`com.filestech.sms`) fa parte della suite **Files Tech**, pubblicata da **Patrice
+SMS Relay (`com.filestech.sms`) fa parte della suite **Files Tech**, pubblicata da **Patrice
 Haltaya**. Contatto: **contact@files-tech.com**.
 
 ## Licenza
 
-SMS Tech è un software libero pubblicato con **licenza Apache 2.0**. Lei può utilizzarlo,
+SMS Relay è un software libero pubblicato con **licenza Apache 2.0**. Lei può utilizzarlo,
 modificarlo e ridistribuirlo alle condizioni di tale licenza. Il testo completo si trova nel file
-`LICENSE` del repository dei sorgenti (https://github.com/gitubpatrice/SMS-TECH). Fa fede soltanto
+`LICENSE` del repository dei sorgenti (https://github.com/realquink/relay). Fa fede soltanto
 il testo inglese della licenza.
 
 ## Utilizzo
@@ -45,7 +45,7 @@ in caso di pericolo, chiami direttamente il 112 o il numero di emergenza del suo
 
 ## Limitazioni
 
-- SMS Tech non sostituisce **in alcun caso** un parere o un'assistenza continuativa di natura
+- SMS Relay non sostituisce **in alcun caso** un parere o un'assistenza continuativa di natura
   medica, legale, finanziaria o professionale.
 - Il rilevamento delle truffe funziona offline, sulla base di regole: può segnalare un messaggio
   legittimo e lasciar passare un messaggio fraudolento. Non la esime dal restare vigile.
@@ -64,7 +64,7 @@ senza possibilità di ritorno — anche da parte nostra:
 - **Un PIN della cassaforte dimenticato** non si può recuperare: l'unico modo per rientrare nella
   cassaforte senza di esso la **svuota**, conversazioni e messaggi compresi, sul telefono e
   nell'archivio messaggi del sistema.
-- **«Elimina tutti i miei dati»** cancella tutte le conversazioni in SMS Tech **e** nell'archivio
+- **«Elimina tutti i miei dati»** cancella tutte le conversazioni in SMS Relay **e** nell'archivio
   messaggi del telefono, insieme agli allegati, agli invii programmati, alle impostazioni e alla
   cassaforte.
 - **Disinstallare l'applicazione, o cancellarne i dati da Android,** elimina il suo database
@@ -75,7 +75,7 @@ Un backup cifrato, conservato fuori dal telefono, è l'unica protezione contro u
 ## Dati
 
 Tutti i suoi dati sono memorizzati **localmente e in forma cifrata** sul suo telefono — si veda
-l'[informativa sulla privacy](PRIVACY.it.md). SMS Tech non invia nulla su Internet e non ha
+l'[informativa sulla privacy](PRIVACY.it.md). SMS Relay non invia nulla su Internet e non ha
 l'autorizzazione tecnica per farlo (nessuna autorizzazione Android `INTERNET`); i suoi SMS e MMS
 passano attraverso la rete del suo operatore, come con qualsiasi app SMS.
 

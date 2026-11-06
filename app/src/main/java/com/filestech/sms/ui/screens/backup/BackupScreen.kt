@@ -359,7 +359,7 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                 scope.launch {
                     when (viewModel.exportSecondFactor()) {
                         com.filestech.sms.security.VaultSecondFactor.NONE ->
-                            launcher.launch("smstech_${System.currentTimeMillis()}.smsbk")
+                            launcher.launch("smsrelay_${System.currentTimeMillis()}.smsbk")
                         // Le facteur se prouve ICI, pas dans un ecran qu'il faudrait quitter
                         // pour revenir — le quitter refermerait justement la session.
                         com.filestech.sms.security.VaultSecondFactor.PIN ->
@@ -440,7 +440,7 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
             onVerified = {
                 askingVaultPin = false
                 viewModel.grantVaultProof()
-                launcher.launch("smstech_${System.currentTimeMillis()}.smsbk")
+                launcher.launch("smsrelay_${System.currentTimeMillis()}.smsbk")
             },
             onCancel = { askingVaultPin = false },
         )
