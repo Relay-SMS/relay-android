@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
     <!-- Core -->
-    <string name="app_name">SMS Relay</string>
+    <string name="app_name">Relay</string>
 
     <!-- v1.3.7 — First-launch splash screen (animated logo + tagline). -->
     <string name="splash_tagline">L\'app che non legge i suoi messaggi e rispetta la sua privacy.</string>

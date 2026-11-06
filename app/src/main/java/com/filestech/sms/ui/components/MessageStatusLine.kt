@@ -9,27 +9,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.ui.util.rememberChatFormatters
 import java.util.Date
 
 /**
- * 2026-10-29 (issue #53) — la ligne « heure • statut » sous une bulle, écrite UNE fois pour les
- * trois bulles (texte, vocale, photo). Le libellé vient de [libelleDeStatut].
+ * Signal-style — la ligne « heure • statut » ne vit PLUS sous la bulle : elle est
+ * rendue en petit, en bas à droite, À L'INTÉRIEUR de la bulle, alignée sur la
+ * dernière ligne de texte. Le libellé vient de [libelleDeStatut].
  *
- * Avant : deux copies identiques (texte, vocale) et RIEN sous une photo — `MediaAttachmentBubble`
- * recevait `showTimestamp` sans jamais l'utiliser. Un MMS photo en échec était donc indiscernable
- * d'un MMS parti : c'est exactement ce que décrit l'issue #53.
- *
- * Affichée si [showTimestamp] (début d'une rafale) ou si l'envoi a échoué — un échec se dit
- * toujours. [modifier] porte les marges propres à chaque bulle.
+ * Affichée si [showTimestamp] (début d'une rafale) ou si l'envoi a échoué — un échec
+ * se dit toujours. [textColor] est la couleur du corps de la bulle appelante (blanc
+ * sur bulle sortante texte, `onSurfaceVariant` sur bulle vocale sortante sans fond…),
+ * atténuée ici sauf en cas d'échec, où la couleur d'erreur reste pleine pour que
+ * l'échec se voie. Un MMS en échec n'y promet plus « appuyer pour réessayer » : un
+ * MMS ne se relance pas (cf. [libelleDeStatut]).
  */
 @Composable
-internal fun MessageStatusLine(
+internal fun BubbleTimestamp(
     message: Message,
-    isOut: Boolean,
     showTimestamp: Boolean,
+    textColor: Color,
     modifier: Modifier = Modifier,
 ) {
     if (!showTimestamp && message.status != Message.Status.FAILED) return
@@ -42,12 +44,16 @@ internal fun MessageStatusLine(
     val time = remember(message.date) { formatters.time.format(Date(message.date)) }
     Row(
         modifier = Modifier.fillMaxWidth().then(modifier),
-        horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = if (label != null) "$time • $label" else time,
-            color = if (message.status == Message.Status.FAILED) cs.error else cs.onSurfaceVariant,
+            color = if (message.status == Message.Status.FAILED) {
+                cs.error
+            } else {
+                textColor.copy(alpha = 0.75f)
+            },
             style = MaterialTheme.typography.labelSmall,
         )
     }

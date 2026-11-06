@@ -1,13 +1,12 @@
 package com.filestech.sms.ui.components
 
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -15,15 +14,10 @@ import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -31,26 +25,24 @@ import com.filestech.sms.R
 import com.filestech.sms.ui.theme.starColor
 
 /**
- * Accessible fallback for the long-press "delete" gesture on chat bubbles. Some users do not
- * discover the long-press (or the gesture is captured by other interactions on the bubble —
- * tap-to-retry on FAILED messages, slider on audio bubbles), so every bubble exposes a small
- * three-dot trigger that opens a one-item menu. The menu reuses the same delete pipeline as
- * the long-press (`onDelete()` → `pendingDelete = msg` in `ThreadScreen`), so the destructive
- * confirmation dialog still runs.
+ * Overflow menu attached to a chat bubble — surfaces Copy / Select text / Forward /
+ * Reply / Translate / React / Star / **Delete** (in that order, with Delete rendered
+ * in red at the bottom of the list as the destructive action).
  *
- * Visually low-key by design: 32 dp icon button + 0.55 alpha tint so it does not compete with
- * the bubble content. Sits in the row gutter opposite the speaker side, where the layout was
- * already reserving 40 dp of breathing room.
- */
-/**
- * Overflow menu attached to a chat bubble — surfaces Reply / Translate / **Delete** (in that
- * order, with Delete rendered in red at the bottom of the list as the destructive action).
+ * Signal-style: the three-dot trigger beside every bubble is gone — the caller opens
+ * this menu from a tap on the bubble itself (see [MessageBubble],
+ * [AudioMessageBubble], [MediaAttachmentBubble]). The menu itself is unchanged apart
+ * from the rounded corners (~18 dp, Signal-style). Reply and Translate are optional
+ * (a row with neither still renders the menu just for the Delete action).
  *
- * Reply and Translate are optional (a row with neither, e.g. a system status message, still
- * renders the menu just for the Delete action).
+ * The menu reuses the same delete pipeline as before (`onDelete()` →
+ * `pendingDelete = msg` in `ThreadScreen`), so the destructive confirmation dialog
+ * still runs.
  */
 @Composable
-fun BubbleMenuTrigger(
+fun BubbleMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
     onDelete: () -> Unit,
     onReply: (() -> Unit)? = null,
     onTranslate: (() -> Unit)? = null,
@@ -78,180 +70,165 @@ fun BubbleMenuTrigger(
     onToggleStar: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    androidx.compose.foundation.layout.Box(modifier = modifier) {
-        // v1.2.3 audit U5: 40 dp touch target (WCAG 2.5.5) and 0.75 alpha tint
-        // (previously 0.55 ≈ 2.3:1 — failed WCAG 3:1 for icons). The trigger sits in the row
-        // gutter beside the bubble, so it renders against `surface`, not the bubble fill.
-        IconButton(
-            onClick = { expanded = true },
-            modifier = Modifier.size(40.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.MoreVert,
-                contentDescription = stringResource(R.string.action_message_actions),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            // v1.3.11 (F3) — Copy ranked first because it's the most-requested action
-            // (clipboard fed by long-press is the iMessage / Google Messages convention).
-            if (onCopy != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.action_copy)) },
-                    onClick = {
-                        expanded = false
-                        onCopy()
-                    },
-                )
-            }
-            // v1.28.6 — « Sélectionner le texte » juste sous Copier : même intention, la
-            // partie au lieu du tout. Aussi joignable par appui long sur la bulle, qui ne copie
-            // plus le message entier (doublon de Copier).
-            if (onSelectText != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.SelectAll,
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.action_select_text)) },
-                    onClick = {
-                        expanded = false
-                        onSelectText()
-                    },
-                )
-            }
-            // v1.3.11 (F5) — Forward right under Copy: same "I want to do something with
-            // this content" intent group, before per-message actions (Reply / React).
-            if (onForward != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.Send,
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.action_forward)) },
-                    onClick = {
-                        expanded = false
-                        onForward()
-                    },
-                )
-            }
-            if (onReply != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.Reply,
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.action_reply)) },
-                    onClick = {
-                        expanded = false
-                        onReply()
-                    },
-                )
-            }
-            if (onTranslate != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.Translate,
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.action_translate)) },
-                    onClick = {
-                        expanded = false
-                        onTranslate()
-                    },
-                )
-            }
-            // v1.3.0 — entrée "Réagir" : ouvre le picker emoji côté ThreadScreen. Placée
-            // avant Delete pour respecter le pattern "destructive en dernier".
-            if (onReact != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.EmojiEmotions,
-                            contentDescription = null,
-                        )
-                    },
-                    text = { Text(stringResource(R.string.action_react)) },
-                    onClick = {
-                        expanded = false
-                        onReact()
-                    },
-                )
-            }
-            // v1.26.1 (audit F2) — « Favori ». `MessageDao.setStarred` existait avec ZÉRO
-            // appelant, alors que trois chaînes promettaient à l'utilisateur que « les messages
-            // favoris ne sont jamais supprimés » et que la purge automatique s'appuie réellement
-            // sur le drapeau (`DELETE … AND starred = 0`). La promesse ne protégeait donc rien :
-            // aucun message ne POUVAIT être mis en favori. Placé juste avant la suppression,
-            // parce que c'est précisément ce dont il protège.
-            if (onToggleStar != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (starred) Icons.Outlined.Star else Icons.Outlined.StarBorder,
-                            contentDescription = null,
-                            // v1.27.0 — l'étoile PLEINE porte l'or ; la creuse garde la couleur
-                            // d'icône du menu. Teinter les deux ferait de l'or une décoration au
-                            // lieu d'un état, et l'utilisateur ne lirait plus la différence.
-                            tint = if (starred) {
-                                starColor(MaterialTheme.colorScheme)
-                            } else {
-                                LocalContentColor.current
-                            },
-                        )
-                    },
-                    text = {
-                        Text(
-                            stringResource(
-                                if (starred) R.string.action_unstar else R.string.action_star,
-                            ),
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        onToggleStar()
-                    },
-                )
-            }
-            // Destructive action always at the bottom, painted in error red.
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier,
+    ) {
+        // v1.3.11 (F3) — Copy ranked first because it's the most-requested action
+        // (clipboard fed by long-press is the iMessage / Google Messages convention).
+        if (onCopy != null) {
             DropdownMenuItem(
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Outlined.Delete,
+                        imageVector = Icons.Outlined.ContentCopy,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                text = { Text(stringResource(R.string.action_copy)) },
+                onClick = {
+                    onDismissRequest()
+                    onCopy()
+                },
+            )
+        }
+        // v1.28.6 — « Sélectionner le texte » juste sous Copier : même intention, la
+        // partie au lieu du tout. Aussi joignable par appui long sur la bulle, qui ne copie
+        // plus le message entier (doublon de Copier).
+        if (onSelectText != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.SelectAll,
+                        contentDescription = null,
+                    )
+                },
+                text = { Text(stringResource(R.string.action_select_text)) },
+                onClick = {
+                    onDismissRequest()
+                    onSelectText()
+                },
+            )
+        }
+        // v1.3.11 (F5) — Forward right under Copy: same "I want to do something with
+        // this content" intent group, before per-message actions (Reply / React).
+        if (onForward != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.Send,
+                        contentDescription = null,
+                    )
+                },
+                text = { Text(stringResource(R.string.action_forward)) },
+                onClick = {
+                    onDismissRequest()
+                    onForward()
+                },
+            )
+        }
+        if (onReply != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.Reply,
+                        contentDescription = null,
+                    )
+                },
+                text = { Text(stringResource(R.string.action_reply)) },
+                onClick = {
+                    onDismissRequest()
+                    onReply()
+                },
+            )
+        }
+        if (onTranslate != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Translate,
+                        contentDescription = null,
+                    )
+                },
+                text = { Text(stringResource(R.string.action_translate)) },
+                onClick = {
+                    onDismissRequest()
+                    onTranslate()
+                },
+            )
+        }
+        // v1.3.0 — entrée "Réagir" : ouvre le picker emoji côté ThreadScreen. Placée
+        // avant Delete pour respecter le pattern "destructive en dernier".
+        if (onReact != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.EmojiEmotions,
+                        contentDescription = null,
+                    )
+                },
+                text = { Text(stringResource(R.string.action_react)) },
+                onClick = {
+                    onDismissRequest()
+                    onReact()
+                },
+            )
+        }
+        // v1.26.1 (audit F2) — « Favori ». `MessageDao.setStarred` existait avec ZÉRO
+        // appelant, alors que trois chaînes promettaient à l'utilisateur que « les messages
+        // favoris ne sont jamais supprimés » et que la purge automatique s'appuie réellement
+        // sur le drapeau (`DELETE … AND starred = 0`). La promesse ne protégeait donc rien :
+        // aucun message ne POUVAIT être mis en favori. Placé juste avant la suppression,
+        // parce que c'est précisément ce dont il protège.
+        if (onToggleStar != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (starred) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+                        contentDescription = null,
+                        // v1.27.0 — l'étoile PLEINE porte l'or ; la creuse garde la couleur
+                        // d'icône du menu. Teinter les deux ferait de l'or une décoration au
+                        // lieu d'un état, et l'utilisateur ne lirait plus la différence.
+                        tint = if (starred) {
+                            starColor(MaterialTheme.colorScheme)
+                        } else {
+                            LocalContentColor.current
+                        },
                     )
                 },
                 text = {
                     Text(
-                        stringResource(R.string.action_delete),
-                        color = MaterialTheme.colorScheme.error,
+                        stringResource(
+                            if (starred) R.string.action_unstar else R.string.action_star,
+                        ),
                     )
                 },
                 onClick = {
-                    expanded = false
-                    onDelete()
+                    onDismissRequest()
+                    onToggleStar()
                 },
             )
         }
+        // Destructive action always at the bottom, painted in error red.
+        DropdownMenuItem(
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.action_delete),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            },
+            onClick = {
+                onDismissRequest()
+                onDelete()
+            },
+        )
     }
 }

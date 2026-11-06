@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Branding -->
-    <color name="brand_blue">#FF2460AB</color>
-    <color name="ic_launcher_background">#FFFFFFFF</color>
+    <color name="brand_blue">#FF1E4FD8</color>
+    <color name="ic_launcher_background">#FF1E4FD8</color>
 
     <!-- M3 light defaults (used by the splash window before Compose loads) -->
-    <color name="md_theme_light_primary">#FF2460AB</color>
+    <color name="md_theme_light_primary">#FF1E4FD8</color>
     <color name="md_theme_light_onPrimary">#FFFFFFFF</color>
     <color name="md_theme_light_background">#FFFDFCFF</color>
     <color name="md_theme_light_onBackground">#FF1B1B1F</color>

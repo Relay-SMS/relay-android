@@ -5,7 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
-internal val BrandBlue = Color(0xFF2460AB)
+internal val BrandBlue = Color(0xFF1E4FD8)
 internal val BrandBlueDark = Color(0xFFA9C7FF)
 
 /**
@@ -144,7 +144,7 @@ internal val BrandStarDark = Color(0xFFFFC107)
 // "Numéro bloqué", "PJ envoyée"…) doivent porter l'identité bleue de la marque, pas alerter
 // faussement. Si un snackbar dangereux est requis ponctuellement, le call site doit poser
 // `containerColor = BrandDanger` explicitement (overrides le default brand). White text sur
-// BrandBlue (#2460AB) donne ~5.8:1 — WCAG AA pour texte normal et grand.
+// BrandBlue (#1E4FD8) donne ~5.8:1 — WCAG AA pour texte normal et grand.
 internal val SnackbarBg = BrandBlue
 internal val SnackbarOn = Color.White
 

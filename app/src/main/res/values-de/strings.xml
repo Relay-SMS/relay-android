@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="de">
     <!-- Core -->
-    <string name="app_name">SMS Relay</string>
+    <string name="app_name">Relay</string>
 
     <!-- v1.3.7 — First-launch splash screen (animated logo + tagline). -->
     <string name="splash_tagline">Die App, die Ihre Nachrichten nicht liest und Ihre Privatsphäre respektiert.</string>
-    <string name="splash_logo_content_description">SMS Relay Logo</string>
+    <string name="splash_logo_content_description">Relay Logo</string>
     <string name="splash_skip_hint">Zum Fortfahren tippen</string>
     <string name="splash_skip_label">Startbildschirm überspringen</string>
 

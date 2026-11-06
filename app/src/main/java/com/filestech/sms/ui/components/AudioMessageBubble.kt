@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -28,7 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -139,21 +142,15 @@ fun AudioMessageBubble(
         bottomEnd = if (isOut) 4.dp else 18.dp,
     )
 
+    // Signal-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle
+    // (hors bouton lecture et slider, qui gardent leurs gestes) ouvre le menu.
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isOut) {
-            BubbleMenuTrigger(
-                onReply = onReply,
-                onReact = onReact,
-                onForward = onForward,
-                starred = message.starred,
-                onToggleStar = onToggleStar,
-                onDelete = onDelete,
-            )
-        }
         androidx.compose.foundation.layout.Column(
             horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
         ) {
@@ -174,6 +171,7 @@ fun AudioMessageBubble(
                     modifier = Modifier
                         .widthIn(min = 220.dp, max = 320.dp)
                         .clip(shape)
+                        .clickable { menuExpanded = true }
                         // v1.2.6 design : outgoing → border seul (allégé). Incoming → fond
                         // slate-blue. v1.4.0 : the incoming bubble also gets a thin border
                         // slightly darker than its fill so it pops off the surrounding
@@ -304,12 +302,20 @@ fun AudioMessageBubble(
                             modifier = Modifier.padding(end = 4.dp),
                         )
                     }
-                  } // ferme Column senderLabel + Row
+                    // Signal-style — heure (+ statut sortant) en petit, en bas à droite,
+                    // À L'INTÉRIEUR de la bulle.
+                    BubbleTimestamp(
+                        message = message,
+                        showTimestamp = showTimestamp,
+                        textColor = labelColor,
+                        modifier = Modifier.padding(top = 2.dp, end = 4.dp),
+                    )
+                  } // ferme Column senderLabel + Row + horodatage
                 }
             }
-        }
-        if (!isOut) {
-            BubbleMenuTrigger(
+            BubbleMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
                 onReply = onReply,
                 onReact = onReact,
                 onForward = onForward,
@@ -319,15 +325,6 @@ fun AudioMessageBubble(
             )
         }
     }
-
-    // 2026-10-29 (issue #53) — ligne commune aux trois bulles, cf. [MessageStatusLine]. Un vocal
-    // en échec n'y promet plus « appuyer pour réessayer » : un MMS ne se relance pas.
-    MessageStatusLine(
-        message = message,
-        isOut = isOut,
-        showTimestamp = showTimestamp,
-        modifier = Modifier.padding(horizontal = 24.dp),
-    )
 }
 
 /**

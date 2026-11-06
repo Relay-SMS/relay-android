@@ -28,7 +28,7 @@ import androidx.compose.ui.graphics.Color
 internal object BubbleColorPalette {
 
     /** Bleu marque par défaut — sélection = reset à `null` dans la persistance. */
-    val BRAND_BLUE: Color = Color(0xFF2460AB)
+    val BRAND_BLUE: Color = Color(0xFF1E4FD8)
 
     /**
      * Couleurs alternatives, choisies pour rester sobres et lisibles
