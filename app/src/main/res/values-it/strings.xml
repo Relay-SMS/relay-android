@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
     <!-- Core -->
-    <string name="app_name">SMS Tech</string>
+    <string name="app_name">SMS Relay</string>
 
     <!-- v1.3.7 — First-launch splash screen (animated logo + tagline). -->
     <string name="splash_tagline">L\'app che non legge i suoi messaggi e rispetta la sua privacy.</string>
-    <string name="splash_logo_content_description">Logo SMS Tech</string>
+    <string name="splash_logo_content_description">Logo SMS Relay</string>
     <string name="splash_skip_hint">Tocchi lo schermo per continuare</string>
     <string name="splash_skip_label">Salta la schermata iniziale</string>
 
     <!-- v1.3.10 — Foreground KeepAliveService (opt-in mode for aggressive OEM ROMs). -->
-    <string name="keep_alive_notification_title">SMS Tech è attiva</string>
+    <string name="keep_alive_notification_title">SMS Relay è attiva</string>
     <string name="keep_alive_notification_text">Necessaria per ricevere SMS / MMS in modo affidabile sul suo telefono.</string>
     <string name="settings_keep_alive_title">Modalità resistente (Xiaomi / Huawei…)</string>
-    <string name="settings_keep_alive_desc">Mantiene SMS Tech attiva in secondo piano tramite una notifica permanente nella barra di stato (obbligo Android per qualsiasi servizio in primo piano — non può essere chiusa finché l\'interruttore è acceso). Utile sulle ROM aggressive (Xiaomi MIUI/HyperOS, Huawei EMUI/HarmonyOS, Honor MagicOS, Oppo/Realme/OnePlus ColorOS, Vivo/iQOO FunTouch, Meizu Flyme, ASUS Zen UI), che altrimenti chiudono le app SMS di terze parti e bloccano MMS e notifiche. Inutile su Pixel, Samsung Galaxy, Sony, Fairphone, Motorola, Nokia, Nothing Phone — lì la lasci spenta.</string>
+    <string name="settings_keep_alive_desc">Mantiene SMS Relay attiva in secondo piano tramite una notifica permanente nella barra di stato (obbligo Android per qualsiasi servizio in primo piano — non può essere chiusa finché l\'interruttore è acceso). Utile sulle ROM aggressive (Xiaomi MIUI/HyperOS, Huawei EMUI/HarmonyOS, Honor MagicOS, Oppo/Realme/OnePlus ColorOS, Vivo/iQOO FunTouch, Meizu Flyme, ASUS Zen UI), che altrimenti chiudono le app SMS di terze parti e bloccano MMS e notifiche. Inutile su Pixel, Samsung Galaxy, Sony, Fairphone, Motorola, Nokia, Nothing Phone — lì la lasci spenta.</string>
 
 
     <!-- Common -->
@@ -89,7 +89,7 @@
     <string name="settings_purge_blocked_result">%1$d conversazione/i ripulite</string>
     <string name="settings_purge_blocked_none">Nessuna conversazione bloccata da ripulire</string>
     <string name="lock_mode_biometric">Biometria + PIN di riserva</string>
-    <string name="lock_biometric_title">Sblocca SMS Tech</string>
+    <string name="lock_biometric_title">Sblocca SMS Relay</string>
     <string name="lock_biometric_subtitle">Usi l\'impronta o il volto</string>
     <string name="lock_use_pin">Usa il PIN</string>
     <string name="lock_biometric_unavailable">Biometria non disponibile su questo dispositivo — imposti prima un PIN</string>
@@ -144,7 +144,7 @@
     <string name="conversations_delete_confirm_title">Eliminare questa conversazione?</string>
     <string name="conversations_delete_confirm_body">Tutti i messaggi di questa conversazione saranno rimossi definitivamente da questo dispositivo. Le altre conversazioni non sono toccate.</string>
     <!-- v1.28.9 — une conversation du coffre n'est plus supprimee si sa copie systeme resiste : elle reviendrait hors du coffre. -->
-    <string name="conversations_delete_vault_kept_system">Questa conversazione della cassaforte non è stata eliminata: la sua copia nell\'archivio messaggi del telefono non è stata rimossa e sarebbe riapparsa fuori dalla cassaforte alla sincronizzazione successiva. Imposti SMS Tech come app SMS predefinita, poi riprovi. Se continua a fallire, sposti prima la conversazione fuori dalla cassaforte: potrà poi ricomparire nell\'elenco principale.</string>
+    <string name="conversations_delete_vault_kept_system">Questa conversazione della cassaforte non è stata eliminata: la sua copia nell\'archivio messaggi del telefono non è stata rimossa e sarebbe riapparsa fuori dalla cassaforte alla sincronizzazione successiva. Imposti SMS Relay come app SMS predefinita, poi riprovi. Se continua a fallire, sposti prima la conversazione fuori dalla cassaforte: potrà poi ricomparire nell\'elenco principale.</string>
     <string name="conversations_delete_kept_local">La conversazione non è stata eliminata: una parte non è stata rimossa da questo telefono. Riprovi.</string>
     <string name="conversations_draft_prefix">Bozza: %1$s</string>
     <string name="conversations_preview_attachment">Allegato</string>
@@ -273,16 +273,16 @@
     <string name="settings_vault_pin_forgot_confirm_body">Ogni conversazione nella cassaforte viene eliminata, messaggi compresi, da questo telefono e dall\'archivio SMS del sistema. Nulla viene recuperato: è il prezzo per rientrare senza il PIN. Le conversazioni fuori dalla cassaforte non vengono toccate. L\'operazione è irreversibile.</string>
     <string name="settings_vault_pin_forgot_confirm_action">Svuota e rimuovi</string>
     <string name="settings_vault_pin_forgot_done">Cassaforte svuotata: %1$d conversazione/i eliminata/e. Il suo PIN è rimosso.</string>
-    <string name="settings_vault_pin_forgot_incomplete">Pulizia incompleta: %1$d conversazione/i eliminata/e, ne restano %2$d. Il PIN della cassaforte NON è stato rimosso. Imposti SMS Tech come app SMS predefinita, poi riprovi.</string>
+    <string name="settings_vault_pin_forgot_incomplete">Pulizia incompleta: %1$d conversazione/i eliminata/e, ne restano %2$d. Il PIN della cassaforte NON è stato rimosso. Imposti SMS Relay come app SMS predefinita, poi riprovi.</string>
     <!-- v1.28.3 — echec LOCAL : pas de sortie forcee, et la raison est dite. -->
     <string name="settings_vault_pin_forgot_local_failure">%1$d conversazione/i eliminata/e, ma %2$d non è stato possibile rimuoverle da questo telefono. Il PIN resta al suo posto: rimuoverlo aprirebbe una cassaforte ancora piena. Liberi spazio e riprovi.</string>
     <string name="settings_vault_pin_forgot_residue">Cassaforte svuotata e PIN rimosso. Ma %2$d conversazione/i hanno lasciato la propria copia nell\'archivio SMS del telefono: restano leggibili da un\'altra app di messaggistica. %1$d conversazione/i sono state eliminate del tutto.</string>
     <string name="settings_vault_pin_force_title">Svuotare comunque?</string>
-    <string name="settings_vault_pin_force_body">La copia di %1$d conversazione/i non è stato possibile rimuoverla dall\'archivio SMS del telefono, e riprovare darà lo stesso risultato. SMS Tech può svuotare comunque la cassaforte e rimuovere il PIN: riottiene l\'accesso, ma quelle copie restano sul telefono e restano leggibili da un\'altra app di messaggistica. L\'operazione è irreversibile.</string>
+    <string name="settings_vault_pin_force_body">La copia di %1$d conversazione/i non è stato possibile rimuoverla dall\'archivio SMS del telefono, e riprovare darà lo stesso risultato. SMS Relay può svuotare comunque la cassaforte e rimuovere il PIN: riottiene l\'accesso, ma quelle copie restano sul telefono e restano leggibili da un\'altra app di messaggistica. L\'operazione è irreversibile.</string>
     <string name="settings_vault_pin_force_action">Svuota e rimuovi il PIN</string>
     <!-- v1.25.3 (audit M23) — turning the app lock off used to happen on a single tap. -->
     <string name="settings_lock_clear_confirm_title">Disattivare il blocco dell\'app?</string>
-    <string name="settings_lock_clear_confirm_body">Il suo PIN verrà eliminato e SMS Tech si aprirà senza chiedere nulla. Anche lo sblocco biometrico viene disattivato. L\'operazione è irreversibile.</string>
+    <string name="settings_lock_clear_confirm_body">Il suo PIN verrà eliminato e SMS Relay si aprirà senza chiedere nulla. Anche lo sblocco biometrico viene disattivato. L\'operazione è irreversibile.</string>
     <string name="settings_lock_clear_confirm_action">Disattiva</string>
     <string name="action_disable">Disattiva</string>
     <string name="vault_actions_title">Azioni sulla cassaforte</string>
@@ -305,7 +305,7 @@
     <string name="smishing_banner_title">⚠️ Forse fraudolento</string>
     <string name="smishing_banner_subtitle">Tocchi per sapere perché</string>
     <string name="smishing_dialog_title">Perché questo avviso?</string>
-    <string name="smishing_dialog_intro">SMS Tech ha rilevato in questo messaggio i seguenti segnali sospetti. Nessun contenuto degli SMS è stato inviato da nessuna parte — tutto è calcolato in locale.</string>
+    <string name="smishing_dialog_intro">SMS Relay ha rilevato in questo messaggio i seguenti segnali sospetti. Nessun contenuto degli SMS è stato inviato da nessuna parte — tutto è calcolato in locale.</string>
     <string name="smishing_reason_url_shortener">Link accorciato (bit.ly, t.co, tinyurl…). Gli accorciatori possono nascondere la vera destinazione: verifichi prima di toccare.</string>
     <string name="smishing_reason_urgency">Toni di urgenza o di pressione (urgente, scade, clicchi qui…). Una tattica classica di ingegneria sociale per suscitare panico.</string>
     <string name="smishing_reason_premium">Numero a sovrapprezzo (3xxx o 0899 in Francia, 0900 in Germania, 899 in Italia, 806 in Spagna…). Chiamare questi numeri costa caro e fa spesso parte di una truffa.</string>
@@ -331,7 +331,7 @@
     <!-- v1.14.8 audit P2 — texte mis à jour : depuis v1.14.2 l'action "URGENCE" en un tap a été retirée (risque de déclenchement accidentel). Seules les actions 112/17 restent. -->
     <!-- v1.28.12 - the police number changes from country to country: neither description names it. -->
     <string name="channel_emergency_shortcut_desc">Notifica permanente silenziosa con scorciatoie di chiamata (112 e, se esiste, il numero di emergenza proprio del suo paese). Tocchi il corpo per aprire la schermata di emergenza, poi tenga premuto 3 s per inviare l\'allarme.</string>
-    <string name="emergency_shortcut_notif_title">SMS Tech — scorciatoia di emergenza</string>
+    <string name="emergency_shortcut_notif_title">SMS Relay — scorciatoia di emergenza</string>
     <string name="emergency_shortcut_notif_text">Tocchi per aprire la pagina di emergenza, o chiami il 112.</string>
     <!-- v1.28.12 — one label for both quick actions: the police number changes from country to
          country, so it can no longer be written into the string. -->
@@ -363,7 +363,7 @@
 
     <!-- Migration -->
     <string name="migration_title">Importa gli SMS esistenti</string>
-    <string name="migration_body">Legge dal fornitore SMS del sistema e rispecchia i messaggi nel database cifrato. SMS Tech deve già essere l\'app SMS predefinita.</string>
+    <string name="migration_body">Legge dal fornitore SMS del sistema e rispecchia i messaggi nel database cifrato. SMS Relay deve già essere l\'app SMS predefinita.</string>
     <string name="migration_run">Avvia l\'importazione</string>
     <string name="migration_rerun">Riesegui</string>
     <string name="migration_imported">Importati: %1$d</string>
@@ -374,7 +374,7 @@
     <string name="about_easter_egg">✨ Grazie a chi tiene alla propria riservatezza. ✨</string>
 
     <!-- Lock screen -->
-    <string name="lock_title">SMS Tech è bloccata</string>
+    <string name="lock_title">SMS Relay è bloccata</string>
     <string name="lock_pin_hint">Inserisca il suo PIN</string>
     <string name="lock_lockout_message">Troppi tentativi. Riprovi tra %1$d s.</string>
 
@@ -401,7 +401,7 @@
 
     <string name="settings_section_locale">Lingua e regione</string>
     <string name="settings_language">Lingua dell\'app</string>
-    <string name="settings_language_desc">Apre la schermata Android della lingua per singola app. SMS Tech segue la lingua del sistema, a meno che non ne scelga una qui.</string>
+    <string name="settings_language_desc">Apre la schermata Android della lingua per singola app. SMS Relay segue la lingua del sistema, a meno che non ne scelga una qui.</string>
 
     <string name="settings_section_conversations">Conversazioni</string>
     <string name="settings_show_avatars">Mostra gli avatar</string>
@@ -442,7 +442,7 @@
     <string name="settings_auto_delete_purge_now_disabled">Scelga una durata per attivarlo</string>
     <string name="settings_auto_delete_purge_confirm_title">Confermi la pulizia</string>
     <string name="settings_auto_delete_purge_confirm_zero">Nessun messaggio da eliminare per questa durata.</string>
-    <string name="settings_auto_delete_purge_confirm_body">%1$d messaggio/i più vecchi di %2$d giorni saranno eliminati dal telefono, non solo da SMS Tech. I messaggi nei preferiti vengono conservati. L\'operazione è irreversibile.</string>
+    <string name="settings_auto_delete_purge_confirm_body">%1$d messaggio/i più vecchi di %2$d giorni saranno eliminati dal telefono, non solo da SMS Relay. I messaggi nei preferiti vengono conservati. L\'operazione è irreversibile.</string>
     <string name="settings_auto_delete_purge_done">%1$d messaggio/i eliminati.</string>
     <string name="action_delete_now">Elimina</string>
     <string name="settings_resync_title">Risincronizza dal telefono</string>
@@ -454,7 +454,7 @@
          Title kept (was already pointing to "reaction format"). Desc legacy kept for downgrade. -->
     <string name="settings_reaction_format_title">Formato delle reazioni</string>
     <string name="settings_reaction_format_fr">Francese leggibile</string>
-    <string name="settings_reaction_format_fr_hint">\"Réagi par ❤️ à votre message : «preview»\". Naturale e comprensibile per qualsiasi destinatario Android di lingua francese. SMS Tech lo decodifica come una reazione nativa.</string>
+    <string name="settings_reaction_format_fr_hint">\"Réagi par ❤️ à votre message : «preview»\". Naturale e comprensibile per qualsiasi destinatario Android di lingua francese. SMS Relay lo decodifica come una reazione nativa.</string>
     <string name="settings_reaction_format_en">Tapback (compatibile iMessage)</string>
     <string name="settings_reaction_format_en_hint">\"Reacted ❤️ to «preview»\". Riconosciuto automaticamente da iMessage (iPhone) e dalle versioni recenti di Google Messaggi come una bolla di reazione nativa. Meno naturale per i destinatari di lingua francese.</string>
     <string name="settings_reaction_format_emoji">Solo emoji</string>
@@ -471,7 +471,7 @@
     <!-- v1.9.0 — Safety call -->
     <string name="settings_section_safety_call">Safety call</string>
     <string name="settings_safety_call_title">Safety call</string>
-    <string name="settings_safety_call_desc">Invia un SMS automatico ai suoi contatti di emergenza se non apre SMS Tech per una durata configurata. Pensato per i viaggi in solitaria, la vita isolata, i mestieri a rischio.</string>
+    <string name="settings_safety_call_desc">Invia un SMS automatico ai suoi contatti di emergenza se non apre SMS Relay per una durata configurata. Pensato per i viaggi in solitaria, la vita isolata, i mestieri a rischio.</string>
     <string name="settings_safety_call_disabled">Disattivato</string>
     <string name="settings_safety_call_disabled_after_alert">Disattivato — un allarme è scattato</string>
     <string name="settings_safety_call_im_ok_snack">Timer azzerato.</string>
@@ -502,7 +502,7 @@
     <string name="safety_call_setup_section_contacts">Contatti di emergenza (max 4)</string>
     <string name="safety_call_setup_section_template">Messaggio</string>
     <string name="safety_call_setup_toggle_enable">Attiva Safety call</string>
-    <string name="safety_call_setup_toggle_desc">Quando è attivo, aprire SMS Tech azzera il timer. Se non la apre entro la durata scelta, i suoi contatti ricevono un SMS automatico.</string>
+    <string name="safety_call_setup_toggle_desc">Quando è attivo, aprire SMS Relay azzera il timer. Se non la apre entro la durata scelta, i suoi contatti ricevono un SMS automatico.</string>
     <string name="safety_call_setup_duration_24h">24 ore</string>
     <string name="safety_call_setup_duration_48h">48 ore</string>
     <string name="safety_call_setup_duration_72h">72 ore</string>
@@ -526,22 +526,22 @@
     <string name="safety_call_setup_save_validation_no_contacts">Aggiunga almeno un contatto prima di attivarlo.</string>
     <string name="safety_call_setup_shared_with_emergency">Questi contatti sono usati anche dalla modalità emergenza, che è ancora attiva. Svuotare l\'elenco la lascerebbe senza nessuno da avvisare. Disattivi prima la modalità emergenza, oppure tenga almeno un contatto.</string>
     <string name="safety_call_setup_save_validation_custom_empty">Il messaggio personalizzato non può essere vuoto.</string>
-    <string name="safety_call_warning_title">SMS Tech — confermi che sta bene</string>
+    <string name="safety_call_warning_title">SMS Relay — confermi che sta bene</string>
     <string name="safety_call_warning_body_hours">Safety call scatterà tra circa %1$d ore. Tocchi per azzerare il timer.</string>
     <string name="safety_call_warning_body_imminent">Safety call scatterà tra meno di 2 ore. Tocchi per azzerarlo adesso.</string>
     <string name="safety_call_cannot_send_title">Il Safety call non può inviare</string>
-    <string name="safety_call_cannot_send_body">SMS Tech non è la sua app SMS predefinita: l\'allarme non partirebbe. I suoi contatti non sarebbero avvisati. Tocchi per correggere.</string>
+    <string name="safety_call_cannot_send_body">SMS Relay non è la sua app SMS predefinita: l\'allarme non partirebbe. I suoi contatti non sarebbero avvisati. Tocchi per correggere.</string>
     <string name="safety_role_missing_title">Questa protezione non può inviare</string>
-    <string name="safety_role_missing_body">SMS Tech non è la sua app SMS predefinita. Può attivarla, ma quando scatterà non partirà nulla e nessuno sarà avvisato.</string>
-    <string name="safety_call_sequence_title">SMS Tech — allarme inviato</string>
+    <string name="safety_role_missing_body">SMS Relay non è la sua app SMS predefinita. Può attivarla, ma quando scatterà non partirà nulla e nessuno sarà avvisato.</string>
+    <string name="safety_call_sequence_title">SMS Relay — allarme inviato</string>
     <plurals name="safety_call_sequence_body">
         <item quantity="one">%1$d messaggio su %2$d inviato ai suoi contatti. Tocchi se sta bene: i richiami si fermeranno.</item>
         <item quantity="many">%1$d messaggi su %2$d inviati ai suoi contatti. Tocchi se sta bene: i richiami si fermeranno.</item>
         <item quantity="other">%1$d messaggi su %2$d inviati ai suoi contatti. Tocchi se sta bene: i richiami si fermeranno.</item>
     </plurals>
-    <string name="safety_call_sequence_title_sending">SMS Tech — invio dell\'allarme</string>
+    <string name="safety_call_sequence_title_sending">SMS Relay — invio dell\'allarme</string>
     <string name="safety_call_sequence_body_sending">L\'allarme è in corso di invio ai suoi contatti. Tocchi se sta bene: l\'invio si fermerà.</string>
-    <string name="safety_call_sequence_title_done">SMS Tech — allarme inviato, Safety call disattivato</string>
+    <string name="safety_call_sequence_title_done">SMS Relay — allarme inviato, Safety call disattivato</string>
     <plurals name="safety_call_sequence_body_done">
         <item quantity="one">%1$d messaggio su %2$d è stato inviato ai suoi contatti. Safety call adesso è disattivato — tocchi «Riattiva» per armarlo di nuovo.</item>
         <item quantity="many">Tutti i %1$d messaggi sono stati inviati ai suoi contatti. Safety call adesso è disattivato — tocchi «Riattiva» per armarlo di nuovo.</item>
@@ -553,8 +553,8 @@
          settings_safety_call_im_ok_stops_relances) on purpose: the same gesture must read the same
          way wherever it is made. -->
     <string name="safety_call_ack_rearmed">Safety call è di nuovo attivo. Il timer riparte da capo.</string>
-    <string name="safety_call_reset_warning_title">Il timer riparte quando apre SMS Tech</string>
-    <string name="safety_call_reset_warning_body">Una volta attivo Safety call, il timer riparte non appena apre quest\'app e la sblocca. Usare il telefono per qualsiasi altra cosa non fa differenza: se non apre SMS Tech entro il tempo scelto, l\'allarme parte verso i suoi contatti.</string>
+    <string name="safety_call_reset_warning_title">Il timer riparte quando apre SMS Relay</string>
+    <string name="safety_call_reset_warning_body">Una volta attivo Safety call, il timer riparte non appena apre quest\'app e la sblocca. Usare il telefono per qualsiasi altra cosa non fa differenza: se non apre SMS Relay entro il tempo scelto, l\'allarme parte verso i suoi contatti.</string>
     <string name="safety_call_history_title">Cronologia degli scatti</string>
     <string name="safety_call_history_empty">Nessuno scatto registrato.</string>
     <plurals name="safety_call_history_count">
@@ -707,22 +707,22 @@
     <string name="settings_section_advanced">Avanzate</string>
     <string name="settings_default_sms_app">App SMS predefinita</string>
     <string name="settings_set_default">Imposta come predefinita</string>
-    <string name="settings_is_default">SMS Tech è l\'app SMS predefinita.</string>
+    <string name="settings_is_default">SMS Relay è l\'app SMS predefinita.</string>
     <string name="settings_reset_all">Reimposta tutte le impostazioni</string>
     <string name="settings_nuke_data">Elimina tutti i miei dati</string>
-    <string name="settings_nuke_confirm">Tutte le conversazioni saranno cancellate in SMS Tech E nell\'archivio messaggi del telefono, insieme agli allegati, agli invii programmati e a ogni impostazione. Anche la cassaforte viene cancellata. L\'operazione è irreversibile e alla sincronizzazione successiva non torna nulla.</string>
-    <string name="settings_nuke_confirm_not_default">⚠️ SMS Tech non è la sua app SMS predefinita: il sistema rifiuterà di eliminare i messaggi del telefono. Resteranno al loro posto e torneranno alla sincronizzazione successiva. Saranno cancellati solo i dati propri di SMS Tech.</string>
+    <string name="settings_nuke_confirm">Tutte le conversazioni saranno cancellate in SMS Relay E nell\'archivio messaggi del telefono, insieme agli allegati, agli invii programmati e a ogni impostazione. Anche la cassaforte viene cancellata. L\'operazione è irreversibile e alla sincronizzazione successiva non torna nulla.</string>
+    <string name="settings_nuke_confirm_not_default">⚠️ SMS Relay non è la sua app SMS predefinita: il sistema rifiuterà di eliminare i messaggi del telefono. Resteranno al loro posto e torneranno alla sincronizzazione successiva. Saranno cancellati solo i dati propri di SMS Relay.</string>
     <string name="settings_nuke_done_title">Dati cancellati</string>
-    <string name="settings_nuke_done_body">Conversazioni e impostazioni sono state cancellate, sia in SMS Tech sia nell\'archivio messaggi del telefono. Alla sincronizzazione successiva non tornerà nulla. SMS Tech sta per riavviarsi.</string>
+    <string name="settings_nuke_done_body">Conversazioni e impostazioni sono state cancellate, sia in SMS Relay sia nell\'archivio messaggi del telefono. Alla sincronizzazione successiva non tornerà nulla. SMS Relay sta per riavviarsi.</string>
     <string name="settings_nuke_residue_title">Eliminazione incompleta</string>
     <plurals name="settings_nuke_residue_body">
-        <item quantity="one">%1$d conversazione è rimasta nell\'archivio messaggi del telefono: il sistema ha rifiutato di eliminarla e tornerà alla sincronizzazione successiva. Di solito la causa è che SMS Tech non è l\'app SMS predefinita.</item>
-        <item quantity="many">%1$d conversazioni sono rimaste nell\'archivio messaggi del telefono: il sistema ha rifiutato di eliminarle e torneranno alla sincronizzazione successiva. Di solito la causa è che SMS Tech non è l\'app SMS predefinita.</item>
-        <item quantity="other">%1$d conversazioni sono rimaste nell\'archivio messaggi del telefono: il sistema ha rifiutato di eliminarle e torneranno alla sincronizzazione successiva. Di solito la causa è che SMS Tech non è l\'app SMS predefinita.</item>
+        <item quantity="one">%1$d conversazione è rimasta nell\'archivio messaggi del telefono: il sistema ha rifiutato di eliminarla e tornerà alla sincronizzazione successiva. Di solito la causa è che SMS Relay non è l\'app SMS predefinita.</item>
+        <item quantity="many">%1$d conversazioni sono rimaste nell\'archivio messaggi del telefono: il sistema ha rifiutato di eliminarle e torneranno alla sincronizzazione successiva. Di solito la causa è che SMS Relay non è l\'app SMS predefinita.</item>
+        <item quantity="other">%1$d conversazioni sono rimaste nell\'archivio messaggi del telefono: il sistema ha rifiutato di eliminarle e torneranno alla sincronizzazione successiva. Di solito la causa è che SMS Relay non è l\'app SMS predefinita.</item>
     </plurals>
     <!-- v1.28.9 (septieme note d'Andrew, constat 2) — ne pas savoir n'est pas « rien a effacer ». -->
     <string name="settings_nuke_list_unreadable">Non è stato possibile leggere l\'elenco delle conversazioni: le loro copie nell\'archivio messaggi del telefono non sono state eliminate e torneranno alla sincronizzazione successiva.</string>
-    <string name="settings_nuke_local_failure">Una parte dei dati propri di SMS Tech non ha potuto essere cancellata da questo telefono. Esegua di nuovo «Elimina tutti i miei dati».</string>
+    <string name="settings_nuke_local_failure">Una parte dei dati propri di SMS Relay non ha potuto essere cancellata da questo telefono. Esegua di nuovo «Elimina tutti i miei dati».</string>
 
     <!-- About -->
     <string name="about_title">Informazioni</string>
@@ -750,7 +750,7 @@
     <string name="about_perm_call_phone">Riquadri di chiamata d\'emergenza: chiamata diretta. Se negata, aprono l\'app Telefono.</string>
     <string name="about_permissions_title">Autorizzazioni che usiamo</string>
     <string name="about_security_title">Sicurezza e limiti</string>
-    <string name="about_security_body">SMS e MMS viaggiano in chiaro sulla rete dell\'operatore: è un limite del protocollo, non una scelta. SMS Tech protegge soltanto ciò che è conservato sul suo dispositivo. Per una messaggistica cifrata da un capo all\'altro, usi Signal o Matrix.</string>
+    <string name="about_security_body">SMS e MMS viaggiano in chiaro sulla rete dell\'operatore: è un limite del protocollo, non una scelta. SMS Relay protegge soltanto ciò che è conservato sul suo dispositivo. Per una messaggistica cifrata da un capo all\'altro, usi Signal o Matrix.</string>
     <string name="about_credits_body">Creata da %1$s. Interfaccia ispirata ai principi di movimento di Material 3. Realizzata con Kotlin, Compose, Hilt, Room e SQLCipher.</string>
     <string name="about_legal_body">© %1$s %2$s. Distribuita con licenza Apache 2.0.</string>
     <string name="about_source_code">Codice sorgente</string>
@@ -767,13 +767,13 @@
     <string name="channel_incoming_desc">Notifiche per gli SMS e gli MMS che riceve.</string>
     <!-- v1.8.0 — silent channel for NotificationStyle.SILENT -->
     <string name="channel_incoming_silent_label">Messaggi in arrivo (silenziosi)</string>
-    <string name="channel_incoming_silent_desc">Notifiche quando SMS Tech è impostata su «Silenziose». Nessuna comparsa in primo piano, nessun suono.</string>
+    <string name="channel_incoming_silent_desc">Notifiche quando SMS Relay è impostata su «Silenziose». Nessuna comparsa in primo piano, nessun suono.</string>
     <string name="channel_sent_label">Messaggi inviati</string>
     <string name="channel_sent_desc">Stato dei messaggi che ha inviato.</string>
     <string name="channel_failed_label">Messaggi non riusciti</string>
     <string name="channel_failed_desc">Errori e suggerimenti per riprovare.</string>
     <string name="channel_keep_alive_label">Modalità resistente</string>
-    <string name="channel_keep_alive_desc">Mantiene SMS Tech attiva sui telefoni il cui produttore chiude le app in secondo piano.</string>
+    <string name="channel_keep_alive_desc">Mantiene SMS Relay attiva sui telefoni il cui produttore chiude le app in secondo piano.</string>
     <string name="channel_safety_call_warning_label">Avviso Safety call</string>
     <string name="channel_safety_call_warning_desc">Promemoria prima dell\'SMS automatico ai suoi contatti di emergenza.</string>
     <string name="channel_safety_call_receipt_label">Allarme Safety call terminato</string>
@@ -786,10 +786,10 @@
 
     <!-- PDF export -->
     <string name="pdf_header_subtitle">Esportato il %1$s • %2$d partecipante/i</string>
-    <string name="pdf_footer">Pagina %1$d — SMS Tech</string>
+    <string name="pdf_footer">Pagina %1$d — SMS Relay</string>
 
     <!-- Errors -->
-    <string name="error_not_default_app">SMS Tech non è ancora l\'app SMS predefinita.</string>
+    <string name="error_not_default_app">SMS Relay non è ancora l\'app SMS predefinita.</string>
     <string name="error_send_failed">Invio del messaggio non riuscito.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
     <string name="send_failure_notification_title">Messaggio non inviato</string>
@@ -840,7 +840,7 @@
     <string name="backup_restore_in_progress">Ripristino in corso…</string>
     <string name="backup_restore_success">%1$d conversazioni (%2$d nuove), %3$d messaggi importati (%4$d già presenti)</string>
     <string name="backup_restore_failed_wrong_pass">Passphrase errata o file danneggiato</string>
-    <string name="backup_restore_failed_format">Non è un file di backup di SMS Tech valido</string>
+    <string name="backup_restore_failed_format">Non è un file di backup di SMS Relay valido</string>
     <string name="backup_restore_failed_storage">Impossibile leggere il file</string>
 
     <!-- v1.15.1 — Scheduled messages screen + Thread schedule flow. -->
@@ -921,7 +921,7 @@
     <!-- Help recipes (7 titles + steps) -->
     <string name="about_help_default_title">Impostare come app SMS predefinita</string>
     <string name="about_help_default_step1">Pulsante blu «Imposta come predefinita» in cima all\'elenco delle conversazioni</string>
-    <string name="about_help_default_step2">Oppure Impostazioni Android → App predefinite → SMS → SMS Tech</string>
+    <string name="about_help_default_step2">Oppure Impostazioni Android → App predefinite → SMS → SMS Relay</string>
     <string name="about_help_voice_title">Inviare un messaggio vocale</string>
     <string name="about_help_voice_step1">Tenga premuto il microfono a destra della finestra di scrittura</string>
     <string name="about_help_voice_step2">Parli, poi rilasci per inviare (trascini a sinistra per annullare)</string>
@@ -946,7 +946,7 @@
     <string name="about_help_emergency_step4">«Sto bene» nell\'elenco delle conversazioni azzera il tempo di attesa e, se non ha disattivato l\'SMS, avvisa i suoi contatti che era un falso allarme</string>
     <string name="about_help_update_title">Cercare un aggiornamento</string>
     <string name="about_help_update_step1">Pulsante «Vedi gli aggiornamenti» in cima a questa pagina</string>
-    <string name="about_help_update_step2">Apre la pagina GitHub Releases di SMS Tech</string>
+    <string name="about_help_update_step2">Apre la pagina GitHub Releases di SMS Relay</string>
     <string name="about_help_update_step3">L\'app non tenta mai di aggiornarsi da sola senza il suo consenso</string>
 
     <!-- v1.14.8 R1/R2 — incoming MMS failure notification (size cap or MMSC error). -->
@@ -988,9 +988,9 @@
     <string name="thread_load_older">Carica i messaggi più vecchi</string>
     <string name="thread_load_older_remaining">Carica i messaggi più vecchi (%1$d)</string>
     <!-- v1.24.0 : ecran de recuperation quand la base ne peut pas etre ouverte -->
-    <string name="db_recovery_title">SMS Tech non riesce ad aprire il suo database</string>
-    <string name="db_recovery_body">I suoi messaggi sono ancora su questo dispositivo — Android ne conserva una copia propria e SMS Tech non ha eliminato nulla. In questo momento è illeggibile soltanto il database cifrato di SMS Tech.</string>
-    <string name="db_recovery_hint">Di solito accade dopo un cambio del blocco schermo o un ripristino del dispositivo, che invalida la chiave che protegge il database. Vale la pena provare prima a riavviare il telefono. Se questa schermata continua a comparire, reinstallare SMS Tech ricostruirà il suo database a partire dai messaggi che Android già conserva.</string>
+    <string name="db_recovery_title">SMS Relay non riesce ad aprire il suo database</string>
+    <string name="db_recovery_body">I suoi messaggi sono ancora su questo dispositivo — Android ne conserva una copia propria e SMS Relay non ha eliminato nulla. In questo momento è illeggibile soltanto il database cifrato di SMS Relay.</string>
+    <string name="db_recovery_hint">Di solito accade dopo un cambio del blocco schermo o un ripristino del dispositivo, che invalida la chiave che protegge il database. Vale la pena provare prima a riavviare il telefono. Se questa schermata continua a comparire, reinstallare SMS Relay ricostruirà il suo database a partire dai messaggi che Android già conserva.</string>
     <string name="action_add">Aggiungi</string>
     <string name="action_discard">Scarta</string>
     <string name="safety_call_saved_enabled">Safety call attivato</string>
@@ -1056,9 +1056,9 @@
          plurals: the value is the follow-up interval times the index, so 15, 30 or 45 — never 1.
          Making them plurals would ask every translator to write a singular form that can never
          appear on screen. -->
-    <string name="safety_sms_relance_first">Allarme automatico SMS Tech: ancora nessuna attività sul mio telefono, %1$d minuti dopo. Prova a raggiungermi, per favore.</string>
-    <string name="safety_sms_relance_middle">Allarme automatico SMS Tech: %1$d minuti senza alcuna attività da parte mia. Se non riesci a raggiungermi, avvisa una persona a me vicina.</string>
-    <string name="safety_sms_relance_last">Ultimo allarme automatico SMS Tech: %1$d minuti senza attività. Non seguirà nessun altro messaggio. Controlla per favore che io stia bene.</string>
+    <string name="safety_sms_relance_first">Allarme automatico SMS Relay: ancora nessuna attività sul mio telefono, %1$d minuti dopo. Prova a raggiungermi, per favore.</string>
+    <string name="safety_sms_relance_middle">Allarme automatico SMS Relay: %1$d minuti senza alcuna attività da parte mia. Se non riesci a raggiungermi, avvisa una persona a me vicina.</string>
+    <string name="safety_sms_relance_last">Ultimo allarme automatico SMS Relay: %1$d minuti senza attività. Non seguirà nessun altro messaggio. Controlla per favore che io stia bene.</string>
 
     <string name="safety_duration_less_than_hour">meno di un\'ora</string>
     <plurals name="safety_duration_hours">

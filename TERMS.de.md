@@ -1,4 +1,4 @@
-# Nutzungsbedingungen — SMS Tech
+# Nutzungsbedingungen — SMS Relay
 
 _Zuletzt aktualisiert: 26. Oktober 2026_ · 🇬🇧 [English](TERMS.md) · 🇫🇷 [Français](TERMS.fr.md) · 🇮🇹 [Italiano](TERMS.it.md) · 🇪🇸 [Español](TERMS.es.md)
 
@@ -8,14 +8,14 @@ _Zuletzt aktualisiert: 26. Oktober 2026_ · 🇬🇧 [English](TERMS.md) · 🇫
 
 ## Herausgeber
 
-SMS Tech (`com.filestech.sms`) gehört zur Suite **Files Tech**, herausgegeben von **Patrice
+SMS Relay (`com.filestech.sms`) gehört zur Suite **Files Tech**, herausgegeben von **Patrice
 Haltaya**. Kontakt: **contact@files-tech.com**.
 
 ## Lizenz
 
-SMS Tech ist freie Software, veröffentlicht unter der **Apache-Lizenz 2.0**. Sie dürfen sie unter
+SMS Relay ist freie Software, veröffentlicht unter der **Apache-Lizenz 2.0**. Sie dürfen sie unter
 den Bedingungen dieser Lizenz verwenden, verändern und weiterverbreiten. Der vollständige Text steht
-in der Datei `LICENSE` des Quellcode-Repositorys (https://github.com/gitubpatrice/SMS-TECH).
+in der Datei `LICENSE` des Quellcode-Repositorys (https://github.com/realquink/relay).
 Verbindlich ist allein der englische Text der Lizenz.
 
 ## Nutzung
@@ -46,7 +46,7 @@ eine **Hilfe**. Sie **ersetzen in keinem Fall die Notrufdienste**: Rufen Sie bei
 
 ## Einschränkungen
 
-- SMS Tech ersetzt **in keinem Fall** eine medizinische, rechtliche, finanzielle oder fachliche
+- SMS Relay ersetzt **in keinem Fall** eine medizinische, rechtliche, finanzielle oder fachliche
   Beratung oder Betreuung.
 - Die Betrugserkennung arbeitet offline und regelbasiert; sie kann eine legitime Nachricht markieren
   und eine betrügerische durchlassen. Sie entbindet Sie nicht von Ihrer eigenen Wachsamkeit.
@@ -66,7 +66,7 @@ bauartbedingt, ohne jede Möglichkeit der Wiederherstellung — auch nicht durch
 - **Eine vergessene Tresor-PIN** lässt sich nicht wiederherstellen: Der einzige Weg zurück in den
   Tresor ohne sie **leert** ihn, Unterhaltungen und Nachrichten eingeschlossen, auf dem Telefon und
   im Nachrichtenspeicher des Systems.
-- **„Alle meine Daten löschen“** löscht alle Unterhaltungen in SMS Tech **und** im
+- **„Alle meine Daten löschen“** löscht alle Unterhaltungen in SMS Relay **und** im
   Nachrichtenspeicher des Telefons, samt Anhängen, geplanten Nachrichten, Einstellungen und Tresor.
 - **Die Deinstallation der App oder das Löschen ihrer Daten über Android** entfernt ihre
   verschlüsselte Datenbank, einschließlich des Tresors.
@@ -77,7 +77,7 @@ vor einem Verlust.
 ## Daten
 
 Alle Ihre Daten werden **lokal und verschlüsselt** auf Ihrem Telefon gespeichert — siehe die
-[Datenschutzerklärung](PRIVACY.de.md). SMS Tech sendet nichts ins Internet und hat nicht die
+[Datenschutzerklärung](PRIVACY.de.md). SMS Relay sendet nichts ins Internet und hat nicht die
 technische Berechtigung dazu (keine Android-Berechtigung `INTERNET`); Ihre SMS und MMS laufen wie
 bei jeder SMS-App über das Netz Ihres Mobilfunkanbieters.
 

@@ -1,4 +1,4 @@
-SMS Tech ist eine SMS-/MMS-App für Android, ohne Werbung und ohne Tracker. Sie ersetzt die vorinstallierte Nachrichten-App und lässt jede Nachricht auf Ihrem Gerät — keine Cloud, keine Analyse, kein SDK eines Dritten, das Ihre Daten irgendwohin schickt.
+SMS Relay ist eine SMS-/MMS-App für Android, ohne Werbung und ohne Tracker. Sie ersetzt die vorinstallierte Nachrichten-App und lässt jede Nachricht auf Ihrem Gerät — keine Cloud, keine Analyse, kein SDK eines Dritten, das Ihre Daten irgendwohin schickt.
 
 <b>Funktionen</b>
 
@@ -10,9 +10,9 @@ SMS Tech ist eine SMS-/MMS-App für Android, ohne Werbung und ohne Tracker. Sie 
 <li>Notfallmodus — die Schaltfläche 3 s halten, um eine Alarm-SMS an Ihre Safety-Call-Kontakte zu senden, mit einer einmaligen GPS-Position, wenn Sie den Standort erlaubt haben; ohne diese Berechtigung geht die SMS trotzdem hinaus, nur ohne Koordinaten. Schnellzugriff auf die Notrufnummern des Landes, in dem Sie sich befinden, plus Verknüpfungen auf dem Sperrbildschirm. Der Direktanruf ist optional: standardmäßig öffnet sich einfach die vorausgefüllte Telefon-App</li>
 <li>Entsperren per Biometrie — Fingerabdruck oder Gesicht, mit einer PIN als Rückfallebene, die Sie selbst festlegen</li>
 <li>Antwort mit Bezug — eine Nachricht lange drücken, „Antworten“ wählen, und das Eingabefeld zeigt ein kleines Zitat, damit der Empfänger sieht, worauf Sie antworten</li>
-<li>Übersetzung über andere Apps — eine Nachricht lange drücken und „Übersetzen“ wählen, um den Text per System-Intent an die bei Ihnen installierte Übersetzungs-App zu geben (Google Übersetzer, DeepL, Aves Translate …). Kein Übersetzungsmodell wird mitgeliefert, und SMS Tech sendet selbst nichts</li>
+<li>Übersetzung über andere Apps — eine Nachricht lange drücken und „Übersetzen“ wählen, um den Text per System-Intent an die bei Ihnen installierte Übersetzungs-App zu geben (Google Übersetzer, DeepL, Aves Translate …). Kein Übersetzungsmodell wird mitgeliefert, und SMS Relay sendet selbst nichts</li>
 <li>Geplante Nachrichten — eine SMS schreiben, Datum und Uhrzeit wählen, und sie wird zu diesem Zeitpunkt gesendet, auch wenn die App geschlossen ist</li>
-<li>Systemweit blockierte Nummern — beim ersten Start spiegelt SMS Tech die Blockliste des Systems (Telefon-App, Samsung Messages) und löscht rückwirkend passende Unterhaltungen</li>
+<li>Systemweit blockierte Nummern — beim ersten Start spiegelt SMS Relay die Blockliste des Systems (Telefon-App, Samsung Messages) und löscht rückwirkend passende Unterhaltungen</li>
 <li>Anhänge — Foto, Video, Datei, Kontaktkarte. Fotos werden automatisch als JPEG neu kodiert, damit sie in die MMS-Grenzen der Anbieter passen</li>
 <li>Volltextsuche über alle Unterhaltungen, mit FTS4-Index</li>
 <li>Eine Unterhaltung als PDF exportieren, zur Ablage</li>
@@ -28,12 +28,12 @@ SMS Tech ist eine SMS-/MMS-App für Android, ohne Werbung und ohne Tracker. Sie 
 <li>Keine Analyse, keine Absturzberichte, kein Tracking-SDK eines Dritten</li>
 <li>Kein Netzzugriff: keine Internetberechtigung, MMS überträgt der MMS-Dienst von Android. Nur Ihre Nachrichten verlassen das Telefon</li>
 <li>Standort und Telefonanruf dienen ausschließlich dem Notfallmodus. Beide sind freiwillig, keine wird je im Hintergrund genutzt, und die App läuft auch ohne sie</li>
-<li>Apache-Lizenz 2.0 — Quellcode unter https://github.com/gitubpatrice/SMS-TECH</li>
-<li>Sicherheitsmodell dokumentiert unter https://github.com/gitubpatrice/SMS-TECH/blob/main/SECURITY.md</li>
+<li>Apache-Lizenz 2.0 — Quellcode unter https://github.com/realquink/relay</li>
+<li>Sicherheitsmodell dokumentiert unter https://github.com/realquink/relay/blob/main/SECURITY.md</li>
 </ul>
 
 <b>Zur deutschen Übersetzung</b>
 
-Vom Entwickler mit maschineller Hilfe erstellt, nicht von einer muttersprachlichen Person geprüft. Wenn etwas falsch klingt: https://github.com/gitubpatrice/SMS-TECH/issues
+Vom Entwickler mit maschineller Hilfe erstellt, nicht von einer muttersprachlichen Person geprüft. Wenn etwas falsch klingt: https://github.com/realquink/relay/issues
 
 Projektseite: https://files-tech.com/sms-tech.php
