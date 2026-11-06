@@ -1704,7 +1704,16 @@ private fun ComposingRow(
             )
         } else {
             // v1.26.1 (audit H7) — désactivé pendant l'envoi, comme le bouton vocal l'est déjà.
-            FilledIconButton(onClick = onSendText, enabled = !isSending) {
+            // Explicit colours (2026-11-06): the default FilledIconButton rendered white
+            // on this screen, making the white send glyph invisible. Blue tile, white icon.
+            FilledIconButton(
+                onClick = onSendText,
+                enabled = !isSending,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = cs.primary,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                ),
+            ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.Send,
                     contentDescription = stringResource(R.string.action_send),
@@ -1945,7 +1954,15 @@ private fun ReviewingMode(
                 CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
             }
         } else {
-            FilledIconButton(onClick = onSend) {
+            // Explicit colours (2026-11-06): same white-on-white issue as the composer
+            // send button — blue tile, white icon.
+            FilledIconButton(
+                onClick = onSend,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = cs.primary,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                ),
+            ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.Send,
                     contentDescription = stringResource(R.string.voice_action_send),

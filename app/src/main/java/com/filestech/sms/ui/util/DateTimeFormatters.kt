@@ -19,7 +19,9 @@ import java.util.Locale
  * we scope the instance to the composition (single-threaded by definition).
  */
 class ChatFormatters(val locale: Locale) {
-    val time: SimpleDateFormat = SimpleDateFormat("HH:mm", locale)
+    // 12-hour clock with AM/PM (e.g. "5:50 PM") — Kristin, 2026-11-06. The previous
+    // 24-hour "HH:mm" read as military time.
+    val time: SimpleDateFormat = SimpleDateFormat("h:mm a", locale)
     val dayLabel: SimpleDateFormat = SimpleDateFormat("EEE", locale)
     val weekdayFull: SimpleDateFormat = SimpleDateFormat("EEEE", locale)
     val dateMedium: SimpleDateFormat = SimpleDateFormat("d MMM", locale)
@@ -35,7 +37,7 @@ fun rememberChatFormatters(): ChatFormatters {
 
 /**
  * Returns a label suitable for the conversation row:
- *  - same day  → HH:mm
+ *  - same day  → h:mm a (12-hour, e.g. "5:50 PM")
  *  - same week → short day name
  *  - else      → day + month
  */

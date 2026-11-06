@@ -209,14 +209,27 @@ fun SplashScreen(
                 .fillMaxSize()
                 .padding(horizontal = 32.dp),
         ) {
-            Image(
-                painter = painterResource(R.drawable.sms_tech_icon),
-                contentDescription = stringResource(R.string.splash_logo_content_description),
+            // Relay logo: white radio-tower glyph (adaptive-icon foreground vector)
+            // on a #1E4FD8 rounded tile. The old sms_tech_icon PNG is no longer used
+            // here (Kristin, 2026-11-06 — the splash showed the old logo).
+            androidx.compose.foundation.layout.Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(logoSizeDp)
                     .scale(logoScale.value)
-                    .alpha(logoAlpha.value),
-            )
+                    .alpha(logoAlpha.value)
+                    .background(
+                        color = com.filestech.sms.ui.theme.BrandBlue,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                    )
+                    .padding(logoSizeDp * 0.14f),
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = stringResource(R.string.splash_logo_content_description),
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             Spacer(modifier = Modifier.height(24.dp))
             Text(
                 text = stringResource(R.string.app_name),

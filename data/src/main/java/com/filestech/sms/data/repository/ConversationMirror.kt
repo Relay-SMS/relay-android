@@ -206,36 +206,51 @@ class ConversationMirror @Inject constructor(
     }
 
     /**
-     * v1.4.1 — tries to apply an incoming reaction back to an outgoing message we
-     * previously sent to [address]. Returns `true` when a target outgoing message was
-     * found and its `reaction_emoji` was updated ; `false` when no match exists (caller
-     * then falls back to inserting the body as a plain incoming SMS).
+     * Tries to apply an incoming reaction back to a message in the thread with
+     * [address]. Returns the applied target, or `null` when no match exists
+     * (caller then falls back to inserting the body as a plain incoming SMS).
      *
      * Lookup strategy depends on [kind] :
      *   - [com.filestech.sms.domain.reaction.IncomingReactionDecoder.DecodedReaction
-     *     .Kind.Tapback] — verbose `Reacted <emoji> [to «…»]` shape. Always safe to
-     *     bind to ANY recent outgoing in the conversation. Match either by body
-     *     prefix (when [bodyPrefix] is non-null) or by "most recent outgoing"
+     *     .Kind.Tapback] — verbose `Reacted <emoji> [to «…»]`, Apple tapbacks and
+     *     Google Messages framing. The target can be ANY message in the thread,
+     *     incoming or outgoing: in a group thread people react to each other's
+     *     texts, and on iPhone you can react to your own. Match either by body
+     *     prefix (when [bodyPrefix] is non-null) or by "most recent message"
      *     (when the remote reacted to a message with no text body, voice / image).
      *   - [com.filestech.sms.domain.reaction.IncomingReactionDecoder.DecodedReaction
      *     .Kind.EmojiOnly] — bare emoji SMS, ambiguous with a real one-emoji message.
      *     The match requires an outgoing message strictly younger than
      *     [IncomingReactionDecoder.EMOJI_ONLY_REACT_WINDOW_MS]. If none exists, we
-     *     give up and the caller stores the body as a regular incoming SMS.
+     *     give up and the caller stores the body as a regular incoming SMS. This
+     *     path stays outgoing-only on purpose: a bare "❤️" must never be folded
+     *     onto a message the sender received.
      *
-     * The conversation is resolved via exact-CSV match, then suffix-8 fallback (covers
-     * the `+33` vs `06` representation drift between provider and SMS Tech). We do NOT
-     * call [ensureConversation] here — the reaction cannot target anything we haven't
-     * sent, so a missing conv is a fast-fail.
+     * When [isRemoval] is true, the target's badge is cleared (only if it
+     * currently shows the same emoji — the single-emoji storage cannot tell
+     * whose reaction it is) instead of being set. The caller still gets a
+     * non-null result when a target was found, so the removal text is
+     * suppressed as a bubble even when the badge itself was untouched.
+     *
+     * The conversation is resolved via exact-CSV match, then the identity
+     * fallback (covers the `+33` vs `06` representation drift), then — for a
+     * reaction sent by a group participant — any group conversation that
+     * contains the sender, most recently active first. A target match is
+     * what disambiguates between groups sharing that sender. We do NOT call
+     * [ensureConversation] here — a missing conversation is a fast-fail.
+     *
+     * [reactionDateMs] is the timestamp of the reaction SMS itself ; a target
+     * must be dated at most [REACTION_DATE_TOLERANCE_MS] after it (MMS
+     * ordering can skew dates). `null` disables the check.
      *
      * No side-effect on `conversations.lastMessagePreview` / `unreadCount` : a reaction
      * is a metadata update on an existing row, not a new message.
      */
     /**
-     * v1.4.1 — outcome of [applyIncomingReaction]. `null` = no matching outgoing
+     * v1.4.1 — outcome of [applyIncomingReaction]. `null` = no matching
      * message was found (caller falls back to inserting the body as a plain incoming
      * SMS). Non-null carries the `conversationId`, the `targetMessageId` (Room id of
-     * the outgoing message the reaction was glued onto) and the body of that message
+     * the message the reaction was glued onto) and the body of that message
      * — all three are consumed by the receiver to post a "<sender> a réagi ❤️ : …"
      * system notification (v1.6.1).
      *
@@ -268,6 +283,10 @@ class ConversationMirror @Inject constructor(
          *     résiduelle inhérente au protocole SMS-based Tapback.
          */
         wasTruncated: Boolean = false,
+        /** `true` when the remote user removed a reaction: clear the badge. */
+        isRemoval: Boolean = false,
+        /** Timestamp of the reaction SMS itself, for the date-tolerance check. */
+        reactionDateMs: Long? = null,
     ): ReactionApplied? = withContext(io) {
         val addr = PhoneAddress.of(address)
         if (addr.normalized.isEmpty()) return@withContext null
@@ -282,57 +301,112 @@ class ConversationMirror @Inject constructor(
         // `blockKey` seul ferait poser une réaction reçue de `+1 561 234 5678` sur la conversation
         // de `+33 6 12 34 56 78`.
         val ident = phoneIdentity.snapshot()
-        val existing = conversationDao.findByAddressesCsv(csv)
+        val oneToOne = conversationDao.findByAddressesCsv(csv)
             ?: conversationDao.snapshotOneToOneConversations().firstOrNull { conv ->
                 val convRaw = PhoneAddress.list(conv.addressesCsv).firstOrNull()?.raw
                 convRaw != null && ident.matches(convRaw, addr.raw)
             }
-            ?: return@withContext null
-        val target = when (kind) {
+        // Group threads: the sender is one participant among several. Any group
+        // containing them is a candidate; the quoted text disambiguates between
+        // groups sharing that sender. Most recently active first.
+        val groups = conversationDao.snapshotGroupConversations()
+            .filter { conv ->
+                PhoneAddress.list(conv.addressesCsv).any { member ->
+                    ident.matches(member.raw, addr.raw)
+                }
+            }
+            .sortedByDescending { it.lastMessageAt }
+        val candidates = listOfNotNull(oneToOne) + groups
+        if (candidates.isEmpty()) return@withContext null
+        val maxDateMs = reactionDateMs?.let { it + REACTION_DATE_TOLERANCE_MS }
+        for (conv in candidates) {
+            val target = findReactionTarget(
+                conversationId = conv.id,
+                bodyPrefix = bodyPrefix,
+                kind = kind,
+                wasTruncated = wasTruncated,
+                maxDateMs = maxDateMs,
+            ) ?: continue
+            if (isRemoval) {
+                // Single-emoji storage cannot tell whose reaction the badge
+                // shows: only clear it when it is the emoji being removed.
+                if (target.reactionEmoji == emoji) {
+                    messageDao.setReaction(target.id, null)
+                }
+            } else {
+                messageDao.setReaction(target.id, emoji)
+            }
+            return@withContext ReactionApplied(
+                conversationId = conv.id,
+                targetMessageId = target.id,
+                targetBody = target.body,
+            )
+        }
+        return@withContext null
+    }
+
+    /**
+     * Finds the message a reaction targets inside one conversation, most
+     * recent first. Tapback kinds match ANY message in the thread (incoming
+     * or outgoing); the emoji-only path keeps its outgoing-only, 5-minute
+     * window rule. Candidates dated after [maxDateMs] are skipped (a
+     * reaction cannot target a message sent after it).
+     */
+    private suspend fun findReactionTarget(
+        conversationId: Long,
+        bodyPrefix: String?,
+        kind: Kind,
+        wasTruncated: Boolean,
+        maxDateMs: Long?,
+    ): MessageEntity? {
+        fun withinTolerance(entity: MessageEntity): Boolean =
+            maxDateMs == null || entity.date <= maxDateMs
+        return when (kind) {
             Kind.Tapback -> {
                 if (bodyPrefix != null) {
                     val normalizedPrefix = bodyPrefix.collapseWhitespace()
-                    val recentOutgoing = messageDao.findRecentOutgoingForConversation(
-                        conversationId = existing.id,
-                        limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
-                    )
                     if (!wasTruncated) {
                         // v1.6.2 — match EXACT (body normalisé == prefix). Élimine
-                        // l'ambiguïté quand plusieurs OUTGOING partagent un préfixe
+                        // l'ambiguïté quand plusieurs messages partagent un préfixe
                         // court ("Hello" ≠ "Hello world"). Itère le plus récent en
                         // premier ; comme la liste DAO est ORDER BY date DESC, le
                         // firstOrNull retourne le plus récent EXACT match — en pratique
                         // le seul, sauf duplicate identique rare.
-                        recentOutgoing.firstOrNull { entity ->
-                            entity.body.collapseWhitespace() == normalizedPrefix
+                        messageDao.findRecentForConversation(
+                            conversationId = conversationId,
+                            limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
+                        ).firstOrNull { entity ->
+                            withinTolerance(entity) &&
+                                entity.body.collapseWhitespace() == normalizedPrefix
                         }
                     } else {
                         // v1.4.1 / v1.6.2 — body tronqué : match préfixe inévitable.
                         // SQL LIKE rapide d'abord (cas mono-ligne), fallback Kotlin
-                        // si le body OUTGOING contient des newlines (l'encoder
-                        // normalise les whitespace mais pas le DAO).
+                        // si le body contient des newlines (l'encoder normalise les
+                        // whitespace mais pas le DAO).
                         val escaped = escapeForSqlLike(bodyPrefix)
-                        messageDao.findMostRecentOutgoingByBodyPrefix(existing.id, escaped)
-                            ?: recentOutgoing.firstOrNull { entity ->
-                                entity.body.collapseWhitespace().startsWith(normalizedPrefix)
+                        messageDao.findMostRecentByBodyPrefix(conversationId, escaped)
+                            ?.takeIf { withinTolerance(it) }
+                            ?: messageDao.findRecentForConversation(
+                                conversationId = conversationId,
+                                limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
+                            ).firstOrNull { entity ->
+                                withinTolerance(entity) &&
+                                    entity.body.collapseWhitespace()
+                                        .startsWith(normalizedPrefix)
                             }
                     }
                 } else {
-                    messageDao.findMostRecentOutgoing(existing.id)
+                    messageDao.findMostRecent(conversationId)
+                        ?.takeIf { withinTolerance(it) }
                 }
             }
             Kind.EmojiOnly -> {
                 val sinceMs = System.currentTimeMillis() -
                     IncomingReactionDecoder.EMOJI_ONLY_REACT_WINDOW_MS
-                messageDao.findMostRecentOutgoingAfter(existing.id, sinceMs)
+                messageDao.findMostRecentOutgoingAfter(conversationId, sinceMs)
             }
-        } ?: return@withContext null
-        messageDao.setReaction(target.id, emoji)
-        ReactionApplied(
-            conversationId = existing.id,
-            targetMessageId = target.id,
-            targetBody = target.body,
-        )
+        }
     }
 
     /**
@@ -1386,14 +1460,21 @@ class ConversationMirror @Inject constructor(
         const val DISPLAY_NAME_CACHE_MAX = 1000
 
         /**
-         * v1.6.2 (Tapback fold bugfix) — borne du fallback fuzzy de fold Tapback.
-         * 50 messages OUTGOING couvrent largement le scénario réel (l'utilisateur
-         * réagit dans la fenêtre courte qui suit un envoi, pas 3 semaines plus tard).
-         * Coût mémoire négligeable (~50 × 200 B = 10 KB), une seule query Room
-         * supplémentaire grâce au LIMIT côté DAO — déclenchée UNIQUEMENT quand la
-         * LIKE rapide a échoué (cas body OUTGOING multi-ligne).
+         * Borne du fallback fuzzy de fold Tapback. 500 messages couvrent les longs
+         * fils (même ordre de grandeur que la limite de 500 de Qik) ; le coût
+         * mémoire reste négligeable (~500 × 200 B = 100 KB), une seule query
+         * Room supplémentaire grâce au LIMIT côté DAO — déclenchée UNIQUEMENT
+         * quand la LIKE rapide a échoué (cas body multi-ligne).
          */
-        const val TAPBACK_FALLBACK_LOOKUP_LIMIT = 50
+        const val TAPBACK_FALLBACK_LOOKUP_LIMIT = 500
+
+        /**
+         * Tolérance de date du matching Tapback : un message ne peut être la
+         * cible d'une réaction que s'il est daté d'au plus 60 s APRÈS la
+         * réaction (l'ordre MMS peut décaler les dates). Un message plus récent
+         * que la réaction ne peut pas être ce à quoi on a réagi.
+         */
+        const val REACTION_DATE_TOLERANCE_MS: Long = 60_000L
     }
 }
 
