@@ -286,7 +286,7 @@ class SafetyMessageTextsTest {
         // identifiable, ressemble à du hameçonnage — et se fait ignorer.
         pourChaqueLangue { l ->
             for (index in 1..SafetyCallConfig.RELANCE_COUNT) {
-                assertThat(l.textes.safetyCallRelance(index)).contains("SMS Tech")
+                assertThat(l.textes.safetyCallRelance(index)).contains("SMS Relay")
             }
         }
     }
