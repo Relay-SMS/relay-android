@@ -91,9 +91,12 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                 // indisponible), le `catch` connaît donc déjà l'adresse et le corps et peut
                 // écrire le SMS dans la boîte système en dernier recours.
                 val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: emptyArray()
-                if (messages.isEmpty()) return@launch
-                val address = messages.first().displayOriginatingAddress?.stripInvisibleChars()
-                    ?: return@launch
+                // One combined guard (was two early exits): keeps the launch
+                // block to four early exits after the reaction-removal exit
+                // was added.
+                val address = messages.firstOrNull()?.displayOriginatingAddress
+                    ?.stripInvisibleChars()
+                if (messages.isEmpty() || address == null) return@launch
                 val ts = messages.firstOrNull()?.timestampMillis ?: System.currentTimeMillis()
                 // Audit F22: strip bidi overrides + zero-width chars that would let a spam SMS
                 // spoof its visible origin or sneak past content moderation.
