@@ -102,6 +102,16 @@ class StartupMigrations @Inject constructor(
             }
         }.onFailure { Timber.w(it, "v1.28.12 reaction format migration failed") }
 
+        // Migration du format de réaction vers IOS_TAPBACK : les «» de
+        // EMOJI_WITH_QUOTE arrivaient en <<>> côté correspondant. Même
+        // placement qu'au-dessus (AVANT le court-circuit) pour la même raison :
+        // le parc visé a déjà tous les anciens drapeaux à `true`.
+        runCatching {
+            if (settings.migrerFormatVersIosTapback()) {
+                Timber.i("migration: reaction format EMOJI_WITH_QUOTE -> IOS_TAPBACK")
+            }
+        }.onFailure { Timber.w(it, "reaction format iOS tapback migration failed") }
+
         // Global short-circuit: an up-to-date install does no migration work and never opens the
         // database. This is the whole point of the consolidation.
         if (advanced.startupDbMigrationsDone) return@withContext

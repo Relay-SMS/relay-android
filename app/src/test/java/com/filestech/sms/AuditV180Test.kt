@@ -89,11 +89,12 @@ class AuditV180Test {
 
     // ──────────────── Bug 5 — Format réaction FR par défaut ────────────────
 
-    @Test fun `ReactionFormat enum exposes 4 values v1_9_0`() {
+    @Test fun `ReactionFormat enum exposes 5 values`() {
         // v1.9.0 ajout EMOJI_WITH_QUOTE en complément des 3 v1.8.x.
+        // IOS_TAPBACK ajouté ensuite : forme textuelle Apple par défaut.
         val values = ReactionFormat.values().map { it.name }.toSet()
         assertThat(values).containsExactly(
-            "READABLE_FR", "TAPBACK_EN", "EMOJI_ONLY", "EMOJI_WITH_QUOTE",
+            "READABLE_FR", "TAPBACK_EN", "EMOJI_ONLY", "EMOJI_WITH_QUOTE", "IOS_TAPBACK",
         )
     }
 

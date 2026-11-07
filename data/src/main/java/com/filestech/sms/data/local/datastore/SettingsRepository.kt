@@ -244,6 +244,35 @@ class SettingsRepository(
         return change
     }
 
+    /**
+     * Ramène UNE FOIS le format de réaction `EMOJI_WITH_QUOTE` au défaut
+     * [ReactionFormat.IOS_TAPBACK]. Les `«»` de l'ancien format arrivaient
+     * déformés en `<<>>` côté correspondant : le destinataire voyait
+     * `👍<<Hi>>` au lieu d'une réaction comprise. Ne touche QUE
+     * `EMOJI_WITH_QUOTE` — un choix explicite d'un autre format est conservé,
+     * et l'utilisateur peut rechoisir `EMOJI_WITH_QUOTE` ensuite sans qu'on
+     * le lui reprenne (le drapeau est posé dans tous les cas, y compris sur
+     * une installation neuve qui n'a rien à migrer).
+     *
+     * Rend `true` si la valeur a changé. Tout tient dans un seul `edit`,
+     * comme [migrerFormatDeReaction].
+     *
+     * Voir [com.filestech.sms.domain.settings.AdvancedSettings
+     * .reactionFormatMigreIosTapback].
+     */
+    suspend fun migrerFormatVersIosTapback(): Boolean {
+        var change = false
+        dataStore.edit { prefs ->
+            if (prefs[K.reactionFormatMigreIosTapback] == true) return@edit
+            prefs[K.reactionFormatMigreIosTapback] = true
+            if (prefs[K.reactionFormat] == ReactionFormat.EMOJI_WITH_QUOTE.name) {
+                prefs[K.reactionFormat] = ReactionFormat.IOS_TAPBACK.name
+                change = true
+            }
+        }
+        return change
+    }
+
     override suspend fun update(transform: (AppSettings) -> AppSettings) {
         dataStore.edit { prefs ->
             val current = prefs.toAppSettings()
@@ -270,10 +299,10 @@ class SettingsRepository(
                 signature = p[K.signature],
             ),
             sending = SendingSettings(
-                confirmBeforeBroadcast = p[K.confirmBroadcast] ?: true,
+                confirmBeforeBroadcast = p[K.confirmBroadcast] ?: false,
                 convertToMmsAfterSegments = p[K.convertMmsAfter] ?: 3,
                 mmsImageQuality = enumOr(p, K.mmsQuality, MmsImageQuality.BALANCED, MmsImageQuality::valueOf),
-                deliveryReports = p[K.deliveryReports] ?: false,
+                deliveryReports = p[K.deliveryReports] ?: true,
                 defaultSubId = p[K.defaultSubId],
                 userMsisdn = p[K.userMsisdn],
                 groupMms = p[K.groupMms] ?: false,
@@ -405,6 +434,7 @@ class SettingsRepository(
                 startupDbMigrationsDone = p[K.startupDbMigrationsDone] ?: false,
                 staleConversationPreviewsRepairedV1240 = p[K.staleConversationPreviewsRepairedV1240] ?: false,
                 reactionFormatMigreV12812 = p[K.reactionFormatMigreV12812] ?: false,
+                reactionFormatMigreIosTapback = p[K.reactionFormatMigreIosTapback] ?: false,
                 identityDedupRepairedV1272 = p[K.identityDedupRepairedV1272] ?: false,
                 emptyConversationsPurgedV1272 = p[K.emptyConversationsPurgedV1272] ?: false,
             ),
@@ -529,6 +559,7 @@ class SettingsRepository(
         this[K.startupDbMigrationsDone] = s.advanced.startupDbMigrationsDone
         this[K.staleConversationPreviewsRepairedV1240] = s.advanced.staleConversationPreviewsRepairedV1240
         this[K.reactionFormatMigreV12812] = s.advanced.reactionFormatMigreV12812
+        this[K.reactionFormatMigreIosTapback] = s.advanced.reactionFormatMigreIosTapback
         this[K.identityDedupRepairedV1272] = s.advanced.identityDedupRepairedV1272
         this[K.emptyConversationsPurgedV1272] = s.advanced.emptyConversationsPurgedV1272
     }
@@ -702,6 +733,10 @@ class SettingsRepository(
 
         // v1.28.12 — drapeau one-shot de la migration du format de réaction.
         val reactionFormatMigreV12812 = booleanPreferencesKey("advanced.reactionFormatV12812")
+
+        // One-shot : migration du format de réaction vers IOS_TAPBACK.
+        val reactionFormatMigreIosTapback =
+            booleanPreferencesKey("advanced.reactionFormatIosTapback")
 
         /** v1.27.2 (audit Codex, LP-05) — rejeu de la dedup avec l identite region-aware. */
         val identityDedupRepairedV1272 =

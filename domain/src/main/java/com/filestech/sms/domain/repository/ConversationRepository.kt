@@ -160,10 +160,11 @@ interface ConversationRepository {
      *                                   (incluant null → null ou même emoji), ou le message
      *                                   n'existe plus (purgé / supprimé concurrently).
      *   - [SetReactionResult.First]   : transition null → emoji non-null. Premier tap.
-     *                                   C'est le seul cas qui justifie un envoi SMS.
+     *                                   Le caller envoie un SMS de réaction.
      *   - [SetReactionResult.Changed] : transition emoji A → emoji B (deux non-null distincts).
-     *                                   Pas d'envoi (le user a hésité, on n'en spamme pas un 2ᵉ).
-     *   - [SetReactionResult.Removed] : transition emoji → null. Pas d'envoi (silencieux local).
+     *                                   Le caller envoie un SMS avec le nouvel emoji (v1.4.1).
+     *   - [SetReactionResult.Removed] : transition emoji → null. Le caller envoie
+     *                                   un SMS de retrait (`Removed a like from "…"`, forme Apple).
      *
      * Le mapping est strictement déterministe : un seul update Room par appel, jamais d'écho
      * réseau côté repo. L'envoi SMS éventuel est orchestré par le caller via

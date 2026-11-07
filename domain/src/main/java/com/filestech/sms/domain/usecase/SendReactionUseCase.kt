@@ -34,8 +34,10 @@ import javax.inject.Inject
  *   - de vérifier que [com.filestech.sms.domain.settings.SendingSettings
  *     .sendReactionsToRecipient] est activée,
  *   - d'avoir affiché le dialog de confirmation au premier envoi si nécessaire,
- *   - de ne PAS invoquer ce use case pour un retrait
- *     ([com.filestech.sms.domain.repository.SetReactionResult.Removed]).
+ *   - de passer `isRemoval = true` pour un retrait ([SetReactionResult.Removed]) :
+ *     le retrait part comme `Removed a like from "…"` (forme Apple, décodée
+ *     côté SMS Relay) — il n'est plus silencieux local uniquement, car Apple
+ *     et Google ont tous deux une forme de retrait sur le fil.
  *
  * **v1.4.1 — Changed désormais dispatché.** Depuis v1.4.1 le ViewModel propage aussi les
  * transitions [com.filestech.sms.domain.repository.SetReactionResult.Changed] (changement
@@ -70,6 +72,13 @@ class SendReactionUseCase @Inject constructor(
      *     "Reacted ❤️ to «aperçu»" — compat iMessage iPhone + Google Messages.
      *   - [ReactionFormat.EMOJI_ONLY] :
      *     "❤️" — minimal, perd le contexte du message d'origine côté destinataire.
+     *   - [ReactionFormat.IOS_TAPBACK] :
+     *     `Liked "aperçu"` — forme textuelle Apple (voir [buildIosTapbackBody]).
+     *
+     * @param isRemoval `true` pour un retrait : le corps est TOUJOURS la forme
+     *   de retrait iPhone ([buildIosTapbackBody] avec `isRemoval = true`), quel
+     *   que soit [format] — c'est la seule forme de retrait interopérable
+     *   (ni `EMOJI_ONLY` ni `EMOJI_WITH_QUOTE` ne peuvent exprimer un retrait).
      *
      * ⚠️ v1.28.12 — [format] n'a PLUS de valeur par défaut. Elle valait `READABLE_FR`,
      * c'est-à-dire un TROISIÈME endroit où le défaut du format était écrit, donc un
@@ -82,6 +91,7 @@ class SendReactionUseCase @Inject constructor(
         messageId: Long,
         emoji: String,
         format: ReactionFormat,
+        isRemoval: Boolean = false,
     ): Outcome<SendReport> {
         if (emoji.isBlank()) return Outcome.Failure(AppError.Validation("empty reaction emoji"))
 
@@ -122,26 +132,29 @@ class SendReactionUseCase @Inject constructor(
 
         return sendSms(
             recipients = listOf(target),
-            // v1.8.0 (bug 5 fix) — switch sur les 3 formats de réaction. Le format
-            // par défaut [ReactionFormat.READABLE_FR] est le naturel francophone
-            // "J'ai réagi par ❤️ à : «...»" — lisible pour tout destinataire
-            // Android non-SMS Tech. Les autres formats restent disponibles pour les
-            // users qui ont beaucoup de contacts iPhone (TAPBACK_EN) ou qui
-            // préfèrent un envoi minimaliste (EMOJI_ONLY).
-            body = when (format) {
-                ReactionFormat.EMOJI_ONLY -> emoji
-                ReactionFormat.TAPBACK_EN -> buildTapbackBody(emoji, message.body)
-                ReactionFormat.READABLE_FR -> buildReadableFrBody(
-                    emoji,
-                    message.body,
-                    // v1.8.1 — résolu à l'envoi (Settings override > Profile
-                    // Android > null). Lecture rapide (~1-5 ms), faite à
-                    // chaque envoi pour refléter immédiatement un changement
-                    // de nom dans Settings sans avoir à redémarrer l'app.
-                    senderName = senderNameProvider.resolveDisplayName(),
-                )
-                // v1.9.0 — format compact + contexte : "❤️ «aperçu»".
-                ReactionFormat.EMOJI_WITH_QUOTE -> buildEmojiWithQuoteBody(emoji, message.body)
+            // v1.8.0 (bug 5 fix) — switch sur les formats de réaction. Le retrait
+            // ignore [format] : seule la forme iPhone sait exprimer un retrait
+            // sur le fil (voir KDoc de [invoke]).
+            body = if (isRemoval) {
+                buildIosTapbackBody(emoji, message.body, isRemoval = true)
+            } else {
+                when (format) {
+                    ReactionFormat.EMOJI_ONLY -> emoji
+                    ReactionFormat.TAPBACK_EN -> buildTapbackBody(emoji, message.body)
+                    ReactionFormat.READABLE_FR -> buildReadableFrBody(
+                        emoji,
+                        message.body,
+                        // v1.8.1 — résolu à l'envoi (Settings override > Profile
+                        // Android > null). Lecture rapide (~1-5 ms), faite à
+                        // chaque envoi pour refléter immédiatement un changement
+                        // de nom dans Settings sans avoir à redémarrer l'app.
+                        senderName = senderNameProvider.resolveDisplayName(),
+                    )
+                    // v1.9.0 — format compact + contexte : "❤️ «aperçu»".
+                    ReactionFormat.EMOJI_WITH_QUOTE -> buildEmojiWithQuoteBody(emoji, message.body)
+                    // Forme textuelle Apple : `Liked "aperçu"`, défaut actuel.
+                    ReactionFormat.IOS_TAPBACK -> buildIosTapbackBody(emoji, message.body)
+                }
             },
             // F3 — pas de signature pour une réaction.
             appendSignature = false,
@@ -390,6 +403,140 @@ fun buildEmojiWithQuoteBody(emoji: String, originalBody: String): String {
         sanitized.safeTake(budget).trimEnd() + "…"
     }
     return "$emoji «$preview»"
+}
+
+/**
+ * Forme textuelle Apple des six tapbacks classiques, et son verbe de retrait.
+ * Les libellés sont ceux qu'Apple Messages envoie par SMS aux non-iMessage
+ * (`Liked "…"`, `Removed a like from "…"`…) — repris tels quels pour que
+ * l'interopérabilité ne dépende pas d'une reformulation. La table est le
+ * miroir émetteur de [com.filestech.sms.domain.reaction.IncomingReactionDecoder]
+ * (sa table `IOS_TAPBACKS`) : tout ce qui est émis ici doit être décodé là.
+ */
+private data class IosTapbackVerb(
+    val emoji: String,
+    val addVerb: String,
+    val removeVerb: String,
+)
+
+private val IOS_TAPBACK_VERBS = listOf(
+    IosTapbackVerb("❤️", "Loved", "Removed a heart from"),
+    IosTapbackVerb("👍", "Liked", "Removed a like from"),
+    IosTapbackVerb("👎", "Disliked", "Removed a dislike from"),
+    IosTapbackVerb("😂", "Laughed at", "Removed a laugh from"),
+    IosTapbackVerb("‼️", "Emphasized", "Removed an exclamation from"),
+    IosTapbackVerb("❓", "Questioned", "Removed a question from"),
+)
+
+/**
+ * Résout le verbe Apple d'un emoji classique, ou `null` pour tout autre emoji
+ * (réaction custom, multi-emoji). La comparaison ignore le sélecteur de
+ * variation U+FE0F : le picker émet "❤️" mais un clavier tiers peut émettre
+ * "❤" — c'est la même réaction.
+ */
+private fun iosTapbackVerbFor(emoji: String): IosTapbackVerb? {
+    val bare = emoji.replace("\uFE0F", "")
+    return IOS_TAPBACK_VERBS.firstOrNull { it.emoji.replace("\uFE0F", "") == bare }
+}
+
+/**
+ * Construit le corps SMS au format textuel Apple (`Liked "aperçu"`) — la
+ * forme qu'Apple Messages envoie par SMS quand le correspondant n'a pas
+ * iMessage, et que Google Messages affiche comme badge natif (« Show iPhone
+ * reactions as emoji »). C'est le format par défaut : il est lisible comme
+ * une phrase par n'importe quelle app SMS, y compris celles qui ne
+ * connaissent pas les réactions.
+ *
+ * Pourquoi des guillemets DROITS (`"`) et pas les guillemets typographiques
+ * (`«»` / `“”`) des autres formats :
+ *
+ *   - `"` est GSM-7 : il traverse tous les opérateurs et transcodages sans
+ *     être touché. Les `«»` du format `EMOJI_WITH_QUOTE` arrivaient déformés
+ *     en `<<>>` côté correspondant (`👍<<Hi>>`), et `“”` subissent le même
+ *     sort sur les passerelles qui normalisent la ponctuation.
+ *   - Le décodeur entrant accepte les deux formes, donc l'aller-retour
+ *     Relay → Relay reste un badge.
+ *
+ * Garanties :
+ *
+ *   - Body vide (MMS image pure) → fallback `Reacted <emoji>` (ajout) ou
+ *     `Removed <emoji>` (retrait), comme [buildTapbackBody] — la forme
+ *     verbale exige une citation, il n'y en a pas.
+ *   - Emoji hors des six classiques (custom, multi-emoji "❤️👍") → forme
+ *     générique `Reacted <emoji> to "…"` / `Removed <emoji> from "…"`,
+ *     décodée côté Relay par les regex `TAPBACK_*` / générique.
+ *   - Guillemets DANS la citation : conservés tels quels. Le décodeur
+ *     matche jusqu'au DERNIER guillemet (ancre `$`), et le matching par
+ *     préfixe côté correspondant reste exact puisque l'aperçu est un
+ *     préfixe du body d'origine.
+ *   - Sanitisation et troncature grapheme-safe identiques à [buildTapbackBody]
+ *     (via [truncatedPreview]) pour rester dans 1 segment SMS.
+ */
+fun buildIosTapbackBody(
+    emoji: String,
+    originalBody: String,
+    isRemoval: Boolean = false,
+): String {
+    val sanitized = originalBody
+        .replace(FORBIDDEN_BODY_CHARS, " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    if (sanitized.isEmpty()) {
+        return if (isRemoval) "Removed $emoji" else "Reacted $emoji"
+    }
+    val verb = iosTapbackVerbFor(emoji)
+    return if (verb != null) {
+        buildVerbTapback(verb, sanitized, isRemoval)
+    } else {
+        buildGenericTapback(emoji, sanitized, isRemoval)
+    }
+}
+
+/** Forme verbale : `Liked "aperçu"` ou `Removed a like from "aperçu"`. */
+private fun buildVerbTapback(
+    verb: IosTapbackVerb,
+    sanitized: String,
+    isRemoval: Boolean,
+): String {
+    val lead = if (isRemoval) verb.removeVerb else verb.addVerb
+    val preview = truncatedPreview(sanitized, iosTapbackBudget(lead))
+    return "$lead \"$preview\""
+}
+
+/** Forme générique : `Reacted <emoji> to "…"` ou `Removed <emoji> from "…"`. */
+private fun buildGenericTapback(
+    emoji: String,
+    sanitized: String,
+    isRemoval: Boolean,
+): String {
+    val preview = truncatedPreview(sanitized, previewBudget(emoji))
+    return if (isRemoval) {
+        "Removed $emoji from \"$preview\""
+    } else {
+        "Reacted $emoji to \"$preview\""
+    }
+}
+
+/**
+ * Budget chars UTF-16 pour l'aperçu de la forme verbale : le total tient
+ * dans 1 segment (70) = verbe + espace + 2 guillemets + `…` éventuel.
+ * Plafonné à [PREVIEW_HARD_MAX], plancher à 8, comme les autres formats.
+ */
+private fun iosTapbackBudget(leadVerb: String): Int =
+    (SMS_UCS2_SEGMENT_CAP - leadVerb.length - IOS_TAPBACK_WRAP_LENGTH)
+        .coerceAtMost(PREVIEW_HARD_MAX)
+        .coerceAtLeast(8)
+
+/** Wrap fixe de la forme verbale : espace (1) + guillemets (2) + `…` éventuel (1). */
+private const val IOS_TAPBACK_WRAP_LENGTH = 1 + 2 + 1
+
+/** Aperçu tronqué grapheme-safe via [safeTake], avec marqueur `…` si coupé. */
+private fun truncatedPreview(sanitized: String, budget: Int): String {
+    return if (sanitized.length <= budget) {
+        sanitized
+    } else {
+        sanitized.safeTake(budget).trimEnd() + "…"
+    }
 }
 
 /**

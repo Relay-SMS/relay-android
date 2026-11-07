@@ -14,8 +14,10 @@ class AppSettingsTest {
         assertThat(s.security.flagSecure).isTrue()
         // Vault locks on leave by default
         assertThat(s.security.lockVaultOnLeave).isTrue()
-        // Sending: confirm before broadcast on by default (anti-misclick)
-        assertThat(s.sending.confirmBeforeBroadcast).isTrue()
+        // Sending: delivery reports on by default; no confirm-before-send dialog
+        // by default — messages send straight away.
+        assertThat(s.sending.deliveryReports).isTrue()
+        assertThat(s.sending.confirmBeforeBroadcast).isFalse()
         // Backups: encrypted by default
         assertThat(s.backup.encrypt).isTrue()
         // Auto-delete OFF — no surprise data loss

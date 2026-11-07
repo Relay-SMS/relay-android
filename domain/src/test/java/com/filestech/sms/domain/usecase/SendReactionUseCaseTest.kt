@@ -1,5 +1,6 @@
 package com.filestech.sms.domain.usecase
 
+import com.filestech.sms.domain.reaction.IncomingReactionDecoder
 import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Test
 
@@ -123,5 +124,133 @@ class SendReactionUseCaseTest {
         // Emoji famille ZWJ (11 UTF-16 units)
         assertThat(buildTapbackBody("👨‍👩‍👧‍👦", longBody).length)
             .isAtMost(70)
+    }
+
+    // ──────── buildIosTapbackBody — forme textuelle Apple ────────
+
+    @Test fun `ios tapback maps the six classic emojis to Apple verbs`() {
+        assertThat(buildIosTapbackBody("❤️", "Hi")).isEqualTo("Loved \"Hi\"")
+        assertThat(buildIosTapbackBody("👍", "Hi")).isEqualTo("Liked \"Hi\"")
+        assertThat(buildIosTapbackBody("👎", "Hi")).isEqualTo("Disliked \"Hi\"")
+        assertThat(buildIosTapbackBody("😂", "Hi")).isEqualTo("Laughed at \"Hi\"")
+        assertThat(buildIosTapbackBody("‼️", "Hi")).isEqualTo("Emphasized \"Hi\"")
+        assertThat(buildIosTapbackBody("❓", "Hi")).isEqualTo("Questioned \"Hi\"")
+    }
+
+    @Test fun `ios tapback removals use Apple removal wordings`() {
+        assertThat(buildIosTapbackBody("❤️", "Hi", isRemoval = true))
+            .isEqualTo("Removed a heart from \"Hi\"")
+        assertThat(buildIosTapbackBody("👍", "Hi", isRemoval = true))
+            .isEqualTo("Removed a like from \"Hi\"")
+        assertThat(buildIosTapbackBody("👎", "Hi", isRemoval = true))
+            .isEqualTo("Removed a dislike from \"Hi\"")
+        assertThat(buildIosTapbackBody("😂", "Hi", isRemoval = true))
+            .isEqualTo("Removed a laugh from \"Hi\"")
+        assertThat(buildIosTapbackBody("‼️", "Hi", isRemoval = true))
+            .isEqualTo("Removed an exclamation from \"Hi\"")
+        assertThat(buildIosTapbackBody("❓", "Hi", isRemoval = true))
+            .isEqualTo("Removed a question from \"Hi\"")
+    }
+
+    @Test fun `ios tapback uses straight ASCII quotes so carriers cannot mangle them`() {
+        // Régression du bug rapporté : les «» de EMOJI_WITH_QUOTE arrivaient en
+        // <<>> côté correspondant (`👍<<Hi>>`). La forme iOS n'émet que de l'ASCII
+        // (verbe + guillemets droits) : rien à transcoder, rien à déformer.
+        val out = buildIosTapbackBody("👍", "Hi")
+        assertThat(out).doesNotContain("«")
+        assertThat(out).doesNotContain("»")
+        assertThat(out).doesNotContain("“")
+        assertThat(out).doesNotContain("”")
+        assertThat(out.all { it.code < 128 }).isTrue()
+    }
+
+    @Test fun `ios tapback falls back to generic Reacted form for other emojis`() {
+        assertThat(buildIosTapbackBody("🎉", "Hi")).isEqualTo("Reacted 🎉 to \"Hi\"")
+        assertThat(buildIosTapbackBody("🎉", "Hi", isRemoval = true))
+            .isEqualTo("Removed 🎉 from \"Hi\"")
+        // Multi-emoji : la chaîne entière part telle quelle.
+        assertThat(buildIosTapbackBody("❤️👍", "Hi")).isEqualTo("Reacted ❤️👍 to \"Hi\"")
+    }
+
+    @Test fun `ios tapback lookup ignores the variation selector`() {
+        // "❤" sans VS16 et "‼" sans VS16 sont les mêmes réactions que "❤️"/"‼️".
+        assertThat(buildIosTapbackBody("❤", "Hi")).isEqualTo("Loved \"Hi\"")
+        assertThat(buildIosTapbackBody("‼", "Hi")).isEqualTo("Emphasized \"Hi\"")
+    }
+
+    @Test fun `ios tapback empty body falls back without quotes`() {
+        assertThat(buildIosTapbackBody("👍", "")).isEqualTo("Reacted 👍")
+        assertThat(buildIosTapbackBody("👍", "", isRemoval = true)).isEqualTo("Removed 👍")
+    }
+
+    @Test fun `ios tapback truncates long previews within one segment`() {
+        val longBody = "x".repeat(500)
+        val out = buildIosTapbackBody("👍", longBody)
+        assertThat(out.length).isAtMost(70)
+        assertThat(out).startsWith("Liked \"")
+        assertThat(out).endsWith("…\"")
+        // Le verbe de retrait le plus long reste aussi dans 1 segment.
+        val removed = buildIosTapbackBody("‼️", longBody, isRemoval = true)
+        assertThat(removed.length).isAtMost(70)
+        assertThat(removed).startsWith("Removed an exclamation from \"")
+    }
+
+    @Test fun `ios tapback keeps inner quotes and still round-trips`() {
+        // Les guillemets DANS la citation sont conservés : le décodeur matche
+        // jusqu'au DERNIER guillemet, et le préfixe reste exact.
+        val out = buildIosTapbackBody("👍", "say \"hi\" now")
+        assertThat(out).isEqualTo("Liked \"say \"hi\" now\"")
+        val decoded = IncomingReactionDecoder.decode(out)
+        assertThat(decoded?.emoji).isEqualTo("👍")
+        assertThat(decoded?.previewPrefix).isEqualTo("say \"hi\" now")
+        assertThat(decoded?.isRemoval).isFalse()
+    }
+
+    @Test fun `ios tapback round-trips through our own decoder for every verb`() {
+        val cases = listOf(
+            "❤️" to "Loved", "👍" to "Liked", "👎" to "Disliked",
+            "😂" to "Laughed at", "‼️" to "Emphasized", "❓" to "Questioned",
+        )
+        for ((emoji, verb) in cases) {
+            val added = buildIosTapbackBody(emoji, "Hello world")
+            val decodedAdd = IncomingReactionDecoder.decode(added)
+            assertThat(decodedAdd?.emoji).isEqualTo(emoji)
+            assertThat(decodedAdd?.previewPrefix).isEqualTo("Hello world")
+            assertThat(decodedAdd?.isRemoval).isFalse()
+
+            val removed = buildIosTapbackBody(emoji, "Hello world", isRemoval = true)
+            assertThat(removed).startsWith("Removed ")
+            val decodedRemove = IncomingReactionDecoder.decode(removed)
+            assertThat(decodedRemove?.emoji).isEqualTo(emoji)
+            assertThat(decodedRemove?.previewPrefix).isEqualTo("Hello world")
+            assertThat(decodedRemove?.isRemoval).isTrue()
+        }
+        // Forme générique (emoji hors classiques) : aller-retour aussi.
+        val generic = buildIosTapbackBody("🎉", "Hello world")
+        val decodedGeneric = IncomingReactionDecoder.decode(generic)
+        assertThat(decodedGeneric?.emoji).isEqualTo("🎉")
+        assertThat(decodedGeneric?.previewPrefix).isEqualTo("Hello world")
+        val genericRemoved = buildIosTapbackBody("🎉", "Hello world", isRemoval = true)
+        val decodedGenericRemoved = IncomingReactionDecoder.decode(genericRemoved)
+        assertThat(decodedGenericRemoved?.emoji).isEqualTo("🎉")
+        assertThat(decodedGenericRemoved?.isRemoval).isTrue()
+    }
+
+    @Test fun `ios tapback truncated preview round-trips with wasTruncated`() {
+        val out = buildIosTapbackBody("👍", "x".repeat(500))
+        val decoded = IncomingReactionDecoder.decode(out)
+        assertThat(decoded?.emoji).isEqualTo("👍")
+        assertThat(decoded?.wasTruncated).isTrue()
+        assertThat(decoded?.previewPrefix?.length).isAtMost(50)
+    }
+
+    @Test fun `ios tapback empty-body add round-trips, removal fallback is text only`() {
+        // `Reacted 👍` se décode (cible = message sortant le plus récent).
+        val decoded = IncomingReactionDecoder.decode(buildIosTapbackBody("👍", ""))
+        assertThat(decoded?.emoji).isEqualTo("👍")
+        assertThat(decoded?.previewPrefix).isNull()
+        // `Removed 👍` n'a pas de forme décodable (pas de citation) : il reste
+        // lisible comme texte côté correspondant, c'est documenté, pas un bug.
+        assertThat(IncomingReactionDecoder.decode(buildIosTapbackBody("👍", "", true))).isNull()
     }
 }
