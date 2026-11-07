@@ -1,17 +1,11 @@
 package com.filestech.sms.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,12 +17,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
+import com.filestech.sms.ui.theme.RelayText
 
 /**
  * v1.3.0 — Dialog "Plus" affichée quand l'utilisateur veut une réaction emoji autre que
- * les 8 quick-pick de [EmojiReactionPickerSheet]. Un `OutlinedTextField` autofocus laisse
+ * les 8 quick-pick de [EmojiReactionPickerSheet]. Un champ rempli autofocus laisse
  * l'utilisateur ouvrir son clavier emoji système (touche 🌐 ou icône emoji du clavier)
  * et choisir n'importe quel emoji. Le bouton OK est désactivé tant que la saisie est vide.
  *
@@ -51,18 +45,17 @@ fun EmojiCustomDialog(
     val sanitized = remember(value) { sanitizeReactionInput(value) }
     val isValidEmoji = remember(sanitized) { sanitized.isLikelyEmoji() }
 
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.reaction_picker_other_title)) },
-        text = {
-            Column {
+        title = stringResource(R.string.reaction_picker_other_title),
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     text = stringResource(R.string.reaction_picker_other_body),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Timestamp,
                     color = cs.onSurfaceVariant,
                 )
-                Spacer(Modifier.size(12.dp))
-                OutlinedTextField(
+                RelayTextField(
                     value = value,
                     onValueChange = { new ->
                         // Cap à 12 char UTF-16 — un emoji complexe (drapeau, famille ZWJ)
@@ -71,7 +64,7 @@ fun EmojiCustomDialog(
                         // keystroke (sinon Compose recompose et le curseur peut sauter).
                         if (new.length <= 12) value = new
                     },
-                    placeholder = { Text(stringResource(R.string.reaction_picker_other_hint)) },
+                    placeholder = stringResource(R.string.reaction_picker_other_hint),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier
@@ -81,17 +74,18 @@ fun EmojiCustomDialog(
             }
         },
         confirmButton = {
-            Button(
+            RelayTextButton(
+                text = stringResource(R.string.action_save),
                 onClick = { onPicked(sanitized) },
                 enabled = isValidEmoji,
-            ) {
-                Text(stringResource(R.string.action_save))
-            }
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -100,7 +94,7 @@ fun EmojiCustomDialog(
  * v1.3.0 audit Q4/F2 — normalise la saisie : trim whitespace, retire les caractères de
  * contrôle BiDi/RLO (U+202A..U+202E, U+2066..U+2069) qui pourraient inverser visuellement
  * la conversation alentour, et retire les Byte Order Marks. Pas de filtre `length` ici :
- * `OutlinedTextField` cap déjà à 12 char UTF-16.
+ * le champ cap déjà à 12 char UTF-16.
  */
 private fun sanitizeReactionInput(input: String): String {
     if (input.isEmpty()) return ""

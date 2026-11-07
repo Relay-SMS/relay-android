@@ -3,6 +3,7 @@ package com.filestech.sms.ui.screens.safetycall
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,27 +20,19 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -51,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -71,10 +65,19 @@ import com.filestech.sms.system.notifications.CANAL_DU_SAFETY_CALL
 import com.filestech.sms.system.safety.rememberSafetyMessageTexts
 import com.filestech.sms.ui.components.BanniereNotificationsCoupees
 import com.filestech.sms.ui.components.BanniereRoleSmsManquant
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayPickerDialog
+import com.filestech.sms.ui.components.RelayPickerOption
+import com.filestech.sms.ui.components.RelayPrimaryButton
+import com.filestech.sms.ui.components.RelayRow
+import com.filestech.sms.ui.components.RelaySection
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
-import com.filestech.sms.ui.theme.BrandBlue
 import com.filestech.sms.ui.theme.BrandWarning
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.util.libelleDeDuree
 import java.text.DateFormat
 import java.util.Date
@@ -190,10 +193,25 @@ fun SafetyCallSetupScreen(
         }
     }
 
+    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section rows sit on
+    // the canvas (see RelaySection). Picked from the surface luminance so it follows the
+    // active scheme, dark variants included.
+    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        RelayColors.CanvasDark
+    } else {
+        RelayColors.Surface
+    }
+
     Scaffold(
+        containerColor = pageBackground,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.safety_call_setup_title)) },
+                title = {
+                    Text(
+                        stringResource(R.string.safety_call_setup_title),
+                        style = RelayText.ThreadTitle,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = requestExit) {
                         Icon(
@@ -211,7 +229,7 @@ fun SafetyCallSetupScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // v1.28.12 — AVANT tout le reste : sans le rôle d'application SMS par défaut, rien
@@ -223,6 +241,7 @@ fun SafetyCallSetupScreen(
                     viewModel.defaultAppManager.buildChangeDefaultIntent()
                         ?.let { lanceurRoleSms.launch(it) }
                 },
+                modifier = Modifier.padding(horizontal = 16.dp),
             )
             // v1.28.13 — l'avertissement avant envoi et l'arrêt de la séquence passent par des
             // notifications : sans elles, le Safety call part sans prévenir, et on ne l'arrête plus
@@ -230,6 +249,7 @@ fun SafetyCallSetupScreen(
             BanniereNotificationsCoupees(
                 message = stringResource(R.string.notifications_off_safety_call),
                 canaux = listOf(CANAL_DU_SAFETY_CALL),
+                modifier = Modifier.padding(horizontal = 16.dp),
             )
             StatusSection(
                 draft = draft,
@@ -254,20 +274,22 @@ fun SafetyCallSetupScreen(
             Spacer(Modifier.size(8.dp))
             // v1.27.3 — l'avertissement se lit JUSTE AVANT le geste qui engage. Demande de Patrice
             // le 2026-08-06, après que deux de ses propres tests se soient arrêtés là-dessus.
-            TimerResetWarning()
-            Spacer(Modifier.size(8.dp))
-            // v1.10.0 — BrandBlue + texte blanc (identité marque), demande
-            // user 2026-05-21. Cohérent avec Mode urgence Setup.
-            Button(
-                onClick = viewModel::save,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandBlue,
-                    contentColor = Color.White,
-                ),
-                modifier = Modifier.fillMaxWidth(),
+            // Il garde son fond orange : la teinte est délibérée (avertissement de sécurité, pas
+            // un bandeau décoratif) et le texte noir dessus est le seul couple qui passe le
+            // seuil AA — voir le KDoc de TimerResetWarning.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
             ) {
-                Text(stringResource(R.string.safety_call_setup_save))
+                TimerResetWarning()
             }
+            Spacer(Modifier.size(8.dp))
+            RelayPrimaryButton(
+                text = stringResource(R.string.safety_call_setup_save),
+                onClick = viewModel::save,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
             // v1.27.3 — l'historique vient APRÈS le bouton d'enregistrement : ce n'est pas un champ
             // du formulaire mais une lecture du passé, et il ne doit pas s'interposer entre la
             // saisie et l'action qui la valide.
@@ -277,24 +299,37 @@ fun SafetyCallSetupScreen(
     }
 
     if (confirmExitOpen) {
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { confirmExitOpen = false },
-            title = { Text(stringResource(R.string.safety_call_setup_unsaved_title)) },
-            text = { Text(stringResource(R.string.safety_call_setup_unsaved_body)) },
+            title = stringResource(R.string.safety_call_setup_unsaved_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.safety_call_setup_unsaved_body),
+                    style = RelayText.Preview,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmExitOpen = false
-                    // `save` émet `Saved`, dont l'observateur appelle déjà `onBack()`. En cas
-                    // d'échec de validation, on reste sur l'écran avec le motif affiché — c'est
-                    // voulu : sortir alors reviendrait à perdre la saisie malgré l'avertissement.
-                    viewModel.save()
-                }) { Text(stringResource(R.string.safety_call_setup_save)) }
+                RelayTextButton(
+                    text = stringResource(R.string.safety_call_setup_save),
+                    onClick = {
+                        confirmExitOpen = false
+                        // `save` émet `Saved`, dont l'observateur appelle déjà `onBack()`. En cas
+                        // d'échec de validation, on reste sur l'écran avec le motif affiché — c'est
+                        // voulu : sortir alors reviendrait à perdre la saisie malgré l'avertissement.
+                        viewModel.save()
+                    },
+                    confirm = true,
+                )
             },
             dismissButton = {
-                TextButton(onClick = {
-                    confirmExitOpen = false
-                    onBack()
-                }) { Text(stringResource(R.string.action_discard)) }
+                RelayTextButton(
+                    text = stringResource(R.string.action_discard),
+                    onClick = {
+                        confirmExitOpen = false
+                        onBack()
+                    },
+                )
             },
         )
     }
@@ -328,19 +363,21 @@ private fun StatusSection(
     savedEnabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.safety_call_setup_section_status)) {
+    RelaySection(title = stringResource(R.string.safety_call_setup_section_status)) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(
                     stringResource(R.string.safety_call_setup_toggle_enable),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = RelayText.MessageBody,
                 )
                 Text(
                     stringResource(R.string.safety_call_setup_toggle_desc),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Timestamp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -352,16 +389,22 @@ private fun StatusSection(
         // Un indicateur qui suivrait le brouillon mentirait exactement comme lui : c'est ce qui a
         // fait croire à une désactivation qui n'avait jamais été écrite. Ici, ce qui s'affiche
         // vient de DataStore.
-        Spacer(Modifier.height(12.dp))
-        val activeColor = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+        // Phase 8 — le choix clair/sombre suit le thème ACTIF (luminance de la surface),
+        // pas le thème système : un `ThemeMode` forcé (sombre sur un système clair, ou
+        // l'inverse) choisissait sinon la mauvaise teinte — le vert clair `#2E7D32` sur
+        // fond sombre ne donne que 2.6:1. Voir le même motif `pageBackground` plus haut.
+        val activeColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
             com.filestech.sms.ui.theme.BrandSuccessDark
         } else {
             com.filestech.sms.ui.theme.BrandSuccessLight
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        ) {
             Text(
                 text = stringResource(R.string.safety_call_setup_state_label),
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.MessageBody,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(6.dp))
@@ -371,7 +414,7 @@ private fun StatusSection(
                 } else {
                     stringResource(R.string.safety_call_setup_state_off)
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.MessageBody,
                 fontWeight = FontWeight.SemiBold,
                 color = if (savedEnabled) activeColor else MaterialTheme.colorScheme.error,
             )
@@ -380,13 +423,30 @@ private fun StatusSection(
         // Et quand l'intention diverge de l'enregistré, on le NOMME — plutôt que de laisser
         // deviner que l'interrupteur n'a pas encore d'effet.
         if (draft.enabled != savedEnabled) {
-            Spacer(Modifier.height(4.dp))
             Text(
                 text = stringResource(R.string.safety_call_setup_state_unsaved),
-                style = MaterialTheme.typography.bodySmall,
+                style = RelayText.Timestamp,
                 color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
             )
         }
+    }
+}
+
+/** Libellé de la durée courante : « 24 heures », ou « Personnalisée · 96 heures » hors standard. */
+@Composable
+private fun durationLabelText(timeoutMs: Long): String {
+    val hours = (timeoutMs / 3_600_000L).toInt()
+    return when (timeoutMs) {
+        SafetyCallConfig.TIMEOUT_24H_MS -> stringResource(R.string.safety_call_setup_duration_24h)
+        SafetyCallConfig.TIMEOUT_48H_MS -> stringResource(R.string.safety_call_setup_duration_48h)
+        SafetyCallConfig.TIMEOUT_72H_MS -> stringResource(R.string.safety_call_setup_duration_72h)
+        // v1.28.12 (mesure sur appareil, S24 en italien) — le PLURIEL, pas la forme
+        // abrégée. La puce affichait « 1 h » au milieu de « 24 ore / 48 ore / 72 ore » :
+        // traduite, donc invisible à la parité, mais abrégée là où ses voisines ne le
+        // sont pas. Un lecteur italien y voit du texte non traduit.
+        else -> stringResource(R.string.safety_call_setup_duration_custom) + " · " +
+            pluralStringResource(R.plurals.safety_duration_hours, hours, hours)
     }
 }
 
@@ -396,65 +456,63 @@ private fun DurationSection(
     onSelect: (Long) -> Unit,
     onOpenCustom: () -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.safety_call_setup_section_duration)) {
-        val current = draft.timeoutMs
-        val isStandard = current == SafetyCallConfig.TIMEOUT_24H_MS ||
-            current == SafetyCallConfig.TIMEOUT_48H_MS ||
-            current == SafetyCallConfig.TIMEOUT_72H_MS
-        DurationOption(
-            label = stringResource(R.string.safety_call_setup_duration_24h),
-            selected = current == SafetyCallConfig.TIMEOUT_24H_MS,
-            onClick = { onSelect(SafetyCallConfig.TIMEOUT_24H_MS) },
-        )
-        DurationOption(
-            label = stringResource(R.string.safety_call_setup_duration_48h),
-            selected = current == SafetyCallConfig.TIMEOUT_48H_MS,
-            onClick = { onSelect(SafetyCallConfig.TIMEOUT_48H_MS) },
-        )
-        DurationOption(
-            label = stringResource(R.string.safety_call_setup_duration_72h),
-            selected = current == SafetyCallConfig.TIMEOUT_72H_MS,
-            onClick = { onSelect(SafetyCallConfig.TIMEOUT_72H_MS) },
-        )
-        val customLabel = if (!isStandard) {
-            // v1.28.12 (mesure sur appareil, S24 en italien) — le PLURIEL, pas la forme
-            // abrégée. La puce affichait « 1 h » au milieu de « 24 ore / 48 ore / 72 ore » :
-            // traduite, donc invisible à la parité, mais abrégée là où ses voisines ne le
-            // sont pas. Un lecteur italien y voit du texte non traduit.
-            val heures = (current / 3_600_000L).toInt()
-            stringResource(R.string.safety_call_setup_duration_custom) + " · " +
-                pluralStringResource(R.plurals.safety_duration_hours, heures, heures)
-        } else {
-            stringResource(R.string.safety_call_setup_duration_custom)
-        }
-        DurationOption(
-            label = customLabel,
-            selected = !isStandard,
-            onClick = onOpenCustom,
+    var pickerOpen by remember { mutableStateOf(false) }
+    val current = draft.timeoutMs
+    val isStandard = current == SafetyCallConfig.TIMEOUT_24H_MS ||
+        current == SafetyCallConfig.TIMEOUT_48H_MS ||
+        current == SafetyCallConfig.TIMEOUT_72H_MS
+    val cs = MaterialTheme.colorScheme
+    RelaySection(title = stringResource(R.string.safety_call_setup_section_duration)) {
+        RelayRow(
+            title = durationLabelText(current),
+            onClick = { pickerOpen = true },
+            trailing = {
+                Icon(
+                    Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
         )
         Text(
             stringResource(R.string.safety_call_setup_duration_custom_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 48.dp),
+            style = RelayText.Timestamp,
+            color = cs.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
         )
     }
-}
-
-@Composable
-private fun DurationOption(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
-            RadioButton(selected = selected, onClick = null)
-        }
-        Spacer(Modifier.size(12.dp))
-        Text(label, modifier = Modifier.weight(1f))
+    if (pickerOpen) {
+        RelayPickerDialog(
+            title = stringResource(R.string.safety_call_setup_section_duration),
+            options = listOf(
+                RelayPickerOption(
+                    label = stringResource(R.string.safety_call_setup_duration_24h),
+                    selected = current == SafetyCallConfig.TIMEOUT_24H_MS,
+                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_24H_MS); pickerOpen = false },
+                ),
+                RelayPickerOption(
+                    label = stringResource(R.string.safety_call_setup_duration_48h),
+                    selected = current == SafetyCallConfig.TIMEOUT_48H_MS,
+                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_48H_MS); pickerOpen = false },
+                ),
+                RelayPickerOption(
+                    label = stringResource(R.string.safety_call_setup_duration_72h),
+                    selected = current == SafetyCallConfig.TIMEOUT_72H_MS,
+                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_72H_MS); pickerOpen = false },
+                ),
+                RelayPickerOption(
+                    label = if (isStandard) {
+                        stringResource(R.string.safety_call_setup_duration_custom)
+                    } else {
+                        durationLabelText(current)
+                    },
+                    selected = !isStandard,
+                    onClick = { pickerOpen = false; onOpenCustom() },
+                ),
+            ),
+            onDismiss = { pickerOpen = false },
+        )
     }
 }
 
@@ -464,47 +522,49 @@ private fun ContactsSection(
     onAdd: () -> Unit,
     onRemove: (Int) -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.safety_call_setup_section_contacts)) {
-        draft.contacts.forEachIndexed { index, contact ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    contact.sanitizedDisplayName()?.let {
-                        Text(it, style = MaterialTheme.typography.bodyLarge)
+    RelaySection(title = stringResource(R.string.safety_call_setup_section_contacts)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            draft.contacts.forEachIndexed { index, contact ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        contact.sanitizedDisplayName()?.let {
+                            Text(it, style = RelayText.MessageBody)
+                        }
+                        Text(
+                            contact.phoneNumber,
+                            style = RelayText.Timestamp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    Text(
-                        contact.phoneNumber,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(onClick = { onRemove(index) }) {
-                    Icon(
-                        Icons.Outlined.Delete,
-                        contentDescription = stringResource(R.string.safety_call_setup_remove_contact),
-                        tint = MaterialTheme.colorScheme.error,
-                    )
+                    IconButton(onClick = { onRemove(index) }) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = stringResource(R.string.safety_call_setup_remove_contact),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
-        }
-        if (draft.contacts.size < SafetyCallConfig.MAX_CONTACTS) {
-            OutlinedButton(
-                onClick = onAdd,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            ) {
-                Icon(Icons.Outlined.Add, contentDescription = null)
-                Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.safety_call_setup_add_contact))
+            if (draft.contacts.size < SafetyCallConfig.MAX_CONTACTS) {
+                RelayTextButton(
+                    text = stringResource(R.string.safety_call_setup_add_contact),
+                    onClick = onAdd,
+                )
+            } else {
+                Text(
+                    stringResource(R.string.safety_call_setup_contact_max_reached),
+                    style = RelayText.Timestamp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
-        } else {
-            Text(
-                stringResource(R.string.safety_call_setup_contact_max_reached),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
         }
     }
 }
@@ -515,58 +575,67 @@ private fun TemplateSection(
     onSelectTemplate: (SafetyCallTemplate) -> Unit,
     onCustomMessageChange: (String) -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.safety_call_setup_section_template)) {
-        TemplateOption(
-            label = stringResource(R.string.safety_call_setup_template_check_in),
-            selected = draft.template == SafetyCallTemplate.CHECK_IN,
-            onClick = { onSelectTemplate(SafetyCallTemplate.CHECK_IN) },
-        )
-        TemplateOption(
-            label = stringResource(R.string.safety_call_setup_template_urgent),
-            selected = draft.template == SafetyCallTemplate.URGENT,
-            onClick = { onSelectTemplate(SafetyCallTemplate.URGENT) },
-        )
-        TemplateOption(
-            label = stringResource(R.string.safety_call_setup_template_follow_up),
-            selected = draft.template == SafetyCallTemplate.FOLLOW_UP,
-            onClick = { onSelectTemplate(SafetyCallTemplate.FOLLOW_UP) },
-        )
-        TemplateOption(
-            label = stringResource(R.string.safety_call_setup_template_custom),
-            selected = draft.template == SafetyCallTemplate.CUSTOM,
-            onClick = { onSelectTemplate(SafetyCallTemplate.CUSTOM) },
-        )
-        if (draft.template == SafetyCallTemplate.CUSTOM) {
-            Spacer(Modifier.size(8.dp))
-            OutlinedTextField(
-                value = draft.customMessage,
-                onValueChange = onCustomMessageChange,
-                label = { Text(stringResource(R.string.safety_call_setup_template_custom_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 4,
-            )
-        }
-        // Aperçu du SMS final rendu (placeholder [DURÉE] remplacé).
-        Spacer(Modifier.size(12.dp))
-        Text(
-            stringResource(R.string.safety_call_setup_template_preview),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            ),
+    RelaySection(title = stringResource(R.string.safety_call_setup_section_template)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            Text(
-                // v1.28.12 — MEME source que l'envoi (`TriggerSafetyCallUseCase`).
-                text = rememberSafetyMessageTexts()
-                    .safetyCallBody(draft.template, draft.timeoutMs, draft.customMessage)
-                    .ifBlank { "—" },
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodyMedium,
+            TemplateOption(
+                label = stringResource(R.string.safety_call_setup_template_check_in),
+                selected = draft.template == SafetyCallTemplate.CHECK_IN,
+                onClick = { onSelectTemplate(SafetyCallTemplate.CHECK_IN) },
             )
+            TemplateOption(
+                label = stringResource(R.string.safety_call_setup_template_urgent),
+                selected = draft.template == SafetyCallTemplate.URGENT,
+                onClick = { onSelectTemplate(SafetyCallTemplate.URGENT) },
+            )
+            TemplateOption(
+                label = stringResource(R.string.safety_call_setup_template_follow_up),
+                selected = draft.template == SafetyCallTemplate.FOLLOW_UP,
+                onClick = { onSelectTemplate(SafetyCallTemplate.FOLLOW_UP) },
+            )
+            TemplateOption(
+                label = stringResource(R.string.safety_call_setup_template_custom),
+                selected = draft.template == SafetyCallTemplate.CUSTOM,
+                onClick = { onSelectTemplate(SafetyCallTemplate.CUSTOM) },
+            )
+            if (draft.template == SafetyCallTemplate.CUSTOM) {
+                Spacer(Modifier.size(8.dp))
+                RelayTextField(
+                    value = draft.customMessage,
+                    onValueChange = onCustomMessageChange,
+                    placeholder = stringResource(R.string.safety_call_setup_template_custom_label),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 4,
+                )
+            }
+            // Aperçu du SMS final rendu (placeholder [DURÉE] remplacé).
+            Spacer(Modifier.size(12.dp))
+            Text(
+                stringResource(R.string.safety_call_setup_template_preview),
+                style = RelayText.Timestamp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                    .padding(12.dp),
+            ) {
+                Text(
+                    // v1.28.12 — MEME source que l'envoi (`TriggerSafetyCallUseCase`).
+                    text = rememberSafetyMessageTexts()
+                        .safetyCallBody(draft.template, draft.timeoutMs, draft.customMessage)
+                        .ifBlank { "—" },
+                    style = RelayText.Preview,
+                )
+            }
         }
     }
 }
@@ -687,71 +756,57 @@ private fun HistorySection(history: List<SafetyCallTriggerRecord>) {
     // Un seul formateur pour toute la liste, mémorisé : `DateFormat` n'est pas thread-safe, et la
     // composition est mono-thread par définition. Même motif que [ChatFormatters].
     val dateFormat = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
-    SectionCard(title = stringResource(R.string.safety_call_history_title)) {
-        if (history.isEmpty()) {
-            Text(
-                stringResource(R.string.safety_call_history_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            return@SectionCard
-        }
-        history.forEachIndexed { index, record ->
-            if (index > 0) Spacer(Modifier.size(12.dp))
-            Text(
-                dateFormat.format(Date(record.triggeredAt)),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                pluralStringResource(
-                    R.plurals.safety_call_history_count,
-                    record.messagesDelivered,
-                    record.messagesDelivered,
-                    record.totalMessages,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (record.recipients.isNotEmpty()) {
+    RelaySection(title = stringResource(R.string.safety_call_history_title)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            if (history.isEmpty()) {
                 Text(
-                    stringResource(
-                        R.string.safety_call_history_recipients,
-                        record.recipients.joinToString(", "),
+                    stringResource(R.string.safety_call_history_empty),
+                    style = RelayText.MessageBody,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@RelaySection
+            }
+            history.forEachIndexed { index, record ->
+                if (index > 0) Spacer(Modifier.size(12.dp))
+                Text(
+                    dateFormat.format(Date(record.triggeredAt)),
+                    style = RelayText.MessageBody,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    pluralStringResource(
+                        R.plurals.safety_call_history_count,
+                        record.messagesDelivered,
+                        record.messagesDelivered,
+                        record.totalMessages,
                     ),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Timestamp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (record.recipients.isNotEmpty()) {
+                    Text(
+                        stringResource(
+                            R.string.safety_call_history_recipients,
+                            record.recipients.joinToString(", "),
+                        ),
+                        style = RelayText.Timestamp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (!record.isComplete) {
+                    // Une séquence écourtée et une séquence menée à terme sont deux issues très
+                    // différentes ; le seul couple de nombres les rendrait mal.
+                    Text(
+                        stringResource(R.string.safety_call_history_stopped),
+                        style = RelayText.Timestamp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            if (!record.isComplete) {
-                // Une séquence écourtée et une séquence menée à terme sont deux issues très
-                // différentes ; le seul couple de nombres les rendrait mal.
-                Text(
-                    stringResource(R.string.safety_call_history_stopped),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        ),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.size(8.dp))
-            content()
         }
     }
 }
@@ -763,23 +818,22 @@ private fun AddContactDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.safety_call_setup_add_contact)) },
-        text = {
-            Column {
-                OutlinedTextField(
+        title = stringResource(R.string.safety_call_setup_add_contact),
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                RelayTextField(
                     value = name,
                     onValueChange = { name = it.take(40) },
-                    label = { Text(stringResource(R.string.safety_call_setup_contact_name_label)) },
+                    placeholder = stringResource(R.string.safety_call_setup_contact_name_label),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
+                RelayTextField(
                     value = phone,
                     onValueChange = { phone = it.take(20) },
-                    label = { Text(stringResource(R.string.safety_call_setup_contact_phone_label)) },
+                    placeholder = stringResource(R.string.safety_call_setup_contact_phone_label),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
@@ -787,19 +841,17 @@ private fun AddContactDialog(
             }
         },
         confirmButton = {
-            // v1.10.0 — confirm BrandBlue + blanc (demande user 2026-05-21).
-            Button(
+            RelayTextButton(
+                text = stringResource(R.string.action_add),
                 onClick = { onConfirm(name.ifBlank { null }, phone) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandBlue,
-                    contentColor = Color.White,
-                ),
-            ) {
-                Text(stringResource(R.string.action_add))
-            }
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -836,35 +888,39 @@ private fun CustomDurationDialog(
         )
         else -> pluralStringResource(R.plurals.safety_duration_hours, parsed, parsed)
     }
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.safety_call_setup_duration_custom)) },
-        text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { input -> value = input.filter { it.isDigit() }.take(3) },
-                singleLine = true,
-                label = { Text(stringResource(R.string.safety_call_setup_duration_custom)) },
-                supportingText = { Text(supportingLabel) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        confirmButton = {
-            // v1.10.0 — confirm BrandBlue + blanc (demande user 2026-05-21).
-            Button(
-                onClick = { parsed?.let(onConfirm) },
-                enabled = parsed != null,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandBlue,
-                    contentColor = Color.White,
-                ),
-            ) {
-                Text(stringResource(R.string.action_save))
+        title = stringResource(R.string.safety_call_setup_duration_custom),
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                RelayTextField(
+                    value = value,
+                    onValueChange = { input -> value = input.filter { it.isDigit() }.take(3) },
+                    placeholder = stringResource(R.string.safety_call_setup_duration_custom),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = supportingLabel,
+                    style = RelayText.Timestamp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
+        confirmButton = {
+            RelayTextButton(
+                text = stringResource(R.string.action_save),
+                onClick = { parsed?.let(onConfirm) },
+                enabled = parsed != null,
+                confirm = true,
+            )
+        },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }

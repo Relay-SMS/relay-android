@@ -50,7 +50,7 @@ open a connection. MMS are carried by Android's own MMS service, which talks to 
 
 SMS is **not** end-to-end encrypted at the protocol level — this is a limitation of the carrier
 network, not a choice. SMS Relay protects what's stored on your device, with SQLCipher + the
-AndroidKeyStore. For true end-to-end encryption, use Signal or Matrix.
+AndroidKeyStore. For true end-to-end encryption, use Matrix.
 
 See the [privacy policy](PRIVACY.md), the [terms of use](TERMS.md) and
 [PERMISSIONS.md](PERMISSIONS.md). Security model: [SECURITY.md](SECURITY.md)

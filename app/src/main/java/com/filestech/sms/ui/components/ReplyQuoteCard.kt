@@ -24,11 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
+import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.ReplyStripeOutgoing
 
 /**
@@ -70,16 +72,20 @@ fun ReplyQuoteCard(
     // v1.2.3 audit U17: alpha 0.78f on primary + onPrimary body alpha 0.82f composited to
     // ~5.5:1, right at the WCAG AA edge. Bumping container alpha to 0.88f gets us cleanly above
     // the 4.5:1 threshold for body text on outgoing bubbles.
+    // Phase 8 — le fond sortant est le bleu de marque FIXE (et le texte blanc fixe), comme
+    // la bulle hôte : le `primary` du thème s'éclaircit en sombre, et une carte bleu clair
+    // sur une bulle bleu foncé ne lirait plus comme une seule structure. En clair, le
+    // `primary` vaut déjà ce bleu fixe : rien ne change.
     val containerColor = if (isOutgoingHost) {
-        cs.primary.copy(alpha = 0.88f)
+        RelayColors.Blue.copy(alpha = 0.88f)
     } else {
         cs.surfaceContainerHighest
     }
     // Liseré d'accent gauche : bleu foncé côté SORTANT (le fond de bulle garde son bleu par
     // défaut), couleur primary INCHANGÉE côté ENTRANT.
     val stripeColor = if (isOutgoingHost) ReplyStripeOutgoing else cs.primary
-    val labelColor = if (isOutgoingHost) cs.onPrimary else cs.onSurface
-    val bodyColor = if (isOutgoingHost) cs.onPrimary.copy(alpha = 0.9f) else cs.onSurfaceVariant
+    val labelColor = if (isOutgoingHost) Color.White else cs.onSurface
+    val bodyColor = if (isOutgoingHost) Color.White.copy(alpha = 0.9f) else cs.onSurfaceVariant
 
     val stripeWidth = 4.dp
     Row(
@@ -92,11 +98,13 @@ fun ReplyQuoteCard(
             // contenu, sans dépendre d'`IntrinsicSize`/`fillMaxHeight` (qui ne couvraient pas la
             // pleine hauteur de façon fiable). Le `clip(RoundedCornerShape)` ci-dessus arrondit ses
             // coins gauches (effet border-radius épousant la bulle). Bleu foncé côté sortant,
-            // primary côté entrant. Le padding `start` réserve la largeur du liseré + une gouttière.
+            // primary côté entrant. Le padding reprend la géométrie de la bulle (9 dp vertical,
+            // 13 dp horizontal) : le liseré vit dans la gouttière gauche, le texte s'aligne sur
+            // le corps du message sous la carte.
             .drawBehind {
                 drawRect(color = stripeColor, size = Size(stripeWidth.toPx(), size.height))
             }
-            .padding(start = stripeWidth + 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 13.dp, end = 13.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Column {
@@ -139,11 +147,12 @@ fun ComposerReplyChip(
             .background(cs.surfaceContainerHigh)
             // Bord gauche pleine hauteur (drawBehind sur la hauteur réelle du cartouche), cohérent
             // avec [ReplyQuoteCard]. Remplace l'ancien Box 3×32 dp fixe qui ne couvrait pas toute
-            // la hauteur. Le padding `start` réserve la largeur du liseré + une gouttière.
+            // la hauteur. Le padding reprend la géométrie de la bulle (9 dp vertical, 13 dp
+            // horizontal) ; l'extrémité droite garde 4 dp pour coller le bouton Fermer au bord.
             .drawBehind {
                 drawRect(color = stripeColor, size = Size(stripeWidth.toPx(), size.height))
             }
-            .padding(start = stripeWidth + 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 13.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

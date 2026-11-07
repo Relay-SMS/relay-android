@@ -2,22 +2,32 @@ package com.filestech.sms.domain.reaction
 
 /**
  * v1.4.1 — pure-Kotlin decoder for incoming SMS bodies that look like a reaction sent
- * back by another SMS Tech instance (or by Apple Messages / Google Messages, which use
- * the same Tapback wire format).
+ * back by another SMS Tech instance, by Apple Messages, or by Google Messages.
  *
- * Two formats produced by SMS Tech's own [com.filestech.sms.domain.usecase
- * .SendReactionUseCase.buildTapbackBody] are decoded :
+ * Formats decoded (see [decode] and [decodeGoogleFormat]) :
  *
- *   - **`Reacted <emoji> to «<preview>»`** — the standard Tapback shape. The preview
- *     may end with `…` if SMS Tech had to truncate the original body to fit the
- *     UCS-2 70-char segment cap. The trailing `…` is stripped before exposing
- *     [DecodedReaction.previewPrefix] so the caller can match it as a `LIKE prefix%`
- *     against stored outgoing message bodies.
+ *   - **`Reacted <emoji> to «<preview>»`** — the standard Tapback shape produced by
+ *     SMS Tech's own [com.filestech.sms.domain.usecase.SendReactionUseCase
+ *     .buildTapbackBody]. The preview may end with `…` if SMS Tech had to truncate
+ *     the original body to fit the UCS-2 70-char segment cap. The trailing `…` is
+ *     stripped before exposing [DecodedReaction.previewPrefix] so the caller can
+ *     match it as a `LIKE prefix%` against stored outgoing message bodies.
  *
  *   - **`Reacted <emoji>`** (no `to «…»` tail) — produced by SMS Tech when reacting to
  *     a message with no text body (a voice MMS / image without caption). The caller
  *     should match the most recent outgoing message in the conversation (ordered by
  *     date desc) as the target.
+ *
+ *   - **Apple Messages tapbacks** — `Loved / Liked / Disliked / Laughed at /
+ *     Emphasized / Questioned "…"` (and their `Removed … from "…"` forms). Apple does
+ *     NOT use the `Reacted … to …` shape, which is why these used to arrive as plain
+ *     text bubbles saying e.g. `Loved "your text"`.
+ *
+ *   - **Google Messages reactions** — framed with invisible characters (U+200A
+ *     framing, U+200B separators for an add, U+200C for a removal). Decoded by
+ *     [decodeGoogleFormat], which MUST be called on the raw SMS body: the receiver
+ *     strips U+200B from the body before [decode] runs, and the framing would be
+ *     gone by then.
  *
  * **Pure emojis are NOT decoded.** SMS Tech's "emoji only" reaction mode (cf.
  * `SendingSettings.reactionEmojiOnly`) sends just the emoji byte sequence — but a
@@ -64,6 +74,13 @@ object IncomingReactionDecoder {
          * `false` pour [Kind.EmojiOnly] (pas de preview).
          */
         val wasTruncated: Boolean = false,
+        /**
+         * `true` when the remote user REMOVED a reaction (`Removed a heart from
+         * "…"`, Google Messages U+200C framing…). The [emoji] is the one being
+         * removed. The caller clears the badge instead of setting it, and must
+         * not post a "reacted" notification for it.
+         */
+        val isRemoval: Boolean = false,
     ) {
         enum class Kind { Tapback, EmojiOnly }
     }
@@ -103,177 +120,320 @@ object IncomingReactionDecoder {
     /**
      * Tries to decode [body] as a reaction-back. Returns `null` when [body] is plain
      * text — caller falls back to the regular "store as incoming SMS" path.
+     *
+     * Tries to decode [body] as a reaction-back. Returns `null` when [body] is plain
+     * text — caller falls back to the regular "store as incoming SMS" path.
+     *
+     * The body is tried against each known wire format in turn ([ATTEMPT_STEPS]).
+     * A step reports [DecodeAttempt.Found] (stop — this is the reaction),
+     * [DecodeAttempt.NotMatched] (try the next format) or [DecodeAttempt.Invalid]
+     * (the body matched a format but failed its guards — stop and return `null`,
+     * exactly as the early `return null`s of the previous implementation did).
+     * Splitting the chain into one small function per format keeps every
+     * function under Detekt's ReturnCount limit (max 4).
      */
     fun decode(body: String): DecodedReaction? {
         if (body.length > MAX_DECODE_INPUT_LENGTH) return null
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return null
+        return resolveAttempts(trimmed)
+    }
 
-        // v1.8.1 — French readable WITH sender name prefix :
-        // `<Nom> a réagi par <emoji> à votre message : «<preview>»`. Tried
-        // FIRST because it's a strict super-pattern of the anonymous form.
-        // The captured name is currently NOT exposed in DecodedReaction (the
-        // caller already knows the contact via the SMS sender address), but
-        // keeping the regex strict prevents misclassification of e.g.
-        // "Réagi par X à votre message" as if it started with a name.
-        READABLE_FR_NAMED_WITH_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[2].trim()
-            val rawPreview = m.groupValues[3]
-            val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
+    private fun resolveAttempts(trimmed: String): DecodedReaction? {
+        for (attempt in ATTEMPT_STEPS) {
+            when (val result = attempt(trimmed)) {
+                is DecodeAttempt.Found -> return result.reaction
+                DecodeAttempt.Invalid -> return null
+                DecodeAttempt.NotMatched -> Unit
+            }
+        }
+        return null
+    }
+
+    /**
+     * Outcome of one decode attempt. The split exists because the historical
+     * implementation returned `null` outright for a matched-but-invalid body
+     * (e.g. an empty preview), while a non-match fell through to the next
+     * format — collapsing the two would change what decodes.
+     */
+    private sealed interface DecodeAttempt {
+        data class Found(val reaction: DecodedReaction) : DecodeAttempt
+        object NotMatched : DecodeAttempt
+        object Invalid : DecodeAttempt
+    }
+
+    /**
+     * Known wire formats, in the order [decode] tries them. The order matters:
+     * the French named form is a strict super-pattern of the anonymous one, and
+     * the Apple tapbacks are tried before the generic emoji+quote shape.
+     */
+    private val ATTEMPT_STEPS: List<(String) -> DecodeAttempt> = listOf(
+        { trimmed -> decodeWithPreview(trimmed, READABLE_FR_NAMED_WITH_PREVIEW_REGEX, 2, 3) },
+        { trimmed -> decodeNoPreview(trimmed, READABLE_FR_NAMED_NO_PREVIEW_REGEX, 2) },
+        { trimmed -> decodeWithPreview(trimmed, READABLE_FR_WITH_PREVIEW_REGEX, 1, 2) },
+        { trimmed -> decodeNoPreview(trimmed, READABLE_FR_NO_PREVIEW_REGEX, 1) },
+        ::decodeIosTapback,
+        ::decodeGenericRemoval,
+        ::decodeEmojiWithQuote,
+        { trimmed -> decodeWithPreview(trimmed, READABLE_FR_LEGACY_WITH_PREVIEW_REGEX, 1, 2) },
+        { trimmed -> decodeNoPreview(trimmed, READABLE_FR_LEGACY_NO_PREVIEW_REGEX, 1) },
+        { trimmed -> decodeWithPreview(trimmed, TAPBACK_WITH_PREVIEW_REGEX, 1, 2) },
+        { trimmed -> decodeNoPreview(trimmed, TAPBACK_NO_PREVIEW_REGEX, 1) },
+        ::decodeEmojiOnly,
+    )
+
+    /**
+     * Shared shape for the `… with preview` formats (`Reacted <emoji> to
+     * «<preview>»`, the French readable forms, the legacy form): the emoji is
+     * group [emojiGroup], the preview group [previewGroup]. A matched body
+     * with an empty emoji or preview is [DecodeAttempt.Invalid], not a
+     * fall-through.
+     */
+    private fun decodeWithPreview(
+        trimmed: String,
+        regex: Regex,
+        emojiGroup: Int,
+        previewGroup: Int,
+    ): DecodeAttempt =
+        regex.matchEntire(trimmed)?.let { m ->
+            val emoji = m.groupValues[emojiGroup].trim()
+            val rawPreview = m.groupValues[previewGroup]
             val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
-            if (emoji.isEmpty() || preview.isEmpty()) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = preview,
-                kind = DecodedReaction.Kind.Tapback,
-                wasTruncated = wasTruncated,
-            )
-        }
+            when {
+                emoji.isEmpty() || preview.isEmpty() -> DecodeAttempt.Invalid
+                else -> DecodeAttempt.Found(
+                    DecodedReaction(
+                        emoji = emoji,
+                        previewPrefix = preview,
+                        kind = DecodedReaction.Kind.Tapback,
+                        wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER),
+                    ),
+                )
+            }
+        } ?: DecodeAttempt.NotMatched
 
-        // v1.8.1 — French readable WITH sender name, no preview (MMS image) :
-        // `<Nom> a réagi par <emoji> à votre message`.
-        READABLE_FR_NAMED_NO_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[2]
-            if (emoji.isEmpty() || emoji.all { it.code < 128 }) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = null,
-                kind = DecodedReaction.Kind.Tapback,
-            )
-        }
+    /**
+     * Shared shape for the `… without preview` formats: the emoji is group
+     * [emojiGroup] and must contain a non-ASCII codepoint (a real emoji
+     * always does; "Reacted hello" must not decode). A matched body with an
+     * ASCII-only token is [DecodeAttempt.Invalid].
+     */
+    private fun decodeNoPreview(
+        trimmed: String,
+        regex: Regex,
+        emojiGroup: Int,
+    ): DecodeAttempt =
+        regex.matchEntire(trimmed)?.let { m ->
+            val emoji = m.groupValues[emojiGroup]
+            when {
+                emoji.isEmpty() || emoji.all { it.code < 128 } -> DecodeAttempt.Invalid
+                else -> DecodeAttempt.Found(
+                    DecodedReaction(
+                        emoji = emoji,
+                        previewPrefix = null,
+                        kind = DecodedReaction.Kind.Tapback,
+                    ),
+                )
+            }
+        } ?: DecodeAttempt.NotMatched
 
-        // v1.8.1 (wording neutral) — French readable WITHOUT name :
-        // `Réagi par <emoji> à votre message : «<preview>»`.
-        READABLE_FR_WITH_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[1].trim()
-            val rawPreview = m.groupValues[2]
-            val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
-            val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
-            if (emoji.isEmpty() || preview.isEmpty()) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = preview,
-                kind = DecodedReaction.Kind.Tapback,
-                wasTruncated = wasTruncated,
-            )
-        }
-
-        // v1.8.1 — French readable WITHOUT name, no preview :
-        // `Réagi par <emoji> à votre message`.
-        READABLE_FR_NO_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[1]
-            if (emoji.isEmpty() || emoji.all { it.code < 128 }) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = null,
-                kind = DecodedReaction.Kind.Tapback,
-            )
-        }
-
-        // v1.9.0 — Emoji + quote compact format : `<emoji> «<preview>»`.
-        // Strict : emoji = 1ʳᵉ token sans whitespace + au moins 1 codepoint
-        // emoji vrai (cf. [isLikelyEmojiChar]). v1.9.0 audit fix SEC-7 :
-        // l'ancien guard `emoji.all { it.code < 128 }` acceptait à tort un
-        // mot accentué français (`été «aperçu»` → réaction faussement
-        // décodée). Le nouveau guard exige au moins un char dans les blocs
-        // emoji Unicode connus.
-        //
-        // Fast-path SEC-6 anti-ReDoS : on skip la regex si pas de guillemet
-        // fermant (la regex non-greedy backtracke sur input pathologique).
-        if (trimmed.contains('»') || trimmed.lastIndexOf('"') > 0) {
-            EMOJI_WITH_QUOTE_REGEX.matchEntire(trimmed)?.let { m ->
-                val emoji = m.groupValues[1]
-                val rawPreview = m.groupValues[2]
-                if (emoji.isEmpty() || emoji.none { isLikelyEmojiChar(it) }) return@let
-                val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
+    /**
+     * Apple Messages tapbacks (English): `Loved / Liked / Disliked / Laughed
+     * at / Emphasized / Questioned "…"` and their `Removed … from "…"` forms.
+     * Quotes are curly “ ” or straight " (carriers strip punctuation). An
+     * empty preview falls through to the next tapback verb, then to the next
+     * format — it is not a hard rejection.
+     */
+    private fun decodeIosTapback(trimmed: String): DecodeAttempt =
+        IOS_TAPBACK_REGEXES.firstNotNullOfOrNull { (regex, emoji, isRemoval) ->
+            regex.matchEntire(trimmed)?.let { m ->
+                val rawPreview = m.groupValues[1]
                 val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
-                if (preview.isEmpty()) return@let
-                return DecodedReaction(
+                if (preview.isEmpty()) {
+                    null
+                } else {
+                    DecodeAttempt.Found(
+                        DecodedReaction(
+                            emoji = emoji,
+                            previewPrefix = preview,
+                            kind = DecodedReaction.Kind.Tapback,
+                            wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER),
+                            isRemoval = isRemoval,
+                        ),
+                    )
+                }
+            }
+        } ?: DecodeAttempt.NotMatched
+
+    /**
+     * Apple Messages generic removal: `Removed <emoji> from "…"`. The
+     * captured token must contain a non-ASCII codepoint so a sentence like
+     * `Removed the meeting from "Friday"` cannot match. Guard failures fall
+     * through to the next format.
+     */
+    private fun decodeGenericRemoval(trimmed: String): DecodeAttempt =
+        GENERIC_REMOVED_REGEX.matchEntire(trimmed)?.let { m ->
+            val emoji = m.groupValues[1]
+            val rawPreview = m.groupValues[2]
+            val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
+            when {
+                emoji.isEmpty() || emoji.all { it.code < 128 } -> DecodeAttempt.NotMatched
+                preview.isEmpty() -> DecodeAttempt.NotMatched
+                else -> DecodeAttempt.Found(
+                    DecodedReaction(
+                        emoji = emoji,
+                        previewPrefix = preview,
+                        kind = DecodedReaction.Kind.Tapback,
+                        wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER),
+                        isRemoval = true,
+                    ),
+                )
+            }
+        } ?: DecodeAttempt.NotMatched
+
+    /**
+     * v1.9.0 — Emoji + quote compact format: `<emoji> «<preview>»`. The
+     * emoji must contain a real emoji char ([isLikelyEmojiChar]) — the old
+     * ASCII guard wrongly accepted an accented French word (`été «aperçu»`).
+     * Fast-path: skip the regex when there is no closing guillemet (the
+     * non-greedy pattern backtracks on pathological input).
+     */
+    private fun decodeEmojiWithQuote(trimmed: String): DecodeAttempt {
+        if (!trimmed.contains('»') && trimmed.lastIndexOf('"') <= 0) {
+            return DecodeAttempt.NotMatched
+        }
+        return EMOJI_WITH_QUOTE_REGEX.matchEntire(trimmed)?.let { m ->
+            val emoji = m.groupValues[1]
+            val rawPreview = m.groupValues[2]
+            val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
+            when {
+                emoji.isEmpty() || emoji.none { isLikelyEmojiChar(it) } ->
+                    DecodeAttempt.NotMatched
+                preview.isEmpty() -> DecodeAttempt.NotMatched
+                else -> DecodeAttempt.Found(
+                    DecodedReaction(
+                        emoji = emoji,
+                        previewPrefix = preview,
+                        kind = DecodedReaction.Kind.Tapback,
+                        wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER),
+                    ),
+                )
+            }
+        } ?: DecodeAttempt.NotMatched
+    }
+
+    /**
+     * v1.4.1 — emoji-only candidate (SendingSettings.reactionEmojiOnly =
+     * true). The body contains nothing but one or two emojis; tagged
+     * [Kind.EmojiOnly] so the caller requires a tight time window before
+     * promoting it to a reaction badge.
+     */
+    private fun decodeEmojiOnly(trimmed: String): DecodeAttempt =
+        if (looksLikeEmojiOnly(trimmed)) {
+            DecodeAttempt.Found(
+                DecodedReaction(
+                    emoji = trimmed,
+                    previewPrefix = null,
+                    kind = DecodedReaction.Kind.EmojiOnly,
+                ),
+            )
+        } else {
+            DecodeAttempt.NotMatched
+        }
+
+    /**
+     * Google Messages reaction format, decoded from the RAW SMS body.
+     *
+     * The body is framed with invisible characters: it starts and ends with
+     * U+200A (hair space), the emoji sits between two separator chars, and the
+     * quoted original text sits between the next two U+200A. The separator is
+     * U+200B for an add and U+200C for a removal:
+     *
+     *   add:     `\u200A…\u200B<emoji>\u200B…\u200A<original>\u200A…\u200A`
+     *   removal: `\u200A…\u200C<emoji>\u200C…\u200A<original>\u200A…\u200A`
+     *
+     * MUST be called on the raw body: the receiver strips U+200B (via
+     * `stripInvisibleChars`) before [decode] runs, which destroys the
+     * framing. Returns `null` when the body is not Google-framed. The
+     * segment checks (no separator / framing char inside a skipped segment)
+     * keep stray invisible-char soup from misclassifying as a reaction.
+     */
+    fun decodeGoogleFormat(body: String): DecodedReaction? {
+        if (body.length > MAX_DECODE_INPUT_LENGTH) return null
+        if (!body.startsWith(GOOGLE_FRAME) || !body.endsWith(GOOGLE_FRAME)) {
+            return null
+        }
+        return parseGoogleFramed(body, GOOGLE_ADD_SEPARATOR, isRemoval = false)
+            ?: parseGoogleFramed(body, GOOGLE_REMOVE_SEPARATOR, isRemoval = true)
+    }
+
+    private fun parseGoogleFramed(
+        body: String,
+        separator: Char,
+        isRemoval: Boolean,
+    ): DecodedReaction? =
+        googleQuotePositions(body, separator)?.let { positions ->
+            val emoji = body.substring(positions.firstSep + 1, positions.secondSep)
+            val rawPreview = body.substring(positions.openQuote + 1, positions.closeQuote)
+            val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
+            val emojiInvalid = emoji.isEmpty() || emoji.none { isLikelyEmojiChar(it) }
+            val framingInvalid = emoji.any { it == GOOGLE_FRAME } || preview.isEmpty()
+            if (emojiInvalid || framingInvalid) {
+                null
+            } else {
+                DecodedReaction(
                     emoji = emoji,
                     previewPrefix = preview,
                     kind = DecodedReaction.Kind.Tapback,
-                    wasTruncated = wasTruncated,
+                    wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER),
+                    isRemoval = isRemoval,
                 )
             }
         }
 
-        // v1.8.1 — LEGACY v1.8.0 format (kept for backward compat) :
-        // `J'ai réagi par <emoji> à : «<preview>»`. Run AFTER the new regex
-        // so v1.8.1+ messages match the new (preferred) format first.
-        READABLE_FR_LEGACY_WITH_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[1].trim()
-            val rawPreview = m.groupValues[2]
-            val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
-            val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
-            if (emoji.isEmpty() || preview.isEmpty()) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = preview,
-                kind = DecodedReaction.Kind.Tapback,
-                wasTruncated = wasTruncated,
-            )
-        }
-        READABLE_FR_LEGACY_NO_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[1]
-            if (emoji.isEmpty() || emoji.all { it.code < 128 }) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = null,
-                kind = DecodedReaction.Kind.Tapback,
-            )
-        }
+    /** Positions of the Google framing markers: the two separators around the
+     * emoji and the two frame chars around the quoted original text. */
+    private data class GoogleQuotePositions(
+        val firstSep: Int,
+        val secondSep: Int,
+        val openQuote: Int,
+        val closeQuote: Int,
+    )
 
-        // Tapback with preview : `Reacted <emoji> to «<preview>»`. The `«` and `»` are
-        // the Unicode guillemets that SMS Tech emits (forces UCS-2 single-segment).
-        TAPBACK_WITH_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[1].trim()
-            val rawPreview = m.groupValues[2]
-            // v1.6.2 — capture si l'encoder a tronqué (marker `…` en queue). Le caller
-            // utilise ce flag pour choisir entre match exact et match préfixe.
-            val wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER)
-            val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
-            if (emoji.isEmpty() || preview.isEmpty()) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = preview,
-                kind = DecodedReaction.Kind.Tapback,
-                wasTruncated = wasTruncated,
-            )
+    /**
+     * Locates the Google framing markers, or `null` when the body is not a
+     * complete, well-formed Google reaction: a missing marker, a skipped
+     * segment containing a separator or frame char, or no trailing segment
+     * after the closing quote. The checks are grouped into small booleans so
+     * no single condition grows complex, and each substring is only read once
+     * its bounds are known to be valid — [String.substring] would throw on an
+     * out-of-range slice.
+     */
+    private fun googleQuotePositions(
+        body: String,
+        separator: Char,
+    ): GoogleQuotePositions? {
+        val firstSep = body.indexOf(separator, startIndex = 1)
+        val secondSep = body.indexOf(separator, startIndex = firstSep + 1)
+        val openQuote = body.indexOf(GOOGLE_FRAME, startIndex = secondSep + 1)
+        val closeQuote = body.indexOf(GOOGLE_FRAME, startIndex = openQuote + 1)
+        val separatorsFound = firstSep >= 0 && secondSep >= 0
+        val quotesFound = openQuote >= 0 && closeQuote >= 0
+        val headClean = firstSep >= 0 &&
+            !body.substring(1, firstSep).any { it == separator || it == GOOGLE_FRAME }
+        val middleClean = openQuote >= 0 &&
+            !body.substring(secondSep + 1, openQuote)
+                .any { it == separator || it == GOOGLE_FRAME }
+        val tailClean = closeQuote >= 0 && closeQuote < body.length - 1 &&
+            !body.substring(closeQuote + 1, body.length - 1)
+                .any { it == separator || it == GOOGLE_FRAME }
+        val indicesValid = separatorsFound && quotesFound
+        val segmentsValid = headClean && middleClean && tailClean
+        return if (indicesValid && segmentsValid) {
+            GoogleQuotePositions(firstSep, secondSep, openQuote, closeQuote)
+        } else {
+            null
         }
-
-        // Tapback without preview : `Reacted <emoji>` (original message had no text body,
-        // e.g. voice MMS / image-only). Caller matches the most recent outgoing message
-        // in the conversation.
-        //
-        // The captured token MUST :
-        //   - contain no whitespace (a real emoji never does ; "Reacted to your post"
-        //     would otherwise be misread as emoji="to your post"),
-        //   - contain at least one non-ASCII codepoint (a real emoji always does ;
-        //     "Reacted hello" would otherwise be misread as emoji="hello").
-        TAPBACK_NO_PREVIEW_REGEX.matchEntire(trimmed)?.let { m ->
-            val emoji = m.groupValues[1]
-            if (emoji.isEmpty() || emoji.all { it.code < 128 }) return null
-            return DecodedReaction(
-                emoji = emoji,
-                previewPrefix = null,
-                kind = DecodedReaction.Kind.Tapback,
-            )
-        }
-
-        // v1.4.1 — emoji-only candidate (SendingSettings.reactionEmojiOnly = true). The
-        // body contains nothing but one or two emojis. We tag it [Kind.EmojiOnly] so
-        // the caller knows to require a tight time window before promoting it to a
-        // reaction badge — a stand-alone "❤️" SMS is also a perfectly valid real
-        // message and must not be silently folded onto an unrelated past outgoing.
-        if (looksLikeEmojiOnly(trimmed)) {
-            return DecodedReaction(
-                emoji = trimmed,
-                previewPrefix = null,
-                kind = DecodedReaction.Kind.EmojiOnly,
-            )
-        }
-
-        return null
     }
 
     /**
@@ -296,6 +456,73 @@ object IncomingReactionDecoder {
 
     /** Lone Unicode horizontal ellipsis SMS Tech appends when the preview was truncated. */
     private const val TRUNCATION_MARKER: String = "…"
+
+    /** Google Messages framing char (U+200A hair space): opens and closes the body. */
+    private const val GOOGLE_FRAME: Char = '\u200A'
+
+    /** Google Messages separator for an added reaction (U+200B zero width space). */
+    private const val GOOGLE_ADD_SEPARATOR: Char = '\u200B'
+
+    /** Google Messages separator for a removed reaction (U+200C zero width non-joiner). */
+    private const val GOOGLE_REMOVE_SEPARATOR: Char = '\u200C'
+
+    /**
+     * Apple Messages tapbacks (English), as data: the verb the add uses, the
+     * emoji it maps to, and the verb the removal uses. Adding a locale means
+     * adding rows here, not new regexes. Wordings are the ones Apple Messages
+     * sends over SMS to non-iMessage recipients.
+     */
+    private data class IosTapback(
+        val addVerb: String,
+        val emoji: String,
+        val removeVerb: String,
+    )
+
+    private val IOS_TAPBACKS = listOf(
+        IosTapback("Loved", "❤️", "Removed a heart from"),
+        IosTapback("Liked", "👍", "Removed a like from"),
+        IosTapback("Disliked", "👎", "Removed a dislike from"),
+        IosTapback("Laughed at", "😂", "Removed a laugh from"),
+        IosTapback("Emphasized", "‼️", "Removed an exclamation from"),
+        IosTapback("Questioned", "❓", "Removed a question from"),
+    )
+
+    /**
+     * Compiled from [IOS_TAPBACKS]: one (regex, emoji, isRemoval) triple per
+     * add/remove form. The preview group is non-greedy with `DOT_MATCHES_ALL`
+     * (same as the Tapback regex); the 400-char input cap bounds backtracking.
+     */
+    private val IOS_TAPBACK_REGEXES: List<Triple<Regex, String, Boolean>> =
+        IOS_TAPBACKS.flatMap { tapback ->
+            listOf(
+                Triple(
+                    Regex(
+                        "^${Regex.escape(tapback.addVerb)}\\s+[“\"](.+?)[”\"]$",
+                        RegexOption.DOT_MATCHES_ALL,
+                    ),
+                    tapback.emoji,
+                    false,
+                ),
+                Triple(
+                    Regex(
+                        "^${Regex.escape(tapback.removeVerb)}\\s+[“\"](.+?)[”\"]$",
+                        RegexOption.DOT_MATCHES_ALL,
+                    ),
+                    tapback.emoji,
+                    true,
+                ),
+            )
+        }
+
+    /**
+     * Apple Messages generic removal: `Removed <emoji> from "…"`. The emoji
+     * slot is guarded in [decode] (must contain a non-ASCII codepoint) so a
+     * sentence like `Removed the meeting from "Friday"` cannot match.
+     */
+    private val GENERIC_REMOVED_REGEX = Regex(
+        """^Removed\s+(\S+)\s+from\s+[“"](.+?)[”"]$""",
+        RegexOption.DOT_MATCHES_ALL,
+    )
 
     /**
      * Matches `Reacted <emoji> to «<preview>»` with both standard Unicode guillemets

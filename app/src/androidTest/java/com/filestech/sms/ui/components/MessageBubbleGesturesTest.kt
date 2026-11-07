@@ -3,10 +3,8 @@ package com.filestech.sms.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -19,10 +17,11 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * v1.28.6 — l'appui long sur une bulle **n'est plus** « copier tout » (doublon du menu ⋮) mais
- * « sélectionner le texte » ; et cette sélection est aussi une entrée du menu ⋮. Les deux chemins
- * sont testés parce que c'est exactement le motif d'asymétrie que ce dépôt a le plus souvent
- * rencontré : un geste changé sur une voie et pas sur l'autre.
+ * v1.28.6 — l'appui long sur une bulle **n'est plus** « copier tout » (doublon de l'entrée
+ * « Copier » du menu) mais « sélectionner le texte » ; et cette sélection est aussi une entrée
+ * du menu de la bulle (ouvert par tap depuis 2026-11-06). Les deux chemins sont testés parce
+ * que c'est exactement le motif d'asymétrie que ce dépôt a le plus souvent rencontré : un
+ * geste changé sur une voie et pas sur l'autre.
  */
 class MessageBubbleGesturesTest {
 
@@ -76,28 +75,21 @@ class MessageBubbleGesturesTest {
     }
 
     /**
-     * v1.28.7 — **sur un écran étroit, le bouton ⋮ garde sa taille et ouvre le menu.**
-     *
-     * Le `Row` de la bulle mesurait la bulle — plafonnée à 320 dp fixes — AVANT le bouton : mesuré
-     * sur émulateur, il tombait à 0 dp sur un écran de 320 dp, et le menu devenait inatteignable.
-     * La largeur est bornée DANS le test, et non par l'écran de l'appareil : le test mesure la
-     * même chose sur le S9, sur l'émulateur de la CI et partout ailleurs.
-     *
-     * ⚠️ **Seul le test ENTRANT prouve le correctif.** Contrôle négatif mesuré le 2026-09-13 : sans
-     * `weight`, le test entrant tombe et le test SORTANT reste vert. Pour une bulle sortante, le
-     * bouton est placé AVANT la bulle dans le `Row`, donc mesuré en premier : elle n'a jamais été
-     * écrasée. Le test sortant est gardé comme garde — il tomberait si le bouton passait après la
-     * bulle ou si la colonne cessait de céder la place —, pas comme preuve de ce correctif.
+     * Relay (2026-11-06) — **le bouton ⋮ a disparu : c'est le tap sur la bulle qui
+     * ouvre le menu.** L'ancien test v1.28.7 vérifiait que le bouton gardait 40 dp sur un
+     * écran étroit ; ce bouton n'existe plus. Le menu doit donc s'ouvrir par tap sur la
+     * bulle, y compris sur un écran étroit de 320 dp, pour les messages entrants comme
+     * sortants.
      */
     @Test
-    fun surUnEcranEtroit_leBoutonGardeSaTailleEtOuvreLeMenu_messageEntrant() =
-        boutonSurEcranEtroit(Message.Direction.INCOMING)
+    fun surUnEcranEtroit_leTapSurLaBulleOuvreLeMenu_messageEntrant() =
+        tapSurEcranEtroit(Message.Direction.INCOMING)
 
     @Test
-    fun surUnEcranEtroit_leBoutonGardeSaTailleEtOuvreLeMenu_messageSortant() =
-        boutonSurEcranEtroit(Message.Direction.OUTGOING)
+    fun surUnEcranEtroit_leTapSurLaBulleOuvreLeMenu_messageSortant() =
+        tapSurEcranEtroit(Message.Direction.OUTGOING)
 
-    private fun boutonSurEcranEtroit(direction: Message.Direction) {
+    private fun tapSurEcranEtroit(direction: Message.Direction) {
         var selections = 0
         compose.setContent {
             Box(Modifier.width(320.dp)) {
@@ -110,9 +102,7 @@ class MessageBubbleGesturesTest {
             }
         }
 
-        val bouton = compose.onNodeWithContentDescription(context.getString(R.string.action_message_actions))
-        bouton.assertWidthIsAtLeast(40.dp)
-        bouton.performClick()
+        compose.onNodeWithText(LONG_BODY).performClick()
         compose.onNodeWithText(context.getString(R.string.action_select_text)).performClick()
         compose.waitForIdle()
 
@@ -131,7 +121,7 @@ class MessageBubbleGesturesTest {
             )
         }
 
-        compose.onNodeWithContentDescription(context.getString(R.string.action_message_actions)).performClick()
+        compose.onNodeWithText(BODY).performClick()
         compose.onNodeWithText(context.getString(R.string.action_select_text)).performClick()
         compose.waitForIdle()
 

@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -28,7 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +42,9 @@ import com.filestech.sms.R
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.ui.theme.BrandBlue
+import com.filestech.sms.ui.theme.FixedTypeSize
+import com.filestech.sms.ui.theme.RelayText
 
 /**
  * Audio bubble for an MMS voice message. Renders a compact mini-player (play/pause + slider +
@@ -90,16 +96,22 @@ fun AudioMessageBubble(
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
     // v1.2.6 design : la bulle vocale de l'expéditeur (outgoing) est désormais sans fond,
-    // juste un contour `cs.primary` pour garder la silhouette. La bulle entrante reste
-    // inchangée (fill slate-blue + contrôles primary).
-    val bgColor = if (isOut) cs.primary else com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
+    // juste un contour bleu de marque pour garder la silhouette. La bulle entrante reste
+    // inchangée (fill gris neutre + contrôles primary).
+    // Phase 8 — le contour sortant est le bleu fixe [BrandBlue], comme la bulle texte
+    // ([MessageBubble]) : le `primary` du thème s'éclaircit en sombre et les bulles
+    // sortantes ne doivent pas changer de bleu entre elles.
+    val bgColor = if (isOut) BrandBlue else com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
     // Sans fond plein côté outgoing, on ne peut plus utiliser `onPrimary` (blanc) pour les
     // contrôles : ils deviendraient invisibles sur la surface du thème. Bascule en `primary`
-    // pour les deux directions (l'incoming, sur fond slate-blue, reste lisible aussi).
+    // pour les deux directions (l'incoming, sur fond gris neutre, reste lisible aussi).
     val controlColor = cs.primary
     val sliderActive = cs.primary
     val sliderInactive = cs.onSurfaceVariant.copy(alpha = 0.3f)
-    val labelColor = cs.onSurfaceVariant
+    // Phase 8 — la durée et l'heure entrantes passent en `onSurface` : `onSurfaceVariant`
+    // ne donnait que 4.40:1 sur la bulle entrante claire `#E9E9EB`. Côté sortant, sans
+    // fond, `onSurfaceVariant` sur le fond de page passe (5.33:1 en clair, 6.12:1 en sombre).
+    val labelColor = if (isOut) cs.onSurfaceVariant else cs.onSurface
 
     // `derivedStateOf` blocks recomposition unless the *projected* slice changes — so a tick
     // that only moves `positionMs` on a non-active bubble emits the same `LocalPlayback.None`
@@ -139,21 +151,15 @@ fun AudioMessageBubble(
         bottomEnd = if (isOut) 4.dp else 18.dp,
     )
 
+    // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle
+    // (hors bouton lecture et slider, qui gardent leurs gestes) ouvre le menu.
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isOut) {
-            BubbleMenuTrigger(
-                onReply = onReply,
-                onReact = onReact,
-                onForward = onForward,
-                starred = message.starred,
-                onToggleStar = onToggleStar,
-                onDelete = onDelete,
-            )
-        }
         androidx.compose.foundation.layout.Column(
             horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
         ) {
@@ -174,6 +180,7 @@ fun AudioMessageBubble(
                     modifier = Modifier
                         .widthIn(min = 220.dp, max = 320.dp)
                         .clip(shape)
+                        .clickable { menuExpanded = true }
                         // v1.2.6 design : outgoing → border seul (allégé). Incoming → fond
                         // slate-blue. v1.4.0 : the incoming bubble also gets a thin border
                         // slightly darker than its fill so it pops off the surrounding
@@ -200,15 +207,15 @@ fun AudioMessageBubble(
                 ) {
                   androidx.compose.foundation.layout.Column {
                     if (!senderLabel.isNullOrBlank()) {
-                        // Z5 audit fix — utiliser une couleur à haut contraste avec le
-                        // fond de la bulle (cf. MessageBubble.textColor). `labelColor`
-                        // (cs.onSurfaceVariant) tombait sous WCAG AA sur fond `primary`
-                        // pour les bulles outgoing.
-                        val senderColor = if (isOut) cs.onPrimary else cs.onSurface
+                        // Phase 8 — l'étiquette est sur le fond de page côté sortant (la
+                        // bulle n'a qu'un contour, pas de fond) et sur la bulle entrante
+                        // côté entrant : `onSurface` passe partout. L'ancien `onPrimary`
+                        // sortant (blanc en clair) était invisible sur fond clair — le
+                        // commentaire Z5 supposait à tort un fond `primary` plein.
                         Text(
                             text = senderLabel,
                             style = MaterialTheme.typography.labelMedium,
-                            color = senderColor,
+                            color = cs.onSurface,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                             modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 2.dp),
                         )
@@ -219,10 +226,12 @@ fun AudioMessageBubble(
                         //    de la bulle (`bgColor`), pour cohérence visuelle. Icône blanche pleine.
                         //  - incoming : disque primary 15 % + icône primary (inchangé).
                         val playBg = if (isOut) bgColor else controlColor.copy(alpha = 0.15f)
-                        val playTint = if (isOut) cs.onPrimary else controlColor
+                        // Phase 8 — blanc fixe sur le disque bleu fixe sortant : `onPrimary`
+                        // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
+                        val playTint = if (isOut) Color.White else controlColor
                         // Note : `Icons.Outlined.PlayArrow` / `Icons.Outlined.Pause` sont rendues
                         // pleines visuellement par Material (forme triangle/bâtonnets sans contour
-                        // creux), donc une flèche `onPrimary` (blanche) sur fond bleu apparaît bien
+                        // creux), donc une flèche blanche sur fond bleu apparaît bien
                         // pleine — pas besoin de basculer vers `Filled.*`.
                         val playIcon = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow
                         Box(
@@ -297,19 +306,32 @@ fun AudioMessageBubble(
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
-                        Text(
-                            text = formatBubbleDuration(if (isPlaying && positionMs > 0) positionMs.toLong() else totalMs.toLong()),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = labelColor,
-                            modifier = Modifier.padding(end = 4.dp),
-                        )
+                        // Phase 8 — la durée est du méta-texte de mise en page, comme
+                        // l'heure : 12sp fixe (voir [FixedTypeSize]), pas `labelSmall`
+                        // multiplié par le coefficient « Taille du texte des messages ».
+                        FixedTypeSize {
+                            Text(
+                                text = formatBubbleDuration(if (isPlaying && positionMs > 0) positionMs.toLong() else totalMs.toLong()),
+                                style = RelayText.BubbleMeta,
+                                color = labelColor,
+                                modifier = Modifier.padding(end = 4.dp),
+                            )
+                        }
                     }
-                  } // ferme Column senderLabel + Row
+                    // Relay — heure (+ statut sortant) en petit, en bas à droite,
+                    // À L'INTÉRIEUR de la bulle.
+                    BubbleTimestamp(
+                        message = message,
+                        showTimestamp = showTimestamp,
+                        textColor = labelColor,
+                        modifier = Modifier.padding(top = 2.dp, end = 4.dp),
+                    )
+                  } // ferme Column senderLabel + Row + horodatage
                 }
             }
-        }
-        if (!isOut) {
-            BubbleMenuTrigger(
+            BubbleMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
                 onReply = onReply,
                 onReact = onReact,
                 onForward = onForward,
@@ -319,15 +341,6 @@ fun AudioMessageBubble(
             )
         }
     }
-
-    // 2026-10-29 (issue #53) — ligne commune aux trois bulles, cf. [MessageStatusLine]. Un vocal
-    // en échec n'y promet plus « appuyer pour réessayer » : un MMS ne se relance pas.
-    MessageStatusLine(
-        message = message,
-        isOut = isOut,
-        showTimestamp = showTimestamp,
-        modifier = Modifier.padding(horizontal = 24.dp),
-    )
 }
 
 /**

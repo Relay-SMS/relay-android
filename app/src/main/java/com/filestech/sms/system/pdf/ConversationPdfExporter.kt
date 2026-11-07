@@ -107,7 +107,7 @@ class ConversationPdfExporter @Inject constructor(
         val timestampPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.GRAY; textSize = 8.5f
         }
-        val outgoingBg = Paint().apply { color = Color.parseColor("#2460AB"); isAntiAlias = true }
+        val outgoingBg = Paint().apply { color = Color.parseColor("#1E4FD8"); isAntiAlias = true }
         val incomingBg = Paint().apply { color = Color.parseColor("#EAEAEA"); isAntiAlias = true; style = Paint.Style.FILL }
         val incomingStroke = Paint().apply { color = Color.parseColor("#CFCFCF"); isAntiAlias = true; style = Paint.Style.STROKE; strokeWidth = 0.75f }
 

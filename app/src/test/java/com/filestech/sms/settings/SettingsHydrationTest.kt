@@ -173,6 +173,61 @@ class SettingsHydrationTest {
         }
     }
 
+    /**
+     * La migration vers `IOS_TAPBACK` ne touche QUE `EMOJI_WITH_QUOTE` : les
+     * `«»` de ce format arrivaient en `<<>>` côté correspondant, il ne
+     * remplissait plus sa promesse. La migration ne se rejoue pas
+     * (l'utilisateur peut rechoisir `EMOJI_WITH_QUOTE` ensuite).
+     */
+    @Test
+    fun laMigrationVersIosTapbackMigreEmojiWithQuoteUneSeuleFois() {
+        runBlocking {
+            val portee = CoroutineScope(Dispatchers.Unconfined)
+            try {
+                val depot = SettingsRepository(magasin, portee)
+
+                // 1. Une installation sur EMOJI_WITH_QUOTE migre vers IOS_TAPBACK.
+                magasin.edit { it[FORMAT_DE_REACTION] = ReactionFormat.EMOJI_WITH_QUOTE.name }
+                assertThat(depot.migrerFormatVersIosTapback()).isTrue()
+                assertThat(magasin.data.first()[FORMAT_DE_REACTION])
+                    .isEqualTo(ReactionFormat.IOS_TAPBACK.name)
+
+                // 2. Elle ne se rejoue pas : le drapeau est posé.
+                assertThat(depot.migrerFormatVersIosTapback()).isFalse()
+                assertThat(magasin.data.first()[FORMAT_DE_REACTION])
+                    .isEqualTo(ReactionFormat.IOS_TAPBACK.name)
+
+                // 3. LE cas qui compte : l'utilisateur rechoisit EMOJI_WITH_QUOTE. Il reste.
+                magasin.edit { it[FORMAT_DE_REACTION] = ReactionFormat.EMOJI_WITH_QUOTE.name }
+                assertThat(depot.migrerFormatVersIosTapback()).isFalse()
+                assertThat(magasin.data.first()[FORMAT_DE_REACTION])
+                    .isEqualTo(ReactionFormat.EMOJI_WITH_QUOTE.name)
+            } finally {
+                portee.cancel()
+            }
+        }
+    }
+
+    /**
+     * Le témoin négatif du test précédent : la migration ne touche QUE
+     * `EMOJI_WITH_QUOTE`. Magasin neuf ici, donc drapeau non posé.
+     */
+    @Test
+    fun laMigrationVersIosTapbackNeTouchePasLesAutresFormats() {
+        runBlocking {
+            val portee = CoroutineScope(Dispatchers.Unconfined)
+            try {
+                magasin.edit { it[FORMAT_DE_REACTION] = ReactionFormat.READABLE_FR.name }
+                assertThat(SettingsRepository(magasin, portee).migrerFormatVersIosTapback())
+                    .isFalse()
+                assertThat(magasin.data.first()[FORMAT_DE_REACTION])
+                    .isEqualTo(ReactionFormat.READABLE_FR.name)
+            } finally {
+                portee.cancel()
+            }
+        }
+    }
+
     private companion object {
         const val TIMEOUT_MS = 10_000L
 
@@ -350,6 +405,9 @@ class SettingsHydrationTest {
      * installation**, et toute installation neuve envoyait des réactions écrites en
      * français, quelle que soit la langue de l'application.
      *
+     * Le défaut est désormais `IOS_TAPBACK` (les `«»` de `EMOJI_WITH_QUOTE`
+     * arrivaient en `<<>>` côté correspondant).
+     *
      * Deux assertions, et il en faut deux : la première interdit aux deux endroits de
      * diverger à nouveau, la seconde fige la valeur elle-même, pour qu'un changement
      * silencieux du défaut déclaré ne passe pas non plus.
@@ -364,7 +422,7 @@ class SettingsHydrationTest {
                 assertThat(neuf?.sending?.reactionFormat)
                     .isEqualTo(SendingSettings().reactionFormat)
                 assertThat(neuf?.sending?.reactionFormat)
-                    .isEqualTo(ReactionFormat.EMOJI_WITH_QUOTE)
+                    .isEqualTo(ReactionFormat.IOS_TAPBACK)
             } finally {
                 portee.cancel()
             }

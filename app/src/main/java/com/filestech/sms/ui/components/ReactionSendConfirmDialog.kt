@@ -1,5 +1,6 @@
 package com.filestech.sms.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -7,12 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filestech.sms.R
+import com.filestech.sms.ui.theme.RelayText
 
 /**
  * v1.3.1 — confirmation du PREMIER envoi de réaction par SMS au correspondant. Affiché
@@ -67,11 +66,11 @@ fun ReactionSendConfirmDialog(
         runCatching { cancelFocusRequester.requestFocus() }
     }
 
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.reaction_send_confirm_title)) },
-        text = {
-            Column {
+        title = stringResource(R.string.reaction_send_confirm_title),
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Preview gros + nom destinataire
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -81,17 +80,14 @@ fun ReactionSendConfirmDialog(
                     Spacer(Modifier.size(12.dp))
                     Text(
                         text = recipientLabel,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
+                        style = RelayText.MessageBody.copy(fontWeight = FontWeight.Medium),
                     )
                 }
-                Spacer(Modifier.size(12.dp))
                 Text(
                     text = stringResource(R.string.reaction_send_confirm_body),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Timestamp,
                     color = cs.onSurfaceVariant,
                 )
-                Spacer(Modifier.size(12.dp))
                 // Case "Ne plus demander". X6 audit v1.3.1 : `Modifier.toggleable` avec
                 // `role = Role.Checkbox` regroupe Row + Checkbox dans un seul nœud a11y
                 // (TalkBack/Switch Access annoncent une seule cible cliquable). La Checkbox
@@ -110,22 +106,26 @@ fun ReactionSendConfirmDialog(
                 ) {
                     Checkbox(checked = neverAskAgain, onCheckedChange = null)
                     Spacer(Modifier.size(4.dp))
-                    Text(stringResource(R.string.reaction_send_confirm_never_ask))
+                    Text(
+                        text = stringResource(R.string.reaction_send_confirm_never_ask),
+                        style = RelayText.MessageBody,
+                    )
                 }
             }
         },
         confirmButton = {
-            FilledTonalButton(onClick = { onConfirm(neverAskAgain) }) {
-                Text(stringResource(R.string.action_send))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_send),
+                onClick = { onConfirm(neverAskAgain) },
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
                 onClick = onDismiss,
                 modifier = Modifier.focusRequester(cancelFocusRequester),
-            ) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            )
         },
     )
 }

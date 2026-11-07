@@ -125,6 +125,126 @@ class IncomingReactionDecoderTest {
         assertThat(result.previewPrefix).isEqualTo("Hello")
     }
 
+    // ──────────────── Apple Messages tapbacks (English) ────────────────
+
+    @Test fun `decodes iPhone Loved tapback with curly quotes`() {
+        val result = IncomingReactionDecoder.decode("Loved “Hello”")
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("❤️")
+        assertThat(result.previewPrefix).isEqualTo("Hello")
+        assertThat(result.isRemoval).isFalse()
+    }
+
+    @Test fun `decodes iPhone tapbacks with straight quotes`() {
+        assertThat(IncomingReactionDecoder.decode("Liked \"Hello\"")!!.emoji)
+            .isEqualTo("👍")
+        assertThat(IncomingReactionDecoder.decode("Disliked \"Hello\"")!!.emoji)
+            .isEqualTo("👎")
+        assertThat(IncomingReactionDecoder.decode("Laughed at \"Hello\"")!!.emoji)
+            .isEqualTo("😂")
+        assertThat(IncomingReactionDecoder.decode("Emphasized \"Hello\"")!!.emoji)
+            .isEqualTo("‼️")
+        assertThat(IncomingReactionDecoder.decode("Questioned \"Hello\"")!!.emoji)
+            .isEqualTo("❓")
+    }
+
+    @Test fun `decodes iPhone tapback with truncation marker`() {
+        val result = IncomingReactionDecoder.decode("Loved “Lorem ipsum dolor sit…”")
+        assertThat(result).isNotNull()
+        assertThat(result!!.previewPrefix).isEqualTo("Lorem ipsum dolor sit")
+        assertThat(result.wasTruncated).isTrue()
+    }
+
+    @Test fun `decodes iPhone tapback removals`() {
+        val heart = IncomingReactionDecoder.decode("Removed a heart from “Hello”")
+        assertThat(heart).isNotNull()
+        assertThat(heart!!.emoji).isEqualTo("❤️")
+        assertThat(heart.previewPrefix).isEqualTo("Hello")
+        assertThat(heart.isRemoval).isTrue()
+        assertThat(IncomingReactionDecoder.decode("Removed a like from “Hello”")!!.emoji)
+            .isEqualTo("👍")
+        assertThat(
+            IncomingReactionDecoder.decode("Removed a laugh from “Hello”")!!.isRemoval,
+        ).isTrue()
+        assertThat(
+            IncomingReactionDecoder.decode("Removed ❤️ from “Hello”")!!.isRemoval,
+        ).isTrue()
+    }
+
+    @Test fun `iPhone tapback wording without quotes is NOT decoded`() {
+        assertThat(IncomingReactionDecoder.decode("Loved the movie last night")).isNull()
+        assertThat(IncomingReactionDecoder.decode("I loved \"that\"")).isNull()
+        assertThat(IncomingReactionDecoder.decode("Loved \"\"")).isNull()
+        // Generic removal needs a real emoji, not a word.
+        assertThat(
+            IncomingReactionDecoder.decode("Removed the meeting from \"Friday\""),
+        ).isNull()
+    }
+
+    // ──────────────── Google Messages invisible-char format ────────────────
+
+    private fun googleBody(
+        emoji: String,
+        original: String,
+        separator: Char = '\u200B',
+    ): String = "\u200A" + "sender" + separator + emoji + separator +
+        "tag" + "\u200A" + original + "\u200A" + "tail" + "\u200A"
+
+    @Test fun `decodes Google Messages reaction from raw body`() {
+        val result = IncomingReactionDecoder.decodeGoogleFormat(
+            googleBody("❤️", "Hello world"),
+        )
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("❤️")
+        assertThat(result.previewPrefix).isEqualTo("Hello world")
+        assertThat(result.isRemoval).isFalse()
+    }
+
+    @Test fun `decodes Google Messages removal (U+200C separators)`() {
+        val result = IncomingReactionDecoder.decodeGoogleFormat(
+            googleBody("👍", "Hello world", separator = '\u200C'),
+        )
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("👍")
+        assertThat(result.previewPrefix).isEqualTo("Hello world")
+        assertThat(result.isRemoval).isTrue()
+    }
+
+    @Test fun `decodes Google Messages reaction with truncated preview`() {
+        val result = IncomingReactionDecoder.decodeGoogleFormat(
+            googleBody("😂", "Lorem ipsum dolor sit…"),
+        )
+        assertThat(result).isNotNull()
+        assertThat(result!!.previewPrefix).isEqualTo("Lorem ipsum dolor sit")
+        assertThat(result.wasTruncated).isTrue()
+    }
+
+    @Test fun `Google format without framing is NOT decoded`() {
+        assertThat(IncomingReactionDecoder.decodeGoogleFormat("❤️ Hello")).isNull()
+        assertThat(
+            IncomingReactionDecoder.decodeGoogleFormat(
+                "\u200B❤️\u200BHello\u200A",
+            ),
+        ).isNull()
+        // Missing the closing frame.
+        assertThat(
+            IncomingReactionDecoder.decodeGoogleFormat(
+                "\u200Asender\u200B❤️\u200Btag\u200AHello\u200Atail",
+            ),
+        ).isNull()
+        // Empty emoji slot / empty preview.
+        assertThat(
+            IncomingReactionDecoder.decodeGoogleFormat(
+                googleBody("", "Hello"),
+            ),
+        ).isNull()
+        assertThat(
+            IncomingReactionDecoder.decodeGoogleFormat(
+                googleBody("❤️", ""),
+            ),
+        ).isNull()
+    }
+
     // ──────────────── v1.6.0 audit Q4 — ReDoS regression ────────────────
 
     @Test fun `decode rejects oversized body fast (ReDoS guard)`() {

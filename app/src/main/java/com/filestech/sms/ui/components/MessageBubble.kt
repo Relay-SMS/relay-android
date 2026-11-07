@@ -16,6 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -123,6 +127,11 @@ fun MessageBubble(
 
     val shape = bubbleShape(isOut, burstPosition)
 
+    // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
+    // le menu ([BubbleMenu]), un appui long garde la sélection libre ([onSelectText]),
+    // et un tap sur un message FAILED garde le retry ([onTap]).
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(
             horizontal = 12.dp,
@@ -131,39 +140,12 @@ fun MessageBubble(
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
-        // Outgoing: trigger sits to the LEFT of the bubble. Menu carries Reply / Translate /
-        // Delete (in that order; Delete in red at the bottom of the list).
-        if (isOut) {
-            BubbleMenuTrigger(
-                onCopy = onCopy,
-                onSelectText = onSelectText,
-                onForward = onForward,
-                onReply = onReply,
-                onTranslate = onTranslate,
-                onReact = onReact,
-                starred = message.starred,
-                onToggleStar = onToggleStar,
-                onDelete = onDelete,
-            )
-        }
         // Stack the optional reply quote ABOVE the bubble — same horizontal alignment so it
         // visually anchors to the same side as the bubble. Inline column to keep the row
         // layout intact.
-        // v1.28.7 — LE BOUTON ⋮ EST MESURÉ AVANT LA BULLE. Un `Row` mesure d'abord ses enfants
-        // SANS poids, dans l'ordre : la bulle, plafonnée à une largeur FIXE de 320 dp, prenait
-        // tout ce qu'elle voulait, et le bouton de 40 dp recevait le reste. Une bulle pleine
-        // exige 384 dp avec les marges ; mesuré sur émulateur, le bouton tombait à 16 dp sur un
-        // écran de 360 dp avec un long message, et à 0 dp sur 320 dp — le menu (copier,
-        // transférer, répondre, favori, supprimer) devenait inatteignable. Trouvé par un test
-        // de la v1.28.6 sur l'émulateur étroit de la CI.
-        //
-        // `weight(1f, fill = false)` fait mesurer la colonne APRÈS le bouton, dans l'espace qui
-        // reste, sans l'étirer : une bulle courte garde sa largeur naturelle, et l'alignement
-        // d'entrée ou de sortie est inchangé.
-        //
-        // Seules les bulles ENTRANTES étaient écrasées : pour une sortante, le bouton précède la
-        // bulle dans le `Row`, il était donc déjà mesuré en premier. Contrôle négatif mesuré : sans
-        // ce poids, le test entrant tombe et le test sortant reste vert.
+        // `weight(1f, fill = false)` : la bulle prend la largeur qu'il lui faut (plafonnée
+        // à 320 dp) sans s'étirer sur toute la ligne ; une bulle courte garde sa largeur
+        // naturelle, et l'alignement d'entrée ou de sortie est inchangé.
         Column(
             modifier = Modifier.weight(1f, fill = false),
             horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
@@ -190,18 +172,40 @@ fun MessageBubble(
                             if (isOut) Modifier.drawBehind { drawRect(outgoingBrush) }
                             else Modifier.background(com.filestech.sms.ui.theme.bubbleIncomingColor(cs)),
                         )
-                        // v1.3.11 (F3) — long-press on the bubble. v1.28.6 — it no longer copies
-                        // the whole body (a duplicate of the ⋮ « Copier » entry) but opens the
-                        // free text selection ([onSelectText]). Falls back to a plain `clickable`
-                        // when unavailable so tap-to-retry on FAILED rows stays untouched.
+                        // Relay — tap opens the bubble menu ([BubbleMenu]) ; tap on a
+                        // FAILED message still retries ([onTap]). v1.28.6 — long-press no longer
+                        // copies the whole body (a duplicate of the « Copier » menu entry) but
+                        // opens the free text selection ([onSelectText]). Falls back to a plain
+                        // `clickable` when unavailable so tap-to-retry on FAILED rows stays
+                        // untouched.
                         .then(
                             if (onSelectText != null) {
                                 Modifier.combinedClickable(
-                                    onClick = onTap,
+                                    onClick = {
+                                        if (
+                                            message.status ==
+                                            com.filestech.sms.domain.model.Message.Status.FAILED
+                                        ) {
+                                            onTap()
+                                        } else {
+                                            menuExpanded = true
+                                        }
+                                    },
                                     onLongClick = onSelectText,
                                 )
                             } else {
-                                Modifier.clickable(onClick = onTap)
+                                Modifier.clickable(
+                                    onClick = {
+                                        if (
+                                            message.status ==
+                                            com.filestech.sms.domain.model.Message.Status.FAILED
+                                        ) {
+                                            onTap()
+                                        } else {
+                                            menuExpanded = true
+                                        }
+                                    },
+                                )
                             },
                         )
                         .padding(PaddingValues(horizontal = 14.dp, vertical = 10.dp)),
@@ -254,17 +258,20 @@ fun MessageBubble(
                                 onPhoneClick = onPhoneClick,
                             )
                         }
+                        // Relay — heure (+ statut sortant) en petit, en bas à droite,
+                        // À L'INTÉRIEUR de la bulle, alignée sur la dernière ligne de texte.
+                        BubbleTimestamp(
+                            message = message,
+                            showTimestamp = showTimestamp,
+                            textColor = textColor,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
                     }
                 }
             }
-            // v1.7.1 — inline TranslationBlock removed (was rendering an in-app
-            // translation result from ML Kit). Translation now happens out-of-process
-            // via ACTION_PROCESS_TEXT — the user's chosen translation app shows the
-            // result in its own UI, so no in-bubble overlay is needed anymore.
-        }
-        // Incoming: trigger sits to the RIGHT of the bubble.
-        if (!isOut) {
-            BubbleMenuTrigger(
+            BubbleMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
                 onCopy = onCopy,
                 onSelectText = onSelectText,
                 onForward = onForward,
@@ -275,6 +282,10 @@ fun MessageBubble(
                 onToggleStar = onToggleStar,
                 onDelete = onDelete,
             )
+            // v1.7.1 — inline TranslationBlock removed (was rendering an in-app
+            // translation result from ML Kit). Translation now happens out-of-process
+            // via ACTION_PROCESS_TEXT — the user's chosen translation app shows the
+            // result in its own UI, so no in-bubble overlay is needed anymore.
         }
     }
     // v1.11.0 — Sujet 3 anti-smishing : bandeau rouge sous la bulle entrante
@@ -284,13 +295,6 @@ fun MessageBubble(
     if (!isOut && smishingReasons.isNotEmpty()) {
         SmishingBanner(reasons = smishingReasons)
     }
-    // 2026-10-29 (issue #53) — ligne commune aux trois bulles, cf. [MessageStatusLine].
-    MessageStatusLine(
-        message = message,
-        isOut = isOut,
-        showTimestamp = showTimestamp,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp),
-    )
 }
 
 /**

@@ -31,7 +31,7 @@ import timber.log.Timber
  * La seule technique connue pour bypasser ce kill est : **forcer le processus à être visible
  * comme "service au premier plan"** via `startForeground` + une notification persistante
  * dans le shade. C'est exactement ce que font WhatsApp ("WhatsApp se reconnecte..."),
- * Signal, Telegram, et toutes les apps anti-spam SMS. Le service ne fait RIEN d'autre :
+ * Telegram et toutes les apps anti-spam SMS. Le service ne fait RIEN d'autre :
  * pas de logique métier, pas de polling, pas de réseau, pas de wakelock — juste être
  * là pour que MIUI/HarmonyOS classent SMS Tech parmi les apps "user-active".
  *

@@ -25,7 +25,7 @@ import com.filestech.sms.ui.security.SensitiveClipboard
  * ⋮, et rien ne permettait d'en copier une partie. La sélection se fait ici, hors de la liste, et
  * non dans la bulle : dans une `LazyColumn`, la sélection par appui long et glissement se bat avec
  * le défilement, avec le tap-pour-réessayer des messages en échec et avec les liens cliquables.
- * Signal, Google Messages font de même.
+ * Google Messages fait de même.
  *
  * Le corps est affiché tel quel, sans liens ni numéros cliquables : ici on sélectionne, on ne
  * navigue pas.

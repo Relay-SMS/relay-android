@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,10 +24,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +44,7 @@ import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.ui.theme.BrandBlue
 import com.filestech.sms.ui.theme.bubbleIncomingColor
 import timber.log.Timber
 import java.io.File
@@ -62,7 +68,7 @@ import java.io.File
  * fichier que celui partagé. Cohérent avec l'audit F1 PDF Tech (allowed roots).
  *
  * Cohérence visuelle : reuse [outgoingBubbleColor] / [bubbleIncomingColor] et le
- * [BubbleMenuTrigger] (delete/reply/react) du pattern existant — l'utilisateur a
+ * [BubbleMenu] (delete/reply/react) du pattern existant — l'utilisateur a
  * les mêmes actions que sur les bulles texte/audio.
  */
 @Composable
@@ -106,15 +112,23 @@ fun MediaAttachmentBubble(
     val context = LocalContext.current
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
-    // Outgoing : primary (couleur de marque) ; Incoming : slate-blue d'app (cohérent
-    // avec MessageBubble / AudioMessageBubble).
-    val bgColor = if (isOut) cs.primary else bubbleIncomingColor(cs)
+    // Outgoing : bleu de marque fixe (cohérent avec [MessageBubble] et
+    // [AudioMessageBubble]). Phase 8 — pas le `primary` du thème, qui s'éclaircit en
+    // sombre : les bulles sortantes gardent un seul bleu dans les deux thèmes, et le
+    // texte sortant reste blanc (voir ci-dessous).
+    val bgColor = if (isOut) BrandBlue else bubbleIncomingColor(cs)
     val shape = RoundedCornerShape(18.dp)
 
     // X-04 — une seule fonction d'ouverture, paramétrée par la pièce jointe touchée.
     val ouvrir: (Attachment) -> Unit = remember(message.id) {
         fun(cible: Attachment) = ouvrirPieceJointe(context, cible)
     }
+
+    // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
+    // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe (le
+    // `clickable` interne consomme le geste avant ce parent) ; l'appui long garde la
+    // sélection libre de la légende quand il y en a une.
+    var menuExpanded by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -123,20 +137,12 @@ fun MediaAttachmentBubble(
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isOut) {
-            BubbleMenuTrigger(
-                onCopy = onCopy,
-                onSelectText = onSelectText,
-                onForward = onForward,
-                onReply = onReply,
-                onReact = onReact,
-                starred = message.starred,
-                onToggleStar = onToggleStar,
-                onDelete = onDelete,
-            )
-        }
         Column(
             horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
+            modifier = Modifier.combinedClickable(
+                onClick = { menuExpanded = true },
+                onLongClick = onSelectText,
+            ),
         ) {
             if (repliedToPreview != null) {
                 ReplyQuoteCard(
@@ -186,7 +192,9 @@ fun MediaAttachmentBubble(
                 MessageTextWithLinks(
                     text = message.body,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (isOut) cs.onPrimary else cs.onSurface,
+                    // Phase 8 — blanc fixe sur le bleu de marque fixe sortant : `onPrimary`
+                    // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
+                    color = if (isOut) Color.White else cs.onSurface,
                     onPhoneClick = onPhoneClick,
                     modifier = Modifier
                         .widthIn(max = 240.dp)
@@ -195,9 +203,18 @@ fun MediaAttachmentBubble(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
-        }
-        if (!isOut) {
-            BubbleMenuTrigger(
+            // Relay — heure (+ statut sortant) en petit, en bas à droite de la
+            // bulle. Pour une pièce jointe sans légende, elle se place sous la vignette,
+            // faute de fond de bulle où l'inscrire.
+            BubbleTimestamp(
+                message = message,
+                showTimestamp = showTimestamp,
+                textColor = cs.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, end = 4.dp),
+            )
+            BubbleMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
                 onCopy = onCopy,
                 onSelectText = onSelectText,
                 onForward = onForward,
@@ -209,15 +226,6 @@ fun MediaAttachmentBubble(
             )
         }
     }
-    // 2026-10-29 (issue #53) — une photo n'affichait AUCUN statut : `showTimestamp` était reçu et
-    // jamais lu, et un envoi en échec ne se distinguait pas d'un envoi parti. Mêmes marges que la
-    // bulle texte.
-    MessageStatusLine(
-        message = message,
-        isOut = isOut,
-        showTimestamp = showTimestamp,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp),
-    )
 }
 
 /** Une pièce jointe, selon son type : vignette, icône vidéo ou icône de fichier. */
@@ -387,14 +395,15 @@ private fun IconAttachment(
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val textColor = if (isOutgoing) cs.onPrimary else cs.onSurface
+    // Phase 8 — blanc fixe sur le bleu de marque fixe sortant (voir [bgColor] plus haut) :
+    // `onPrimary` devient bleu nuit en sombre.
+    val textColor = if (isOutgoing) Color.White else cs.onSurface
     // v1.3.10 — fill the bubble for BOTH directions. Before, outgoing got only a 1.5 dp
     // border around a transparent interior; that pattern relied on the body placeholder text
     // ("📎 filename.pdf") underneath to fill the visual space. With the v1.3.10 body /
     // previewLabel decoupling, outgoing files without a user caption have body = "" → the
-    // bordered shell looks like a hollow white blob. Aligning with [MessageBubble] +
-    // [AudioMessageBubble] (always filled with the brand-primary background, text in
-    // onPrimary) restores visual coherence across all outgoing bubble types.
+    // bordered shell looks like a hollow white blob. Filling with the fixed brand blue
+    // (text in fixed white, see above) keeps all outgoing bubble types coherent.
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier

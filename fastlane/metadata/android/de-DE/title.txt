@@ -1,1 +1,1 @@
-SMS Relay
+Relay – SMS & MMS Messenger

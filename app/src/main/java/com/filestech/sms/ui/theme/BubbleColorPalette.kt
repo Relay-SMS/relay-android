@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
  * de contraste ≥ 4.5:1 avec le texte blanc (WCAG AA pour texte normal).
  * Le user choisit dans cette grille fermée — pas de color picker libre —
  * pour garantir la lisibilité du texte des bulles dans tous les thèmes
- * (clair, sombre, AMOLED, Dark Tech).
+ * (clair, sombre).
  *
  * Les couleurs sont stockées en ARGB Int dans
  * [com.filestech.sms.data.local.db.entity.ConversationEntity.bubbleColorArgb]
@@ -28,7 +28,7 @@ import androidx.compose.ui.graphics.Color
 internal object BubbleColorPalette {
 
     /** Bleu marque par défaut — sélection = reset à `null` dans la persistance. */
-    val BRAND_BLUE: Color = Color(0xFF2460AB)
+    val BRAND_BLUE: Color = Color(0xFF1E4FD8)
 
     /**
      * Couleurs alternatives, choisies pour rester sobres et lisibles

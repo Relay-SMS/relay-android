@@ -7,7 +7,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,7 +14,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -25,41 +23,61 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PersonOff
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Sms
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,7 +89,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -88,10 +105,21 @@ import com.filestech.sms.system.notifications.CANAL_DU_RACCOURCI_D_URGENCE
 import com.filestech.sms.system.notifications.canalDesMessages
 import com.filestech.sms.system.settings.ouvrirLesNotificationsDeLApplication
 import com.filestech.sms.ui.components.BanniereNotificationsCoupees
+import com.filestech.sms.ui.components.RelayDestructiveButton
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayPickerDialog
+import com.filestech.sms.ui.components.RelayPickerOption
+import com.filestech.sms.ui.components.RelayPrimaryButton
+import com.filestech.sms.ui.components.RelayRow
+import com.filestech.sms.ui.components.RelaySection
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.rememberPermissionAccordee
 import com.filestech.sms.ui.components.rememberPermissionLocalisation
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.security.ProtectSecretInput
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.util.daySeparatorLabel
 import com.filestech.sms.ui.util.libelleDeDuree
 import com.filestech.sms.ui.util.rememberChatFormatters
@@ -324,7 +352,17 @@ fun SettingsScreen(
         }
     }
 
+    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section rows sit on
+    // the canvas (see RelaySection). Picked from the surface luminance so it follows the
+    // active scheme, dark variants included.
+    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        RelayColors.CanvasDark
+    } else {
+        RelayColors.Surface
+    }
+
     Scaffold(
+        containerColor = pageBackground,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
@@ -345,9 +383,8 @@ fun SettingsScreen(
         ) {
             Spacer(Modifier.size(4.dp))
 
-            SectionCard(
+            RelaySection(
                 title = stringResource(R.string.settings_section_appearance),
-                icon = Icons.Outlined.Palette,
             ) {
                 ThemeSwatchPicker(
                     current = state.appearance.themeMode,
@@ -355,17 +392,20 @@ fun SettingsScreen(
                 )
                 ToggleRow(
                     title = stringResource(R.string.settings_dynamic_colors),
+                    leadingIcon = Icons.Outlined.Palette,
                     value = state.appearance.dynamicColors,
                     onChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(dynamicColors = v)) } },
                 )
                 ToggleRow(
                     title = stringResource(R.string.settings_amoled),
+                    leadingIcon = Icons.Outlined.DarkMode,
                     value = state.appearance.amoledTrueBlack,
                     onChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(amoledTrueBlack = v)) } },
                 )
                 // 2026-10-29 — taille du texte des messages, cf. [com.filestech.sms.ui.theme.MessageTextSize].
                 NavigationRow(
                     title = stringResource(R.string.settings_text_scale),
+                    leadingIcon = Icons.Outlined.FormatSize,
                     description = stringResource(
                         R.string.settings_text_scale_desc,
                         textScaleLabel(state.appearance.textScale),
@@ -385,24 +425,24 @@ fun SettingsScreen(
             // Réservé à Android 13+ : en dessous, la page n'existe pas et l'intent n'ouvrirait
             // rien. Une entrée qui ne fait rien est pire que pas d'entrée.
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                SectionCard(
+                RelaySection(
                     title = stringResource(R.string.settings_section_locale),
-                    icon = Icons.Outlined.Language,
                 ) {
                     NavigationRow(
                         title = stringResource(R.string.settings_language),
+                        leadingIcon = Icons.Outlined.Language,
                         description = stringResource(R.string.settings_language_desc),
                         onClick = { ouvrirLaLangueDeLApplication(ctx) },
                     )
                 }
             }
 
-            SectionCard(
+            RelaySection(
                 title = stringResource(R.string.settings_section_conversations),
-                icon = Icons.Outlined.Forum,
             ) {
                 ToggleRow(
                     title = stringResource(R.string.settings_show_avatars),
+                    leadingIcon = Icons.Outlined.PersonOutline,
                     value = state.conversations.showAvatars,
                     onChange = { v -> viewModel.update { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
                 )
@@ -416,23 +456,25 @@ fun SettingsScreen(
                 )
             }
 
-            SectionCard(
+            RelaySection(
                 title = stringResource(R.string.settings_section_sending),
-                icon = Icons.AutoMirrored.Outlined.Send,
             ) {
                 ToggleRow(
                     title = stringResource(R.string.settings_delivery_reports),
+                    leadingIcon = Icons.Outlined.Check,
                     value = state.sending.deliveryReports,
                     onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(deliveryReports = v)) } },
                 )
                 ToggleRow(
                     title = stringResource(R.string.settings_confirm_broadcast),
+                    leadingIcon = Icons.Outlined.WarningAmber,
                     value = state.sending.confirmBeforeBroadcast,
                     onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) } },
                 )
                 // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
                 ToggleRow(
                     title = stringResource(R.string.settings_group_mms),
+                    leadingIcon = Icons.Outlined.Group,
                     value = state.sending.groupMms,
                     onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) } },
                     description = stringResource(R.string.settings_group_mms_hint),
@@ -455,6 +497,7 @@ fun SettingsScreen(
                     ?: stringResource(R.string.settings_default_region_auto)
                 NavigationRow(
                     title = stringResource(R.string.settings_default_region_title),
+                    leadingIcon = Icons.Outlined.Public,
                     description = defaultRegionLabel,
                     onClick = { defaultRegionPickerOpen = true },
                 )
@@ -463,6 +506,7 @@ fun SettingsScreen(
                 // dans SMS Tech). La description prévient explicitement du coût SMS.
                 ToggleRow(
                     title = stringResource(R.string.settings_send_reactions_title),
+                    leadingIcon = Icons.Outlined.EmojiEmotions,
                     description = stringResource(R.string.settings_send_reactions_desc),
                     value = state.sending.sendReactionsToRecipient,
                     onChange = { v ->
@@ -487,6 +531,8 @@ fun SettingsScreen(
                     exit = fadeOut() + shrinkVertically(),
                 ) {
                     val reactionFormatLabel = when (state.sending.reactionFormat) {
+                        com.filestech.sms.domain.model.ReactionFormat.IOS_TAPBACK ->
+                            stringResource(R.string.settings_reaction_format_ios)
                         com.filestech.sms.domain.model.ReactionFormat.READABLE_FR ->
                             stringResource(R.string.settings_reaction_format_fr)
                         com.filestech.sms.domain.model.ReactionFormat.TAPBACK_EN ->
@@ -498,6 +544,7 @@ fun SettingsScreen(
                     }
                     NavigationRow(
                         title = stringResource(R.string.settings_reaction_format_title),
+                        leadingIcon = Icons.Outlined.ChatBubbleOutline,
                         description = reactionFormatLabel,
                         onClick = { reactionFormatPickerOpen = true },
                     )
@@ -561,9 +608,8 @@ fun SettingsScreen(
             // cohérence avec Mode urgence : ne pas révéler à l'agresseur
             // l'existence des features de sécurité personnelle.
             if (!isPanicDecoy) {
-                SectionCard(
+                RelaySection(
                     title = stringResource(R.string.settings_section_safety_call),
-                    icon = Icons.Outlined.Shield,
                 ) {
                     val safetyCall = state.security.safetyCall
                     // Hissés au niveau de la composition : les appeler dans le lambda déclencherait
@@ -633,6 +679,7 @@ fun SettingsScreen(
                     } else {
                         NavigationRow(
                             title = stringResource(R.string.settings_safety_call_title),
+                            leadingIcon = Icons.Outlined.Shield,
                             // v1.27.3 (relecture Codex, SC-1273-05) — L'ÉTAT TERMINAL SE DIT ICI.
                             //
                             // Le désarmement de fin de séquence écrit `enabled = false` dans la
@@ -673,9 +720,8 @@ fun SettingsScreen(
                 )
             }
 
-            SectionCard(
+            RelaySection(
                 title = stringResource(R.string.settings_section_blocking),
-                icon = Icons.Outlined.Block,
             ) {
                 // v1.28.13 (balayage des permissions refusées, MR F-Droid !38458) — sans accès aux
                 // contacts, `IncomingBlockPolicy` ne peut savoir qui est inconnu et laisse TOUT
@@ -684,6 +730,7 @@ fun SettingsScreen(
                 val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
                 ToggleRow(
                     title = stringResource(R.string.settings_block_unknown),
+                    leadingIcon = Icons.Outlined.Block,
                     value = state.blocking.blockUnknown,
                     onChange = { v -> viewModel.update { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },
                     // 2026-10-29 — l'effet est dit AVANT d'activer : `IncomingBlockPolicy` écarte le
@@ -697,7 +744,11 @@ fun SettingsScreen(
                         stringResource(R.string.settings_block_unknown_desc)
                     },
                 )
-                NavigationRow(stringResource(R.string.settings_manage_blocked), onClick = onOpenBlocked)
+                NavigationRow(
+                    title = stringResource(R.string.settings_manage_blocked),
+                    leadingIcon = Icons.Outlined.PersonOff,
+                    onClick = onOpenBlocked,
+                )
             }
 
             // v1.15.1 — Section dédiée Messages programmés. Avant : noyée dans "Blocage" →
@@ -715,12 +766,12 @@ fun SettingsScreen(
             // depuis une conversation du coffre, sans jamais demander le second facteur.
             // `ScheduledMessageRepositoryImpl` applique désormais la même règle de visibilité
             // que les conversations — en leurre comme coffre fermé, la liste est vide.
-            SectionCard(
+            RelaySection(
                 title = stringResource(R.string.settings_section_scheduled),
-                icon = Icons.Outlined.Schedule,
             ) {
                 NavigationRow(
                     title = stringResource(R.string.settings_scheduled_messages),
+                    leadingIcon = Icons.Outlined.Schedule,
                     description = stringResource(R.string.settings_scheduled_messages_desc),
                     onClick = onOpenScheduledMessages,
                 )
@@ -739,19 +790,29 @@ fun SettingsScreen(
             // (`BackupService.writeSmsbk` refuse en `PanicDecoy`) ; ceci évite en plus de
             // proposer une action vouée au refus.
             if (!isPanicDecoy) {
-                SectionCard(
+                RelaySection(
                     title = stringResource(R.string.settings_section_backup),
-                    icon = Icons.Outlined.Backup,
                 ) {
-                    NavigationRow(stringResource(R.string.settings_backup_now), onClick = onOpenBackup)
-                    NavigationRow(stringResource(R.string.settings_restore), onClick = onOpenBackup)
-                    NavigationRow(stringResource(R.string.migration_title), onClick = onOpenMigration)
+                    NavigationRow(
+                        title = stringResource(R.string.settings_backup_now),
+                        leadingIcon = Icons.Outlined.Backup,
+                        onClick = onOpenBackup,
+                    )
+                    NavigationRow(
+                        title = stringResource(R.string.settings_restore),
+                        leadingIcon = Icons.Outlined.Refresh,
+                        onClick = onOpenBackup,
+                    )
+                    NavigationRow(
+                        title = stringResource(R.string.migration_title),
+                        leadingIcon = Icons.Outlined.SystemUpdate,
+                        onClick = onOpenMigration,
+                    )
                 }
             }
 
-            SectionCard(
+            RelaySection(
                 title = stringResource(R.string.settings_section_advanced),
-                icon = Icons.Outlined.Tune,
             ) {
                 // v1.27.12 — le bouton passe SOUS la description au lieu d'occuper le
                 // `trailingContent`. Meme defaut que le bandeau de [ConversationsScreen] et meme
@@ -759,28 +820,49 @@ fun SettingsScreen(
                 // colonne de quelques caracteres. Visible des qu'on cumule un ecran etroit et une
                 // police agrandie — mesure sur un Redmi 9C a 360 dp et `font_scale` 1,33.
                 val estParDefaut = viewModel.defaultAppManager.isDefault()
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.settings_default_sms_app)) },
-                    supportingContent = {
-                        Column {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Sms,
+                            contentDescription = null,
+                            tint = RelayColors.Blue,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.settings_default_sms_app),
+                                style = RelayText.MessageBody,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
                             Text(
                                 text = if (estParDefaut) {
                                     stringResource(R.string.settings_is_default)
                                 } else {
                                     stringResource(R.string.error_not_default_app)
                                 },
+                                style = RelayText.Timestamp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (!estParDefaut) {
-                                Spacer(Modifier.size(10.dp))
-                                Button(onClick = {
-                                    viewModel.defaultAppManager.buildChangeDefaultIntent()
-                                        ?.let { defaultLauncher.launch(it) }
-                                }) { Text(stringResource(R.string.settings_set_default)) }
-                            }
                         }
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
+                    }
+                    if (!estParDefaut) {
+                        Spacer(Modifier.size(10.dp))
+                        RelayPrimaryButton(
+                            text = stringResource(R.string.settings_set_default),
+                            onClick = {
+                                viewModel.defaultAppManager.buildChangeDefaultIntent()
+                                    ?.let { defaultLauncher.launch(it) }
+                            },
+                        )
+                    }
+                }
                 // Audit U15: label said "Archived" but the row opened the Blocked screen. Removed —
                 // archived conversations are reached from the Conversations top bar (icon Inventory2),
                 // and the Blocked list has its own dedicated row right above.
@@ -789,6 +871,7 @@ fun SettingsScreen(
                 // indépendamment de l'app). Le re-import dedup via l'index UNIQUE telephony_uri.
                 NavigationRow(
                     title = stringResource(R.string.settings_resync_title),
+                    leadingIcon = Icons.Outlined.Sync,
                     description = stringResource(R.string.settings_resync_desc),
                     // v1.8.0 — dialog de confirmation (peut faire ré-apparaître
                     // des conversations précédemment supprimées si toujours
@@ -806,6 +889,7 @@ fun SettingsScreen(
                 // comprendre la notif persistante.
                 ToggleRow(
                     title = stringResource(R.string.settings_keep_alive_title),
+                    leadingIcon = Icons.Outlined.Bolt,
                     description = stringResource(R.string.settings_keep_alive_desc),
                     value = state.advanced.keepAliveService,
                     onChange = { v ->
@@ -830,47 +914,44 @@ fun SettingsScreen(
                 // [SettingsViewModel.resetAll] qui préserve désormais le bloc sécurité, et c'est
                 // le bon endroit : un garde d'écran ne dit rien du prochain point d'entrée.
                 NavigationRow(
-                    stringResource(R.string.settings_reset_all),
+                    title = stringResource(R.string.settings_reset_all),
+                    leadingIcon = Icons.Outlined.RestartAlt,
                     onClick = { showResetAllConfirm = true },
                 )
                 NavigationRow(
-                    stringResource(R.string.settings_nuke_data),
+                    title = stringResource(R.string.settings_nuke_data),
+                    leadingIcon = Icons.Outlined.DeleteForever,
                     onClick = { showNuke = true },
                     destructive = true,
                 )
             }
 
             Spacer(Modifier.size(8.dp))
-            // About lives outside the card stack — it's a meta link, not a settings group.
-            Column(modifier = Modifier.padding(horizontal = 12.dp)) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = com.filestech.sms.ui.theme.settingsBlockColor(MaterialTheme.colorScheme),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    NavigationRow(stringResource(R.string.about_title), onClick = onOpenAbout)
-                }
-            }
+            // About lives outside the section stack — it's a meta link, not a settings group.
+            NavigationRow(
+                title = stringResource(R.string.about_title),
+                leadingIcon = Icons.Outlined.Info,
+                onClick = onOpenAbout,
+            )
             Spacer(Modifier.size(24.dp))
         }
     }
 
     if (showNuke) {
         // Audit U16: destructive dialog — Cancel really autofocused (FocusRequester wired below)
-        // + confirm action surfaced in errorContainer so accidental taps require visual intent.
+        // + confirm action in the error red so accidental taps require visual intent.
         // The "nuke" call is irreversible.
         val cancelFocus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
         LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { showNuke = false },
-            title = { Text(stringResource(R.string.settings_nuke_data)) },
+            title = stringResource(R.string.settings_nuke_data),
             // v1.28.6 — l'avertissement dit desormais que les messages du TELEPHONE partent aussi
             // (c'est ce que la purge fait depuis cette version), et, quand SMS Tech n'est pas
             // l'application SMS par defaut, que le systeme le lui refusera. Deux textes plutot
             // qu'un seul conditionnel : celui qui s'ajoute est un AVERTISSEMENT, il porte la
             // couleur d'erreur, et la promesse principale ne se reecrit pas selon l'etat.
-            text = {
+            content = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.settings_nuke_confirm))
                     if (!viewModel.defaultAppManager.isDefault()) {
@@ -882,21 +963,19 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayDestructiveButton(
+                    text = stringResource(R.string.action_delete),
                     onClick = { viewModel.nukeData(); showNuke = false },
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        containerColor = androidx.compose.ui.graphics.Color(0xFFC62828),
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.action_delete)) }
+                )
             },
             dismissButton = {
-                TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { showNuke = false },
                     modifier = Modifier
                         .focusRequester(cancelFocus)
                         .focusable(),
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -912,8 +991,15 @@ fun SettingsScreen(
     // [EffacementIncompletTexte] : l'écran est au seuil de complexité de detekt.
     nukeResultat?.let { resultat ->
         val incomplet = resultat.incomplet
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { /* lecture obligatoire : seul le bouton ferme */ },
+            title = stringResource(
+                if (incomplet) {
+                    R.string.settings_nuke_residue_title
+                } else {
+                    R.string.settings_nuke_done_title
+                },
+            ),
             icon = {
                 Icon(
                     imageVector = if (incomplet) Icons.Outlined.WarningAmber else Icons.Outlined.Check,
@@ -925,23 +1011,8 @@ fun SettingsScreen(
                     },
                 )
             },
-            title = {
-                Text(
-                    text = stringResource(
-                        if (incomplet) {
-                            R.string.settings_nuke_residue_title
-                        } else {
-                            R.string.settings_nuke_done_title
-                        },
-                    ),
-                    color = if (incomplet) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-            },
-            text = {
+            titleColor = if (incomplet) MaterialTheme.colorScheme.error else null,
+            content = {
                 if (incomplet) {
                     EffacementIncompletTexte(resultat)
                 } else {
@@ -949,10 +1020,13 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    nukeResultat = null
-                    viewModel.terminerEffacement()
-                }) { Text(stringResource(R.string.action_close)) }
+                RelayTextButton(
+                    text = stringResource(R.string.action_close),
+                    onClick = {
+                        nukeResultat = null
+                        viewModel.terminerEffacement()
+                    },
+                )
             },
         )
     }
@@ -1100,20 +1174,24 @@ fun SettingsScreen(
     }
 
     if (panicCodeClearConfirmOpen) {
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { panicCodeClearConfirmOpen = false },
-            title = { Text(stringResource(R.string.settings_panic_code_clear_title)) },
-            text = { Text(stringResource(R.string.settings_panic_code_clear_body)) },
+            title = stringResource(R.string.settings_panic_code_clear_title),
+            content = { Text(stringResource(R.string.settings_panic_code_clear_body)) },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.clearPanicCode()
-                    panicCodeClearConfirmOpen = false
-                }) { Text(stringResource(R.string.settings_panic_code_clear_action)) }
+                RelayTextButton(
+                    text = stringResource(R.string.settings_panic_code_clear_action),
+                    onClick = {
+                        viewModel.clearPanicCode()
+                        panicCodeClearConfirmOpen = false
+                    },
+                )
             },
             dismissButton = {
-                TextButton(onClick = { panicCodeClearConfirmOpen = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = { panicCodeClearConfirmOpen = false },
+                )
             },
         )
     }
@@ -1146,34 +1224,32 @@ fun SettingsScreen(
 
     // v1.8.0 — Dialog de confirmation : Resync depuis le téléphone.
     // Pattern Files Tech : autofocus Cancel + bouton confirm primary action.
-    // v1.10.0 — BrandBlue + blanc (demande user 2026-05-21), action non
-    // destructive (re-importe depuis content://sms, pas de perte).
+    // Action non destructive (re-importe depuis content://sms, pas de perte).
     if (showResyncConfirm) {
         val cancelFocus = remember { FocusRequester() }
         LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { showResyncConfirm = false },
-            title = { Text(stringResource(R.string.settings_resync_confirm_title)) },
-            text = { Text(stringResource(R.string.settings_resync_confirm_body)) },
+            title = stringResource(R.string.settings_resync_confirm_title),
+            content = { Text(stringResource(R.string.settings_resync_confirm_body)) },
             confirmButton = {
-                androidx.compose.material3.Button(
+                RelayTextButton(
+                    text = stringResource(R.string.action_confirm),
                     onClick = {
                         viewModel.forceResyncFromTelephony()
                         showResyncConfirm = false
                     },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = com.filestech.sms.ui.theme.BrandBlue,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.action_confirm)) }
+                    confirm = true,
+                )
             },
             dismissButton = {
-                TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { showResyncConfirm = false },
                     modifier = Modifier
                         .focusRequester(cancelFocus)
                         .focusable(),
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -1181,7 +1257,6 @@ fun SettingsScreen(
     // v1.8.0 — Dialog de confirmation : Réinitialiser tous les réglages.
     // Pattern Files Tech : autofocus Cancel — l'user qui tape rapidement après
     // un précédent dialog ne réinitialise pas par réflexe.
-    // v1.10.0 — confirm BrandBlue + blanc (demande user 2026-05-21).
     // Action remet les réglages aux défauts mais NE touche PAS aux messages
     // (donc non-destructive au sens contenu utilisateur), ni — depuis v1.27.11 — aux
     // réglages de sécurité. Le corps du dialogue le dit maintenant explicitement : il
@@ -1189,29 +1264,28 @@ fun SettingsScreen(
     if (showResetAllConfirm) {
         val cancelFocus = remember { FocusRequester() }
         LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { showResetAllConfirm = false },
-            title = { Text(stringResource(R.string.settings_reset_all_confirm_title)) },
-            text = { Text(stringResource(R.string.settings_reset_all_confirm_body)) },
+            title = stringResource(R.string.settings_reset_all_confirm_title),
+            content = { Text(stringResource(R.string.settings_reset_all_confirm_body)) },
             confirmButton = {
-                androidx.compose.material3.Button(
+                RelayTextButton(
+                    text = stringResource(R.string.action_confirm),
                     onClick = {
                         viewModel.resetAll()
                         showResetAllConfirm = false
                     },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = com.filestech.sms.ui.theme.BrandBlue,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.action_confirm)) }
+                    confirm = true,
+                )
             },
             dismissButton = {
-                TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { showResetAllConfirm = false },
                     modifier = Modifier
                         .focusRequester(cancelFocus)
                         .focusable(),
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -1222,32 +1296,27 @@ fun SettingsScreen(
     if (showPurgeBlockedConfirm) {
         val cancelFocus = remember { FocusRequester() }
         LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { showPurgeBlockedConfirm = false },
-            title = { Text(stringResource(R.string.settings_purge_blocked_confirm_title)) },
-            text = { Text(stringResource(R.string.settings_purge_blocked_confirm_body)) },
+            title = stringResource(R.string.settings_purge_blocked_confirm_title),
+            content = { Text(stringResource(R.string.settings_purge_blocked_confirm_body)) },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayDestructiveButton(
+                    text = stringResource(R.string.action_delete),
                     onClick = {
                         viewModel.purgeBlockedConversations()
                         showPurgeBlockedConfirm = false
                     },
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        // v1.9.0 — passe de `errorContainer` (rose pâle Material 3)
-                        // à `BrandDanger` (rouge logo) pour cohérence cross-app
-                        // avec les autres boutons destructifs.
-                        containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.action_delete)) }
+                )
             },
             dismissButton = {
-                TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { showPurgeBlockedConfirm = false },
                     modifier = Modifier
                         .focusRequester(cancelFocus)
                         .focusable(),
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -1307,33 +1376,31 @@ fun SettingsScreen(
     }
 
     // v1.25.3 (audit M23) — Dialog confirmation désactivation du verrou de l'app. Même patron
-    // que le retrait du PIN du coffre juste en dessous : confirm BrandDanger, Annuler autofocus.
+    // que le retrait du PIN du coffre juste en dessous : confirm rouge destructif, Annuler autofocus.
     if (lockClearConfirmOpen) {
         val cancelFocus = remember { FocusRequester() }
         // `runCatching` comme dans `DestructiveConfirmDialog` : `requestFocus()` jette si le nœud
         // n'est pas encore attaché, et perdre l'autofocus vaut mieux que planter les Réglages.
         LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { lockClearConfirmOpen = false },
-            title = { Text(stringResource(R.string.settings_lock_clear_confirm_title)) },
-            text = { Text(stringResource(R.string.settings_lock_clear_confirm_body)) },
+            title = stringResource(R.string.settings_lock_clear_confirm_title),
+            content = { Text(stringResource(R.string.settings_lock_clear_confirm_body)) },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayDestructiveButton(
+                    text = stringResource(R.string.settings_lock_clear_confirm_action),
                     onClick = {
                         viewModel.clearLock()
                         lockClearConfirmOpen = false
                     },
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.settings_lock_clear_confirm_action)) }
+                )
             },
             dismissButton = {
-                TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { lockClearConfirmOpen = false },
                     modifier = Modifier.focusRequester(cancelFocus).focusable(),
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -1368,27 +1435,25 @@ fun SettingsScreen(
         val cancelFocus = remember { FocusRequester() }
         // Même garde que les autres confirmations destructives de l'écran.
         LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { vaultPinForgetConfirmOpen = false },
-            title = { Text(stringResource(R.string.settings_vault_pin_forgot_confirm_title)) },
-            text = { Text(stringResource(R.string.settings_vault_pin_forgot_confirm_body)) },
+            title = stringResource(R.string.settings_vault_pin_forgot_confirm_title),
+            content = { Text(stringResource(R.string.settings_vault_pin_forgot_confirm_body)) },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayDestructiveButton(
+                    text = stringResource(R.string.settings_vault_pin_forgot_confirm_action),
                     onClick = {
                         viewModel.forgetVaultPinAndPurge()
                         vaultPinForgetConfirmOpen = false
                     },
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.settings_vault_pin_forgot_confirm_action)) }
+                )
             },
             dismissButton = {
-                TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { vaultPinForgetConfirmOpen = false },
                     modifier = Modifier.focusRequester(cancelFocus).focusable(),
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -1406,31 +1471,29 @@ fun SettingsScreen(
     if (resteAuTelephone != null) {
         val cancelFocus = remember { FocusRequester() }
         LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { vaultPinForceConfirm = null },
-            title = { Text(stringResource(R.string.settings_vault_pin_force_title)) },
-            text = {
+            title = stringResource(R.string.settings_vault_pin_force_title),
+            content = {
                 Text(
                     stringResource(R.string.settings_vault_pin_force_body, resteAuTelephone),
                 )
             },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayDestructiveButton(
+                    text = stringResource(R.string.settings_vault_pin_force_action),
                     onClick = {
                         viewModel.forgetVaultPinAndPurge(force = true)
                         vaultPinForceConfirm = null
                     },
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.settings_vault_pin_force_action)) }
+                )
             },
             dismissButton = {
-                TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { vaultPinForceConfirm = null },
                     modifier = Modifier.focusRequester(cancelFocus).focusable(),
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -1455,64 +1518,29 @@ private fun PreviewModePickerDialog(
     onSelect: (com.filestech.sms.domain.settings.PreviewMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_notif_preview)) },
-        text = {
-            Column {
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_notif_preview_always),
-                    hint = null,
-                    selected = current == com.filestech.sms.domain.settings.PreviewMode.ALWAYS,
-                    onClick = { onSelect(com.filestech.sms.domain.settings.PreviewMode.ALWAYS) },
-                )
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_notif_preview_unlocked),
-                    hint = stringResource(R.string.settings_notif_preview_unlocked_hint),
-                    selected = current == com.filestech.sms.domain.settings.PreviewMode.WHEN_UNLOCKED,
-                    onClick = { onSelect(com.filestech.sms.domain.settings.PreviewMode.WHEN_UNLOCKED) },
-                )
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_notif_preview_never),
-                    hint = stringResource(R.string.settings_notif_preview_never_hint),
-                    selected = current == com.filestech.sms.domain.settings.PreviewMode.NEVER,
-                    onClick = { onSelect(com.filestech.sms.domain.settings.PreviewMode.NEVER) },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-        },
+    RelayPickerDialog(
+        title = stringResource(R.string.settings_notif_preview),
+        options = listOf(
+            RelayPickerOption(
+                label = stringResource(R.string.settings_notif_preview_always),
+                selected = current == com.filestech.sms.domain.settings.PreviewMode.ALWAYS,
+                onClick = { onSelect(com.filestech.sms.domain.settings.PreviewMode.ALWAYS) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_notif_preview_unlocked),
+                hint = stringResource(R.string.settings_notif_preview_unlocked_hint),
+                selected = current == com.filestech.sms.domain.settings.PreviewMode.WHEN_UNLOCKED,
+                onClick = { onSelect(com.filestech.sms.domain.settings.PreviewMode.WHEN_UNLOCKED) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_notif_preview_never),
+                hint = stringResource(R.string.settings_notif_preview_never_hint),
+                selected = current == com.filestech.sms.domain.settings.PreviewMode.NEVER,
+                onClick = { onSelect(com.filestech.sms.domain.settings.PreviewMode.NEVER) },
+            ),
+        ),
+        onDismiss = onDismiss,
     )
-}
-
-@Composable
-private fun PreviewModeOption(
-    label: String,
-    hint: String?,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        androidx.compose.material3.RadioButton(selected = selected, onClick = onClick)
-        Spacer(Modifier.size(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label)
-            if (hint != null) {
-                Text(
-                    hint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
 }
 
 /**
@@ -1534,40 +1562,41 @@ private fun ReactionFormatPickerDialog(
     onSelect: (com.filestech.sms.domain.model.ReactionFormat) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_reaction_format_title)) },
-        text = {
-            Column {
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_reaction_format_fr),
-                    hint = stringResource(R.string.settings_reaction_format_fr_hint),
-                    selected = current == com.filestech.sms.domain.model.ReactionFormat.READABLE_FR,
-                    onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.READABLE_FR) },
-                )
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_reaction_format_en),
-                    hint = stringResource(R.string.settings_reaction_format_en_hint),
-                    selected = current == com.filestech.sms.domain.model.ReactionFormat.TAPBACK_EN,
-                    onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.TAPBACK_EN) },
-                )
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_reaction_format_emoji_quote),
-                    hint = stringResource(R.string.settings_reaction_format_emoji_quote_hint),
-                    selected = current == com.filestech.sms.domain.model.ReactionFormat.EMOJI_WITH_QUOTE,
-                    onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.EMOJI_WITH_QUOTE) },
-                )
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_reaction_format_emoji),
-                    hint = stringResource(R.string.settings_reaction_format_emoji_hint),
-                    selected = current == com.filestech.sms.domain.model.ReactionFormat.EMOJI_ONLY,
-                    onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.EMOJI_ONLY) },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-        },
+    RelayPickerDialog(
+        title = stringResource(R.string.settings_reaction_format_title),
+        options = listOf(
+            RelayPickerOption(
+                label = stringResource(R.string.settings_reaction_format_ios),
+                hint = stringResource(R.string.settings_reaction_format_ios_hint),
+                selected = current == com.filestech.sms.domain.model.ReactionFormat.IOS_TAPBACK,
+                onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.IOS_TAPBACK) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_reaction_format_fr),
+                hint = stringResource(R.string.settings_reaction_format_fr_hint),
+                selected = current == com.filestech.sms.domain.model.ReactionFormat.READABLE_FR,
+                onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.READABLE_FR) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_reaction_format_en),
+                hint = stringResource(R.string.settings_reaction_format_en_hint),
+                selected = current == com.filestech.sms.domain.model.ReactionFormat.TAPBACK_EN,
+                onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.TAPBACK_EN) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_reaction_format_emoji_quote),
+                hint = stringResource(R.string.settings_reaction_format_emoji_quote_hint),
+                selected = current == com.filestech.sms.domain.model.ReactionFormat.EMOJI_WITH_QUOTE,
+                onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.EMOJI_WITH_QUOTE) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_reaction_format_emoji),
+                hint = stringResource(R.string.settings_reaction_format_emoji_hint),
+                selected = current == com.filestech.sms.domain.model.ReactionFormat.EMOJI_ONLY,
+                onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.EMOJI_ONLY) },
+            ),
+        ),
+        onDismiss = onDismiss,
     )
 }
 
@@ -1583,30 +1612,24 @@ private fun DefaultRegionPickerDialog(
     onSelect: (String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_default_region_title)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_default_region_auto),
-                    hint = stringResource(R.string.settings_default_region_auto_hint),
-                    selected = current == null,
-                    onClick = { onSelect(null) },
-                )
-                for (opt in DEFAULT_REGION_OPTIONS) {
-                    PreviewModeOption(
-                        label = "${isoToFlagEmoji(opt.iso)} ${regionDisplayName(opt.iso)}",
-                        hint = opt.dialCode,
-                        selected = current.equals(opt.iso, ignoreCase = true),
-                        onClick = { onSelect(opt.iso) },
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-        },
+    val autoOption = RelayPickerOption(
+        label = stringResource(R.string.settings_default_region_auto),
+        hint = stringResource(R.string.settings_default_region_auto_hint),
+        selected = current == null,
+        onClick = { onSelect(null) },
+    )
+    val regionOptions = DEFAULT_REGION_OPTIONS.map { opt ->
+        RelayPickerOption(
+            label = "${isoToFlagEmoji(opt.iso)} ${regionDisplayName(opt.iso)}",
+            hint = opt.dialCode,
+            selected = current.equals(opt.iso, ignoreCase = true),
+            onClick = { onSelect(opt.iso) },
+        )
+    }
+    RelayPickerDialog(
+        title = stringResource(R.string.settings_default_region_title),
+        options = listOf(autoOption) + regionOptions,
+        onDismiss = onDismiss,
     )
 }
 
@@ -1652,34 +1675,29 @@ private fun NotificationStylePickerDialog(
     onSelect: (com.filestech.sms.domain.settings.NotificationStyle) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_notif_style)) },
-        text = {
-            Column {
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_notif_style_heads_up),
-                    hint = stringResource(R.string.settings_notif_style_heads_up_hint),
-                    selected = current == com.filestech.sms.domain.settings.NotificationStyle.HEADS_UP,
-                    onClick = { onSelect(com.filestech.sms.domain.settings.NotificationStyle.HEADS_UP) },
-                )
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_notif_style_banner),
-                    hint = stringResource(R.string.settings_notif_style_banner_hint),
-                    selected = current == com.filestech.sms.domain.settings.NotificationStyle.BANNER,
-                    onClick = { onSelect(com.filestech.sms.domain.settings.NotificationStyle.BANNER) },
-                )
-                PreviewModeOption(
-                    label = stringResource(R.string.settings_notif_style_silent),
-                    hint = stringResource(R.string.settings_notif_style_silent_hint),
-                    selected = current == com.filestech.sms.domain.settings.NotificationStyle.SILENT,
-                    onClick = { onSelect(com.filestech.sms.domain.settings.NotificationStyle.SILENT) },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-        },
+    RelayPickerDialog(
+        title = stringResource(R.string.settings_notif_style),
+        options = listOf(
+            RelayPickerOption(
+                label = stringResource(R.string.settings_notif_style_heads_up),
+                hint = stringResource(R.string.settings_notif_style_heads_up_hint),
+                selected = current == com.filestech.sms.domain.settings.NotificationStyle.HEADS_UP,
+                onClick = { onSelect(com.filestech.sms.domain.settings.NotificationStyle.HEADS_UP) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_notif_style_banner),
+                hint = stringResource(R.string.settings_notif_style_banner_hint),
+                selected = current == com.filestech.sms.domain.settings.NotificationStyle.BANNER,
+                onClick = { onSelect(com.filestech.sms.domain.settings.NotificationStyle.BANNER) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.settings_notif_style_silent),
+                hint = stringResource(R.string.settings_notif_style_silent_hint),
+                selected = current == com.filestech.sms.domain.settings.NotificationStyle.SILENT,
+                onClick = { onSelect(com.filestech.sms.domain.settings.NotificationStyle.SILENT) },
+            ),
+        ),
+        onDismiss = onDismiss,
     )
 }
 
@@ -1699,25 +1717,16 @@ private fun AutoLockDelayPickerDialog(
     onPick: (AutoLockDelay) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_auto_lock_delay_dialog_title)) },
-        text = {
-            Column {
-                autoLockDelayOptions().forEach { (delay, label) ->
-                    LockModeOption(
-                        label = label,
-                        selected = current == delay,
-                        onClick = { onPick(delay) },
-                    )
-                }
-            }
+    RelayPickerDialog(
+        title = stringResource(R.string.settings_auto_lock_delay_dialog_title),
+        options = autoLockDelayOptions().map { (delay, label) ->
+            RelayPickerOption(
+                label = label,
+                selected = current == delay,
+                onClick = { onPick(delay) },
+            )
         },
-        confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
-        },
+        onDismiss = onDismiss,
     )
 }
 
@@ -1749,51 +1758,40 @@ private fun LockModePickerDialog(
     onPick: (com.filestech.sms.domain.settings.LockMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.lock_mode_dialog_title)) },
-        text = {
-            Column {
-                LockModeOption(
-                    label = stringResource(R.string.lock_mode_off),
-                    selected = currentMode == com.filestech.sms.domain.settings.LockMode.OFF,
-                    onClick = { onPick(com.filestech.sms.domain.settings.LockMode.OFF) },
-                )
-                LockModeOption(
-                    label = stringResource(R.string.lock_mode_pin),
-                    selected = currentMode == com.filestech.sms.domain.settings.LockMode.PIN,
-                    onClick = { onPick(com.filestech.sms.domain.settings.LockMode.PIN) },
-                )
-                LockModeOption(
-                    label = stringResource(R.string.lock_mode_biometric),
-                    selected = currentMode == com.filestech.sms.domain.settings.LockMode.BIOMETRIC,
-                    onClick = { onPick(com.filestech.sms.domain.settings.LockMode.BIOMETRIC) },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-        },
+    RelayPickerDialog(
+        title = stringResource(R.string.lock_mode_dialog_title),
+        options = listOf(
+            RelayPickerOption(
+                label = stringResource(R.string.lock_mode_off),
+                selected = currentMode == com.filestech.sms.domain.settings.LockMode.OFF,
+                onClick = { onPick(com.filestech.sms.domain.settings.LockMode.OFF) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.lock_mode_pin),
+                selected = currentMode == com.filestech.sms.domain.settings.LockMode.PIN,
+                onClick = { onPick(com.filestech.sms.domain.settings.LockMode.PIN) },
+            ),
+            RelayPickerOption(
+                label = stringResource(R.string.lock_mode_biometric),
+                selected = currentMode == com.filestech.sms.domain.settings.LockMode.BIOMETRIC,
+                onClick = { onPick(com.filestech.sms.domain.settings.LockMode.BIOMETRIC) },
+            ),
+        ),
+        onDismiss = onDismiss,
     )
 }
 
+/**
+ * Small secondary label above a filled field inside a dialog — the filled
+ * [RelayTextField] carries no floating label of its own.
+ */
 @Composable
-private fun LockModeOption(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        androidx.compose.material3.RadioButton(
-            selected = selected,
-            onClick = onClick,
-        )
-        Spacer(Modifier.size(8.dp))
-        Text(label)
-    }
+private fun DialogFieldLabel(text: String) {
+    Text(
+        text = text,
+        style = RelayText.Timestamp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**
@@ -1827,34 +1825,37 @@ private fun PinSetupDialog(
     val mismatch = pin.isNotEmpty() && confirm.isNotEmpty() && pin != confirm
     val canSubmit = digitsOnly && !tooShort && pin == confirm
 
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(titleRes)) },
-        text = {
+        title = stringResource(titleRes),
+        content = {
             // v1.27.1 (N3) — DANS le contenu du dialogue (PIN principal ET code panique).
             ProtectSecretInput()
-            Column {
-                androidx.compose.material3.OutlinedTextField(
-                    value = pin,
-                    onValueChange = { if (it.length <= 12) pin = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.pin_setup_field)) },
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
-                    ),
-                )
-                Spacer(Modifier.size(8.dp))
-                androidx.compose.material3.OutlinedTextField(
-                    value = confirm,
-                    onValueChange = { if (it.length <= 12) confirm = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.pin_setup_confirm)) },
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
-                    ),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DialogFieldLabel(stringResource(R.string.pin_setup_field))
+                    RelayTextField(
+                        value = pin,
+                        onValueChange = { if (it.length <= 12) pin = it },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                        ),
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DialogFieldLabel(stringResource(R.string.pin_setup_confirm))
+                    RelayTextField(
+                        value = confirm,
+                        onValueChange = { if (it.length <= 12) confirm = it },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+                        ),
+                    )
+                }
                 val errorMessage = when {
                     !digitsOnly -> stringResource(R.string.pin_setup_digits_only)
                     pin.isNotEmpty() && tooShort -> stringResource(R.string.pin_setup_too_short)
@@ -1862,17 +1863,17 @@ private fun PinSetupDialog(
                     else -> null
                 }
                 if (errorMessage != null) {
-                    Spacer(Modifier.size(6.dp))
                     Text(
                         text = errorMessage,
                         color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = RelayText.Timestamp,
                     )
                 }
             }
         },
         confirmButton = {
-            Button(
+            RelayTextButton(
+                text = stringResource(R.string.action_confirm),
                 onClick = {
                     val chars = pin.toCharArray()
                     pin = ""
@@ -1880,25 +1881,30 @@ private fun PinSetupDialog(
                     onConfirm(chars)
                 },
                 enabled = canSubmit,
-            ) { Text(stringResource(R.string.action_confirm)) }
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = {
-                pin = ""
-                confirm = ""
-                onDismiss()
-            }) { Text(stringResource(R.string.action_cancel)) }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = {
+                    pin = ""
+                    confirm = ""
+                    onDismiss()
+                },
+            )
         },
     )
 }
 
 /**
- * Single toggle line. Pass [description] to surface a small explanatory line under the title
- * (Material 3 `supportingContent`) — useful for security/privacy toggles whose effect is not
- * obvious from the title alone.
+ * Single toggle line of the grouped list: a 50dp row with a 22dp blue leading glyph, a
+ * 16sp/400 title and an optional 13sp secondary description, trailing switch. Pass
+ * [description] to surface a small explanatory line under the title — useful for
+ * security/privacy toggles whose effect is not obvious from the title alone.
  *
- * The container is forced transparent so the parent [SectionCard]'s tinted surface shows
- * through and the whole section reads as one unified group.
+ * The whole row is one TalkBack node (`Modifier.toggleable(role = Role.Switch)`); the
+ * inner Switch has `onCheckedChange = null` and delegates to it.
  */
 @Composable
 private fun ToggleRow(
@@ -1906,11 +1912,11 @@ private fun ToggleRow(
     value: Boolean,
     onChange: (Boolean) -> Unit,
     description: String? = null,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     // v1.2.6 polish : Row compact à la place du `ListItem` (qui forçait min-height 56/72 dp et
     // un Switch pleine taille). On garde un touch target ≥ 48 dp via `heightIn` tout en
-    // resserrant les paddings verticaux. Switch légèrement scaled-down (0.85f) pour qu'il
-    // pèse moins dans l'œil — purement visuel, le hit-area natif reste intact.
+    // resserrant les paddings verticaux.
     //
     // v1.3.7 U1 audit — `Modifier.toggleable(role = Role.Switch)` remplace `.clickable {...}` +
     // `Switch.onCheckedChange`. Avant : TalkBack annonçait DEUX éléments interactifs (la Row
@@ -1918,6 +1924,7 @@ private fun ToggleRow(
     // utilisateur. Maintenant : un seul nœud sémantique avec `Role.Switch`, le Switch interne
     // a `onCheckedChange = null` (délègue au parent toggleable). Pattern Material 3 officiel
     // recommandé pour les "selectable list items" → toggle entier sans double-tap a11y.
+    val cs = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1926,17 +1933,26 @@ private fun ToggleRow(
                 role = Role.Switch,
                 onValueChange = onChange,
             )
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .heightIn(min = 50.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (leadingIcon != null) {
+            Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                tint = RelayColors.Blue,
+                modifier = Modifier.size(22.dp),
+            )
+        }
         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(title, style = RelayText.MessageBody, color = cs.onSurface)
             if (description != null) {
                 Text(
                     description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = RelayText.Timestamp,
+                    color = cs.onSurfaceVariant,
                 )
             }
         }
@@ -1945,7 +1961,6 @@ private fun ToggleRow(
             // v1.3.7 U1 audit — `null` délègue le clic au `Modifier.toggleable` parent
             // (fusion sémantique, un seul élément interactif côté TalkBack/Switch Access).
             onCheckedChange = null,
-            modifier = Modifier.scale(0.85f),
         )
     }
 }
@@ -1956,36 +1971,37 @@ private fun NavigationRow(
     onClick: () -> Unit,
     destructive: Boolean = false,
     description: String? = null,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
-    // Aligné sur ToggleRow ci-dessus pour une densité visuelle homogène dans les SectionCard.
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-            if (description != null) {
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    // One grouped-list row: 22dp blue leading glyph, 16sp/400 title, optional 13sp
+    // secondary description, trailing chevron. The danger-zone row renders its title in
+    // the error red instead.
+    RelayRow(
+        title = title,
+        subtitle = description,
+        onClick = onClick,
+        leadingIcon = if (leadingIcon != null) {
+            {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = RelayColors.Blue,
+                    modifier = Modifier.size(22.dp),
                 )
             }
-        }
-        Icon(
-            Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+        } else {
+            null
+        },
+        trailing = {
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+        },
+        titleColor = if (destructive) RelayColors.Error else null,
+    )
 }
 
 /**
@@ -2025,7 +2041,7 @@ private fun ThemeSwatchPicker(
             Spacer(Modifier.size(10.dp))
             Text(
                 text = stringResource(R.string.settings_theme_dark_tech_desc),
-                style = MaterialTheme.typography.bodySmall,
+                style = RelayText.Timestamp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -2142,9 +2158,9 @@ private fun swatchPalette(mode: com.filestech.sms.domain.settings.ThemeMode): Sw
         )
         com.filestech.sms.domain.settings.ThemeMode.LIGHT -> SwatchPalette(
             background = Color(0xFFFFFFFF),
-            accent = Color(0xFF1565C0),
+            accent = RelayColors.Blue,
             incomingBubble = Color(0xFFE7ECF3),
-            outgoingBubble = Color(0xFF1565C0),
+            outgoingBubble = RelayColors.Blue,
         )
         com.filestech.sms.domain.settings.ThemeMode.DARK -> SwatchPalette(
             background = Color(0xFF15171C),
@@ -2160,52 +2176,6 @@ private fun swatchPalette(mode: com.filestech.sms.domain.settings.ThemeMode): Sw
         )
     }
 
-/**
- * Groups related settings inside a soft tinted card with an icon-led header. Visual replacement
- * for the previous flat [SectionHeader] approach — the screen now reads as a stack of clearly
- * separated topical groups, which is what users expect from a top-tier Settings screen on
- * Android 14+ (Samsung One UI 6, Pixel Material 3, etc.).
- */
-@Composable
-private fun SectionCard(
-    title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-        Row(
-            modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(Modifier.size(10.dp))
-            // v1.2.6 polish : grossi titleMedium + SemiBold pour les en-têtes de section.
-            // Anciennement labelLarge ~14sp qui se perdait visuellement dans la page.
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                ),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            // v1.25.1 : fond gris/bleu clair + liseré gris discret (outlineVariant), pour que
-            // chaque groupe de réglages se détache du fond de page sans surcharge visuelle.
-            color = com.filestech.sms.ui.theme.settingsBlockColor(MaterialTheme.colorScheme),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(content = content)
-        }
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  v1.2.6 audit F4 — "Mon numéro" row + dialog + auto-detection helper
@@ -2311,48 +2281,52 @@ private fun SignatureRow(current: String?, onChange: (String?) -> Unit) {
     var dialogOpen by remember { mutableStateOf(false) }
     NavigationRow(
         title = stringResource(R.string.settings_signature),
+        leadingIcon = Icons.Outlined.Edit,
         description = current?.takeIf { it.isNotBlank() }
             ?: stringResource(R.string.settings_signature_none),
         onClick = { dialogOpen = true },
     )
     if (dialogOpen) {
         var value by remember { mutableStateOf(current.orEmpty()) }
-        androidx.compose.material3.AlertDialog(
+        RelayDialog(
             onDismissRequest = { dialogOpen = false },
-            title = { Text(stringResource(R.string.settings_signature)) },
-            text = {
-                Column {
+            title = stringResource(R.string.settings_signature),
+            content = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         stringResource(R.string.settings_signature_dialog_body),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = RelayText.Timestamp,
                         color = cs.onSurfaceVariant,
                     )
-                    Spacer(Modifier.size(12.dp))
-                    androidx.compose.material3.OutlinedTextField(
+                    RelayTextField(
                         value = value,
                         onValueChange = { if (it.length <= SIGNATURE_MAX_CHARS) value = it },
-                        placeholder = { Text(stringResource(R.string.settings_signature_placeholder)) },
-                        supportingText = {
-                            Text("${value.length} / $SIGNATURE_MAX_CHARS")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = stringResource(R.string.settings_signature_placeholder),
+                    )
+                    Text(
+                        text = "${value.length} / $SIGNATURE_MAX_CHARS",
+                        style = RelayText.Timestamp,
+                        color = cs.onSurfaceVariant,
                     )
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_save),
                     onClick = {
                         dialogOpen = false
                         // Une signature vide vaut « pas de signature » : on repose `null` pour
                         // que `SendSmsUseCase` retombe sur sa branche sans suffixe.
                         onChange(value.trim().takeIf { it.isNotBlank() })
                     },
-                ) { Text(stringResource(R.string.action_save)) }
+                    confirm = true,
+                )
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { dialogOpen = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = { dialogOpen = false },
+                )
             },
         )
     }
@@ -2364,30 +2338,13 @@ private const val SIGNATURE_MAX_CHARS = 80
 @Composable
 private fun MyNumberRow(current: String?, onChange: (String?) -> Unit) {
     var dialogOpen by remember { mutableStateOf(false) }
-    val cs = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { dialogOpen = true }
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.settings_my_number), style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = current?.takeIf { it.isNotBlank() }
-                    ?: stringResource(R.string.settings_my_number_not_set),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (current.isNullOrBlank()) cs.onSurfaceVariant else cs.primary,
-            )
-        }
-        Icon(
-            Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = cs.onSurfaceVariant,
-        )
-    }
+    NavigationRow(
+        title = stringResource(R.string.settings_my_number),
+        description = current?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.settings_my_number_not_set),
+        leadingIcon = Icons.Outlined.PhoneAndroid,
+        onClick = { dialogOpen = true },
+    )
     if (dialogOpen) {
         MyNumberDialog(
             initial = current.orEmpty(),
@@ -2409,7 +2366,7 @@ private fun MyNumberDialog(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var value by remember { mutableStateOf(initial) }
-    // v1.2.7 audit Q16 : le précédent SnackbarHost imbriqué dans `AlertDialog.text` ne
+    // v1.2.7 audit Q16 : le précédent SnackbarHost imbriqué dans le contenu du dialogue ne
     // s'affichait jamais (le host n'a pas de surface dans le content slot du dialog). On
     // remplace par un message inline placé sous le bouton "Détecter".
     var detectFeedback by remember { mutableStateOf<MsisdnDetection?>(null) }
@@ -2440,33 +2397,36 @@ private fun MyNumberDialog(
     // v1.2.7 audit Q7 : la valeur est valide si vide (= clear) OU matche le pattern MSISDN.
     val canSubmit = value.isBlank() || MSISDN_PATTERN.matches(value)
 
-    androidx.compose.material3.AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_my_number_dialog_title)) },
-        text = {
-            Column {
+        title = stringResource(R.string.settings_my_number_dialog_title),
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     stringResource(R.string.settings_my_number_dialog_body),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Timestamp,
                     color = cs.onSurfaceVariant,
                 )
-                Spacer(Modifier.size(12.dp))
-                androidx.compose.material3.OutlinedTextField(
-                    value = value,
-                    onValueChange = { value = it.trim() },
-                    placeholder = { Text(stringResource(R.string.settings_my_number_placeholder)) },
-                    singleLine = true,
-                    isError = value.isNotBlank() && !MSISDN_PATTERN.matches(value),
-                    supportingText = if (value.isNotBlank() && !MSISDN_PATTERN.matches(value)) {
-                        { Text(stringResource(R.string.settings_my_number_invalid)) }
-                    } else null,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.size(8.dp))
-                androidx.compose.material3.TextButton(
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    RelayTextField(
+                        value = value,
+                        onValueChange = { value = it.trim() },
+                        placeholder = stringResource(R.string.settings_my_number_placeholder),
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone,
+                        ),
+                    )
+                    if (value.isNotBlank() && !MSISDN_PATTERN.matches(value)) {
+                        Text(
+                            text = stringResource(R.string.settings_my_number_invalid),
+                            style = RelayText.Timestamp,
+                            color = cs.error,
+                        )
+                    }
+                }
+                RelayTextButton(
+                    text = stringResource(R.string.settings_my_number_detect),
                     onClick = {
                         // v1.2.7 audit Q6 : detectMsisdn fait un binder IPC ; on l'exécute
                         // sur Dispatchers.IO pour ne pas geler le main thread.
@@ -2478,7 +2438,7 @@ private fun MyNumberDialog(
                         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                         if (!granted) {
                             permissionLauncher.launch(android.Manifest.permission.READ_PHONE_NUMBERS)
-                            return@TextButton
+                            return@RelayTextButton
                         }
                         scope.launch {
                             val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -2493,15 +2453,7 @@ private fun MyNumberDialog(
                             }
                         }
                     },
-                ) {
-                    Icon(
-                        Icons.Outlined.PhoneAndroid,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.settings_my_number_detect))
-                }
+                )
                 detectFeedback?.let { fb ->
                     val msgRes = when (fb) {
                         MsisdnDetection.PermissionDenied -> R.string.settings_my_number_detect_no_perm
@@ -2511,7 +2463,7 @@ private fun MyNumberDialog(
                     if (msgRes != null) {
                         Text(
                             text = stringResource(msgRes),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = RelayText.Timestamp,
                             color = cs.error,
                             modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp),
                         )
@@ -2520,17 +2472,18 @@ private fun MyNumberDialog(
             }
         },
         confirmButton = {
-            androidx.compose.material3.Button(
+            RelayTextButton(
+                text = stringResource(R.string.action_save),
                 onClick = { onConfirm(value) },
                 enabled = canSubmit,
-            ) {
-                Text(stringResource(R.string.action_save))
-            }
+                confirm = true,
+            )
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -2543,33 +2496,13 @@ private fun MyNumberDialog(
 @Composable
 private fun SenderNameRow(current: String?, onChange: (String?) -> Unit) {
     var dialogOpen by remember { mutableStateOf(false) }
-    val cs = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { dialogOpen = true }
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(
-                stringResource(R.string.settings_sender_name_title),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = current?.takeIf { it.isNotBlank() }
-                    ?: stringResource(R.string.settings_sender_name_auto),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (current.isNullOrBlank()) cs.onSurfaceVariant else cs.primary,
-            )
-        }
-        Icon(
-            Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = cs.onSurfaceVariant,
-        )
-    }
+    NavigationRow(
+        title = stringResource(R.string.settings_sender_name_title),
+        description = current?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.settings_sender_name_auto),
+        leadingIcon = Icons.Outlined.PersonOutline,
+        onClick = { dialogOpen = true },
+    )
     if (dialogOpen) {
         SenderNameDialog(
             initial = current.orEmpty(),
@@ -2589,39 +2522,43 @@ private fun SenderNameDialog(
     onConfirm: (String?) -> Unit,
 ) {
     var value by remember { mutableStateOf(initial) }
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_sender_name_title)) },
-        text = {
-            Column {
+        title = stringResource(R.string.settings_sender_name_title),
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     stringResource(R.string.settings_sender_name_desc),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
-                androidx.compose.material3.OutlinedTextField(
-                    value = value,
-                    onValueChange = { input ->
-                        // Cap à 40 chars au save (cf. SenderNameProviderImpl.MAX_NAME_LENGTH).
-                        value = input.take(40)
-                    },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.settings_sender_name_label)) },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DialogFieldLabel(stringResource(R.string.settings_sender_name_label))
+                    RelayTextField(
+                        value = value,
+                        onValueChange = { input ->
+                            // Cap à 40 chars au save (cf. SenderNameProviderImpl.MAX_NAME_LENGTH).
+                            value = input.take(40)
+                        },
+                        singleLine = true,
+                    )
+                }
             }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = {
-                onConfirm(value.trim().takeIf { it.isNotBlank() })
-            }) {
-                Text(stringResource(R.string.action_save))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_save),
+                onClick = {
+                    onConfirm(value.trim().takeIf { it.isNotBlank() })
+                },
+                confirm = true,
+            )
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -2672,14 +2609,14 @@ private fun AutoDeleteDialog(
         180 to stringResource(R.string.settings_auto_delete_180),
     )
     val purgeEnabled = (current ?: 0) > 0
-    androidx.compose.material3.AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_auto_delete_title)) },
-        text = {
+        title = stringResource(R.string.settings_auto_delete_title),
+        content = {
             Column {
                 Text(
                     text = stringResource(R.string.settings_auto_delete_desc),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Timestamp,
                     color = cs.onSurfaceVariant,
                 )
                 Spacer(Modifier.size(12.dp))
@@ -2694,36 +2631,36 @@ private fun AutoDeleteDialog(
                         androidx.compose.material3.RadioButton(
                             selected = current == value,
                             onClick = { onSelect(value) },
+                            colors = androidx.compose.material3.RadioButtonDefaults.colors(
+                                selectedColor = RelayColors.Blue,
+                            ),
                         )
                         Spacer(Modifier.size(8.dp))
-                        Text(label, style = MaterialTheme.typography.bodyLarge)
+                        Text(label, style = RelayText.MessageBody)
                     }
                 }
                 Spacer(Modifier.size(8.dp))
                 // Bouton manuel : déclenche d'abord [onRequestConfirm] pour afficher
                 // le sous-dialog (qui appelle [onPurgeNow] si l'utilisateur confirme).
-                androidx.compose.material3.OutlinedButton(
+                RelayDestructiveButton(
+                    text = if (purgeEnabled) {
+                        stringResource(R.string.settings_auto_delete_purge_now)
+                    } else {
+                        stringResource(R.string.settings_auto_delete_purge_now_disabled)
+                    },
                     onClick = onRequestConfirm,
                     enabled = purgeEnabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = if (purgeEnabled) {
-                            stringResource(R.string.settings_auto_delete_purge_now)
-                        } else {
-                            stringResource(R.string.settings_auto_delete_purge_now_disabled)
-                        },
-                    )
-                }
+                )
                 // `onPurgeNow` est passé au parent pour la composition du sous-dialog ;
                 // on l'utilise ici aussi pour empêcher le linter "unused parameter".
                 @Suppress("UNUSED_EXPRESSION") onPurgeNow
             }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_close),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -2751,10 +2688,10 @@ private fun PurgeNowConfirmDialog(
     LaunchedEffect(days) {
         count = runCatching { countLoader() }.getOrDefault(0)
     }
-    androidx.compose.material3.AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_auto_delete_purge_confirm_title)) },
-        text = {
+        title = stringResource(R.string.settings_auto_delete_purge_confirm_title),
+        content = {
             val resolved = count
             val body = when {
                 resolved == null -> stringResource(R.string.settings_auto_delete_purge_confirm_body, 0, days)
@@ -2764,25 +2701,18 @@ private fun PurgeNowConfirmDialog(
             Text(body, color = cs.onSurfaceVariant)
         },
         confirmButton = {
-            androidx.compose.material3.FilledTonalButton(
+            RelayDestructiveButton(
+                text = stringResource(R.string.action_delete_now),
                 onClick = onConfirm,
                 enabled = (count ?: 0) > 0,
-                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                    // v1.9.0 — `BrandDanger` (rouge logo) au lieu d'`errorContainer`.
-                    containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                    contentColor = androidx.compose.ui.graphics.Color.White,
-                ),
-            ) {
-                Text(stringResource(R.string.action_delete_now))
-            }
+            )
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
                 onClick = onDismiss,
                 modifier = Modifier.focusRequester(cancelFocus).focusable(),
-            ) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            )
         },
     )
 }
@@ -2901,7 +2831,7 @@ private fun SafetyCallArmedRecap(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stringResource(R.string.settings_safety_call_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ThreadTitle,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
@@ -2956,7 +2886,7 @@ private fun SafetyCallArmedRecap(
                         total,
                     )
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.Preview,
                 color = MaterialTheme.colorScheme.error,
             )
             Text(
@@ -2968,7 +2898,7 @@ private fun SafetyCallArmedRecap(
                 } else {
                     stringResource(R.string.settings_safety_call_triggered_hint)
                 },
-                style = MaterialTheme.typography.bodySmall,
+                style = RelayText.Timestamp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.size(4.dp))
@@ -2978,50 +2908,48 @@ private fun SafetyCallArmedRecap(
         if (!config.isTriggered && startedLabel != null) {
             Text(
                 text = startedLabel,
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.Preview,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Text(
             text = stringResource(R.string.settings_safety_call_armed_duration, durationLabel),
-            style = MaterialTheme.typography.bodyMedium,
+            style = RelayText.Preview,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text = remainingLabel,
-            style = MaterialTheme.typography.bodyMedium,
+            style = RelayText.Preview,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (contactsLabel.isNotEmpty()) {
             Text(
                 text = contactsLabel,
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.Preview,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Text(
             text = stringResource(R.string.settings_safety_call_armed_template, templateLabel),
-            style = MaterialTheme.typography.bodyMedium,
+            style = RelayText.Preview,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.size(12.dp))
         // 2 actions côte à côte. v1.9.0 UX :
-        //  - "Modifier" → OutlinedButton (action secondaire, neutre)
-        //  - "Je vais bien" → Button filled `primary` (bleu BrandBlue
-        //    du logo) car c'est l'action positive principale du récap.
+        //  - "Modifier" → RelayTextButton (action secondaire, neutre)
+        //  - "Je vais bien" → RelayPrimaryButton car c'est l'action positive
+        //    principale du récap.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.material3.OutlinedButton(
+            RelayTextButton(
+                text = stringResource(R.string.settings_safety_call_armed_modify),
                 onClick = onModify,
                 modifier = Modifier.weight(1f),
-            ) {
-                Text(stringResource(R.string.settings_safety_call_armed_modify))
-            }
-            Button(
+            )
+            RelayPrimaryButton(
+                text = stringResource(R.string.settings_safety_call_armed_im_ok_short),
                 onClick = onImOk,
                 modifier = Modifier.weight(1f),
-            ) {
-                Text(stringResource(R.string.settings_safety_call_armed_im_ok_short))
-            }
+            )
         }
         // v1.27.2 — ce que font réellement les deux boutons, écrit sous eux.
         //
@@ -3032,7 +2960,7 @@ private fun SafetyCallArmedRecap(
         Spacer(Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.settings_safety_call_armed_actions_hint),
-            style = MaterialTheme.typography.bodySmall,
+            style = RelayText.Timestamp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -3107,7 +3035,7 @@ private fun EmergencyArmedRecap(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stringResource(R.string.settings_emergency_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ThreadTitle,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
@@ -3136,37 +3064,35 @@ private fun EmergencyArmedRecap(
         Spacer(Modifier.size(8.dp))
         Text(
             text = stringResource(R.string.settings_emergency_armed_template, templateLabel),
-            style = MaterialTheme.typography.bodyMedium,
+            style = RelayText.Preview,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text = locationLabel,
-            style = MaterialTheme.typography.bodyMedium,
+            style = RelayText.Preview,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text = contactsLabel,
-            style = MaterialTheme.typography.bodyMedium,
+            style = RelayText.Preview,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.size(12.dp))
         // 2 actions côte à côte (mêmes types que SafetyCallArmedRecap) :
-        //  - "Modifier" → OutlinedButton (secondaire)
-        //  - "Ouvrir" → Button filled `primary` (BrandBlue) car c'est
-        //    l'action de référence (accéder au bouton URGENCE).
+        //  - "Modifier" → RelayTextButton (secondaire)
+        //  - "Ouvrir" → RelayPrimaryButton car c'est l'action de référence
+        //    (accéder au bouton URGENCE).
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.material3.OutlinedButton(
+            RelayTextButton(
+                text = stringResource(R.string.settings_emergency_armed_modify),
                 onClick = onModify,
                 modifier = Modifier.weight(1f),
-            ) {
-                Text(stringResource(R.string.settings_emergency_armed_modify))
-            }
-            Button(
+            )
+            RelayPrimaryButton(
+                text = stringResource(R.string.settings_emergency_armed_open),
                 onClick = onOpen,
                 modifier = Modifier.weight(1f),
-            ) {
-                Text(stringResource(R.string.settings_emergency_armed_open))
-            }
+            )
         }
     }
 }
@@ -3232,32 +3158,27 @@ private fun VaultPinSetupDialog(
     val canConfirm = pin.length >= 4 && confirm == pin && !submitting && !lockedOut &&
         (!requireCurrent || current.isNotEmpty())
 
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = { if (!submitting) onDismiss() },
-        title = {
-            Text(
-                stringResource(
-                    if (requireCurrent) {
-                        R.string.settings_vault_pin_change
-                    } else {
-                        R.string.settings_vault_pin_set_title
-                    },
-                ),
-            )
-        },
-        text = {
+        title = stringResource(
+            if (requireCurrent) {
+                R.string.settings_vault_pin_change
+            } else {
+                R.string.settings_vault_pin_set_title
+            },
+        ),
+        content = {
             // v1.27.1 (N3) — DANS le contenu du dialogue : PIN du coffre.
             ProtectSecretInput()
-            androidx.compose.foundation.layout.Column {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     text = stringResource(R.string.settings_vault_pin_set_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview,
                 )
                 if (appPinHint) {
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = stringResource(R.string.settings_vault_pin_same_as_app),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = RelayText.Timestamp,
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
@@ -3265,73 +3186,85 @@ private fun VaultPinSetupDialog(
                 // est TOUTE la correction : sans lui, remplacer le PIN du coffre ne demandait
                 // que le PIN d'application, dont on cherche precisement a se proteger.
                 if (requireCurrent) {
-                    Spacer(Modifier.height(12.dp))
-                    androidx.compose.material3.OutlinedTextField(
-                        value = current,
-                        onValueChange = {
-                            current = it.take(64)
-                            currentWrong = false
-                        },
-                        label = { Text(stringResource(R.string.settings_vault_pin_current_label)) },
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DialogFieldLabel(stringResource(R.string.settings_vault_pin_current_label))
+                        RelayTextField(
+                            value = current,
+                            onValueChange = {
+                                current = it.take(64)
+                                currentWrong = false
+                            },
+                            singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Next,
+                            ),
+                            enabled = !submitting && !lockedOut,
+                            modifier = Modifier.focusRequester(focusRequester),
+                        )
+                        if (currentWrong) {
+                            Text(
+                                text = stringResource(R.string.pin_error_invalid),
+                                style = RelayText.Timestamp,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        // v1.27.10 — hors du champ, sinon Material 3 le rend en couleur
+                        // « desactive » : cf. [com.filestech.sms.ui.components.LockoutNotice].
+                        if (lockedOut) {
+                            com.filestech.sms.ui.components.LockoutNotice(lockoutMessage)
+                        }
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DialogFieldLabel(stringResource(R.string.settings_vault_pin_new_label))
+                    RelayTextField(
+                        value = pin,
+                        onValueChange = { pin = it.take(64) },
                         singleLine = true,
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
                             imeAction = androidx.compose.ui.text.input.ImeAction.Next,
                         ),
-                        isError = currentWrong || lockedOut,
-                        supportingText = if (currentWrong) {
-                            { Text(stringResource(R.string.pin_error_invalid)) }
-                        } else null,
                         enabled = !submitting && !lockedOut,
-                        modifier = Modifier.focusRequester(focusRequester),
+                        modifier = if (requireCurrent) Modifier else Modifier.focusRequester(focusRequester),
                     )
-                    // v1.27.10 — hors du champ, sinon Material 3 le rend en couleur
-                    // « desactive » : cf. [com.filestech.sms.ui.components.LockoutNotice].
-                    if (lockedOut) {
-                        com.filestech.sms.ui.components.LockoutNotice(lockoutMessage)
+                    if (tooShort) {
+                        Text(
+                            text = stringResource(R.string.settings_vault_pin_too_short),
+                            style = RelayText.Timestamp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                androidx.compose.material3.OutlinedTextField(
-                    value = pin,
-                    onValueChange = { pin = it.take(64) },
-                    label = { Text(stringResource(R.string.settings_vault_pin_new_label)) },
-                    singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
-                        imeAction = androidx.compose.ui.text.input.ImeAction.Next,
-                    ),
-                    isError = tooShort,
-                    supportingText = if (tooShort) {
-                        { Text(stringResource(R.string.settings_vault_pin_too_short)) }
-                    } else null,
-                    enabled = !submitting && !lockedOut,
-                    modifier = if (requireCurrent) Modifier else Modifier.focusRequester(focusRequester),
-                )
-                Spacer(Modifier.height(12.dp))
-                androidx.compose.material3.OutlinedTextField(
-                    value = confirm,
-                    onValueChange = { confirm = it.take(64) },
-                    label = { Text(stringResource(R.string.settings_vault_pin_confirm_title)) },
-                    singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
-                        imeAction = androidx.compose.ui.text.input.ImeAction.Done,
-                    ),
-                    isError = mismatch,
-                    supportingText = if (mismatch) {
-                        { Text(stringResource(R.string.settings_vault_pin_mismatch)) }
-                    } else null,
-                    enabled = !submitting && !lockedOut,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DialogFieldLabel(stringResource(R.string.settings_vault_pin_confirm_title))
+                    RelayTextField(
+                        value = confirm,
+                        onValueChange = { confirm = it.take(64) },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+                        ),
+                        enabled = !submitting && !lockedOut,
+                    )
+                    if (mismatch) {
+                        Text(
+                            text = stringResource(R.string.settings_vault_pin_mismatch),
+                            style = RelayText.Timestamp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
-            Button(
-                enabled = canConfirm,
+            RelayTextButton(
+                text = stringResource(R.string.action_save),
                 onClick = {
                     submitting = true
                     // Meme hygiene qu'en v1.13.0 (audit SEC-1) : les `String` sont vides AVANT
@@ -3353,12 +3286,16 @@ private fun VaultPinSetupDialog(
                         }
                     }
                 },
-            ) { Text(stringResource(R.string.action_save)) }
+                enabled = canConfirm,
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !submitting) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+                enabled = !submitting,
+            )
         },
     )
 }
@@ -3384,12 +3321,12 @@ private fun NotificationsSection(
     onOpenStylePicker: () -> Unit,
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    SectionCard(
+    RelaySection(
         title = stringResource(R.string.settings_section_notifications),
-        icon = Icons.Outlined.Notifications,
     ) {
         ToggleRow(
             title = stringResource(R.string.settings_notifications_enabled),
+            leadingIcon = Icons.Outlined.Notifications,
             value = notifications.enabled,
             onChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(enabled = v)) } },
         )
@@ -3405,6 +3342,7 @@ private fun NotificationsSection(
         }
         ToggleRow(
             title = stringResource(R.string.settings_inline_reply),
+            leadingIcon = Icons.AutoMirrored.Outlined.Reply,
             value = notifications.inlineReply,
             onChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(inlineReply = v)) } },
         )
@@ -3424,6 +3362,7 @@ private fun NotificationsSection(
         }
         NavigationRow(
             title = stringResource(R.string.settings_notif_preview),
+            leadingIcon = Icons.Outlined.Visibility,
             description = previewLabel,
             onClick = onOpenPreviewPicker,
         )
@@ -3438,6 +3377,7 @@ private fun NotificationsSection(
         }
         NavigationRow(
             title = stringResource(R.string.settings_notif_style),
+            leadingIcon = Icons.Outlined.Tune,
             description = styleLabel,
             onClick = onOpenStylePicker,
         )
@@ -3447,6 +3387,7 @@ private fun NotificationsSection(
         // peut vérifier que ses canaux ne sont pas désactivés.
         NavigationRow(
             title = stringResource(R.string.settings_notif_open_system),
+            leadingIcon = Icons.Outlined.Settings,
             description = stringResource(R.string.settings_notif_open_system_desc),
             // v1.28.13 — même ouverture que la bannière ci-dessus, avec repli sur la fiche.
             onClick = { ouvrirLesNotificationsDeLApplication(ctx) },
@@ -3483,9 +3424,8 @@ private fun SecuritySection(
     onOpenPurgeBlockedConfirm: () -> Unit,
     onOpenAutoDeletePicker: () -> Unit,
 ) {
-    SectionCard(
+    RelaySection(
         title = stringResource(R.string.settings_section_security),
-        icon = Icons.Outlined.Shield,
     ) {
         // App lock entry — opens the lock-mode picker (None / PIN / Biometric). Subtitle
         // reflects the current state so the user sees at a glance whether the lock is armed.
@@ -3521,6 +3461,7 @@ private fun SecuritySection(
         if (!isPanicDecoy) {
             NavigationRow(
                 title = stringResource(R.string.settings_app_lock),
+                leadingIcon = Icons.Outlined.Lock,
                 description = currentLockLabel,
                 onClick = onOpenLockModePicker,
             )
@@ -3529,6 +3470,7 @@ private fun SecuritySection(
             // réglage de verrouillage, il en révélerait l'existence.
             NavigationRow(
                 title = stringResource(R.string.settings_auto_lock_delay),
+                leadingIcon = Icons.Outlined.Timer,
                 description = autoLockDelayOptions()
                     .firstOrNull { it.first == security.autoLockDelay }?.second.orEmpty(),
                 onClick = onOpenAutoLockDelayPicker,
@@ -3550,6 +3492,7 @@ private fun SecuritySection(
         if (security.lockMode != com.filestech.sms.domain.settings.LockMode.OFF && !isPanicDecoy) {
             NavigationRow(
                 title = stringResource(R.string.settings_panic_code),
+                leadingIcon = Icons.Outlined.Security,
                 description = if (panicCodeSet) {
                     stringResource(R.string.settings_panic_code_set)
                 } else {
@@ -3560,6 +3503,7 @@ private fun SecuritySection(
         }
         ToggleRow(
             title = stringResource(R.string.settings_flag_secure),
+            leadingIcon = Icons.Outlined.PrivacyTip,
             description = stringResource(R.string.settings_flag_secure_desc),
             value = security.flagSecure,
             onChange = { v -> onUpdate { it.copy(security = it.security.copy(flagSecure = v)) } },
@@ -3572,6 +3516,7 @@ private fun SecuritySection(
         if (!isPanicDecoy) {
             ToggleRow(
                 title = stringResource(R.string.settings_lock_vault_on_leave),
+                leadingIcon = Icons.Outlined.LockOpen,
                 description = stringResource(R.string.settings_lock_vault_on_leave_desc),
                 value = security.lockVaultOnLeave,
                 onChange = { v -> onUpdate { it.copy(security = it.security.copy(lockVaultOnLeave = v)) } },
@@ -3580,6 +3525,7 @@ private fun SecuritySection(
         // v1.11.0 — Sujet 3 anti-smishing.
         ToggleRow(
             title = stringResource(R.string.settings_smishing_detection),
+            leadingIcon = Icons.Outlined.Shield,
             description = stringResource(R.string.settings_smishing_detection_desc),
             value = security.smishingDetectionEnabled,
             onChange = { v ->
@@ -3599,6 +3545,7 @@ private fun SecuritySection(
         if (!isPanicDecoy) {
             ToggleRow(
                 title = stringResource(R.string.settings_vault_pin_title),
+                leadingIcon = Icons.Outlined.Key,
                 description = stringResource(R.string.settings_vault_pin_desc),
                 value = security.vaultPinEnabled,
                 onChange = { v ->
@@ -3612,6 +3559,7 @@ private fun SecuritySection(
             if (security.vaultPinEnabled) {
                 NavigationRow(
                     title = stringResource(R.string.settings_vault_pin_change),
+                    leadingIcon = Icons.Outlined.Edit,
                     onClick = onOpenVaultPinSetup,
                 )
                 // v1.27.10 — la porte de sortie « PIN oublie » a sa propre entree, visible, au
@@ -3619,6 +3567,7 @@ private fun SecuritySection(
                 // qu'elle detruit ; la bascule, elle, demande maintenant le PIN.
                 NavigationRow(
                     title = stringResource(R.string.settings_vault_pin_forgot_title),
+                    leadingIcon = Icons.Outlined.WarningAmber,
                     description = stringResource(R.string.settings_vault_pin_forgot_desc),
                     onClick = onOpenVaultPinForgetConfirm,
                 )
@@ -3626,6 +3575,7 @@ private fun SecuritySection(
         }
         NavigationRow(
             title = stringResource(R.string.settings_purge_blocked),
+            leadingIcon = Icons.Outlined.Delete,
             description = stringResource(R.string.settings_purge_blocked_desc),
             // v1.8.0 — dialog de confirmation (action irréversible).
             onClick = onOpenPurgeBlockedConfirm,
@@ -3636,6 +3586,7 @@ private fun SecuritySection(
         val explainer = stringResource(R.string.settings_auto_delete_explainer)
         NavigationRow(
             title = stringResource(R.string.settings_auto_delete_title),
+            leadingIcon = Icons.Outlined.History,
             description = "$currentRetentionLabel\n$explainer",
             onClick = onOpenAutoDeletePicker,
         )
@@ -3663,9 +3614,8 @@ private fun EmergencySection(
     positionAccordee: Boolean,
     onRequestLocationPermission: () -> Unit,
 ) {
-    SectionCard(
+    RelaySection(
         title = stringResource(R.string.settings_section_emergency),
-        icon = Icons.Outlined.WarningAmber,
     ) {
         val emergency = security.emergency
         if (emergency.enabled) {
@@ -3680,6 +3630,7 @@ private fun EmergencySection(
         } else {
             NavigationRow(
                 title = stringResource(R.string.settings_emergency_title),
+                leadingIcon = Icons.Outlined.WarningAmber,
                 description = stringResource(R.string.settings_emergency_disabled) +
                     "\n" + stringResource(R.string.settings_emergency_desc),
                 onClick = onOpenEmergencySetup,
@@ -3691,6 +3642,7 @@ private fun EmergencySection(
         if (emergency.enabled) {
             ToggleRow(
                 title = stringResource(R.string.settings_emergency_shortcut_title),
+                leadingIcon = Icons.Outlined.Notifications,
                 description = stringResource(R.string.settings_emergency_shortcut_desc),
                 value = security.emergencyShortcutEnabled,
                 onChange = { v ->
@@ -3716,6 +3668,7 @@ private fun EmergencySection(
             if (security.emergencyShortcutEnabled) {
                 ToggleRow(
                     title = stringResource(R.string.settings_emergency_call_police_title),
+                    leadingIcon = Icons.Outlined.Phone,
                     description = stringResource(R.string.settings_emergency_call_police_desc),
                     value = security.emergencyCallPoliceEnabled,
                     onChange = { v ->
@@ -3734,6 +3687,7 @@ private fun EmergencySection(
             // v1.14.0 — opt-in SMS "Je vais bien" sur kill-switch.
             ToggleRow(
                 title = stringResource(R.string.settings_send_i_am_ok_sms_title),
+                leadingIcon = Icons.Outlined.ChatBubbleOutline,
                 description = stringResource(R.string.settings_send_i_am_ok_sms_desc),
                 value = security.sendIAmOkSmsOnReset,
                 onChange = { v ->
@@ -3749,6 +3703,7 @@ private fun EmergencySection(
             // mêmes considérations que dans EmergencySetupScreen).
             ToggleRow(
                 title = stringResource(R.string.settings_emergency_include_location_title),
+                leadingIcon = Icons.Outlined.PushPin,
                 description = stringResource(R.string.settings_emergency_include_location_desc),
                 value = emergency.includeLocation,
                 onChange = { v ->

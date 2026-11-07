@@ -67,10 +67,10 @@ data class ConversationSettings(
 enum class SortMode { DATE, UNREAD_FIRST }
 
 data class SendingSettings(
-    val confirmBeforeBroadcast: Boolean = true,
+    val confirmBeforeBroadcast: Boolean = false,
     val convertToMmsAfterSegments: Int = 3,
     val mmsImageQuality: MmsImageQuality = MmsImageQuality.BALANCED,
-    val deliveryReports: Boolean = false,
+    val deliveryReports: Boolean = true,
     // v1.28.3 (F26) — `retryFailedAutomatically` RETIRE. C'etait un champ fantome, comme
     // `blockShortCodes` avant lui (v1.3.5) : affiche, persiste, restitue — et jamais lu par le
     // moindre code de production. `RetrySendUseCase` ne consulte aucun reglage, et son unique
@@ -92,7 +92,7 @@ data class SendingSettings(
      * à condition que [userMsisdn] soit renseigné, faute de quoi on ne sait pas se retirer de
      * la liste. Cf. `GroupMmsMembers`.
      */
-    val groupMms: Boolean = false,
+    val groupMms: Boolean = true,
     /**
      * v1.2.6 audit F4 — MSISDN saisi par l'utilisateur quand la détection automatique via
      * `SubscriptionManager.getActiveSubscriptionInfoForSubscriptionId(subId).number` retourne
@@ -105,12 +105,13 @@ data class SendingSettings(
     val userMsisdn: String? = null,
     /**
      * v1.3.1 — quand `true` (défaut), poser une réaction emoji sur un message reçu envoie
-     * automatiquement un SMS au correspondant contenant uniquement l'emoji (ex. "❤️"), afin
-     * que le correspondant puisse savoir que vous avez réagi. Quand `false`, la réaction
-     * reste strictement locale (badge visible uniquement dans SMS Tech).
+     * automatiquement un SMS au correspondant afin qu'il sache que vous avez réagi
+     * (forme textuelle Apple `Liked "…"` par défaut). Quand `false`, la réaction
+     * reste strictement locale (badge visible uniquement dans SMS Relay).
      *
-     * Le **changement** d'une réaction (A → B) et le **retrait** ne génèrent jamais d'envoi,
-     * pour éviter le spam SMS si l'utilisateur hésite.
+     * Le **changement** d'une réaction (A → B) envoie le nouvel emoji et le
+     * **retrait** envoie `Removed a like from "…"` : le correspondant voit
+     * l'état final, sans quoi il garderait une réaction retirée.
      */
     val sendReactionsToRecipient: Boolean = true,
     /**
@@ -133,7 +134,13 @@ data class SendingSettings(
      * v1.8.0 (bug 5 fix) — format du SMS envoyé au correspondant lors d'une réaction
      * emoji. Quatre options exposées dans Settings → Envoi → "Format des réactions" :
      *
-     *   - [ReactionFormat.EMOJI_WITH_QUOTE] (défaut v1.14.4) : `"❤️ «aperçu»"`.
+     *   - [ReactionFormat.IOS_TAPBACK] (défaut) : `Liked "aperçu"`. Forme
+     *     textuelle Apple, lisible par tout destinataire et affichée comme
+     *     badge natif par iPhone (texte), Google Messages et SMS Relay.
+     *     Guillemets droits ASCII : contrairement aux `«»` de
+     *     [ReactionFormat.EMOJI_WITH_QUOTE], ils survivent aux transcodages
+     *     opérateur (les `«»` arrivaient en `<<>>` côté correspondant).
+     *   - [ReactionFormat.EMOJI_WITH_QUOTE] : `"❤️ «aperçu»"`.
      *     Compact + contexte préservé. Le destinataire voit l'emoji ET le
      *     bout de message d'origine. Pas de phrase parasite. Pattern proche
      *     de l'expérience Tapback mais plus court et indépendant de la langue.
@@ -149,10 +156,16 @@ data class SendingSettings(
      *     legacy mais le destinataire perd tout contexte du message d'origine.
      *
      * v1.14.4 — défaut changé `READABLE_FR` → `EMOJI_WITH_QUOTE` (demande user).
+     * Défaut changé `EMOJI_WITH_QUOTE` → `IOS_TAPBACK` : les `«»` du format
+     * précédent étaient déformés en `<<>>` par les opérateurs, le destinataire
+     * voyait `👍<<Hi>>` au lieu d'une réaction. Les users existants sur
+     * `EMOJI_WITH_QUOTE` sont migrés une fois (voir
+     * [AdvancedSettings.reactionFormatMigreIosTapback]) ; les autres choix
+     * explicites sont conservés.
      * Les users existants conservent leur choix (DataStore persiste). Seuls les
      * NOUVEAUX installs voient le nouveau défaut.
      */
-    val reactionFormat: ReactionFormat = ReactionFormat.EMOJI_WITH_QUOTE,
+    val reactionFormat: ReactionFormat = ReactionFormat.IOS_TAPBACK,
     /**
      * v1.8.1 — nom personnel à inclure dans les SMS de réaction sortants
      * (format `"<Nom> a réagi par ❤️ à votre message : «…»"`). Pour aider
@@ -498,6 +511,17 @@ data class AdvancedSettings(
      */
     val reactionFormatMigreV12812: Boolean = false,
     /**
+     * One-shot : ramène UNE FOIS le format `EMOJI_WITH_QUOTE` au défaut
+     * [ReactionFormat.IOS_TAPBACK]. Les `«»` de l'ancien format arrivaient
+     * déformés en `<<>>` côté correspondant (`👍<<Hi>>`) : le format ne
+     * remplissait plus sa promesse d'être compris hors SMS Relay. Seul
+     * `EMOJI_WITH_QUOTE` est migré — les choix explicites (`READABLE_FR`,
+     * `TAPBACK_EN`, `EMOJI_ONLY`) sont conservés, comme pour la migration
+     * v1.28.12. Voir [com.filestech.sms.data.local.datastore.SettingsRepository
+     * .migrerFormatVersIosTapback].
+     */
+    val reactionFormatMigreIosTapback: Boolean = false,
+    /**
      * 🔴 v1.27.2 (audit Codex du 2026-08-05, LP-05) — REJOUE la deduplication avec l identite
      * region-aware corrigee.
      *
@@ -533,7 +557,7 @@ data class AdvancedSettings(
      *   - Certains **OnePlus** anciens (OxygenOS < 12) et **realme realmeUI**
      *
      * Ces ROMs whitelistent uniquement les apps SMS du constructeur ; toute app SMS
-     * tierce (SMS Tech, QKSMS, Signal, Silence, etc.) est silencieusement killée en
+     * tierce (SMS Tech, QKSMS, Silence, etc.) est silencieusement killée en
      * background, ce qui empêche la réception MMS et l'affichage des notifications.
      *
      * Sur ROMs non-agressives (Pixel Android stock, Samsung One UI, Sony Xperia,

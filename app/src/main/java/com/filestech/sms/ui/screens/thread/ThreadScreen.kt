@@ -9,13 +9,20 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,8 +31,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -36,12 +45,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
@@ -52,6 +61,7 @@ import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonSearch
 import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -70,7 +80,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarDuration
@@ -79,7 +88,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -91,13 +99,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -105,9 +116,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -127,6 +143,10 @@ import com.filestech.sms.ui.components.ComposerReplyChip
 import com.filestech.sms.ui.components.ContactIntents
 import com.filestech.sms.ui.components.MAX_REACTION_EMOJIS
 import com.filestech.sms.ui.components.MessageBubble
+import com.filestech.sms.ui.components.RelayAvatar
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.ReplyQuotePreview
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.SmsTechSnackbarVisuals
@@ -134,7 +154,11 @@ import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.components.toPlaybackUri
 import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.BrandDanger
+import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.MessageTextSize
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.blockedTextColor
 import com.filestech.sms.ui.util.daySeparatorLabel
 import com.filestech.sms.ui.util.rememberChatFormatters
 import com.filestech.sms.ui.util.rememberSimLabeler
@@ -507,65 +531,17 @@ fun ThreadScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    if (headerSubtitleNumber != null) {
-                        Column {
-                            Text(
-                                title,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                headerSubtitleNumber,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            )
-                        }
-                    } else if (state.conversation?.isGroup == true) {
-                        // v1.28.3 — l'icône « groupe » en tête du fil, comme dans la liste.
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Outlined.Group,
-                                contentDescription = stringResource(R.string.group_avatar_cd),
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                title,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            )
-                        }
-                    } else {
-                        Text(title)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back),
-                        )
-                    }
-                },
-                actions = {
-                    if (canCall) {
-                        IconButton(onClick = { viewModel.requestCall() }) {
-                            Icon(
-                                Icons.Outlined.Phone,
-                                contentDescription = stringResource(R.string.action_call),
-                            )
-                        }
-                    }
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(
-                            Icons.Outlined.MoreVert,
-                            contentDescription = stringResource(R.string.action_more),
-                        )
-                    }
+            ThreadHeader(
+                title = title,
+                subtitleNumber = headerSubtitleNumber,
+                isGroup = state.conversation?.isGroup == true,
+                avatarUri = state.conversation?.avatarUri,
+                canCall = canCall,
+                onBack = onBack,
+                onCall = { viewModel.requestCall() },
+                onDetails = { detailsOpen = true },
+                onMoreClick = { menuOpen = true },
+                menu = {
                     ThreadActionsMenu(
                         expanded = menuOpen,
                         hasContact = state.hasContact,
@@ -653,7 +629,6 @@ fun ThreadScreen(
                     voice = state.voice,
                     playback = playbackState,
                     draft = state.draft,
-                    segments = state.segments,
                     isSendingVoice = state.isSendingVoice,
                     isSending = state.isSending,
                     hasPendingAttachments = state.pendingAttachments.isNotEmpty(),
@@ -814,6 +789,9 @@ fun ThreadScreen(
                     } else {
                         state.conversation?.displayName
                     },
+                    // Relay — l'étiquette d'expéditeur ne s'affiche QUE dans les
+                    // groupes ; en 1:1, aucune étiquette au-dessus des bulles.
+                    isGroup = state.conversation?.isGroup == true,
                     bubbleColorArgb = state.conversation?.bubbleColorArgb,
                     smishingReasons = state.smishingVerdicts[msg.id] ?: emptyList(),
                     playbackProvider = { playbackState },
@@ -1252,6 +1230,126 @@ fun ThreadScreen(
     }
 }
 
+/**
+ * Relay UI refresh — thread header: 44dp, canvas background with a hairline underneath.
+ * Back chevron (22dp, brand blue) + 32dp avatar + name (17sp/600); the call glyph is
+ * 22dp brand blue. The two 44dp hit areas side by side leave ~20dp of air between the
+ * call glyph and the overflow glyph. Tapping the avatar or the name opens the
+ * conversation details; the overflow menu is unchanged.
+ */
+@Composable
+private fun ThreadHeader(
+    title: String,
+    subtitleNumber: String?,
+    isGroup: Boolean,
+    avatarUri: String?,
+    canCall: Boolean,
+    onBack: () -> Unit,
+    onCall: () -> Unit,
+    onDetails: () -> Unit,
+    onMoreClick: () -> Unit,
+    menu: @Composable () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .statusBarsPadding()
+            .background(cs.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onBack)
+                    .semantics { role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                    tint = cs.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onDetails)
+                    .semantics { role = Role.Button },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RelayAvatar(
+                    label = title,
+                    size = 32.dp,
+                    customUri = avatarUri,
+                    isGroup = isGroup,
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = RelayText.ThreadTitle,
+                        color = cs.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (subtitleNumber != null) {
+                        Text(
+                            text = subtitleNumber,
+                            style = RelayText.Timestamp,
+                            color = cs.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            if (canCall) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onCall)
+                        .semantics { role = Role.Button },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Outlined.Phone,
+                        contentDescription = stringResource(R.string.action_call),
+                        tint = cs.primary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onMoreClick)
+                    .semantics { role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.MoreVert,
+                    contentDescription = stringResource(R.string.action_more),
+                    modifier = Modifier.size(24.dp),
+                )
+                menu()
+            }
+        }
+        HorizontalDivider(color = cs.outline)
+    }
+}
+
 @Composable
 private fun ThreadActionsMenu(
     expanded: Boolean,
@@ -1277,7 +1375,11 @@ private fun ThreadActionsMenu(
     canSchedule: Boolean,
     onScheduleSend: () -> Unit,
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+    ) {
         if (!hasContact) {
             // Choix clair, sans passer par le sélecteur système + défilement :
             //  - "Créer un contact"       → fiche vierge pré-remplie (ACTION_INSERT)
@@ -1365,7 +1467,9 @@ private fun ThreadActionsMenu(
             text = {
                 Text(
                     stringResource(R.string.action_block),
-                    color = com.filestech.sms.ui.theme.BrandBlocked,
+                    // Phase 8 — l'orange [BrandBlocked] ne donnait que 3.79:1 sur fond clair
+                    // pour du texte ; voir [blockedTextColor]. L'icône garde [BrandBlocked].
+                    color = blockedTextColor(MaterialTheme.colorScheme),
                 )
             },
             onClick = onBlock,
@@ -1405,49 +1509,50 @@ private fun ConversationDetailsDialog(
     formatters: com.filestech.sms.ui.util.ChatFormatters,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.action_details)) },
-        text = {
-            Column {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.padding(top = 8.dp))
-                if (!phoneNumber.isNullOrBlank()) {
-                    Text(
-                        stringResource(R.string.thread_details_number, phoneNumber),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
+        title = stringResource(R.string.action_details),
+        content = {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.padding(top = 8.dp))
+            if (!phoneNumber.isNullOrBlank()) {
                 Text(
-                    stringResource(R.string.thread_details_participants, participants),
+                    stringResource(R.string.thread_details_number, phoneNumber),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+            }
+            Text(
+                stringResource(R.string.thread_details_participants, participants),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                stringResource(R.string.thread_details_messages, messages),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (firstAt != null) {
                 Text(
-                    stringResource(R.string.thread_details_messages, messages),
+                    stringResource(
+                        R.string.thread_details_first,
+                        formatters.fullDay.format(Date(firstAt)),
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                if (firstAt != null) {
-                    Text(
-                        stringResource(
-                            R.string.thread_details_first,
-                            formatters.fullDay.format(Date(firstAt)),
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                if (lastAt != null) {
-                    Text(
-                        stringResource(
-                            R.string.thread_details_last,
-                            formatters.fullDay.format(Date(lastAt)),
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
+            }
+            if (lastAt != null) {
+                Text(
+                    stringResource(
+                        R.string.thread_details_last,
+                        formatters.fullDay.format(Date(lastAt)),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+            RelayTextButton(
+                text = stringResource(R.string.action_close),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -1474,10 +1579,10 @@ private fun DestructiveConfirmDialog(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         runCatching { cancelFocus.requestFocus() }
     }
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(message) },
+        title = title,
+        content = { Text(message) },
         confirmButton = {
             FilledTonalButton(
                 onClick = onConfirm,
@@ -1494,13 +1599,15 @@ private fun DestructiveConfirmDialog(
                     containerColor = confirmColor,
                     contentColor = com.filestech.sms.ui.theme.onBrandContainer(confirmColor),
                 ),
+                shape = RoundedCornerShape(10.dp),
             ) { Text(confirmLabel) }
         },
         dismissButton = {
-            TextButton(
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
                 onClick = onDismiss,
                 modifier = Modifier.focusRequester(cancelFocus),
-            ) { Text(stringResource(R.string.action_cancel)) }
+            )
         },
     )
 }
@@ -1515,7 +1622,6 @@ private fun ComposerBar(
     voice: ThreadViewModel.VoiceState,
     playback: VoicePlaybackController.PlaybackState,
     draft: String,
-    segments: com.filestech.sms.data.sms.SmsSegmentCounter.Stats,
     isSendingVoice: Boolean,
     /** v1.26.1 (audit H7) — envoi texte/media en cours : desactive le bouton Envoyer. */
     isSending: Boolean,
@@ -1544,7 +1650,7 @@ private fun ComposerBar(
     val permissionGranted = micPermission.status == PermissionStatus.Granted
 
     Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
-        HorizontalDivider(color = cs.outlineVariant.copy(alpha = 0.4f))
+        HorizontalDivider(color = cs.outline)
 
         when (voice) {
             // Idle and Recording share the same row layout — switching between them must NOT
@@ -1556,7 +1662,6 @@ private fun ComposerBar(
                 elapsedMs = (voice as? ThreadViewModel.VoiceState.Recording)?.elapsedMs ?: 0L,
                 amplitude = (voice as? ThreadViewModel.VoiceState.Recording)?.amplitude ?: 0,
                 draft = draft,
-                segments = segments,
                 permissionGranted = permissionGranted,
                 hasPendingAttachments = hasPendingAttachments,
                 isSending = isSending,
@@ -1597,6 +1702,11 @@ private fun ComposerBar(
  * recording, release stops it, dragging left past [CANCEL_THRESHOLD_DP] discards instead. The
  * mic stays in the composition tree across the Idle↔Recording transition so the in-flight
  * pointer gesture is never interrupted.
+ *
+ * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 18dp radius, min
+ * 36dp, grows to 5 lines) with the attach glyph leading and the camera inside trailing;
+ * the send affordance is a 32dp blue circle with a white up-arrow, shown only when there
+ * is text (or staged attachments), and a mic glyph when the composer is empty.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1605,7 +1715,6 @@ private fun ComposingRow(
     elapsedMs: Long,
     amplitude: Int,
     draft: String,
-    segments: com.filestech.sms.data.sms.SmsSegmentCounter.Stats,
     permissionGranted: Boolean,
     /** v1.3.4 M1 — quand `true`, force l'affichage du bouton Send au lieu du mic même
      *  si `draft.isBlank()` (l'user a juste empilé des PJ et veut les envoyer sans texte). */
@@ -1621,7 +1730,6 @@ private fun ComposingRow(
     onCancelHintCrossed: () -> Unit,
     onAttachClick: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
     // v1.3.4 M1 — afficher le Mic seulement si pas de PJ stagées ; sinon l'utilisateur
     // doit pouvoir envoyer les PJ via le bouton Send même sans texte.
     val showMic = isRecording || (draft.isBlank() && !hasPendingAttachments)
@@ -1631,83 +1739,161 @@ private fun ComposingRow(
     // Reset the hint when leaving Recording (release/cancel finished).
     LaunchedEffect(isRecording) { if (!isRecording) cancelHinted = false }
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Attachment trigger (#2). Hidden while recording so the gesture surface stays minimal —
-        // the user can attach a file before recording, or after dropping the recording, but not
-        // mid-recording (a file pick would steal focus from the in-flight gesture).
-        if (!isRecording) {
-            IconButton(onClick = onAttachClick) {
-                Icon(
-                    Icons.Outlined.AttachFile,
-                    contentDescription = stringResource(R.string.action_attach),
-                )
-            }
-        }
-        Box(modifier = Modifier.weight(1f)) {
-            if (isRecording) {
-                RecordingStrip(
-                    elapsedMs = elapsedMs,
-                    amplitude = amplitude,
-                    cancelHinted = cancelHinted,
-                )
-            } else {
-                // Le texte saisi suit la taille du texte des messages, comme les bulles.
-                MessageTextSize {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = onDraftChanged,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.thread_compose_placeholder)) },
-                        maxLines = 5,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Default,
-                        ),
-                        supportingText = if (segments.segmentCount > 0) {
-                            {
-                                Text(
-                                    text = stringResource(
-                                        R.string.thread_segments_indicator,
-                                        segments.length,
-                                        segments.length + segments.charsRemainingInCurrentSegment,
-                                        segments.segmentCount,
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = cs.onSurfaceVariant,
-                                )
-                            }
-                        } else null,
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (isRecording) {
+                    RecordingStrip(
+                        elapsedMs = elapsedMs,
+                        amplitude = amplitude,
+                        cancelHinted = cancelHinted,
                     )
+                } else {
+                    // Le texte saisi suit la taille du texte des messages, comme les bulles.
+                    MessageTextSize {
+                        RelayTextField(
+                            value = draft,
+                            onValueChange = onDraftChanged,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 36.dp),
+                            placeholder = stringResource(R.string.thread_compose_placeholder),
+                            maxLines = 5,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                imeAction = ImeAction.Default,
+                            ),
+                            cornerRadius = 18.dp,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            textStyle = MaterialTheme.typography.bodyLarge,
+                            leadingIcon = {
+                                ComposerIconButton(
+                                    icon = Icons.Outlined.AttachFile,
+                                    contentDescription = stringResource(R.string.action_attach),
+                                    onClick = onAttachClick,
+                                )
+                            },
+                            trailingIcon = {
+                                // Opens the same attachment sheet as the attach glyph: the
+                                // app has no direct camera capture, the sheet is where the
+                                // photo picker lives.
+                                ComposerIconButton(
+                                    icon = Icons.Outlined.PhotoCamera,
+                                    contentDescription = stringResource(R.string.action_attach),
+                                    onClick = onAttachClick,
+                                )
+                            },
+                        )
+                    }
                 }
             }
-        }
-        Spacer(Modifier.width(4.dp))
-        if (showMic) {
-            MicButton(
-                isRecording = isRecording,
-                cancelHinted = cancelHinted,
-                permissionGranted = permissionGranted,
-                onRequestPermission = onRequestPermission,
-                onPressStart = onPressStart,
-                onReleaseStop = onReleaseStop,
-                onReleaseCancel = onReleaseCancel,
-                onCancelHintChanged = { hinted ->
-                    if (hinted && !cancelHinted) onCancelHintCrossed()
-                    cancelHinted = hinted
-                },
-            )
-        } else {
-            // v1.26.1 (audit H7) — désactivé pendant l'envoi, comme le bouton vocal l'est déjà.
-            FilledIconButton(onClick = onSendText, enabled = !isSending) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.Send,
-                    contentDescription = stringResource(R.string.action_send),
+            if (showMic) {
+                MicButton(
+                    isRecording = isRecording,
+                    cancelHinted = cancelHinted,
+                    permissionGranted = permissionGranted,
+                    onRequestPermission = onRequestPermission,
+                    onPressStart = onPressStart,
+                    onReleaseStop = onReleaseStop,
+                    onReleaseCancel = onReleaseCancel,
+                    onCancelHintChanged = { hinted ->
+                        if (hinted && !cancelHinted) onCancelHintCrossed()
+                        cancelHinted = hinted
+                    },
                 )
+            } else {
+                // v1.26.1 (audit H7) — désactivé pendant l'envoi, comme le bouton vocal l'est déjà.
+                SendCircleButton(enabled = !isSending, onClick = onSendText)
             }
         }
+    }
+}
+
+/**
+ * Small round hit area (36dp) for a glyph living inside the composer pill — attach
+ * leading, camera trailing. The glyph itself is 22dp in the secondary colour.
+ */
+@Composable
+private fun ComposerIconButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    onClick: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = cs.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+/**
+ * Relay UI refresh — send affordance: a 32dp blue circle with a white up-arrow, on a
+ * 48dp hit area. It slides up with a spring each time it appears (when text is typed)
+ * and scales to 0.90 while pressed; the haptic tick is fired by the caller's
+ * [onClick] (see [ComposerBar]).
+ */
+@Composable
+private fun SendCircleButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        label = "sendPressScale",
+    )
+    // The button (re)enters composition when the composer gains text: animate the
+    // slide-up once per appearance, from 4dp below at 0.9 alpha.
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val slideOffset by animateDpAsState(
+        targetValue = if (entered) 0.dp else 4.dp,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 600f),
+        label = "sendSlideUp",
+    )
+    val slideAlpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.9f,
+        label = "sendSlideAlpha",
+    )
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .offset(y = slideOffset)
+            .alpha(slideAlpha)
+            .alpha(if (enabled) 1f else 0.38f)
+            .scale(pressScale)
+            .clip(CircleShape)
+            .background(if (pressed) RelayColors.BluePressed else RelayColors.Blue)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
+            .semantics { role = Role.Button },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.ArrowUpward,
+            contentDescription = stringResource(R.string.action_send),
+            tint = Color.White,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 
@@ -1741,7 +1927,7 @@ private fun RecordingStrip(
     // v1.2.4 audit U15: animate the cancel-hint background so the swipe-towards-cancel
     // gesture has a continuous color cue instead of the previous abrupt flip.
     val cancelBg by androidx.compose.animation.animateColorAsState(
-        targetValue = if (cancelHinted) danger.copy(alpha = 0.12f) else cs.surfaceContainerHigh,
+        targetValue = if (cancelHinted) danger.copy(alpha = 0.12f) else cs.surfaceVariant,
         label = "rec-cancel-bg",
     )
 
@@ -1816,7 +2002,9 @@ private fun MicButton(
         isRecording -> danger
         else -> cs.primary
     }
-    val contentColor = Color.White
+    // Phase 8 — blanc sur le rouge d'enregistrement (4.96:1), `onPrimary` sur le bleu :
+    // blanc sur le bleu éclairci du thème sombre ne donnerait que 2.57:1.
+    val contentColor = if (cancelHinted || isRecording) Color.White else cs.onPrimary
 
     val pushToTalk = Modifier.pointerInput(permissionGranted) {
         awaitEachGesture {
@@ -1848,23 +2036,50 @@ private fun MicButton(
         }
     }
 
-    FilledIconButton(
-        onClick = { /* push-to-talk gesture handled by pointerInput above */ },
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = containerColor,
-            contentColor = contentColor,
-        ),
+    // Relay UI refresh: a 32dp blue circle with a white mic on a 48dp hit area, matching
+    // the send circle. While recording it grows to 56dp and turns red, as before.
+    // Phase 8 — TalkBack : le geste press-and-hold (`pointerInput`) n'expose aucune
+    // action d'accessibilité — un utilisateur TalkBack entendait « Enregistrer un
+    // message vocal » sans pouvoir le déclencher. La sémantique ci-dessous donne au
+    // bouton un rôle + une description + un `onClick` (tap = démarrer / arrêter,
+    // l'équivalent accessibilité du maintien) ; l'activation tactile ne change pas.
+    val micDescription = stringResource(
+        if (isRecording) R.string.voice_action_stop else R.string.voice_action_record,
+    )
+    Box(
         modifier = Modifier
-            .size(if (isRecording) 56.dp else 40.dp)
+            .size(if (isRecording) 56.dp else 48.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = micDescription
+                role = Role.Button
+                onClick {
+                    if (!permissionGranted) {
+                        onRequestPermission()
+                    } else if (isRecording) {
+                        onReleaseStop()
+                    } else {
+                        onPressStart()
+                    }
+                    true
+                }
+            }
             .then(pushToTalk),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Outlined.Mic,
-            contentDescription = stringResource(
-                if (isRecording) R.string.voice_action_stop else R.string.voice_action_record,
-            ),
-            tint = contentColor,
-        )
+        Box(
+            modifier = Modifier
+                .size(if (isRecording) 56.dp else 32.dp)
+                .clip(CircleShape)
+                .background(containerColor),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Mic,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(if (isRecording) 24.dp else 16.dp),
+            )
+        }
     }
 }
 
@@ -1907,7 +2122,7 @@ private fun ReviewingMode(
                 .weight(1f)
                 .height(48.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(cs.surfaceContainerHigh)
+                .background(cs.surfaceVariant)
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1942,7 +2157,17 @@ private fun ReviewingMode(
                 CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
             }
         } else {
-            FilledIconButton(onClick = onSend) {
+            // Explicit colours (2026-11-06): same white-on-white issue as the composer
+            // send button — blue tile, white icon.
+            // Phase 8 — le contenu suit `onPrimary` : blanc fixe sur le bleu éclairci du
+            // thème sombre ne donnerait que 2.57:1.
+            FilledIconButton(
+                onClick = onSend,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = cs.primary,
+                    contentColor = cs.onPrimary,
+                ),
+            ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.Send,
                     contentDescription = stringResource(R.string.voice_action_send),
@@ -2049,9 +2274,9 @@ private fun computeBurstPosition(
 }
 
 /**
- * Centered day pill rendered between bursts on the very first message and on every day boundary.
- * Visual signature for the thread — a soft surfaceVariant tint with a subtle hairline, no
- * dividers above or below (the cleaner separation Google Messages does not bother with).
+ * Centered day pill between bursts on the very first message and on every day boundary.
+ * Relay UI refresh: a quiet pill on the surface fill, 13sp secondary text, generous
+ * vertical air — no dividers above or below.
  */
 @Composable
 private fun DateSeparator(label: String) {
@@ -2059,21 +2284,25 @@ private fun DateSeparator(label: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 14.dp),
+            .padding(vertical = 16.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
-                .background(cs.surfaceVariant.copy(alpha = 0.55f))
-                .padding(horizontal = 12.dp, vertical = 4.dp),
+                .background(cs.surfaceVariant)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                color = cs.onSurfaceVariant,
-            )
+            // Phase 8 — le libellé est du méta-texte de mise en page, fixe (voir
+            // [FixedTypeSize]), comme l'heure des bulles.
+            FixedTypeSize {
+                Text(
+                    text = label,
+                    style = RelayText.SystemNote,
+                    color = cs.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -2152,6 +2381,8 @@ private fun ThreadMessageItem(
     next: Message?,
     daySeparatorLabel: String?,
     conversationDisplayName: String?,
+    /** Relay — `true` si le fil est un groupe : seul ce cas montre l'étiquette. */
+    isGroup: Boolean = false,
     bubbleColorArgb: Int?,
     smishingReasons: List<com.filestech.sms.domain.smishing.SmishingReason>,
     playbackProvider: () -> com.filestech.sms.data.voice.VoicePlaybackController.PlaybackState,
@@ -2171,7 +2402,9 @@ private fun ThreadMessageItem(
             DateSeparator(label = label)
         }
 
-        val showTimestamp = prev?.date?.let { msg.date - it > 5 * 60_000L } ?: true
+        // Show the time when a message is more than 1 minute after the previous
+        // one — back-to-back messages in a quick burst stay clean.
+        val showTimestamp = prev?.date?.let { msg.date - it > 60_000L } ?: true
         val burstPosition = computeBurstPosition(prev, msg, next)
         val audio = msg.audioAttachment
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à
@@ -2182,9 +2415,14 @@ private fun ThreadMessageItem(
         val mediaAttachment = mediaAttachments.firstOrNull()
         // v1.3.3 #7 — étiquette d'expéditeur uniquement sur la 1ʳᵉ bulle d'un burst (Solo ou First)
         // pour ne pas surcharger visuellement les suites consécutives du même expéditeur.
+        // Relay — uniquement dans les groupes : en 1:1, l'expéditeur est évident et
+        // l'étiquette ne fait que du bruit. Le suffixe SIM (ci-dessous) est conservé : il ne
+        // s'applique que quand une étiquette existe, donc uniquement en groupe.
         val baseSenderLabel: String? = if (
-            burstPosition == BurstPosition.Solo ||
-            burstPosition == BurstPosition.First
+            isGroup && (
+                burstPosition == BurstPosition.Solo ||
+                burstPosition == BurstPosition.First
+            )
         ) {
             if (msg.isOutgoing) {
                 stringResource(R.string.bubble_sender_self)

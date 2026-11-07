@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
     <!-- Core -->
-    <string name="app_name">SMS Relay</string>
+    <string name="app_name">Relay</string>
 
     <!-- v1.3.7 — First-launch splash screen (animated logo + tagline). -->
     <string name="splash_tagline">L\'app che non legge i suoi messaggi e rispetta la sua privacy.</string>
@@ -152,7 +152,6 @@
 
     <!-- Thread -->
     <string name="thread_compose_placeholder">Scriva un messaggio…</string>
-    <string name="thread_segments_indicator">%1$d / %2$d • %3$d seg.</string>
     <string name="thread_status_pending">Invio in corso…</string>
     <string name="thread_status_sent">Inviato</string>
     <string name="thread_status_delivered">Consegnato</string>
@@ -460,8 +459,10 @@
     <string name="settings_reaction_format_emoji">Solo emoji</string>
     <string name="settings_reaction_format_emoji_hint">\"❤️\" da sola. Più pulita sulle app SMS più vecchie, ma il destinatario perde ogni contesto — non può sapere a quale messaggio ha reagito.</string>
     <!-- v1.9.0 — compact emoji + quote -->
-    <string name="settings_reaction_format_emoji_quote">Emoji + citazione (predefinito)</string>
+    <string name="settings_reaction_format_emoji_quote">Emoji + citazione</string>
     <string name="settings_reaction_format_emoji_quote_hint">\"❤️ «il suo messaggio»\". Compatto e conserva il contesto. Il destinatario vede l\'emoji seguita dal messaggio originale citato.</string>
+    <string name="settings_reaction_format_ios">Reazioni iPhone (predefinito)</string>
+    <string name="settings_reaction_format_ios_hint">\"Liked «il suo messaggio»\". iPhone, Google Messaggi e SMS Relay lo riconoscono come una reazione nativa, e si legge come normale testo ovunque.</string>
     <!-- v1.8.1 — sender display name -->
     <string name="settings_sender_name_title">Il suo nome visualizzato</string>
     <string name="settings_sender_name_desc">Incluso negli SMS di reazione in uscita per aiutare il destinatario a identificare l\'autore. Lo lasci vuoto per usare il nome del suo profilo Android (o, in mancanza, l\'anonimo \"Réagi par ❤️…\").</string>
@@ -750,7 +751,7 @@
     <string name="about_perm_call_phone">Riquadri di chiamata d\'emergenza: chiamata diretta. Se negata, aprono l\'app Telefono.</string>
     <string name="about_permissions_title">Autorizzazioni che usiamo</string>
     <string name="about_security_title">Sicurezza e limiti</string>
-    <string name="about_security_body">SMS e MMS viaggiano in chiaro sulla rete dell\'operatore: è un limite del protocollo, non una scelta. SMS Relay protegge soltanto ciò che è conservato sul suo dispositivo. Per una messaggistica cifrata da un capo all\'altro, usi Signal o Matrix.</string>
+    <string name="about_security_body">SMS e MMS viaggiano in chiaro sulla rete dell\'operatore: è un limite del protocollo, non una scelta. SMS Relay protegge soltanto ciò che è conservato sul suo dispositivo. Per una messaggistica cifrata da un capo all\'altro, usi Matrix.</string>
     <string name="about_credits_body">Creata da %1$s. Interfaccia ispirata ai principi di movimento di Material 3. Realizzata con Kotlin, Compose, Hilt, Room e SQLCipher.</string>
     <string name="about_legal_body">© %1$s %2$s. Distribuita con licenza Apache 2.0.</string>
     <string name="about_source_code">Codice sorgente</string>

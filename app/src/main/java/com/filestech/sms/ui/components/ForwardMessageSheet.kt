@@ -14,15 +14,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.ui.theme.RelayText
 
 /**
  * v1.3.11 (F5) — bottom sheet shown when the user picks "Transférer" in a bubble's
@@ -57,7 +54,6 @@ import com.filestech.sms.R
  *     [ForwardPickerViewModel.filtered]) so the user cannot forward to themselves.
  *   - `imePadding` so the search field stays above the keyboard on small screens.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ForwardMessageSheet(
     currentConversationId: Long,
@@ -73,7 +69,6 @@ fun ForwardMessageSheet(
     LaunchedEffect(currentConversationId) {
         viewModel.setExcludedConversation(currentConversationId)
     }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // v1.3.11 (U3) — single dismiss path that resets the search query before bubbling
     // up to the caller. Without it the `ForwardPickerViewModel` (scoped to the source
     // ThreadScreen back-stack entry) would replay the previous query the next time the
@@ -89,9 +84,11 @@ fun ForwardMessageSheet(
     // source avant de naviguer dans les DEUX cas, donc l'entrée de back-stack qui porte ce
     // ViewModel est détruite et la requête avec elle. Vérifié sur appareil le 2026-08-26.
     // Ajouter un reset ici serait un garde-fou pour un chemin inatteignable.
-    ModalBottomSheet(
+    // Relay UI refresh: the shared sheet shell (28dp top corners, drag handle, light
+    // scrim). The navigation-bars-only insets are kept: the search field manages the
+    // IME itself via `imePadding` below.
+    RelaySheet(
         onDismissRequest = dismissAndReset,
-        sheetState = sheetState,
         contentWindowInsets = { WindowInsets.navigationBars },
     ) {
         Column(
@@ -102,16 +99,17 @@ fun ForwardMessageSheet(
         ) {
             Text(
                 text = stringResource(R.string.forward_sheet_title),
-                style = MaterialTheme.typography.titleLarge,
+                style = RelayText.ThreadTitle,
             )
             Spacer(Modifier.size(12.dp))
-            OutlinedTextField(
+            RelaySearchField(
                 // v1.27.9 — état Compose lu directement, cf. [ForwardPickerViewModel.searchInput].
-                value = viewModel.searchInput,
-                onValueChange = viewModel::setQuery,
+                query = viewModel.searchInput,
+                onQueryChange = viewModel::setQuery,
+                placeholder = stringResource(R.string.forward_search_placeholder),
+                onClear = { viewModel.setQuery("") },
+                clearContentDescription = stringResource(R.string.action_close),
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.forward_search_placeholder)) },
-                singleLine = true,
             )
             Spacer(Modifier.size(12.dp))
             // Always-on shortcut: pick a new recipient (opens ComposeScreen).
@@ -131,7 +129,7 @@ fun ForwardMessageSheet(
             HorizontalDivider()
             Text(
                 text = stringResource(R.string.forward_existing_conversation),
-                style = MaterialTheme.typography.titleSmall,
+                style = RelayText.SectionHeader,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
             )

@@ -31,16 +31,13 @@ import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,10 +46,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,17 +65,22 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
 import com.filestech.sms.ui.components.ContactIntents
 import com.filestech.sms.ui.components.ConversationRow
+import com.filestech.sms.ui.components.RelayDestructiveButton
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayEmptyState
+import com.filestech.sms.ui.components.RelaySearchField
+import com.filestech.sms.ui.components.RelaySheet
+import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
+import com.filestech.sms.ui.theme.RelayText
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -275,31 +277,25 @@ fun ConversationsScreen(
                             )
                         }
                     },
+                    // Selection mode reads as a state of the list, not a new screen: the
+                    // bar takes the same primary-container tint as the selected rows below.
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = cs.primaryContainer,
+                        titleContentColor = cs.onPrimaryContainer,
+                        navigationIconContentColor = cs.onPrimaryContainer,
+                        actionIconContentColor = cs.onPrimaryContainer,
+                    ),
                 )
                 return@topBar
             }
             TopAppBar(
                 title = {
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Brand logo in front of the title. Hidden on the archived sub-page so the
-                        // crumb stays unambiguous (logo = home). cacheWidth equivalent: the image
-                        // is fixed at 28 dp on screen, Coil/painterResource decodes once.
-                        if (!archived) {
-                            androidx.compose.foundation.Image(
-                                painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_app_logo),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .padding(end = 10.dp),
-                            )
-                        }
-                        Text(
-                            text = if (archived) stringResource(R.string.tab_archived)
-                            else stringResource(R.string.app_name),
-                        )
-                    }
+                    // Title only — no logo next to it (Kristin, 2026-11-06). The old
+                    // ic_app_logo image used to sit here in front of the name.
+                    Text(
+                        text = if (archived) stringResource(R.string.tab_archived)
+                        else stringResource(R.string.app_name),
+                    )
                 },
                 navigationIcon = {
                     onBack?.let {
@@ -428,17 +424,19 @@ fun ConversationsScreen(
             )
         },
         floatingActionButton = {
-            // v1.2.3 audit U6: use the theme's primary (which auto-adapts to Dark Tech /
-            // Material You / Light) rather than a hardcoded blue that desaturated wrong on
-            // the deep-slate Dark Tech palette.
+            // 56dp circle in the theme primary (the Relay blue by default; a user-chosen
+            // custom accent re-tints it, as it does the unread pills), white outlined pencil.
             FloatingActionButton(
                 onClick = onCompose,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(56.dp),
+                shape = CircleShape,
+                containerColor = cs.primary,
+                contentColor = cs.onPrimary,
             ) {
                 Icon(
                     Icons.Outlined.Edit,
                     contentDescription = stringResource(R.string.action_new_message),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         },
@@ -493,7 +491,7 @@ fun ConversationsScreen(
             when {
                 state.isImporting -> ImportingPlaceholder(count = state.importedCount)
                 state.isLoading -> Unit
-                state.sansAucunResultat(messageHits) -> EmptyState(
+                state.sansAucunResultat(messageHits) -> ConversationsEmptyState(
                     archived = archived,
                     filtered = state.filtered,
                     onCompose = onCompose,
@@ -502,12 +500,8 @@ fun ConversationsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
                 ) {
-                    // Audit PERF-L4 (v1.14.8) — Couleur divider extraite hors loop pour éviter
-                    // l'allocation `Color.copy(alpha=...)` à chaque recomposition d'item. Sur une
-                    // liste de 200 conv qui se met à jour à chaque SMS entrant, on évite ~200
-                    // allocations Color/frame → moindre pression GC sur low-end.
-                    val dividerColor = cs.outlineVariant.copy(alpha = 0.4f)
-
+                    // Relay — AUCUNE ligne de séparation entre les conversations :
+                    // la liste se lit sans filets, comme dans Relay.
                     // v1.25.3 — les conversations dont tous les numéros sont bloqués ne sont plus
                     // ni supprimées ni masquées : elles descendent en fin de liste sous un
                     // en-tête dédié. Le tri d'origine est conservé à l'intérieur de chaque groupe
@@ -580,15 +574,15 @@ fun ConversationsScreen(
                             selected = isSelected,
                             selectionMode = state.selectionMode,
                         )
-                        HorizontalDivider(color = dividerColor)
                     }
 
                     if (blockedConversations.isNotEmpty()) {
                         item(key = "header-blocked", contentType = "header") {
                             Text(
-                                text = stringResource(R.string.conversations_section_blocked),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = com.filestech.sms.ui.theme.BrandBlocked,
+                                text = stringResource(R.string.conversations_section_blocked)
+                                    .uppercase(Locale.ROOT),
+                                style = RelayText.SectionHeader,
+                                color = cs.onSurfaceVariant,
                                 modifier = Modifier.padding(
                                     start = 16.dp,
                                     end = 16.dp,
@@ -621,7 +615,6 @@ fun ConversationsScreen(
                                 onLongClick = { blockedActionsFor = conv },
                                 onDelete = { pendingDeleteBlocked = conv },
                             )
-                            HorizontalDivider(color = dividerColor)
                         }
                     }
 
@@ -631,7 +624,6 @@ fun ConversationsScreen(
                         hits = messageHits,
                         showAvatars = state.settings.conversations.showAvatars,
                         selectionMode = state.selectionMode,
-                        dividerColor = dividerColor,
                         onOpenThread = onOpenThread,
                     )
                 }
@@ -655,22 +647,31 @@ fun ConversationsScreen(
     // Action non destructive, dialog simple (pas d'autofocus complexe — c'est
     // de l'UX, pas une action irreversible).
     if (showMarkAllReadConfirm) {
-        androidx.compose.material3.AlertDialog(
+        RelayDialog(
             onDismissRequest = { showMarkAllReadConfirm = false },
-            title = { Text(stringResource(R.string.action_mark_all_read)) },
-            text = { Text(stringResource(R.string.mark_all_read_confirm_body)) },
+            title = stringResource(R.string.action_mark_all_read),
+            content = {
+                Text(
+                    text = stringResource(R.string.mark_all_read_confirm_body),
+                    style = RelayText.MessageBody,
+                    color = cs.onSurface,
+                )
+            },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_confirm),
                     onClick = {
                         viewModel.markAllAsRead()
                         showMarkAllReadConfirm = false
                     },
-                ) { Text(stringResource(R.string.action_confirm)) }
+                    confirm = true,
+                )
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { showMarkAllReadConfirm = false },
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -682,24 +683,13 @@ private fun SearchField(
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-        placeholder = { Text(stringResource(R.string.conversations_search_hint)) },
-        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = onClear) {
-                    Icon(
-                        Icons.Outlined.Close,
-                        contentDescription = stringResource(R.string.action_close),
-                    )
-                }
-            }
-        },
-        singleLine = true,
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Search),
+    RelaySearchField(
+        query = query,
+        onQueryChange = onQueryChange,
+        placeholder = stringResource(R.string.conversations_search_hint),
+        onClear = onClear,
+        clearContentDescription = stringResource(R.string.action_close),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
     )
 }
 
@@ -709,9 +699,9 @@ private fun SearchField(
  * gérée côté ViewModel via `showIAmOkChip`). Tap → confirm dialog → reset
  * cooldown + (optionnel) SMS "Je vais bien" aux contacts SafetyCall.
  *
- * Style aligné sur [DefaultAppBanner] : `surfaceContainer` neutre, icône
- * Warning amber (rappel visuel : "tu as appuyé sur urgence"), bouton
- * primary "Je vais bien" pour confirmer reset.
+ * Une seule ligne discrète sur le fond de la liste, pas un bloc coloré : une icône
+ * d'alerte, le libellé, et une action texte. L'icône garde sa couleur d'alerte —
+ * c'est un état de sécurité, pas une décoration.
  */
 @Composable
 private fun IAmOkBanner(onClick: () -> Unit) {
@@ -723,42 +713,34 @@ private fun IAmOkBanner(onClick: () -> Unit) {
     // au premier coup d'audition TalkBack.
     val a11yTitle = stringResource(R.string.emergency_i_am_ok_chip_title)
     val a11yAction = stringResource(R.string.emergency_i_am_ok_chip_action)
-    androidx.compose.material3.Surface(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-        color = cs.surfaceContainer,
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 2.dp)
             .semantics(mergeDescendants = true) {
                 contentDescription = "$a11yTitle. $a11yAction"
             },
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.WarningAmber,
-                contentDescription = null,
-                tint = com.filestech.sms.ui.theme.BrandDanger,
-                modifier = Modifier.size(22.dp),
-            )
-            androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
-            Text(
-                text = stringResource(R.string.emergency_i_am_ok_chip_title),
-                style = MaterialTheme.typography.bodyMedium,
-                color = cs.onSurface,
-                modifier = Modifier.weight(1f),
-            )
-            androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
-            androidx.compose.material3.FilledTonalButton(
-                onClick = onClick,
-                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                    containerColor = cs.primary,
-                    contentColor = cs.onPrimary,
-                ),
-            ) { Text(stringResource(R.string.emergency_i_am_ok_chip_action)) }
-        }
+        Icon(
+            imageVector = Icons.Outlined.WarningAmber,
+            contentDescription = null,
+            tint = com.filestech.sms.ui.theme.BrandDanger,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.size(12.dp))
+        Text(
+            text = stringResource(R.string.emergency_i_am_ok_chip_title),
+            style = RelayText.Preview,
+            color = cs.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.size(8.dp))
+        RelayTextButton(
+            text = stringResource(R.string.emergency_i_am_ok_chip_action),
+            onClick = onClick,
+            confirm = true,
+        )
     }
 }
 
@@ -791,20 +773,31 @@ private fun BandeauJeVaisBien(visible: Boolean, onConfirmer: () -> Unit) {
     IAmOkBanner(onClick = { confirmationOuverte = true })
     HorizontalDivider()
     if (!confirmationOuverte) return
-    androidx.compose.material3.AlertDialog(
+    RelayDialog(
         onDismissRequest = { confirmationOuverte = false },
-        title = { Text(stringResource(R.string.emergency_i_am_ok_confirm_title)) },
-        text = { Text(stringResource(R.string.emergency_i_am_ok_confirm_body)) },
+        title = stringResource(R.string.emergency_i_am_ok_confirm_title),
+        content = {
+            Text(
+                text = stringResource(R.string.emergency_i_am_ok_confirm_body),
+                style = RelayText.MessageBody,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        },
         confirmButton = {
-            Button(onClick = {
-                confirmationOuverte = false
-                onConfirmer()
-            }) { Text(stringResource(R.string.emergency_i_am_ok_chip_action)) }
+            RelayTextButton(
+                text = stringResource(R.string.emergency_i_am_ok_chip_action),
+                onClick = {
+                    confirmationOuverte = false
+                    onConfirmer()
+                },
+                confirm = true,
+            )
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
                 onClick = { confirmationOuverte = false },
-            ) { Text(stringResource(R.string.action_cancel)) }
+            )
         },
     )
 }
@@ -812,54 +805,35 @@ private fun BandeauJeVaisBien(visible: Boolean, onConfirmer: () -> Unit) {
 @Composable
 private fun DefaultAppBanner(onSetDefault: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    // v1.2.3 audit U13: dropping the 0.55 alpha — composited over the dark surface of Dark
-    // Tech it could fall below 4.5:1 contrast for the body text. Material 3 `surfaceContainer`
-    // is the native "subtle tint" surface and stays consistent across schemes.
-    androidx.compose.material3.Surface(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-        color = cs.surfaceContainer,
+    // Une seule ligne discrète sur le fond de la liste, pas un bloc coloré : une icône
+    // neutre, le libellé, et une action texte. Le texte peut passer sur deux lignes sur
+    // les écrans étroits ; il garde toute la largeur restante, sans être écrasé par le
+    // bouton (cf. v1.27.12 — le bouton rempli prenait sa largeur intrinsèque avant le
+    // texte, qui se retrouvait sur une colonne de sept caractères).
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // v1.27.12 — le bouton est passe SOUS le texte, au lieu d'etre a cote.
-        //
-        // Il etait dans un `Row` a cote d'un `Text` en `weight(1f)`. Or Compose mesure les
-        // enfants SANS poids en premier : le bouton prenait toute sa largeur intrinseque et le
-        // texte heritait de ce qui restait. Constate sur un Redmi 9C (720x1600 en densite 320,
-        // soit 360 dp de large) avec `font_scale` a 1,33 — un reglage d'accessibilite courant :
-        // le message s'affichait sur une colonne de sept caracteres, coupant « l'applica / tion »
-        // au milieu d'un mot. Reproduit a l'identique sur un S9 force aux memes dimensions.
-        //
-        // L'empilement vaut a toutes les tailles de police et toutes les largeurs, sans seuil a
-        // deviner. C'est aussi ce que prescrit Material pour un bandeau dont le texte depasse une
-        // ligne — et celui-ci la depasse deja en francais sur un ecran ordinaire.
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Outlined.Info,
-                    contentDescription = null,
-                    tint = cs.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
-                Text(
-                    text = stringResource(R.string.error_not_default_app),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = cs.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            androidx.compose.foundation.layout.Spacer(Modifier.size(10.dp))
-            androidx.compose.material3.FilledTonalButton(
-                onClick = onSetDefault,
-                modifier = Modifier.align(Alignment.End),
-                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                    containerColor = cs.primary,
-                    contentColor = cs.onPrimary,
-                ),
-            ) { Text(stringResource(R.string.settings_set_default)) }
-        }
+        Icon(
+            imageVector = Icons.Outlined.Info,
+            contentDescription = null,
+            tint = cs.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.size(12.dp))
+        Text(
+            text = stringResource(R.string.error_not_default_app),
+            style = RelayText.Preview,
+            color = cs.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.size(8.dp))
+        RelayTextButton(
+            text = stringResource(R.string.settings_set_default),
+            onClick = onSetDefault,
+        )
     }
 }
 
@@ -961,10 +935,20 @@ private fun SwipeableConversationRow(
                 contentAlignment = align,
             ) {
                 if (dir != androidx.compose.material3.SwipeToDismissBoxValue.Settled) {
+                    // Phase 8 — l'icône prend le premier plan du fond balayé : blanc sur le
+                    // rouge destructif (4.96:1), `onPrimary` sur le bleu (blanc sur le bleu
+                    // éclairci du thème sombre ne donnerait que 2.57:1).
+                    val iconTint = if (dir ==
+                        androidx.compose.material3.SwipeToDismissBoxValue.EndToStart
+                    ) {
+                        cs.onPrimary
+                    } else {
+                        androidx.compose.ui.graphics.Color.White
+                    }
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = androidx.compose.ui.graphics.Color.White,
+                        tint = iconTint,
                     )
                 }
             }
@@ -1089,37 +1073,45 @@ private fun SwipeableConversationRow(
     }
 
     if (pendingDelete) {
-        androidx.compose.material3.AlertDialog(
+        RelayDialog(
             onDismissRequest = { pendingDelete = false },
-            title = { Text(stringResource(R.string.conversations_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.conversations_delete_confirm_body)) },
+            title = stringResource(R.string.conversations_delete_confirm_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.conversations_delete_confirm_body),
+                    style = RelayText.MessageBody,
+                    color = cs.onSurface,
+                )
+            },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayDestructiveButton(
+                    text = stringResource(R.string.action_delete),
                     onClick = {
                         pendingDelete = false
                         onDelete()
                     },
-                    // v1.2.5: solid BrandDanger fill + white text — `errorContainer` is pastel
-                    // pink in light theme and didn't read as a destructive action.
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.action_delete)) }
+                )
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { pendingDelete = false },
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
 
     if (pendingBlock) {
-        androidx.compose.material3.AlertDialog(
+        RelayDialog(
             onDismissRequest = { pendingBlock = false },
-            title = { Text(stringResource(R.string.conversation_block_confirm_title)) },
-            text = { Text(stringResource(R.string.conversation_block_confirm_body)) },
+            title = stringResource(R.string.conversation_block_confirm_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.conversation_block_confirm_body),
+                    style = RelayText.MessageBody,
+                    color = cs.onSurface,
+                )
+            },
             confirmButton = {
                 androidx.compose.material3.FilledTonalButton(
                     onClick = {
@@ -1145,9 +1137,10 @@ private fun SwipeableConversationRow(
                 ) { Text(stringResource(R.string.action_block)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
                     onClick = { pendingBlock = false },
-                ) { Text(stringResource(R.string.action_cancel)) }
+                )
             },
         )
     }
@@ -1185,7 +1178,6 @@ class ConversationRowActions(
  * choice routes back through the parent's confirm flow so destructive intents still go through
  * a 2-step confirmation.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationActionsSheet(
     onDismiss: () -> Unit,
@@ -1205,11 +1197,7 @@ private fun ConversationActionsSheet(
     onToggleMuteRequested: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
-    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    androidx.compose.material3.ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
+    RelaySheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1312,7 +1300,13 @@ private fun ConversationActionsSheet(
                 headlineContent = {
                     Text(
                         text = stringResource(R.string.action_block),
-                        color = com.filestech.sms.ui.theme.BrandBlocked,
+                        // Phase 8 — l'orange [BrandBlocked] ne donnait que 3.79:1 sur fond
+                        // clair pour du texte ; voir [com.filestech.sms.ui.theme
+                        // .blockedTextColor]. L'icône garde [BrandBlocked] (3.79:1,
+                        // au-dessus du seuil 3:1 non textuel).
+                        color = com.filestech.sms.ui.theme.blockedTextColor(
+                            MaterialTheme.colorScheme,
+                        ),
                     )
                 },
                 modifier = Modifier.clickable(onClick = onBlockRequested),
@@ -1348,7 +1342,7 @@ private fun ImportingPlaceholder(count: Int) {
         )
         Text(
             text = stringResource(R.string.conversations_importing_title),
-            style = MaterialTheme.typography.titleMedium,
+            style = RelayText.ConvoName,
             color = cs.onSurface,
             modifier = Modifier.padding(top = 24.dp),
         )
@@ -1358,7 +1352,7 @@ private fun ImportingPlaceholder(count: Int) {
             } else {
                 stringResource(R.string.conversations_importing_body)
             },
-            style = MaterialTheme.typography.bodyMedium,
+            style = RelayText.Preview,
             color = cs.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp),
         )
@@ -1366,80 +1360,40 @@ private fun ImportingPlaceholder(count: Int) {
 }
 
 /**
- * Empty-state hero: a halo (soft 6 % primary disc) wrapping a primaryContainer-tinted emblem
- * with an outlined icon picked from the user's context (search, archive, chat). Centered title
- * + supportive body underneath. Replaces the previous two-line text dump.
+ * Empty state of the conversations list, on the shared [RelayEmptyState]: a centred glyph,
+ * one headline, one body line, and a primary "new message" action — only on the plain empty
+ * list. A filtered search or the archived view shows just the headline.
  */
 @Composable
-private fun EmptyState(archived: Boolean, filtered: Boolean, onCompose: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
+private fun ConversationsEmptyState(archived: Boolean, filtered: Boolean, onCompose: () -> Unit) {
     val emblemIcon = when {
         filtered -> Icons.Outlined.SearchOff
         archived -> Icons.Outlined.Inventory2
         else -> Icons.Outlined.ChatBubbleOutline
     }
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            // Outer halo — soft glow ring.
-            Box(
-                modifier = Modifier
-                    .size(128.dp)
-                    .clip(CircleShape)
-                    .background(cs.primary.copy(alpha = 0.06f)),
-            )
-            // Inner emblem — primary container disc holding the icon.
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(cs.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = emblemIcon,
-                    contentDescription = null,
-                    tint = cs.onPrimaryContainer,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
-        }
-        Spacer(Modifier.size(24.dp))
-        Text(
-            text = when {
+        RelayEmptyState(
+            icon = emblemIcon,
+            headline = when {
                 filtered -> stringResource(R.string.conversations_no_match)
                 archived -> stringResource(R.string.conversations_archived_empty)
                 else -> stringResource(R.string.conversations_empty_title)
             },
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = cs.onSurface,
-            textAlign = TextAlign.Center,
+            body = if (!archived && !filtered) {
+                stringResource(R.string.conversations_empty_body)
+            } else {
+                null
+            },
+            buttonText = if (!archived && !filtered) {
+                stringResource(R.string.action_new_message)
+            } else {
+                null
+            },
+            onButtonClick = if (!archived && !filtered) onCompose else null,
         )
-        if (!archived && !filtered) {
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = stringResource(R.string.conversations_empty_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = cs.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            // v1.2.3 audit U7: empty state previously had no action button, leaving a fresh
-            // user with nothing to click. The bottom-right FAB exists but is easy to miss on a
-            // mostly-empty screen. Inline CTA mirrors what Notes Tech v1.0.9 shipped (U9).
-            Spacer(Modifier.size(20.dp))
-            androidx.compose.material3.FilledTonalButton(onClick = onCompose) {
-                Icon(
-                    imageVector = Icons.Outlined.Edit,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.action_new_message))
-            }
-        }
     }
 }
 
@@ -1494,23 +1448,27 @@ private fun BlockedConversationDialogs(
     // Confirmation obligatoire : c'est le seul geste de cet écran qui efface réellement des
     // messages, de Room ET du fournisseur système.
     pendingDelete?.let { conv ->
-        androidx.compose.material3.AlertDialog(
+        RelayDialog(
             onDismissRequest = onDismissDelete,
-            title = { Text(stringResource(R.string.conversations_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.conversations_delete_confirm_body)) },
+            title = stringResource(R.string.conversations_delete_confirm_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.conversations_delete_confirm_body),
+                    style = RelayText.MessageBody,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
             confirmButton = {
-                androidx.compose.material3.FilledTonalButton(
+                RelayDestructiveButton(
+                    text = stringResource(R.string.action_delete),
                     onClick = { onConfirmDelete(conv.id) },
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                ) { Text(stringResource(R.string.action_delete)) }
+                )
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = onDismissDelete) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = onDismissDelete,
+                )
             },
         )
     }
@@ -1518,19 +1476,27 @@ private fun BlockedConversationDialogs(
     // « Bloquer » n'aurait aucun sens ici, la conversation l'est déjà : on propose le geste
     // réparateur (débloquer) et le geste assumé (supprimer).
     actionsFor?.let { conv ->
-        androidx.compose.material3.AlertDialog(
+        RelayDialog(
             onDismissRequest = onDismissActions,
-            title = { Text(stringResource(R.string.conversation_actions_title)) },
-            text = { Text(stringResource(R.string.conversation_blocked_label)) },
+            title = stringResource(R.string.conversation_actions_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.conversation_blocked_label),
+                    style = RelayText.MessageBody,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { onUnblock(conv) }) {
-                    Text(stringResource(R.string.action_unblock))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_unblock),
+                    onClick = { onUnblock(conv) },
+                )
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { onRequestDelete(conv) }) {
-                    Text(stringResource(R.string.action_delete))
-                }
+                RelayDestructiveButton(
+                    text = stringResource(R.string.action_delete),
+                    onClick = { onRequestDelete(conv) },
+                )
             },
         )
     }
