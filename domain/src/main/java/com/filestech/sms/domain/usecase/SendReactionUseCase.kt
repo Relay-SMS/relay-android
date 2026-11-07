@@ -55,6 +55,51 @@ class SendReactionUseCase @Inject constructor(
     // restent identiques pour préserver la compat iMessage et la concision).
     private val senderNameProvider: SenderNameProvider,
 ) {
+    /** Message reacted to + validated recipient, resolved before any send. */
+    private data class ReactionRecipient(
+        val message: com.filestech.sms.domain.model.Message,
+        val target: PhoneAddress,
+    )
+
+    /**
+     * Resolves the message and its sender. Fails when the message is missing or
+     * is one of ours (F1 — no echo on our own messages: the recipient would only
+     * see a lone emoji with no link to anything).
+     */
+    private suspend fun resolveRecipient(messageId: Long): Outcome<ReactionRecipient> {
+        val message = conversationRepo.findMessageById(messageId)
+            ?: return Outcome.Failure(AppError.Validation("message not found: $messageId"))
+        if (message.isOutgoing) {
+            return Outcome.Failure(AppError.Validation("cannot send reaction for outgoing message"))
+        }
+        // F2 — the sender is `message.address`: for a 1-1 or group message, only
+        // that sender is notified, never the other group participants.
+        return validateSenderAddress(message.address.trim())
+            .map { target -> ReactionRecipient(message, target) }
+    }
+
+    /**
+     * Validates the raw sender address. X1 (CRITICAL audit v1.3.1) — refuse
+     * alphanumeric senders (banks, Free, INFO, AMAZON…) and short codes under
+     * 4 digits: without this guard the send would go to an undefined recipient
+     * (SmsManager rejection) or a PREMIUM-billed notification short code.
+     */
+    private fun validateSenderAddress(senderRaw: String): Outcome<PhoneAddress> {
+        if (senderRaw.isEmpty()) {
+            return Outcome.Failure(AppError.Validation("message has no sender address"))
+        }
+        if (!senderRaw.isDialablePhoneNumber()) {
+            return Outcome.Failure(
+                AppError.Validation("sender is not a dialable phone number: $senderRaw"),
+            )
+        }
+        val target = PhoneAddress.of(senderRaw)
+        if (target.normalized.isEmpty()) {
+            return Outcome.Failure(AppError.Validation("invalid sender address: $senderRaw"))
+        }
+        return Outcome.Success(target)
+    }
+
     /**
      * Envoie [emoji] à l'expéditeur du message [messageId]. Retourne :
      *
@@ -95,40 +140,9 @@ class SendReactionUseCase @Inject constructor(
     ): Outcome<SendReport> {
         if (emoji.isBlank()) return Outcome.Failure(AppError.Validation("empty reaction emoji"))
 
-        val message = conversationRepo.findMessageById(messageId)
-            ?: return Outcome.Failure(AppError.Validation("message not found: $messageId"))
-
-        // F1 — pas d'écho sur un message qu'on a soi-même envoyé : le destinataire ne
-        // verrait qu'un emoji isolé sans aucun lien causal.
-        if (message.isOutgoing) {
-            return Outcome.Failure(AppError.Validation("cannot send reaction for outgoing message"))
-        }
-
-        // F2 — l'expéditeur du message est `message.address` (en SMS, c'est le numéro qui
-        // a écrit le message qu'on lit). Pour un message reçu dans une conv 1-1 ou de
-        // groupe, c'est cohérent : on ne notifie QUE cet expéditeur, jamais les autres
-        // participants du groupe.
-        val senderRaw = message.address.trim()
-        if (senderRaw.isEmpty()) {
-            return Outcome.Failure(AppError.Validation("message has no sender address"))
-        }
-
-        // X1 (CRITICAL audit v1.3.1) — refuser les expéditeurs alphanumériques (banques,
-        // Free, INFO, AMAZON…) ET les short codes <4 chiffres. Sans ce garde, l'envoi
-        // partirait soit vers un destinataire indéfini (rejet stack SmsManager), soit
-        // vers le short code de notification facturé PREMIUM (1,50 €+). En France les
-        // SMS bancaires / livraison / 2FA sont presque tous alpha → réagir à un SMS de
-        // sa banque avec ❤️ ne doit JAMAIS déclencher d'envoi.
-        if (!senderRaw.isDialablePhoneNumber()) {
-            return Outcome.Failure(
-                AppError.Validation("sender is not a dialable phone number: $senderRaw"),
-            )
-        }
-
-        val target = PhoneAddress.of(senderRaw)
-        if (target.normalized.isEmpty()) {
-            return Outcome.Failure(AppError.Validation("invalid sender address: $senderRaw"))
-        }
+        val resolved = resolveRecipient(messageId)
+        if (resolved is Outcome.Failure) return resolved
+        val (message, target) = (resolved as Outcome.Success).value
 
         return sendSms(
             recipients = listOf(target),
