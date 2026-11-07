@@ -740,7 +740,7 @@
     <string name="about_perm_call_phone">Tuiles d\'appel d\'urgence : appel direct. Refusée, elles ouvrent le composeur.</string>
     <string name="about_permissions_title">Permissions utilisées</string>
     <string name="about_security_title">Sécurité &amp; limites</string>
-    <string name="about_security_body">SMS et MMS circulent en clair sur le réseau opérateur — c\'est une limite du protocole, pas un choix. SMS Relay ne protège que ce qui est stocké sur l\'appareil. Pour du chiffrement de bout en bout, utilisez Signal ou Matrix.</string>
+    <string name="about_security_body">SMS et MMS circulent en clair sur le réseau opérateur — c\'est une limite du protocole, pas un choix. SMS Relay ne protège que ce qui est stocké sur l\'appareil. Pour du chiffrement de bout en bout, utilisez Matrix.</string>
     <string name="about_credits_body">Créée par %1$s. UI inspirée des principes de motion Material 3. Construite avec Kotlin, Compose, Hilt, Room et SQLCipher.</string>
     <string name="about_legal_body">© %1$s %2$s. Publiée sous licence Apache 2.0.</string>
     <string name="about_source_code">Code source</string>

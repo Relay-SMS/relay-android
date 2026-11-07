@@ -120,7 +120,7 @@ fun MediaAttachmentBubble(
         fun(cible: Attachment) = ouvrirPieceJointe(context, cible)
     }
 
-    // Signal-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
+    // Relay-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe (le
     // `clickable` interne consomme le geste avant ce parent) ; l'appui long garde la
     // sélection libre de la légende quand il y en a une.
@@ -197,7 +197,7 @@ fun MediaAttachmentBubble(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
-            // Signal-style — heure (+ statut sortant) en petit, en bas à droite de la
+            // Relay-style — heure (+ statut sortant) en petit, en bas à droite de la
             // bulle. Pour une pièce jointe sans légende, elle se place sous la vignette,
             // faute de fond de bulle où l'inscrire.
             BubbleTimestamp(

@@ -18,7 +18,7 @@ import javax.inject.Singleton
  * Why it exists: an SMS/MMS sent from a **foreign SIM** with a destination in national form (a
  * Luxembourg SIM texting a French `06…` number) is not routable — the network needs the
  * international `+33…` form, otherwise the recipient never gets the message. Reference SMS apps
- * (Google Messages, Signal) all normalise the destination to E.164 before sending.
+ * (Google Messages) all normalise the destination to E.164 before sending.
  *
  * Scope is intentionally minimal: **only the wire address changes**. The Room mirror and the
  * `content://sms` / `content://mms` provider rows keep the user's original raw string, so

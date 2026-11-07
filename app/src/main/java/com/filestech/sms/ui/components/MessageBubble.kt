@@ -127,7 +127,7 @@ fun MessageBubble(
 
     val shape = bubbleShape(isOut, burstPosition)
 
-    // Signal-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
+    // Relay-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu ([BubbleMenu]), un appui long garde la sélection libre ([onSelectText]),
     // et un tap sur un message FAILED garde le retry ([onTap]).
     var menuExpanded by remember { mutableStateOf(false) }
@@ -172,7 +172,7 @@ fun MessageBubble(
                             if (isOut) Modifier.drawBehind { drawRect(outgoingBrush) }
                             else Modifier.background(com.filestech.sms.ui.theme.bubbleIncomingColor(cs)),
                         )
-                        // Signal-style — tap opens the bubble menu ([BubbleMenu]) ; tap on a
+                        // Relay-style — tap opens the bubble menu ([BubbleMenu]) ; tap on a
                         // FAILED message still retries ([onTap]). v1.28.6 — long-press no longer
                         // copies the whole body (a duplicate of the « Copier » menu entry) but
                         // opens the free text selection ([onSelectText]). Falls back to a plain
@@ -258,7 +258,7 @@ fun MessageBubble(
                                 onPhoneClick = onPhoneClick,
                             )
                         }
-                        // Signal-style — heure (+ statut sortant) en petit, en bas à droite,
+                        // Relay-style — heure (+ statut sortant) en petit, en bas à droite,
                         // À L'INTÉRIEUR de la bulle, alignée sur la dernière ligne de texte.
                         BubbleTimestamp(
                             message = message,

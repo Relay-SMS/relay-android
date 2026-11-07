@@ -745,7 +745,7 @@
     <string name="about_perm_call_phone">Emergency call tiles: call directly. Refused, they open the dialer instead.</string>
     <string name="about_permissions_title">Permissions we use</string>
     <string name="about_security_title">Security &amp; limits</string>
-    <string name="about_security_body">SMS and MMS travel unencrypted across the carrier network — this is a protocol limitation, not a choice. SMS Relay only protects what is stored on your device. For end-to-end encrypted messaging, use Signal or Matrix.</string>
+    <string name="about_security_body">SMS and MMS travel unencrypted across the carrier network — this is a protocol limitation, not a choice. SMS Relay only protects what is stored on your device. For end-to-end encrypted messaging, use Matrix.</string>
     <string name="about_credits_body">Created by %1$s. UI inspired by Material 3 motion principles. Built with Kotlin, Compose, Hilt, Room and SQLCipher.</string>
     <string name="about_legal_body">© %1$s %2$s. Released under the Apache License 2.0.</string>
     <string name="about_source_code">Source code</string>

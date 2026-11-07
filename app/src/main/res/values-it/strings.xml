@@ -751,7 +751,7 @@
     <string name="about_perm_call_phone">Riquadri di chiamata d\'emergenza: chiamata diretta. Se negata, aprono l\'app Telefono.</string>
     <string name="about_permissions_title">Autorizzazioni che usiamo</string>
     <string name="about_security_title">Sicurezza e limiti</string>
-    <string name="about_security_body">SMS e MMS viaggiano in chiaro sulla rete dell\'operatore: è un limite del protocollo, non una scelta. SMS Relay protegge soltanto ciò che è conservato sul suo dispositivo. Per una messaggistica cifrata da un capo all\'altro, usi Signal o Matrix.</string>
+    <string name="about_security_body">SMS e MMS viaggiano in chiaro sulla rete dell\'operatore: è un limite del protocollo, non una scelta. SMS Relay protegge soltanto ciò che è conservato sul suo dispositivo. Per una messaggistica cifrata da un capo all\'altro, usi Matrix.</string>
     <string name="about_credits_body">Creata da %1$s. Interfaccia ispirata ai principi di movimento di Material 3. Realizzata con Kotlin, Compose, Hilt, Room e SQLCipher.</string>
     <string name="about_legal_body">© %1$s %2$s. Distribuita con licenza Apache 2.0.</string>
     <string name="about_source_code">Codice sorgente</string>

@@ -142,7 +142,7 @@ fun AudioMessageBubble(
         bottomEnd = if (isOut) 4.dp else 18.dp,
     )
 
-    // Signal-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle
+    // Relay-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle
     // (hors bouton lecture et slider, qui gardent leurs gestes) ouvre le menu.
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -302,7 +302,7 @@ fun AudioMessageBubble(
                             modifier = Modifier.padding(end = 4.dp),
                         )
                     }
-                    // Signal-style — heure (+ statut sortant) en petit, en bas à droite,
+                    // Relay-style — heure (+ statut sortant) en petit, en bas à droite,
                     // À L'INTÉRIEUR de la bulle.
                     BubbleTimestamp(
                         message = message,

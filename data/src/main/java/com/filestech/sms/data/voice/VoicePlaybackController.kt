@@ -24,7 +24,7 @@ import javax.inject.Singleton
 /**
  * App-wide audio playback for voice messages. Only ONE clip plays at a time — starting a new
  * playback automatically stops any previous one. This is the canonical pattern used by
- * messengers (Signal/Telegram/WhatsApp): tap one bubble while another is playing → the first
+ * messengers (Telegram/WhatsApp): tap one bubble while another is playing → the first
  * pauses.
  *
  * Identity: each playable source is keyed by a stable [String] (we use the attachment URI).

@@ -16,7 +16,7 @@ import com.filestech.sms.ui.util.rememberChatFormatters
 import java.util.Date
 
 /**
- * Signal-style — la ligne « heure • statut » ne vit PLUS sous la bulle : elle est
+ * Relay-style — la ligne « heure • statut » ne vit PLUS sous la bulle : elle est
  * rendue en petit, en bas à droite, À L'INTÉRIEUR de la bulle, alignée sur la
  * dernière ligne de texte. Le libellé vient de [libelleDeStatut].
  *
