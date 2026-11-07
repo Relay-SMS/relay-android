@@ -38,10 +38,13 @@ class SetReactionResultTest {
         assertThat(SetReactionResult.Noop).isNotEqualTo(SetReactionResult.Removed)
     }
 
-    @Test fun `only First should be matched by the send-SMS dispatch site`() {
-        // Documentation exécutable du contrat ViewModel : si quelqu'un ajoute une 5ᵉ
-        // sous-classe sans étendre ce test, le sealed when ailleurs cassera à la compile
-        // (sealed exhaustivité Kotlin). C'est voulu — la liste suivante doit rester
+    @Test fun `Noop is the only transition that never dispatches an SMS`() {
+        // Documentation exécutable du contrat ViewModel : First envoie la
+        // réaction, Changed envoie le nouvel emoji (v1.4.1), Removed envoie
+        // le retrait (`Removed a like from "…"`). Seul Noop ne déclenche
+        // jamais d'envoi. Si quelqu'un ajoute une 5ᵉ sous-classe sans étendre
+        // ce test, le sealed when ailleurs cassera à la compile (sealed
+        // exhaustivité Kotlin). C'est voulu — la liste suivante doit rester
         // synchronisée avec la liste réelle des cas.
         val every: List<SetReactionResult> = listOf(
             SetReactionResult.Noop,
@@ -49,9 +52,8 @@ class SetReactionResultTest {
             SetReactionResult.Changed("❤️", "👍"),
             SetReactionResult.Removed,
         )
-        val sendCandidates = every.filter { it is SetReactionResult.First }
-        // Un seul cas autorise l'envoi : First. Si ce nombre change, la doc et les
-        // commentaires "anti-spam Changed/Removed silencieux" doivent être revus.
-        assertThat(sendCandidates).hasSize(1)
+        val neverDispatch = every.filter { it is SetReactionResult.Noop }
+        // Un seul cas n'autorise jamais d'envoi : Noop.
+        assertThat(neverDispatch).hasSize(1)
     }
 }

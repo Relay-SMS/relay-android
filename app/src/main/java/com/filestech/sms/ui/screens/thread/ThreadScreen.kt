@@ -2193,7 +2193,9 @@ private fun ThreadMessageItem(
             DateSeparator(label = label)
         }
 
-        val showTimestamp = prev?.date?.let { msg.date - it > 5 * 60_000L } ?: true
+        // Show the time when a message is more than 1 minute after the previous
+        // one — back-to-back messages in a quick burst stay clean.
+        val showTimestamp = prev?.date?.let { msg.date - it > 60_000L } ?: true
         val burstPosition = computeBurstPosition(prev, msg, next)
         val audio = msg.audioAttachment
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à

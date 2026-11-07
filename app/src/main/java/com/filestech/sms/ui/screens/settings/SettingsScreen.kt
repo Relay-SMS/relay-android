@@ -487,6 +487,8 @@ fun SettingsScreen(
                     exit = fadeOut() + shrinkVertically(),
                 ) {
                     val reactionFormatLabel = when (state.sending.reactionFormat) {
+                        com.filestech.sms.domain.model.ReactionFormat.IOS_TAPBACK ->
+                            stringResource(R.string.settings_reaction_format_ios)
                         com.filestech.sms.domain.model.ReactionFormat.READABLE_FR ->
                             stringResource(R.string.settings_reaction_format_fr)
                         com.filestech.sms.domain.model.ReactionFormat.TAPBACK_EN ->
@@ -1539,6 +1541,12 @@ private fun ReactionFormatPickerDialog(
         title = { Text(stringResource(R.string.settings_reaction_format_title)) },
         text = {
             Column {
+                PreviewModeOption(
+                    label = stringResource(R.string.settings_reaction_format_ios),
+                    hint = stringResource(R.string.settings_reaction_format_ios_hint),
+                    selected = current == com.filestech.sms.domain.model.ReactionFormat.IOS_TAPBACK,
+                    onClick = { onSelect(com.filestech.sms.domain.model.ReactionFormat.IOS_TAPBACK) },
+                )
                 PreviewModeOption(
                     label = stringResource(R.string.settings_reaction_format_fr),
                     hint = stringResource(R.string.settings_reaction_format_fr_hint),

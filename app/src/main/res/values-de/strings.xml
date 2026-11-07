@@ -460,8 +460,10 @@
     <string name="settings_reaction_format_emoji">Nur Emoji</string>
     <string name="settings_reaction_format_emoji_hint">"❤️" allein. Sauberer auf älteren SMS-Apps, aber der Empfänger verliert jeden Zusammenhang — er kann nicht erkennen, auf welche Nachricht Sie reagiert haben.</string>
     <!-- v1.9.0 — compact emoji + quote -->
-    <string name="settings_reaction_format_emoji_quote">Emoji + Zitat (Standard)</string>
+    <string name="settings_reaction_format_emoji_quote">Emoji + Zitat</string>
     <string name="settings_reaction_format_emoji_quote_hint">"❤️ «Ihre Nachricht»". Kompakt und erhält den Zusammenhang. Der Empfänger sieht das Emoji, gefolgt von der zitierten ursprünglichen Nachricht.</string>
+    <string name="settings_reaction_format_ios">iPhone-Reaktionen (Standard)</string>
+    <string name="settings_reaction_format_ios_hint">"Liked \"Ihre Nachricht\"". Wird von iPhone, Google Messages und SMS Relay als native Reaktion erkannt — und ist überall als einfacher Text lesbar.</string>
     <!-- v1.8.1 — sender display name -->
     <string name="settings_sender_name_title">Ihr Anzeigename</string>
     <string name="settings_sender_name_desc">Wird in ausgehende Reaktions-SMS aufgenommen, damit der Empfänger den Urheber erkennt. Leer lassen, um den Namen Ihres Android-Profils zu verwenden (oder auf das anonyme "Réagi par ❤️…" zurückzufallen).</string>

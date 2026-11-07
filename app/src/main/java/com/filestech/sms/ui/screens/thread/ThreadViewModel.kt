@@ -766,30 +766,32 @@ class ThreadViewModel @Inject constructor(
      * bulle se met à jour automatiquement via le Flow d'observation de la conversation.
      *
      * v1.3.1 — si la préférence [com.filestech.sms.domain.settings.SendingSettings
-     * .sendReactionsToRecipient] est activée ET que la transition est une **première pose**
-     * ([SetReactionResult.First] : null → emoji), on prévient le correspondant en envoyant
-     * un SMS contenant uniquement l'emoji. Au tout premier envoi (jamais validé), un
-     * dialog de confirmation s'affiche via [Event.RequestReactionConfirm] ; l'envoi réel
+     * .sendReactionsToRecipient] est activée, on prévient le correspondant par SMS :
+     * **première pose** ([SetReactionResult.First] : null → emoji), **changement**
+     * ([SetReactionResult.Changed] : A → B, dispatché depuis v1.4.1 — l'utilisateur
+     * change légitimement d'avis et le correspondant doit voir le nouvel emoji) et
+     * **retrait** ([SetReactionResult.Removed] : emoji → null, dispatché comme
+     * `Removed a like from "…"` — Apple et Google ont tous deux une forme de
+     * retrait sur le fil). Au tout premier envoi (jamais validé), un dialog de
+     * confirmation s'affiche via [Event.RequestReactionConfirm] ; l'envoi réel
      * a lieu seulement après [confirmReactionSend]. Une fois la case "Ne plus demander"
-     * cochée, les envois suivants sont silencieux.
-     *
-     * Les transitions [SetReactionResult.Changed] (A → B) et [SetReactionResult.Removed]
-     * (emoji → null) sont **toujours silencieuses** côté réseau pour ne pas spammer le
-     * correspondant en cas d'hésitation. Voir KDoc [ConversationRepository.setReaction]
-     * pour la sémantique complète.
+     * cochée, les envois suivants sont silencieux. Le retrait ne déclenche jamais
+     * le dialog (l'utilisateur a déjà validé l'envoi des réactions).
+     * Voir KDoc [ConversationRepository.setReaction] pour la sémantique complète.
      */
     fun setReaction(messageId: Long, emoji: String?) {
         viewModelScope.launch {
+            // Emoji retiré éventuel, lu AVANT l'update : [SetReactionResult.Removed]
+            // ne porte pas l'emoji retiré, et c'est lui qu'il faut envoyer au
+            // correspondant (`Removed a like from "…"`). Lecture indexée, négligeable.
+            val previousEmoji = runCatching { repo.findMessageById(messageId)?.reactionEmoji }
+                .getOrNull()
             val result = runCatching { repo.setReaction(messageId, emoji) }
                 .onFailure { timber.log.Timber.w(it, "setReaction(%d, %s) failed", messageId, emoji) }
                 .getOrNull() ?: return@launch
 
-            // v1.4.1 — dispatch SMS on BOTH First (null → emoji) AND Changed (A → B)
-            // transitions. The v1.3.1 silence-on-Changed rule was too defensive : users
-            // legitimately switch their mind ("oh wait, 👍 fits better than ❤️") and
-            // expect the correspondent to see the update too. Removed (emoji → null)
-            // stays local-only — Apple/Google Tapback has no "remove" wire format we
-            // could encode in a one-segment UCS-2 SMS.
+            // Dispatch SMS sur First (null → emoji), Changed (A → B) et Removed
+            // (emoji → null, forme de retrait Apple). Voir KDoc de [setReaction].
             //
             // [SetReactionResult.Changed] does not carry the messageId (the sealed type
             // is shared across the repo layer), so we close over the [messageId] /
@@ -797,6 +799,7 @@ class ThreadViewModel @Inject constructor(
             // describe the exact state the repo just committed.
             val targetMessageId: Long
             val targetEmoji: String
+            val targetIsRemoval: Boolean
             // v1.6.0 (audit Q3) — `when` exhaustif sur sealed : pas de branche `else`
             // pour qu'une future variante du sealed interface fasse échouer la compilation
             // ici plutôt que d'être avalée silencieusement.
@@ -804,12 +807,18 @@ class ThreadViewModel @Inject constructor(
                 is SetReactionResult.First -> {
                     targetMessageId = result.messageId
                     targetEmoji = result.emoji
+                    targetIsRemoval = false
                 }
                 is SetReactionResult.Changed -> {
                     targetMessageId = messageId
                     targetEmoji = result.to
+                    targetIsRemoval = false
                 }
-                SetReactionResult.Removed -> return@launch
+                SetReactionResult.Removed -> {
+                    targetMessageId = messageId
+                    targetEmoji = previousEmoji ?: return@launch
+                    targetIsRemoval = true
+                }
                 SetReactionResult.Noop -> return@launch
             }
 
@@ -824,6 +833,9 @@ class ThreadViewModel @Inject constructor(
                 // local (cohérent avec la sémantique "réaction locale toujours possible").
                 val targetMessage = repo.findMessageById(targetMessageId)
                 if (targetMessage == null || targetMessage.isOutgoing) return@runCatching
+                // Anti-race retrait : si une réaction est revenue entre-temps, le
+                // retrait n'a plus lieu d'être envoyé.
+                if (targetIsRemoval && targetMessage.reactionEmoji != null) return@runCatching
 
                 // v1.6.2 — lecture FRAÎCHE via `settings.flow.first()` au lieu de
                 // `cachedSettings.value`. Le hot StateFlow Eagerly de v1.6.1 (PERF-11)
@@ -841,11 +853,16 @@ class ThreadViewModel @Inject constructor(
 
                 // v1.4.1 — the confirmation dialog is only triggered on First (so the
                 // user gets to opt-in to "send my reactions" the very first time). For
-                // Changed, we assume the user has already validated the wire pattern
-                // and dispatch silently.
+                // Changed and Removed, we assume the user has already validated the wire
+                // pattern and dispatch silently.
                 val isFirstEver = result is SetReactionResult.First
                 if (sending.reactionConfirmDismissed || !isFirstEver) {
-                    dispatchReactionSms(targetMessageId, targetEmoji, sending.reactionFormat)
+                    dispatchReactionSms(
+                        targetMessageId,
+                        targetEmoji,
+                        sending.reactionFormat,
+                        isRemoval = targetIsRemoval,
+                    )
                 } else {
                     _events.tryEmit(Event.RequestReactionConfirm(targetMessageId, targetEmoji))
                 }
@@ -930,6 +947,7 @@ class ThreadViewModel @Inject constructor(
         messageId: Long,
         emoji: String,
         format: com.filestech.sms.domain.model.ReactionFormat,
+        isRemoval: Boolean = false,
     ): DispatchOutcome {
         val now = System.currentTimeMillis()
         // v1.3.5 G7 audit fix — purge opportuniste des entries expirées AVANT lecture
@@ -940,13 +958,21 @@ class ThreadViewModel @Inject constructor(
         // v1.4.1 — dedup ne s'applique QU'AU MÊME emoji. Si l'utilisateur change
         // (❤️ → 👍), la réaction part même si on est dans la fenêtre 60s — sinon le
         // destinataire reste bloqué sur la 1ʳᵉ réaction et ne voit jamais le changement.
+        // Le retrait est une direction distincte : poser puis retirer dans la fenêtre
+        // doit partir aussi, sinon le correspondant garde une réaction retirée.
+        // (Conditions découpées en booléens nommés : Detekt ComplexCondition max 3.)
         val last = recentlySentReactionFor[messageId]
-        if (last != null && last.emoji == emoji && now - last.timestamp < REACTION_DEDUP_WINDOW_MS) {
+        val sameReaction = last != null &&
+            last.emoji == emoji && last.isRemoval == isRemoval
+        val withinWindow = last != null &&
+            now - last.timestamp < REACTION_DEDUP_WINDOW_MS
+        if (sameReaction && withinWindow) {
             timber.log.Timber.d("dispatchReactionSms: dedup re-send on %d within %ds", messageId, REACTION_DEDUP_WINDOW_MS / 1000)
             return DispatchOutcome.DedupSkipped
         }
-        recentlySentReactionFor[messageId] = ReactionDispatch(emoji = emoji, timestamp = now)
-        return when (val res = sendReaction(messageId, emoji, format)) {
+        recentlySentReactionFor[messageId] =
+            ReactionDispatch(emoji = emoji, timestamp = now, isRemoval = isRemoval)
+        return when (val res = sendReaction(messageId, emoji, format, isRemoval)) {
             is Outcome.Success -> DispatchOutcome.Sent
             is Outcome.Failure -> {
                 _events.tryEmit(Event.SendError(res.error))
@@ -961,9 +987,14 @@ class ThreadViewModel @Inject constructor(
     /**
      * v1.4.1 — `(emoji, timestamp)` tuple. Track emoji in addition to time so the dedup
      * only fires on **same emoji + within 60s** — a legitimate change of heart
-     * (❤️ → 👍) bypasses the window and reaches the correspondent.
+     * (❤️ → 👍) bypasses the window and reaches the correspondent. [isRemoval]
+     * distinguishes a pose from a retrait of the same emoji.
      */
-    private data class ReactionDispatch(val emoji: String, val timestamp: Long)
+    private data class ReactionDispatch(
+        val emoji: String,
+        val timestamp: Long,
+        val isRemoval: Boolean = false,
+    )
 
     /**
      * X2 — dedup en mémoire des envois récents de réactions. Clé = messageId, valeur =

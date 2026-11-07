@@ -7,9 +7,10 @@ package com.filestech.sms.domain.repository
  *
  * Logique d'envoi côté ViewModel :
  *
- *   - [First]   → seule transition qui peut déclencher un SMS (selon préférence user).
- *   - [Changed] → silencieux (le user a hésité, on ne le spam pas).
- *   - [Removed] → silencieux (retrait local uniquement).
+ *   - [First]   → envoie un SMS de réaction (selon préférence user).
+ *   - [Changed] → envoie un SMS avec le nouvel emoji (depuis v1.4.1).
+ *   - [Removed] → envoie un SMS de retrait (`Removed a like from "…"`,
+ *     forme Apple ; dispatché, plus silencieux local uniquement).
  *   - [Noop]    → rien à faire.
  *
  * Pourquoi un sealed class plutôt qu'un simple Pair/Boolean : la sémantique est explicite,
