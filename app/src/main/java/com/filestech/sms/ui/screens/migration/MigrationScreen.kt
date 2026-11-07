@@ -1,5 +1,6 @@
 package com.filestech.sms.ui.screens.migration
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,7 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,8 +19,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -29,6 +32,9 @@ import com.filestech.sms.R
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.sms.TelephonyReader
+import com.filestech.sms.ui.components.RelayPrimaryButton
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -118,7 +124,12 @@ fun MigrationScreen(onBack: () -> Unit, viewModel: MigrationViewModel = hiltView
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.migration_title)) },
+                title = {
+                    Text(
+                        stringResource(R.string.migration_title),
+                        style = RelayText.ThreadTitle,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -130,42 +141,66 @@ fun MigrationScreen(onBack: () -> Unit, viewModel: MigrationViewModel = hiltView
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 32.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.CloudUpload,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(64.dp),
+            )
+            Spacer(Modifier.size(24.dp))
             Text(
                 text = stringResource(R.string.migration_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ThreadTitle,
+                textAlign = TextAlign.Center,
             )
             Spacer(Modifier.size(8.dp))
             Text(
                 text = stringResource(R.string.migration_body),
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.Preview,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.size(16.dp))
-            Button(onClick = viewModel::run, enabled = !state.isRunning) {
-                Text(
-                    if (state.done) stringResource(R.string.migration_rerun)
-                    else stringResource(R.string.migration_run),
-                )
-            }
+            Spacer(Modifier.size(24.dp))
+            RelayPrimaryButton(
+                text = if (state.done) {
+                    stringResource(R.string.migration_rerun)
+                } else {
+                    stringResource(R.string.migration_run)
+                },
+                onClick = viewModel::run,
+                enabled = !state.isRunning,
+            )
             if (state.isRunning || state.done || state.failed) {
                 Spacer(Modifier.size(16.dp))
                 // v1.25.3 (audit M10) — la barre indéterminée ne tourne plus que pendant
                 // l'import : elle restait affichée une fois terminé, ce qui donnait à un import
                 // fini l'apparence d'un import bloqué.
                 if (state.isRunning) {
-                    LinearProgressIndicator(modifier = Modifier.padding(vertical = 8.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        color = RelayColors.Blue,
+                    )
                 }
                 Text(
                     text = stringResource(R.string.migration_imported, state.imported),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview,
+                    textAlign = TextAlign.Center,
                 )
                 if (state.failed) {
                     Spacer(Modifier.size(8.dp))
                     Text(
                         text = stringResource(R.string.migration_failed),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = RelayText.Preview,
                         color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
                     )
                 }
             }

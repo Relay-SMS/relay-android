@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +44,7 @@ import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.ui.theme.BrandBlue
 import com.filestech.sms.ui.theme.bubbleIncomingColor
 import timber.log.Timber
 import java.io.File
@@ -110,9 +112,11 @@ fun MediaAttachmentBubble(
     val context = LocalContext.current
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
-    // Outgoing : primary (couleur de marque) ; Incoming : slate-blue d'app (cohérent
-    // avec MessageBubble / AudioMessageBubble).
-    val bgColor = if (isOut) cs.primary else bubbleIncomingColor(cs)
+    // Outgoing : bleu de marque fixe (cohérent avec [MessageBubble] et
+    // [AudioMessageBubble]). Phase 8 — pas le `primary` du thème, qui s'éclaircit en
+    // sombre : les bulles sortantes gardent un seul bleu dans les deux thèmes, et le
+    // texte sortant reste blanc (voir ci-dessous).
+    val bgColor = if (isOut) BrandBlue else bubbleIncomingColor(cs)
     val shape = RoundedCornerShape(18.dp)
 
     // X-04 — une seule fonction d'ouverture, paramétrée par la pièce jointe touchée.
@@ -120,7 +124,7 @@ fun MediaAttachmentBubble(
         fun(cible: Attachment) = ouvrirPieceJointe(context, cible)
     }
 
-    // Relay-style — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
+    // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe (le
     // `clickable` interne consomme le geste avant ce parent) ; l'appui long garde la
     // sélection libre de la légende quand il y en a une.
@@ -188,7 +192,9 @@ fun MediaAttachmentBubble(
                 MessageTextWithLinks(
                     text = message.body,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (isOut) cs.onPrimary else cs.onSurface,
+                    // Phase 8 — blanc fixe sur le bleu de marque fixe sortant : `onPrimary`
+                    // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
+                    color = if (isOut) Color.White else cs.onSurface,
                     onPhoneClick = onPhoneClick,
                     modifier = Modifier
                         .widthIn(max = 240.dp)
@@ -197,7 +203,7 @@ fun MediaAttachmentBubble(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
-            // Relay-style — heure (+ statut sortant) en petit, en bas à droite de la
+            // Relay — heure (+ statut sortant) en petit, en bas à droite de la
             // bulle. Pour une pièce jointe sans légende, elle se place sous la vignette,
             // faute de fond de bulle où l'inscrire.
             BubbleTimestamp(
@@ -389,14 +395,15 @@ private fun IconAttachment(
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val textColor = if (isOutgoing) cs.onPrimary else cs.onSurface
+    // Phase 8 — blanc fixe sur le bleu de marque fixe sortant (voir [bgColor] plus haut) :
+    // `onPrimary` devient bleu nuit en sombre.
+    val textColor = if (isOutgoing) Color.White else cs.onSurface
     // v1.3.10 — fill the bubble for BOTH directions. Before, outgoing got only a 1.5 dp
     // border around a transparent interior; that pattern relied on the body placeholder text
     // ("📎 filename.pdf") underneath to fill the visual space. With the v1.3.10 body /
     // previewLabel decoupling, outgoing files without a user caption have body = "" → the
-    // bordered shell looks like a hollow white blob. Aligning with [MessageBubble] +
-    // [AudioMessageBubble] (always filled with the brand-primary background, text in
-    // onPrimary) restores visual coherence across all outgoing bubble types.
+    // bordered shell looks like a hollow white blob. Filling with the fixed brand blue
+    // (text in fixed white, see above) keeps all outgoing bubble types coherent.
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,13 +23,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.domain.model.MessageSearchHit
+import com.filestech.sms.ui.theme.FixedTypeSize
+import com.filestech.sms.ui.theme.LocalMessageTextFactor
 import com.filestech.sms.ui.theme.MessageTextSize
+import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.scaledBy
 import com.filestech.sms.ui.util.relativeRowLabel
 import com.filestech.sms.ui.util.rememberChatFormatters
 
 /**
  * v1.28.8 (issue #17) — un message trouvé par la recherche : sa conversation, sa date, et l'extrait
  * où les passages trouvés sont mis en évidence. Un appui ouvre la conversation.
+ *
+ * Même géométrie que [ConversationRow] : ligne 72 dp, avatar 48 dp, nom 17sp/500, date 13sp,
+ * extrait 15sp/400 (deux lignes ici, pour laisser voir le contexte du passage trouvé).
  */
 @Composable
 fun MessageSearchRow(
@@ -47,6 +55,8 @@ fun MessageSearchRow(
     val dateLabel = remember(hit.date) { formatters.relativeRowLabel(hit.date) }
     val surligne = SpanStyle(fontWeight = FontWeight.SemiBold, color = cs.primary)
     val extrait = remember(hit.excerpt, surligne) { extraitSurligne(hit.excerpt, surligne) }
+    // Facteur taille du texte, lu au-dessus de [MessageTextSize] comme dans [ConversationRow].
+    val textFactor = LocalMessageTextFactor.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -57,11 +67,12 @@ fun MessageSearchRow(
                     Modifier.semantics(mergeDescendants = true) {}
                 },
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .height(72.dp)
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showAvatars) {
-            Avatar(label = conversation.title, customUri = conversation.avatarUri, isGroup = conversation.isGroup)
+            RelayAvatar(label = conversation.title, customUri = conversation.avatarUri, isGroup = conversation.isGroup)
             Spacer(Modifier.width(12.dp))
         }
         // Taille du texte des messages : la colonne de texte seulement, comme ConversationRow.
@@ -70,23 +81,27 @@ fun MessageSearchRow(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = conversation.title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+                        style = RelayText.ConvoName.scaledBy(textFactor),
                         color = cs.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = dateLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = cs.onSurfaceVariant,
-                    )
+                    // Phase 8 — l'heure est du méta-texte de mise en page, fixe (voir
+                    // [FixedTypeSize]), comme dans [ConversationRow].
+                    FixedTypeSize {
+                        Text(
+                            text = dateLabel,
+                            style = RelayText.Timestamp,
+                            color = cs.onSurfaceVariant,
+                        )
+                    }
                 }
-                Spacer(Modifier.size(2.dp))
+                Spacer(Modifier.size(3.dp))
                 Text(
                     text = extrait,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview.scaledBy(textFactor),
                     color = cs.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

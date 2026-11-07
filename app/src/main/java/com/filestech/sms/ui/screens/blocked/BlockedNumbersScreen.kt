@@ -5,31 +5,31 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -42,6 +42,11 @@ import androidx.lifecycle.viewModelScope
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.BlockedNumber
 import com.filestech.sms.domain.repository.BlockedNumberRepository
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayEmptyState
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.components.RelayTextField
+import com.filestech.sms.ui.theme.RelayText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -70,10 +75,7 @@ fun BlockedNumbersScreen(onBack: () -> Unit, viewModel: BlockedNumbersViewModel 
     /** v1.25.3 (audit M21) — numéro en attente de confirmation de déblocage. */
     var confirmUnblockFor by remember { mutableStateOf<String?>(null) }
 
-    // Lu une fois : le bouton flottant s'en sert DEUX fois — comme nom accessible et comme libellé
-    // visible. Deux appels diraient la même chose, mais laisseraient croire que les deux valeurs
-    // peuvent diverger, alors que c'est précisément ce qu'il ne faut pas. Voir le bouton plus bas.
-    val ajouterUnNumero = stringResource(R.string.blocked_add)
+    val cs = MaterialTheme.colorScheme
 
     Scaffold(
         topBar = {
@@ -87,89 +89,150 @@ fun BlockedNumbersScreen(onBack: () -> Unit, viewModel: BlockedNumbersViewModel 
             )
         },
         floatingActionButton = {
-            // 🔴🔴 **Le nom accessible est posé sur le BOUTON. Sans lui, ce bouton était MUET.**
-            //
-            // `ExtendedFloatingActionButton` de material3 1.4.0 (BOM Compose 2026.06.00) enveloppe
-            // son emplacement `text` dans un `clearAndSetSemantics` : le libellé est **dessiné** et
-            // **absent de l'arbre de sémantique fusionné**, celui que lit un lecteur d'écran.
-            //
-            // Mesuré sur le S9 le 2026-08-17, sur la **1.27.3 publiée** : ce nœud portait
-            // `clickable=true`, `text=""`, `content-desc=""`, et `NAF="true"` — la marque que
-            // `uiautomator` pose lui-même sur un nœud cliquable sans nom. TalkBack annonçait donc
-            // « bouton », sans dire lequel, sur le seul moyen d'ajouter un numéro à la liste.
-            //
-            // ⚠️ `contentDescription = null` sur l'icône reste correct et le demeure : une icône
-            // décorative ne se nomme pas, et la nommer ici ajouterait une **seconde** source de
-            // libellé — donc une annonce en double le jour où material3 cesse d'effacer le slot, et
-            // un arrêt de focus parasite si son `mergeDescendants` change. La propriété appartient à
-            // l'**action**, pas au pictogramme.
-            //
-            // Trouvé en portant Notes Tech, qui écrivait exactement le même code.
-            ExtendedFloatingActionButton(
-                text = { Text(ajouterUnNumero) },
-                icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+            // The accessible name lives on the BUTTON, not on the decorative icon: without
+            // it TalkBack would announce a nameless button on the only way to add a number.
+            // The icon stays unnamed so its label is never announced twice.
+            FloatingActionButton(
                 onClick = { showDialog = true },
-                modifier = Modifier.semantics { contentDescription = ajouterUnNumero },
-            )
+                modifier = Modifier
+                    .size(56.dp)
+                    .semantics { contentDescription = stringResource(R.string.blocked_add) },
+                shape = CircleShape,
+                containerColor = cs.primary,
+                contentColor = cs.onPrimary,
+            ) {
+                Icon(
+                    Icons.Outlined.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         },
     ) { padding ->
         if (rows.isEmpty()) {
-            Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), verticalArrangement = Arrangement.Center) {
-                Text(text = stringResource(R.string.blocked_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                RelayEmptyState(
+                    icon = Icons.Outlined.Block,
+                    headline = stringResource(R.string.blocked_empty),
+                )
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
                 items(rows, key = { it.id }) { item ->
-                    ListItem(
-                        headlineContent = { Text(item.rawNumber) },
-                        supportingContent = item.label?.let { { Text(it) } },
-                        trailingContent = {
-                            // v1.25.3 (audit M21) — passe par une confirmation : un tap
-                            // accidentel remettait en circulation un numéro indésirable, sans
-                            // annulation possible ni trace de ce qui venait de se produire.
-                            IconButton(onClick = { confirmUnblockFor = item.rawNumber }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_unblock))
-                            }
-                        },
+                    BlockedRow(
+                        number = item.rawNumber,
+                        label = item.label,
+                        onUnblock = { confirmUnblockFor = item.rawNumber },
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                 }
             }
         }
     }
 
     confirmUnblockFor?.let { number ->
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { confirmUnblockFor = null },
-            title = { Text(stringResource(R.string.blocked_unblock_confirm_title)) },
-            text = { Text(stringResource(R.string.blocked_unblock_confirm_body, number)) },
+            title = stringResource(R.string.blocked_unblock_confirm_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.blocked_unblock_confirm_body, number),
+                    style = RelayText.Preview,
+                    color = cs.onSurfaceVariant,
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmUnblockFor = null
-                    viewModel.remove(number)
-                }) { Text(stringResource(R.string.action_unblock)) }
+                RelayTextButton(
+                    text = stringResource(R.string.action_unblock),
+                    onClick = {
+                        confirmUnblockFor = null
+                        viewModel.remove(number)
+                    },
+                    confirm = true,
+                )
             },
             dismissButton = {
-                TextButton(onClick = { confirmUnblockFor = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = { confirmUnblockFor = null },
+                )
             },
         )
     }
 
     if (showDialog) {
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { showDialog = false; newNumber = "" },
-            title = { Text(stringResource(R.string.blocked_add)) },
-            text = {
-                OutlinedTextField(value = newNumber, onValueChange = { newNumber = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            title = stringResource(R.string.blocked_add),
+            content = {
+                RelayTextField(
+                    value = newNumber,
+                    onValueChange = { newNumber = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.add(newNumber); showDialog = false; newNumber = "" }, enabled = newNumber.isNotBlank()) {
-                    Text(stringResource(R.string.action_block))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_block),
+                    onClick = { viewModel.add(newNumber); showDialog = false; newNumber = "" },
+                    enabled = newNumber.isNotBlank(),
+                    confirm = true,
+                )
             },
-            dismissButton = { TextButton(onClick = { showDialog = false; newNumber = "" }) { Text(stringResource(R.string.action_cancel)) } },
+            dismissButton = {
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = { showDialog = false; newNumber = "" },
+                )
+            },
         )
+    }
+}
+
+/** One blocked number: 72dp row with a block glyph, number + optional label, unblock action. */
+@Composable
+private fun BlockedRow(
+    number: String,
+    label: String?,
+    onUnblock: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Block,
+            contentDescription = null,
+            tint = cs.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = number,
+                style = RelayText.ConvoName,
+                color = cs.onSurface,
+            )
+            if (label != null) {
+                Text(
+                    text = label,
+                    style = RelayText.Preview,
+                    color = cs.onSurfaceVariant,
+                )
+            }
+        }
+        // v1.25.3 (audit M21) — passe par une confirmation : un tap
+        // accidentel remettait en circulation un numéro indésirable, sans
+        // annulation possible ni trace de ce qui venait de se produire.
+        IconButton(onClick = onUnblock) {
+            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_unblock))
+        }
     }
 }

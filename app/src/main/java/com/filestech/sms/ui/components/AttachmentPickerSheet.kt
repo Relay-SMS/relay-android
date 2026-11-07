@@ -21,12 +21,9 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +32,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
+import com.filestech.sms.ui.theme.RelayText
 
 /**
  * Compose-side picker for "compose with an attachment" (#2). Hosted by the thread's composer:
@@ -54,14 +52,11 @@ import com.filestech.sms.R
  *  - Subtitle "Envoyé comme MMS" sets honest expectations — the user knows their carrier will
  *    charge MMS rates if they don't have an unlimited bundle.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttachmentPickerSheet(
     onDismiss: () -> Unit,
     onAttachmentPicked: (uri: Uri, kind: AttachmentKind) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     val photoLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -87,10 +82,9 @@ fun AttachmentPickerSheet(
         onDismiss()
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
+    // Relay UI refresh: the shared sheet shell (28dp top corners, drag handle, light
+    // scrim) instead of a bare ModalBottomSheet.
+    RelaySheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -100,11 +94,11 @@ fun AttachmentPickerSheet(
         ) {
             Text(
                 text = stringResource(R.string.attach_sheet_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ThreadTitle,
             )
             Text(
                 text = stringResource(R.string.attach_sheet_subtitle),
-                style = MaterialTheme.typography.bodySmall,
+                style = RelayText.SystemNote,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, bottom = 16.dp),
             )

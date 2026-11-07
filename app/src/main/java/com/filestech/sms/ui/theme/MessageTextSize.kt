@@ -7,7 +7,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import com.filestech.sms.domain.settings.TextScale
 
@@ -66,6 +68,27 @@ internal fun TextScale.factor(): Float = when (this) {
 
 /** Posé par [SmsTechTheme] depuis le réglage ; 1 hors thème (aperçus, tests). */
 internal val LocalMessageTextFactor = staticCompositionLocalOf { 1f }
+
+/**
+ * Phase 8 — épingle le texte de [content] à l'échelle de police système 1x.
+ *
+ * Le méta-texte de mise en page (heure dans une bulle, horodatage d'une ligne de
+ * conversation, compteur d'une pastille, séparateur de date) ne doit NI suivre le
+ * réglage « Taille du texte des messages » (il lit des styles [RelayText] explicites,
+ * que [MessageTextSize] ne multiplie pas) NI l'échelle de police d'Android : à 2x,
+ * une heure agrandie casse la géométrie de la bulle et de la ligne. Seule la
+ * densité de police est ramenée à 1 — la densité d'affichage (`density`) est
+ * conservée, donc les `dp` ne bougent pas. Noms, corps de messages et aperçus ne
+ * passent PAS par ici : ils grandissent, comme le veut le design de référence.
+ */
+@Composable
+fun FixedTypeSize(content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, fontScale = 1f),
+        content = content,
+    )
+}
 
 /** Agrandit (ou réduit) le texte de [content] selon le réglage « Taille du texte des messages ». */
 @Composable

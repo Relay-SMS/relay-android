@@ -1,17 +1,13 @@
 package com.filestech.sms.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.filestech.sms.domain.settings.Appearance
@@ -23,31 +19,30 @@ fun SmsTechTheme(
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
-    val isDarkTech = appearance.themeMode == ThemeMode.DARK_TECH
+    // Two fixed schemes only: Light and one Dark (`#1B1B1B`). The DarkTech mode, the
+    // dynamic-colours toggle and the AMOLED true-black toggle still exist in Settings,
+    // but they resolve onto these two schemes — DarkTech picks the same Dark scheme,
+    // and dynamic colours / true black no longer re-derive the palette from the
+    // wallpaper. The options are kept (and their stored values untouched) so a later
+    // pass can refresh or remove them without a settings migration.
     val useDark = when (appearance.themeMode) {
         ThemeMode.SYSTEM -> systemDark
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
         ThemeMode.DARK_TECH -> true
     }
-    val ctx = LocalContext.current
-    // Dark Tech is an opinionated, fixed palette: ignore dynamic colors and AMOLED override.
-    val dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-        appearance.dynamicColors && !isDarkTech
+    val baseScheme: ColorScheme = if (useDark) darkScheme() else lightScheme()
 
-    val baseScheme: ColorScheme = when {
-        isDarkTech -> darkTechScheme()
-        dynamicAvailable && useDark -> dynamicDarkColorScheme(ctx).maybeAmoled(appearance.amoledTrueBlack)
-            .withBrandSnackbar()
-        dynamicAvailable && !useDark -> dynamicLightColorScheme(ctx).withBrandSnackbar()
-        useDark -> darkScheme(appearance.amoledTrueBlack)
-        else -> lightScheme()
-    }
-
-    // The custom accent doesn't make sense over the Dark Tech palette (which is the whole point).
+    // A user-chosen accent still overrides primary; without one the app uses the
+    // fixed Relay blue. The content colour is derived from the accent itself (see
+    // [onBrandContainer]) instead of staying white: with the dark scheme's dark
+    // `onPrimary`, a dark custom accent would otherwise pair dark-on-dark, and a
+    // light accent with a white `onPrimary` would pair white-on-light.
     val scheme = appearance.customAccentArgb
-        ?.takeIf { !isDarkTech }
-        ?.let { argb -> baseScheme.copy(primary = Color(argb)) }
+        ?.let { argb ->
+            val accent = Color(argb)
+            baseScheme.copy(primary = accent, onPrimary = onBrandContainer(accent))
+        }
         ?: baseScheme
 
     val view = LocalView.current
@@ -72,16 +67,3 @@ fun SmsTechTheme(
         MaterialTheme(colorScheme = scheme, typography = AppTypography, shapes = AppShapes, content = content)
     }
 }
-
-private fun ColorScheme.maybeAmoled(amoled: Boolean): ColorScheme =
-    if (amoled) copy(background = Color.Black, surface = Color.Black) else this
-
-/**
- * Forces our brand slate-blue `Snackbar` palette onto a Material You / dynamic-color scheme.
- * Without this, `dynamicDarkColorScheme` / `dynamicLightColorScheme` derive `inverseSurface`
- * from the wallpaper, which on Samsung One UI commonly resolves to near-black — turning what
- * should be a brand-coloured slate-blue toast into a "black Material 3 default" indistinguishable
- * from the OS shell. Reported as v1.2.2 UX regression.
- */
-private fun ColorScheme.withBrandSnackbar(): ColorScheme =
-    copy(inverseSurface = SnackbarBg, inverseOnSurface = SnackbarOn)

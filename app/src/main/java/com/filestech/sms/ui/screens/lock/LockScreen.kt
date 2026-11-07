@@ -5,22 +5,28 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,8 +40,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -51,8 +64,11 @@ import com.filestech.sms.R
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.domain.settings.LockMode
 import com.filestech.sms.security.AppLockManager
+import com.filestech.sms.ui.components.RelayPrimaryButton
 import com.filestech.sms.ui.security.ProtectSecretInput
 import com.filestech.sms.ui.security.StrongBiometrics
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -328,10 +344,26 @@ fun LockScreen(
                 tint = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.size(24.dp))
-            Text(text = stringResource(R.string.lock_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = stringResource(R.string.lock_title),
+                style = RelayText.ThreadTitle,
+            )
             Spacer(Modifier.size(16.dp))
-            OutlinedTextField(
-                value = pin,
+            val isLockedOut = state is AppLockManager.LockState.LockedOut
+            val submitPin = {
+                if (pin.isNotEmpty() && !isLockedOut) {
+                    viewModel.attempt(pin.toCharArray())
+                    pin = ""
+                }
+            }
+            val pinFocusRequester = remember { FocusRequester() }
+            // Focus automatique à l'ouverture, comme le dialogue de saisie du coffre.
+            LaunchedEffect(Unit) { pinFocusRequester.requestFocus() }
+            LockPinCells(
+                pin = pin,
+                enabled = !isLockedOut,
+                isError = wrongCode,
+                focusRequester = pinFocusRequester,
                 onValueChange = {
                     if (it.length <= 12 && it.all { c -> c.isDigit() }) {
                         pin = it
@@ -341,11 +373,7 @@ fun LockScreen(
                         if (wrongCode) viewModel.clearWrongCode()
                     }
                 },
-                label = { Text(stringResource(R.string.lock_pin_hint)) },
-                isError = wrongCode,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                singleLine = true,
+                onDone = submitPin,
             )
             // v1.26.0 — masque pendant `LockedOut` : le compte a rebours plus bas dit deja ce
             // qu'il faut, et empiler les deux messages rouges brouillerait l'information utile.
@@ -353,31 +381,41 @@ fun LockScreen(
                 Spacer(Modifier.size(8.dp))
                 Text(
                     text = stringResource(R.string.lock_wrong_code),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
             Spacer(Modifier.size(16.dp))
-            val isLockedOut = state is AppLockManager.LockState.LockedOut
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(
-                    onClick = { viewModel.attempt(pin.toCharArray()); pin = "" },
-                    // Audit I1 (v1.14.8) — bouton désactivé pendant LockedOut : avant, l'user
-                    // pouvait tapper "Continuer" sans feedback visible. attemptUnlock re-check
-                    // côté manager et n'incrémente pas l'échec, mais l'UX paraissait cassée.
-                    enabled = pin.isNotEmpty() && !isLockedOut,
-                ) { Text(stringResource(R.string.action_continue)) }
-                // Re-show the biometric prompt manually if the user dismissed it but still wants
-                // to try the finger (only relevant in BIOMETRIC mode).
-                if (lockMode == LockMode.BIOMETRIC && fallbackToPin) {
+            // Audit I1 (v1.14.8) — bouton désactivé pendant LockedOut : avant, l'user
+            // pouvait tapper "Continuer" sans feedback visible. attemptUnlock re-check
+            // côté manager et n'incrémente pas l'échec, mais l'UX paraissait cassée.
+            RelayPrimaryButton(
+                text = stringResource(R.string.action_continue),
+                onClick = submitPin,
+                enabled = pin.isNotEmpty() && !isLockedOut,
+            )
+            // Re-show the biometric prompt manually if the user dismissed it but still wants
+            // to try the finger (only relevant in BIOMETRIC mode).
+            if (lockMode == LockMode.BIOMETRIC && fallbackToPin) {
+                Spacer(Modifier.size(8.dp))
+                TextButton(
+                    onClick = { fallbackToPin = false },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = RelayColors.Blue,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Fingerprint,
+                        contentDescription = null,
+                        tint = RelayColors.Blue,
+                        modifier = Modifier.size(20.dp),
+                    )
                     Spacer(Modifier.size(8.dp))
-                    IconButton(onClick = { fallbackToPin = false }) {
-                        Icon(
-                            imageVector = Icons.Outlined.Fingerprint,
-                            contentDescription = stringResource(R.string.lock_biometric_title),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
+                    Text(
+                        text = stringResource(R.string.lock_biometric_title),
+                        style = RelayText.ButtonText,
+                    )
                 }
             }
             if (isLockedOut) {
@@ -415,9 +453,112 @@ fun LockScreen(
                 Spacer(Modifier.size(12.dp))
                 Text(
                     text = stringResource(R.string.lock_lockout_message, remaining),
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+    }
+}
+
+/** Nombre de cellules visibles de la saisie PIN : un point par caractère saisi. */
+private const val PIN_CELL_COUNT = 6
+
+/**
+ * Saisie du PIN en six grandes cellules arrondies (18dp), même présentation que le dialogue
+ * de saisie du coffre : un point par caractère saisi, jamais le caractère lui-même. La saisie
+ * réelle vit dans un [BasicTextField] invisible (texte et curseur transparents) dont la
+ * `decorationBox` dessine les cellules — le clavier, la transformation mot de passe et la
+ * validation restent ceux d'un champ classique, seule la présentation change. Un code de plus
+ * de six chiffres remplit les six cellules et affiche le surplus (`+N`) à droite : le code
+ * reste accepté jusqu'à douze chiffres, l'utilisateur voit simplement qu'il a dépassé les
+ * six cellules.
+ */
+@Composable
+private fun LockPinCells(
+    pin: String,
+    enabled: Boolean,
+    isError: Boolean,
+    focusRequester: FocusRequester,
+    onValueChange: (String) -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val filled = pin.length.coerceAtMost(PIN_CELL_COUNT)
+    val overflow = (pin.length - PIN_CELL_COUNT).coerceAtLeast(0)
+    BasicTextField(
+        value = pin,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester),
+        textStyle = TextStyle(color = Color.Transparent),
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.NumberPassword,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
+        enabled = enabled,
+        cursorBrush = SolidColor(Color.Transparent),
+        decorationBox = { innerTextField ->
+            // Le champ de texte reste compose (taille nulle, texte transparent) : c'est lui
+            // qui porte la session de saisie et le focus ; les cellules ne font que dessiner.
+            Box(modifier = Modifier.size(0.dp)) { innerTextField() }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                repeat(PIN_CELL_COUNT) { index ->
+                    LockPinCell(
+                        filled = index < filled,
+                        isError = isError,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (overflow > 0) {
+                    Text(
+                        text = "+$overflow",
+                        style = RelayText.Timestamp,
+                        color = cs.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+    )
+}
+
+/** Une cellule de saisie PIN : fond surface, coin 18dp, point centré quand elle est remplie. */
+@Composable
+private fun LockPinCell(
+    filled: Boolean,
+    isError: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val cellShape = RoundedCornerShape(18.dp)
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(cellShape)
+            .background(if (isError) cs.errorContainer else cs.surfaceVariant)
+            .border(
+                width = 1.dp,
+                color = if (isError) cs.error else Color.Transparent,
+                shape = cellShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (filled) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(if (isError) cs.error else cs.onSurface),
+            )
         }
     }
 }
