@@ -488,17 +488,26 @@ private fun DurationSection(
                 RelayPickerOption(
                     label = stringResource(R.string.safety_call_setup_duration_24h),
                     selected = current == SafetyCallConfig.TIMEOUT_24H_MS,
-                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_24H_MS); pickerOpen = false },
+                    onClick = {
+                        onSelect(SafetyCallConfig.TIMEOUT_24H_MS)
+                        pickerOpen = false
+                    },
                 ),
                 RelayPickerOption(
                     label = stringResource(R.string.safety_call_setup_duration_48h),
                     selected = current == SafetyCallConfig.TIMEOUT_48H_MS,
-                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_48H_MS); pickerOpen = false },
+                    onClick = {
+                        onSelect(SafetyCallConfig.TIMEOUT_48H_MS)
+                        pickerOpen = false
+                    },
                 ),
                 RelayPickerOption(
                     label = stringResource(R.string.safety_call_setup_duration_72h),
                     selected = current == SafetyCallConfig.TIMEOUT_72H_MS,
-                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_72H_MS); pickerOpen = false },
+                    onClick = {
+                        onSelect(SafetyCallConfig.TIMEOUT_72H_MS)
+                        pickerOpen = false
+                    },
                 ),
                 RelayPickerOption(
                     label = if (isStandard) {
@@ -507,7 +516,10 @@ private fun DurationSection(
                         durationLabelText(current)
                     },
                     selected = !isStandard,
-                    onClick = { pickerOpen = false; onOpenCustom() },
+                    onClick = {
+                        pickerOpen = false
+                        onOpenCustom()
+                    },
                 ),
             ),
             onDismiss = { pickerOpen = false },

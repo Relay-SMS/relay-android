@@ -2176,7 +2176,6 @@ private fun swatchPalette(mode: com.filestech.sms.domain.settings.ThemeMode): Sw
         )
     }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  v1.2.6 audit F4 — "Mon numéro" row + dialog + auto-detection helper
 // ─────────────────────────────────────────────────────────────────────────────
