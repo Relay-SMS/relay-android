@@ -813,7 +813,7 @@ fun ThreadScreen(
                     } else {
                         state.conversation?.displayName
                     },
-                    // Signal-style — l'étiquette d'expéditeur ne s'affiche QUE dans les
+                    // Relay-style — l'étiquette d'expéditeur ne s'affiche QUE dans les
                     // groupes ; en 1:1, aucune étiquette au-dessus des bulles.
                     isGroup = state.conversation?.isGroup == true,
                     bubbleColorArgb = state.conversation?.bubbleColorArgb,
@@ -2156,7 +2156,7 @@ private fun ThreadMessageItem(
     next: Message?,
     daySeparatorLabel: String?,
     conversationDisplayName: String?,
-    /** Signal-style — `true` si le fil est un groupe : seul ce cas montre l'étiquette. */
+    /** Relay-style — `true` si le fil est un groupe : seul ce cas montre l'étiquette. */
     isGroup: Boolean = false,
     bubbleColorArgb: Int?,
     smishingReasons: List<com.filestech.sms.domain.smishing.SmishingReason>,
@@ -2190,7 +2190,7 @@ private fun ThreadMessageItem(
         val mediaAttachment = mediaAttachments.firstOrNull()
         // v1.3.3 #7 — étiquette d'expéditeur uniquement sur la 1ʳᵉ bulle d'un burst (Solo ou First)
         // pour ne pas surcharger visuellement les suites consécutives du même expéditeur.
-        // Signal-style — uniquement dans les groupes : en 1:1, l'expéditeur est évident et
+        // Relay-style — uniquement dans les groupes : en 1:1, l'expéditeur est évident et
         // l'étiquette ne fait que du bruit. Le suffixe SIM (ci-dessous) est conservé : il ne
         // s'applique que quand une étiquette existe, donc uniquement en groupe.
         val baseSenderLabel: String? = if (

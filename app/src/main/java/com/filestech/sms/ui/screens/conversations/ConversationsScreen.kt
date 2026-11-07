@@ -488,8 +488,8 @@ fun ConversationsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
                 ) {
-                    // Signal-style — AUCUNE ligne de séparation entre les conversations :
-                    // la liste se lit sans filets, comme dans Signal.
+                    // Relay-style — AUCUNE ligne de séparation entre les conversations :
+                    // la liste se lit sans filets, comme dans Relay.
                     // v1.25.3 — les conversations dont tous les numéros sont bloqués ne sont plus
                     // ni supprimées ni masquées : elles descendent en fin de liste sous un
                     // en-tête dédié. Le tri d'origine est conservé à l'intérieur de chaque groupe

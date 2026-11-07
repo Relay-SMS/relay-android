@@ -34,7 +34,7 @@ internal fun LazyListScope.messageHitsSection(
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 6.dp),
         )
     }
-    // Signal-style — pas de ligne de séparation entre les résultats, comme entre
+    // Relay-style — pas de ligne de séparation entre les résultats, comme entre
     // les conversations.
     items(hits, key = { "message-${it.messageId}" }, contentType = { "message-hit" }) { hit ->
         MessageSearchRow(

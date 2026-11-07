@@ -557,7 +557,7 @@ data class AdvancedSettings(
      *   - Certains **OnePlus** anciens (OxygenOS < 12) et **realme realmeUI**
      *
      * Ces ROMs whitelistent uniquement les apps SMS du constructeur ; toute app SMS
-     * tierce (SMS Tech, QKSMS, Signal, Silence, etc.) est silencieusement killée en
+     * tierce (SMS Tech, QKSMS, Silence, etc.) est silencieusement killée en
      * background, ce qui empêche la réception MMS et l'affichage des notifications.
      *
      * Sur ROMs non-agressives (Pixel Android stock, Samsung One UI, Sony Xperia,
