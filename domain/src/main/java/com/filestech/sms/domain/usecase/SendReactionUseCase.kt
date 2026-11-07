@@ -2,6 +2,7 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.core.result.map
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.ReactionFormat
 import com.filestech.sms.domain.model.SendReport
