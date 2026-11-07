@@ -146,7 +146,6 @@
     <string name="conversations_preview_attachment">Pièce jointe</string>
 
     <string name="thread_compose_placeholder">Écrire un message…</string>
-    <string name="thread_segments_indicator">%1$d / %2$d • %3$d seg.</string>
     <string name="thread_status_pending">Envoi…</string>
     <string name="thread_status_sent">Envoyé</string>
     <string name="thread_status_delivered">Remis</string>
