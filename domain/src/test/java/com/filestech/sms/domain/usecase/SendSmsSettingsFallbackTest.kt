@@ -87,10 +87,12 @@ class SendSmsSettingsFallbackTest {
         // alerte d'urgence comprise.
         assertThat(outcome).isInstanceOf(Outcome.Success::class.java)
         assertThat(sender.callCount).isEqualTo(1)
-        // Repli assumé : pas de signature, SIM système, pas d'accusé de réception.
+        // Repli assumé : pas de signature, SIM système, accusé de réception
+        // selon le défaut — activé par défaut depuis le changement de défaut
+        // (accusés de réception ON), donc `true` ici.
         assertThat(sender.lastText).isEqualTo(BODY)
         assertThat(sender.lastSubId).isNull()
-        assertThat(sender.lastDeliveryReport).isFalse()
+        assertThat(sender.lastDeliveryReport).isTrue()
     }
 
     @Test
