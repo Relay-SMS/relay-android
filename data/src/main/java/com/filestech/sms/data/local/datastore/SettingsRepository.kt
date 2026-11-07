@@ -305,7 +305,7 @@ class SettingsRepository(
                 deliveryReports = p[K.deliveryReports] ?: true,
                 defaultSubId = p[K.defaultSubId],
                 userMsisdn = p[K.userMsisdn],
-                groupMms = p[K.groupMms] ?: false,
+                groupMms = p[K.groupMms] ?: true,
                 sendReactionsToRecipient = p[K.sendReactionsToRecipient] ?: true,
                 reactionConfirmDismissed = p[K.reactionConfirmDismissed] ?: false,
                 reactionEmojiOnly = p[K.reactionEmojiOnly] ?: false,

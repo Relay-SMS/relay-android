@@ -92,7 +92,7 @@ data class SendingSettings(
      * à condition que [userMsisdn] soit renseigné, faute de quoi on ne sait pas se retirer de
      * la liste. Cf. `GroupMmsMembers`.
      */
-    val groupMms: Boolean = false,
+    val groupMms: Boolean = true,
     /**
      * v1.2.6 audit F4 — MSISDN saisi par l'utilisateur quand la détection automatique via
      * `SubscriptionManager.getActiveSubscriptionInfoForSubscriptionId(subId).number` retourne
