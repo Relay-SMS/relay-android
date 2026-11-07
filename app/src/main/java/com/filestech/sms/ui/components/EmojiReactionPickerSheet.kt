@@ -1,5 +1,9 @@
 package com.filestech.sms.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,14 +21,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddReaction
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -59,7 +59,6 @@ import com.filestech.sms.core.ext.splitGraphemeClusters
  *
  * Touche `back` / drag down → [onDismiss] sans poser de réaction.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmojiReactionPickerSheet(
     onPicked: (String) -> Unit,
@@ -73,8 +72,6 @@ fun EmojiReactionPickerSheet(
      */
     currentReaction: String? = null,
 ) {
-    // v1.3.0 audit Q7 — `skipPartiallyExpanded = true` aligne ce sheet sur le pattern projet.
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cs = MaterialTheme.colorScheme
 
     // v1.5.0 — état local de la sélection multi. Initialisée avec la réaction courante
@@ -88,103 +85,102 @@ fun EmojiReactionPickerSheet(
     // taille au lieu de N reads de la liste complète).
     val atCapacity by remember { derivedStateOf { selected.size >= MAX_REACTION_EMOJIS } }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+    // Relay UI refresh: the shared sheet shell (28dp top corners, drag handle, light
+    // scrim) with a spring scale-in on the content as it appears.
+    RelaySheet(onDismissRequest = onDismiss) {
+        AnimatedVisibility(
+            visible = true,
+            enter = scaleIn(
+                initialScale = 0.96f,
+                animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
+            ) + fadeIn(),
+            label = "reactionPickerScaleIn",
         ) {
-            QUICK_PICK_EMOJIS.chunked(EMOJIS_PER_ROW).forEach { rowEmojis ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    rowEmojis.forEach { emoji ->
-                        val isSelected = emoji in selected
-                        // Disabled visual : when at capacity, non-selected emojis become
-                        // dimmer + non-clickable so the user cannot exceed the cap.
-                        val canTap = isSelected || !atCapacity
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .then(
-                                    if (isSelected) {
-                                        Modifier
-                                            .background(cs.primaryContainer)
-                                            .border(2.dp, cs.primary, CircleShape)
-                                    } else Modifier
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                QUICK_PICK_EMOJIS.chunked(EMOJIS_PER_ROW).forEach { rowEmojis ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        rowEmojis.forEach { emoji ->
+                            val isSelected = emoji in selected
+                            // Disabled visual : when at capacity, non-selected emojis become
+                            // dimmer + non-clickable so the user cannot exceed the cap.
+                            val canTap = isSelected || !atCapacity
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (isSelected) {
+                                            Modifier
+                                                .background(cs.primaryContainer)
+                                                .border(2.dp, cs.primary, CircleShape)
+                                        } else Modifier
+                                    )
+                                    .clickable(enabled = canTap) {
+                                        selected = if (isSelected) {
+                                            selected - emoji
+                                        } else {
+                                            selected + emoji
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                // v1.6.0 (audit Q2) — emojis non-tappables à pleine capacité
+                                // sont visuellement grisés via alpha 0.38 (Material 3 disabled
+                                // state) plutôt que par un Modifier.then(Modifier) inopérant.
+                                Text(
+                                    text = emoji,
+                                    fontSize = 28.sp,
+                                    modifier = if (canTap) Modifier else Modifier.alpha(0.38f),
                                 )
-                                .clickable(enabled = canTap) {
-                                    selected = if (isSelected) {
-                                        selected - emoji
-                                    } else {
-                                        selected + emoji
-                                    }
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            // v1.6.0 (audit Q2) — emojis non-tappables à pleine capacité
-                            // sont visuellement grisés via alpha 0.38 (Material 3 disabled
-                            // state) plutôt que par un Modifier.then(Modifier) inopérant.
-                            Text(
-                                text = emoji,
-                                fontSize = 28.sp,
-                                modifier = if (canTap) Modifier else Modifier.alpha(0.38f),
-                            )
+                            }
+                        }
+                        repeat(EMOJIS_PER_ROW - rowEmojis.size) {
+                            Spacer(Modifier.size(48.dp))
                         }
                     }
-                    repeat(EMOJIS_PER_ROW - rowEmojis.size) {
-                        Spacer(Modifier.size(48.dp))
-                    }
                 }
-            }
-            Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
 
-            // "+ Autre emoji" — délègue au clavier emoji système. Tap commit immédiatement
-            // la sélection courante via [onOpenCustom] qui posera l'emoji choisi via le
-            // dialog custom (ThreadScreen merge la sélection multi + l'emoji custom dans
-            // un onglet futur — pour v1.5.0 MVP, "Autre" abandonne la sélection multi
-            // courante et part sur l'emoji custom seul).
-            FilledTonalButton(
-                onClick = {
-                    onOpenCustom()
-                    onDismiss()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.AddReaction,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = cs.onSecondaryContainer,
-                )
-                Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.reaction_picker_other))
-            }
+                // "+ Autre emoji" — délègue au clavier emoji système. Tap commit immédiatement
+                // la sélection courante via [onOpenCustom] qui posera l'emoji choisi via le
+                // dialog custom (ThreadScreen merge la sélection multi + l'emoji custom dans
+                // un onglet futur — pour v1.5.0 MVP, "Autre" abandonne la sélection multi
+                // courante et part sur l'emoji custom seul).
+                FilledTonalButton(
+                    onClick = {
+                        onOpenCustom()
+                        onDismiss()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AddReaction,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = cs.onSecondaryContainer,
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text(stringResource(R.string.reaction_picker_other))
+                }
 
-            Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
 
-            // v1.5.0 — bouton "Valider" : commit la sélection multi. Désactivé tant
-            // qu'aucun emoji n'est sélectionné (sinon click no-op étrange).
-            Button(
-                onClick = {
-                    onPicked(selected.joinToString(separator = ""))
-                    onDismiss()
-                },
-                enabled = selected.isNotEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Text(
+                // v1.5.0 — bouton "Valider" : commit la sélection multi. Désactivé tant
+                // qu'aucun emoji n'est sélectionné (sinon click no-op étrange).
+                RelayPrimaryButton(
                     text = if (selected.isEmpty()) {
                         stringResource(R.string.reaction_picker_validate_empty)
                     } else {
@@ -193,6 +189,11 @@ fun EmojiReactionPickerSheet(
                             selected.joinToString(separator = ""),
                         )
                     },
+                    onClick = {
+                        onPicked(selected.joinToString(separator = ""))
+                        onDismiss()
+                    },
+                    enabled = selected.isNotEmpty(),
                 )
             }
         }

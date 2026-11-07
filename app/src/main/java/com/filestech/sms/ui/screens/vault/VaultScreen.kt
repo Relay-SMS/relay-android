@@ -1,7 +1,7 @@
 package com.filestech.sms.ui.screens.vault
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,9 +16,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,9 +56,16 @@ import com.filestech.sms.domain.settings.LockMode
 import com.filestech.sms.domain.usecase.ToggleConversationStateUseCase
 import com.filestech.sms.security.VaultManager
 import com.filestech.sms.ui.components.ConversationRow
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayEmptyState
+import com.filestech.sms.ui.components.RelayRow
+import com.filestech.sms.ui.components.RelaySheet
+import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.security.StrongBiometrics
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -572,8 +579,8 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
 
     // v1.13.1 — long-press hors sélection ouvre un ActionsSheet (single-conv
     // quick action "Sortir du coffre" + entrée mode sélection multiple). Le
-    // legacy ModalBottomSheet v1.11.0 est ressuscité pour préserver la UX
-    // "appui long → action rapide" attendue par les utilisateurs.
+    // sheet reprend la UX "appui long → action rapide" attendue par les utilisateurs,
+    // sur le sheet partagé du design system.
     var vaultSheetTarget by remember { mutableStateOf<Long?>(null) }
     val snackbarHost = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
@@ -659,19 +666,22 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                     // recomposition et le `popBackStack` effectif (1-2 frames sur appareil lent).
                     Text(
                         text = stringResource(R.string.vault_biometric_pending),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = RelayText.Preview,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(24.dp),
                     )
                 }
                 else -> {
                     if (rows.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.vault_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(24.dp),
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            RelayEmptyState(
+                                icon = Icons.Outlined.Lock,
+                                headline = stringResource(R.string.vault_empty),
+                            )
+                        }
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(rows, key = { it.id }) { c ->
@@ -717,7 +727,6 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                                         }
                                     }
                                 }
-                                HorizontalDivider(color = cs.outlineVariant.copy(alpha = 0.4f))
                             }
                         }
                     }
@@ -745,20 +754,28 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
     // parasite corrigé en v1.25.4. Omise à la première écriture de ce correctif, rattrapée à la
     // relecture.
     if (biometricUnavailable && navEntryResumed) {
-        androidx.compose.material3.AlertDialog(
+        RelayDialog(
             onDismissRequest = {
                 biometricUnavailable = false
                 lockedOnBack()
             },
-            title = { Text(stringResource(R.string.vault_biometric_unavailable_title)) },
-            text = { Text(stringResource(R.string.vault_biometric_unavailable_body)) },
+            title = stringResource(R.string.vault_biometric_unavailable_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.vault_biometric_unavailable_body),
+                    style = RelayText.Preview,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                RelayTextButton(
+                    text = stringResource(R.string.action_confirm),
                     onClick = {
                         biometricUnavailable = false
                         lockedOnBack()
                     },
-                ) { Text(stringResource(R.string.action_confirm)) }
+                    confirm = true,
+                )
             },
         )
     }
@@ -794,13 +811,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
     // pattern v1.12 attendu (appui long = action rapide) sans perdre le multi.
     val pendingSheet = vaultSheetTarget
     if (pendingSheet != null) {
-        val sheetState = androidx.compose.material3.rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-        )
-        androidx.compose.material3.ModalBottomSheet(
-            onDismissRequest = { vaultSheetTarget = null },
-            sheetState = sheetState,
-        ) {
+        RelaySheet(onDismissRequest = { vaultSheetTarget = null }) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -809,24 +820,38 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
             ) {
                 Text(
                     text = stringResource(R.string.vault_actions_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = cs.onSurfaceVariant,
+                    style = RelayText.ConvoName,
+                    color = cs.onSurface,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 )
-                androidx.compose.material3.ListItem(
-                    leadingContent = { Icon(Icons.Outlined.LockOpen, contentDescription = null) },
-                    headlineContent = { Text(stringResource(R.string.vault_move_out)) },
-                    modifier = Modifier.clickable {
+                RelayRow(
+                    title = stringResource(R.string.vault_move_out),
+                    onClick = {
                         viewModel.moveOutOfVault(pendingSheet)
                         vaultSheetTarget = null
                     },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.LockOpen,
+                            contentDescription = null,
+                            tint = RelayColors.Blue,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    },
                 )
-                androidx.compose.material3.ListItem(
-                    leadingContent = { Icon(Icons.Outlined.Check, contentDescription = null) },
-                    headlineContent = { Text(stringResource(R.string.bulk_select_multiple)) },
-                    modifier = Modifier.clickable {
+                RelayRow(
+                    title = stringResource(R.string.bulk_select_multiple),
+                    onClick = {
                         viewModel.toggleSelection(pendingSheet)
                         vaultSheetTarget = null
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = null,
+                            tint = RelayColors.Blue,
+                            modifier = Modifier.size(22.dp),
+                        )
                     },
                 )
             }

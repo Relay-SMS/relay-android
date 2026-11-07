@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -24,7 +24,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -56,9 +55,14 @@ import com.filestech.sms.system.emergency.EmergencyNumbers
 import com.filestech.sms.system.safety.rememberSafetyMessageTexts
 import com.filestech.sms.ui.components.BanniereRoleSmsManquant
 import com.filestech.sms.ui.components.EmergencyHoldButton
+import com.filestech.sms.ui.components.RelayDestructiveButton
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.rememberPermissionLocalisation
 import com.filestech.sms.ui.components.showError
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import kotlinx.coroutines.launch
 
@@ -191,7 +195,12 @@ fun EmergencyScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.emergency_title)) },
+                title = {
+                    Text(
+                        stringResource(R.string.emergency_title),
+                        style = RelayText.ThreadTitle,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -236,7 +245,7 @@ fun EmergencyScreen(
             // ── SECTION 1 — Appel direct d'urgence ──
             Text(
                 text = stringResource(R.string.emergency_section_call_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ConvoName,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(12.dp))
@@ -330,7 +339,7 @@ fun EmergencyScreen(
 
             Text(
                 text = stringResource(R.string.emergency_section_sms_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ConvoName,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(12.dp))
@@ -358,25 +367,27 @@ fun EmergencyScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = stringResource(R.string.emergency_setup_location_permission_warning),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.error,
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = localisation.demander) {
-                    Text(stringResource(R.string.emergency_location_grant))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.emergency_location_grant),
+                    onClick = localisation.demander,
+                )
             } else if (state.includeLocation && !localisation.exacte) {
                 // v1.28.13 — position approximative : elle part, avec sa marge, et on le dit ici.
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = stringResource(R.string.emergency_location_approximate),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = localisation.demander) {
-                    Text(stringResource(R.string.emergency_location_grant_precise))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.emergency_location_grant_precise),
+                    onClick = localisation.demander,
+                )
             }
             Spacer(Modifier.height(16.dp))
 
@@ -400,18 +411,17 @@ fun EmergencyScreen(
             }
             Text(
                 text = stringResource(statusRes),
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.Preview,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
             if (state.enabled && contactsCount == 0) {
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(
+                RelayTextButton(
+                    text = stringResource(R.string.emergency_setup_contacts_cta),
                     onClick = onOpenSetup,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
-                ) {
-                    Text(stringResource(R.string.emergency_setup_contacts_cta))
-                }
+                )
             }
 
             Spacer(Modifier.height(28.dp))
@@ -419,7 +429,7 @@ fun EmergencyScreen(
             // ── SECTION 3 — Actions secondaires ──
             Text(
                 text = stringResource(R.string.emergency_section_other_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ConvoName,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(12.dp))
@@ -434,17 +444,25 @@ fun EmergencyScreen(
             androidx.compose.material3.OutlinedButton(
                 onClick = { disableConfirmOpen = true },
                 colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                    contentColor = com.filestech.sms.ui.theme.BrandDanger,
+                    contentColor = RelayColors.Error,
                 ),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.emergency_disable_button)) }
             if (disableConfirmOpen) {
-                androidx.compose.material3.AlertDialog(
+                RelayDialog(
                     onDismissRequest = { disableConfirmOpen = false },
-                    title = { Text(stringResource(R.string.emergency_disable_confirm_title)) },
-                    text = { Text(stringResource(R.string.emergency_disable_confirm_body)) },
+                    title = stringResource(R.string.emergency_disable_confirm_title),
+                    content = {
+                        Text(
+                            text = stringResource(R.string.emergency_disable_confirm_body),
+                            style = RelayText.Preview,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
                     confirmButton = {
-                        androidx.compose.material3.FilledTonalButton(
+                        RelayDestructiveButton(
+                            text = stringResource(R.string.emergency_disable_button),
                             onClick = {
                                 disableConfirmOpen = false
                                 // v1.27.2 — le message est désormais posé par le gestionnaire
@@ -452,16 +470,13 @@ fun EmergencyScreen(
                                 // la seule intention. Il précède le retour à l'écran précédent.
                                 viewModel.disableEmergencyMode()
                             },
-                            colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                                containerColor = com.filestech.sms.ui.theme.BrandDanger,
-                                contentColor = Color.White,
-                            ),
-                        ) { Text(stringResource(R.string.emergency_disable_button)) }
+                        )
                     },
                     dismissButton = {
-                        androidx.compose.material3.TextButton(
+                        RelayTextButton(
+                            text = stringResource(R.string.action_cancel),
                             onClick = { disableConfirmOpen = false },
-                        ) { Text(stringResource(R.string.action_cancel)) }
+                        )
                     },
                 )
             }
@@ -548,12 +563,17 @@ private fun EmergencyCallTile(
         onClick = onClick,
         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
             containerColor = containerColor,
-            contentColor = Color.White,
+            // Phase 8 — le premier plan est dérivé du fond (voir
+            // [com.filestech.sms.ui.theme.onBrandContainer]) : blanc sur la tuile
+            // orange pompiers `#E65100` ne donnait que 3.79:1 — le noir donne 5.54:1.
+            // Blanc sur le sarcelle `#00796B` (5.32:1) et sur le bleu `#1565C0`
+            // (5.75:1) est conservé.
+            contentColor = com.filestech.sms.ui.theme.onBrandContainer(containerColor),
         ),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             horizontal = 16.dp, vertical = 18.dp,
         ),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         modifier = modifier.fillMaxWidth(),
     ) {
         androidx.compose.foundation.layout.Row(
@@ -562,14 +582,12 @@ private fun EmergencyCallTile(
         ) {
             Text(
                 text = number,
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                ),
+                style = RelayText.LargeTitle,
             )
             Spacer(Modifier.size(16.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.titleMedium,
+                style = RelayText.ConvoName,
             )
         }
     }
@@ -586,10 +604,10 @@ private fun RelativePickerDialog(
     onPick: (phone: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    androidx.compose.material3.AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.emergency_call_close_picker_title)) },
-        text = {
+        title = stringResource(R.string.emergency_call_close_picker_title),
+        content = {
             Column {
                 contacts.forEach { c ->
                     val name = c.displayName?.takeIf { it.isNotBlank() } ?: c.phoneNumber
@@ -604,9 +622,10 @@ private fun RelativePickerDialog(
             }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -637,6 +656,7 @@ private fun MessagePreviewCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
+        shape = RoundedCornerShape(10.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -646,13 +666,13 @@ private fun MessagePreviewCard(
         ) {
             Text(
                 text = stringResource(R.string.emergency_preview_title),
-                style = MaterialTheme.typography.labelMedium,
+                style = RelayText.Timestamp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = previewBody,
-                style = MaterialTheme.typography.bodyMedium,
+                style = RelayText.Preview,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }

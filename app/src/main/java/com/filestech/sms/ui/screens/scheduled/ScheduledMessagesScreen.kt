@@ -3,29 +3,22 @@ package com.filestech.sms.ui.screens.scheduled
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,7 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -51,6 +44,11 @@ import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.usecase.CancelScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.RetryScheduledMessageUseCase
+import com.filestech.sms.ui.components.RelayDestructiveButton
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayEmptyState
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.theme.RelayText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -58,6 +56,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -170,29 +169,14 @@ fun ScheduledMessagesScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 32.dp),
+                    .padding(padding),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Schedule,
-                    contentDescription = null,
-                    modifier = Modifier.size(56.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.size(16.dp))
-                Text(
-                    text = stringResource(R.string.scheduled_empty),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.size(12.dp))
-                Text(
-                    text = stringResource(R.string.scheduled_empty_explainer),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+                RelayEmptyState(
+                    icon = Icons.Outlined.Schedule,
+                    headline = stringResource(R.string.scheduled_empty),
+                    body = stringResource(R.string.scheduled_empty_explainer),
                 )
             }
         } else {
@@ -213,9 +197,10 @@ fun ScheduledMessagesScreen(
                         whenLabelRes = R.string.scheduled_when,
                         whenColor = MaterialTheme.colorScheme.primary,
                         trailing = {
-                            TextButton(onClick = { confirmCancelFor = msg }) {
-                                Text(stringResource(R.string.action_cancel))
-                            }
+                            RelayTextButton(
+                                text = stringResource(R.string.action_cancel),
+                                onClick = { confirmCancelFor = msg },
+                            )
                         },
                     )
                 }
@@ -260,23 +245,17 @@ fun ScheduledMessagesScreen(
                             whenColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             trailing = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
+                                    RelayTextButton(
+                                        text = stringResource(R.string.action_retry),
                                         onClick = {
                                             viewModel.retryMessage(msg.id)
                                             scope.launch { snackbarHost.showSnackbar(retriedMessage) }
                                         },
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.Refresh,
-                                            contentDescription = stringResource(R.string.action_retry),
-                                        )
-                                    }
-                                    IconButton(onClick = { confirmDeleteFor = msg }) {
-                                        Icon(
-                                            Icons.Outlined.Delete,
-                                            contentDescription = stringResource(R.string.action_delete),
-                                        )
-                                    }
+                                    )
+                                    RelayDestructiveButton(
+                                        text = stringResource(R.string.action_delete),
+                                        onClick = { confirmDeleteFor = msg },
+                                    )
                                 }
                             },
                         )
@@ -287,21 +266,32 @@ fun ScheduledMessagesScreen(
     }
 
     confirmCancelFor?.let { msg ->
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { confirmCancelFor = null },
-            title = { Text(stringResource(R.string.scheduled_cancel_confirm_title)) },
-            text = { Text(stringResource(R.string.scheduled_cancel_confirm_body)) },
+            title = stringResource(R.string.scheduled_cancel_confirm_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.scheduled_cancel_confirm_body),
+                    style = RelayText.Preview,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    val id = msg.id
-                    confirmCancelFor = null
-                    viewModel.cancelMessage(id)
-                }) { Text(stringResource(R.string.scheduled_cancel_confirm_action)) }
+                RelayTextButton(
+                    text = stringResource(R.string.scheduled_cancel_confirm_action),
+                    onClick = {
+                        val id = msg.id
+                        confirmCancelFor = null
+                        viewModel.cancelMessage(id)
+                    },
+                    confirm = true,
+                )
             },
             dismissButton = {
-                TextButton(onClick = { confirmCancelFor = null }) {
-                    Text(stringResource(R.string.action_back))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_back),
+                    onClick = { confirmCancelFor = null },
+                )
             },
         )
     }
@@ -309,21 +299,31 @@ fun ScheduledMessagesScreen(
     // Retrait définitif : même exigence de confirmation que l'annulation ci-dessus — un tap
     // sur une icône ne doit jamais suffire à effacer un message que l'utilisateur a écrit.
     confirmDeleteFor?.let { msg ->
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { confirmDeleteFor = null },
-            title = { Text(stringResource(R.string.scheduled_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.scheduled_delete_confirm_body)) },
+            title = stringResource(R.string.scheduled_delete_confirm_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.scheduled_delete_confirm_body),
+                    style = RelayText.Preview,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    val id = msg.id
-                    confirmDeleteFor = null
-                    viewModel.deleteMessage(id)
-                }) { Text(stringResource(R.string.action_delete)) }
+                RelayDestructiveButton(
+                    text = stringResource(R.string.action_delete),
+                    onClick = {
+                        val id = msg.id
+                        confirmDeleteFor = null
+                        viewModel.deleteMessage(id)
+                    },
+                )
             },
             dismissButton = {
-                TextButton(onClick = { confirmDeleteFor = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = { confirmDeleteFor = null },
+                )
             },
         )
     }
@@ -337,11 +337,15 @@ private fun SectionHeader(
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp)) {
-        Text(text = title, style = MaterialTheme.typography.titleSmall, color = color)
+        Text(
+            text = title.uppercase(Locale.ROOT),
+            style = RelayText.SectionHeader,
+            color = color,
+        )
         if (explainer != null) {
             Text(
                 text = explainer,
-                style = MaterialTheme.typography.bodySmall,
+                style = RelayText.Timestamp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -352,6 +356,10 @@ private fun SectionHeader(
  * Ligne commune aux deux sections : même corps, mêmes destinataires, même date. Seuls le libellé
  * de date et les actions de fin varient. Factorisée pour qu'une évolution du rendu n'ait pas à
  * être répliquée — donc à terme désynchronisée — entre attente et échec.
+ *
+ * Géométrie de la ligne de conversation : destinataires en 17sp/500, corps en 15sp secondaire,
+ * date en 13sp — les actions (envoyer maintenant / supprimer) sont des boutons texte bleu /
+ * rouge en fin de ligne.
  */
 @Composable
 private fun ScheduledRow(
@@ -360,29 +368,42 @@ private fun ScheduledRow(
     whenColor: Color,
     trailing: @Composable () -> Unit,
 ) {
+    val cs = MaterialTheme.colorScheme
     val recipients = message.addresses.joinToString(", ") { it.toString() }
     val whenLabel = remember(message.scheduledAt) {
         // Format date+time locale system — pas de lib externe, DateFormat AOSP.
         val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
         df.format(Date(message.scheduledAt))
     }
-    ListItem(
-        headlineContent = { Text(message.body, maxLines = 2) },
-        supportingContent = {
-            Column {
-                Text(
-                    text = stringResource(R.string.scheduled_to, recipients),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = stringResource(whenLabelRes, whenLabel),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = whenColor,
-                )
-            }
-        },
-        trailingContent = trailing,
-    )
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.scheduled_to, recipients),
+                style = RelayText.ConvoName,
+                color = cs.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = message.body,
+                style = RelayText.Preview,
+                color = cs.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(whenLabelRes, whenLabel),
+                style = RelayText.Timestamp,
+                color = whenColor,
+            )
+        }
+        trailing()
+    }
 }

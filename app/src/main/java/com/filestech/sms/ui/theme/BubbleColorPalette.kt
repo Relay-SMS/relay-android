@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
  * de contraste ≥ 4.5:1 avec le texte blanc (WCAG AA pour texte normal).
  * Le user choisit dans cette grille fermée — pas de color picker libre —
  * pour garantir la lisibilité du texte des bulles dans tous les thèmes
- * (clair, sombre, AMOLED, Dark Tech).
+ * (clair, sombre).
  *
  * Les couleurs sont stockées en ARGB Int dans
  * [com.filestech.sms.data.local.db.entity.ConversationEntity.bubbleColorArgb]

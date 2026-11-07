@@ -1,15 +1,23 @@
 package com.filestech.sms.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -20,9 +28,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -30,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.security.PinVerdict
 import com.filestech.sms.ui.security.ProtectSecretInput
+import com.filestech.sms.ui.theme.RelayText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -101,31 +116,65 @@ fun PinEntryDialog(
     val lockout = rememberLockoutState(probeLockout)
     val scope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
-    val errorMessage = androidx.compose.ui.res.stringResource(R.string.pin_error_invalid)
+    val errorMessage = stringResource(R.string.pin_error_invalid)
 
     // Focus automatique sur le champ à l'ouverture du dialog (UX standard).
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     val lockedOut = lockout.active
     val lockoutMessage = lockout.message()
+    val canSubmit = pin.isNotEmpty() && !verifying && !lockedOut
 
-    AlertDialog(
+    val submit = {
+        verifying = true
+        val snapshot = pin.toCharArray()
+        // v1.13.0 audit SEC-1 — vide le String pin AVANT le launch
+        // PBKDF2 (~100 ms). Sans ca, le String reste en heap JVM
+        // pendant toute la derivation, expose a un heap dump. Le
+        // snapshot CharArray porte le secret pendant l'appel suspend
+        // et est wipe dans le finally (y compris si la coroutine est
+        // annulee par rotation Activity).
+        pin = ""
+        scope.launch {
+            val verdict = try { onVerify(snapshot) } finally {
+                // Le caller wipe son CharArray — on wipe AUSSI ici
+                // par défense (le contrat dit qu'il peut le faire,
+                // mais s'il oublie, on n'aura pas laissé trainer).
+                for (i in snapshot.indices) snapshot[i] = '\u0000'
+            }
+            verifying = false
+            // pin deja vide ci-dessus (audit SEC-1).
+            when (verdict) {
+                is PinVerdict.Ok -> onVerified()
+                is PinVerdict.Invalid -> error = errorMessage
+                is PinVerdict.LockedOut -> {
+                    error = null
+                    lockout.arm(verdict.untilWall)
+                }
+            }
+        }
+    }
+
+    RelayDialog(
         onDismissRequest = onCancel,
-        title = { Text(title) },
-        text = {
-            // v1.27.1 (N3) — DANS le contenu du dialogue, jamais avant `AlertDialog(...)` :
+        title = title,
+        content = {
+            // v1.27.1 (N3) — DANS le contenu du dialogue, jamais avant `RelayDialog(...)` :
             // c'est ici seulement que `LocalView` désigne la fenêtre DU DIALOGUE. Cf. KDoc.
             ProtectSecretInput()
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (description != null) {
                     Text(
                         text = description,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = RelayText.Preview,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(12.dp))
                 }
-                OutlinedTextField(
-                    value = pin,
+                PinCells(
+                    pin = pin,
+                    enabled = !verifying && !lockedOut,
+                    isError = error != null || lockedOut,
+                    focusRequester = focusRequester,
                     onValueChange = {
                         // Cap à 64 chars : confortable pour une passphrase
                         // tout en prévenant un DoS UI si paste géant. PIN ET
@@ -134,70 +183,143 @@ fun PinEntryDialog(
                         pin = it.take(64)
                         error = null
                     },
-                    modifier = Modifier.focusRequester(focusRequester),
-                    label = { Text(androidx.compose.ui.res.stringResource(R.string.pin_entry_label)) },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                    ),
-                    isError = error != null || lockedOut,
-                    supportingText = error?.let { msg -> { Text(msg) } },
-                    enabled = !verifying && !lockedOut,
+                    onDone = { if (canSubmit) submit() },
                 )
+                if (error != null) {
+                    Text(
+                        text = error.orEmpty(),
+                        style = RelayText.Timestamp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 if (lockedOut) LockoutNotice(lockoutMessage)
                 if (onUseBiometric != null) {
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(
+                    RelayTextButton(
+                        text = stringResource(R.string.vault_use_biometric),
                         onClick = onUseBiometric,
                         enabled = !verifying && !lockedOut,
-                    ) {
-                        Text(androidx.compose.ui.res.stringResource(R.string.vault_use_biometric))
-                    }
+                    )
                 }
             }
         },
         confirmButton = {
-            Button(
-                enabled = pin.isNotEmpty() && !verifying && !lockedOut,
-                onClick = {
-                    verifying = true
-                    val snapshot = pin.toCharArray()
-                    // v1.13.0 audit SEC-1 — vide le String pin AVANT le launch
-                    // PBKDF2 (~100 ms). Sans ca, le String reste en heap JVM
-                    // pendant toute la derivation, expose a un heap dump. Le
-                    // snapshot CharArray porte le secret pendant l'appel suspend
-                    // et est wipe dans le finally (y compris si la coroutine est
-                    // annulee par rotation Activity).
-                    pin = ""
-                    scope.launch {
-                        val verdict = try { onVerify(snapshot) } finally {
-                            // Le caller wipe son CharArray — on wipe AUSSI ici
-                            // par défense (le contrat dit qu'il peut le faire,
-                            // mais s'il oublie, on n'aura pas laissé trainer).
-                            for (i in snapshot.indices) snapshot[i] = '\u0000'
-                        }
-                        verifying = false
-                        // pin deja vide ci-dessus (audit SEC-1).
-                        when (verdict) {
-                            is PinVerdict.Ok -> onVerified()
-                            is PinVerdict.Invalid -> error = errorMessage
-                            is PinVerdict.LockedOut -> {
-                                error = null
-                                lockout.arm(verdict.untilWall)
-                            }
-                        }
-                    }
-                },
-            ) { Text(confirmLabel) }
+            RelayTextButton(
+                text = confirmLabel,
+                onClick = submit,
+                enabled = canSubmit,
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = onCancel, enabled = !verifying) {
-                Text(androidx.compose.ui.res.stringResource(R.string.action_cancel))
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onCancel,
+                enabled = !verifying,
+            )
+        },
+    )
+}
+
+/** Nombre de cellules visibles de la saisie PIN : un point par caractère saisi. */
+private const val PIN_CELL_COUNT = 6
+
+/**
+ * Saisie du PIN en six grandes cellules arrondies (18dp) au lieu d'un champ texte : un point
+ * par caractère saisi, jamais le caractère lui-même. La saisie réelle vit dans un
+ * [BasicTextField] invisible (texte et curseur transparents) dont la `decorationBox` dessine
+ * les cellules — le clavier, la transformation mot de passe et la validation restent ceux
+ * d'un champ classique, seule la présentation change. Une passphrase de plus de six
+ * caractères remplit les six cellules et affiche le surplus (`+N`) à droite : le dialogue
+ * accepte toujours les passphrases longues, l'utilisateur voit simplement qu'il a dépassé
+ * les six cellules.
+ */
+@Composable
+private fun PinCells(
+    pin: String,
+    enabled: Boolean,
+    isError: Boolean,
+    focusRequester: FocusRequester,
+    onValueChange: (String) -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val filled = pin.length.coerceAtMost(PIN_CELL_COUNT)
+    val overflow = (pin.length - PIN_CELL_COUNT).coerceAtLeast(0)
+    BasicTextField(
+        value = pin,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester),
+        textStyle = TextStyle(color = Color.Transparent),
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
+        enabled = enabled,
+        cursorBrush = SolidColor(Color.Transparent),
+        decorationBox = { innerTextField ->
+            // Le champ de texte reste compose (taille nulle, texte transparent) : c'est lui
+            // qui porte la session de saisie et le focus ; les cellules ne font que dessiner.
+            Box(modifier = Modifier.size(0.dp)) { innerTextField() }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                repeat(PIN_CELL_COUNT) { index ->
+                    PinCell(
+                        filled = index < filled,
+                        isError = isError,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (overflow > 0) {
+                    Text(
+                        text = "+$overflow",
+                        style = RelayText.Timestamp,
+                        color = cs.onSurfaceVariant,
+                    )
+                }
             }
         },
     )
+}
+
+/** Une cellule de saisie PIN : fond surface, coin 18dp, point centré quand elle est remplie. */
+@Composable
+private fun PinCell(
+    filled: Boolean,
+    isError: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val cellShape = RoundedCornerShape(18.dp)
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(cellShape)
+            .background(if (isError) cs.errorContainer else cs.surfaceVariant)
+            .border(
+                width = 1.dp,
+                color = if (isError) cs.error else Color.Transparent,
+                shape = cellShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (filled) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(if (isError) cs.error else cs.onSurface),
+            )
+        }
+    }
 }
 
 /**
@@ -239,7 +361,7 @@ internal class LockoutState {
     }
 
     @Composable
-    fun message(): String = androidx.compose.ui.res.stringResource(
+    fun message(): String = stringResource(
         R.string.lock_lockout_message,
         remainingSec,
     )
@@ -298,7 +420,7 @@ internal fun LockoutNotice(message: String) {
     Spacer(Modifier.height(8.dp))
     Text(
         text = message,
-        style = MaterialTheme.typography.bodyMedium,
+        style = RelayText.Preview,
         color = MaterialTheme.colorScheme.error,
     )
 }

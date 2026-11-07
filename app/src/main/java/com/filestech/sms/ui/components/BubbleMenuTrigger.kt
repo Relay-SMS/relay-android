@@ -29,10 +29,10 @@ import com.filestech.sms.ui.theme.starColor
  * Reply / Translate / React / Star / **Delete** (in that order, with Delete rendered
  * in red at the bottom of the list as the destructive action).
  *
- * Relay-style: the three-dot trigger beside every bubble is gone — the caller opens
+ * Relay: the three-dot trigger beside every bubble is gone — the caller opens
  * this menu from a tap on the bubble itself (see [MessageBubble],
  * [AudioMessageBubble], [MediaAttachmentBubble]). The menu itself is unchanged apart
- * from the rounded corners (~18 dp, Relay-style). Reply and Translate are optional
+ * from the rounded corners (~18 dp, Relay). Reply and Translate are optional
  * (a row with neither still renders the menu just for the Delete action).
  *
  * The menu reuses the same delete pipeline as before (`onDelete()` →

@@ -75,7 +75,7 @@ class MessageBubbleGesturesTest {
     }
 
     /**
-     * Signal-style (2026-11-06) — **le bouton ⋮ a disparu : c'est le tap sur la bulle qui
+     * Relay (2026-11-06) — **le bouton ⋮ a disparu : c'est le tap sur la bulle qui
      * ouvre le menu.** L'ancien test v1.28.7 vérifiait que le bouton gardait 40 dp sur un
      * écran étroit ; ce bouton n'existe plus. Le menu doit donc s'ouvrir par tap sur la
      * bulle, y compris sur un écran étroit de 320 dp, pour les messages entrants comme

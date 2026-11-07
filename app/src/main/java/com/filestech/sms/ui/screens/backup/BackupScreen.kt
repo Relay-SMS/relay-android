@@ -2,15 +2,20 @@ package com.filestech.sms.ui.screens.backup
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -18,18 +23,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,7 +40,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -58,9 +62,16 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.backup.BackupService
 import com.filestech.sms.domain.backup.RestoreResult
 import com.filestech.sms.domain.usecase.RestoreBackupUseCase
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayPrimaryButton
+import com.filestech.sms.ui.components.RelaySection
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.security.ProtectSecretInput
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -324,7 +335,17 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
         }
     }
 
+    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section content sits
+    // on the canvas (see RelaySection). Picked from the surface luminance so it follows the
+    // active scheme, dark variants included.
+    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        RelayColors.CanvasDark
+    } else {
+        RelayColors.Surface
+    }
+
     Scaffold(
+        containerColor = pageBackground,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_section_backup)) },
@@ -340,75 +361,83 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
         },
         snackbarHost = { SmsTechSnackbarHost(snackbarHost) },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.settings_backup_now),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = stringResource(R.string.backup_explainer),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.size(12.dp))
-            Button(onClick = {
-                // v1.27.13 — on demande AVANT de faire travailler l'utilisateur. Le selecteur
-                // n'est meme pas ouvert si la sauvegarde ne peut pas aboutir : il aurait cree
-                // un fichier vide qu'on aurait ensuite refuse de remplir.
-                scope.launch {
-                    when (viewModel.exportSecondFactor()) {
-                        com.filestech.sms.security.VaultSecondFactor.NONE ->
-                            launcher.launch("smsrelay_${System.currentTimeMillis()}.smsbk")
-                        // Le facteur se prouve ICI, pas dans un ecran qu'il faudrait quitter
-                        // pour revenir — le quitter refermerait justement la session.
-                        com.filestech.sms.security.VaultSecondFactor.PIN ->
-                            askingVaultPin = true
-                        // Seul cas non couvert : coffre garde par la biometrie SEULE. La porte
-                        // biometrique est adossee au Keystore et vit dans l'ecran du coffre ; la
-                        // recopier ici creerait deux implementations d'une meme garde, et c'est
-                        // ce motif qui a produit les vrais defauts de ce depot. On le dit
-                        // franchement, avec la seule action qui debloque.
-                        com.filestech.sms.security.VaultSecondFactor.BIOMETRIC ->
-                            vaultBiometricOnlyDialog = true
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            RelaySection(title = stringResource(R.string.settings_backup_now)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.backup_explainer),
+                        style = RelayText.Preview,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    RelayPrimaryButton(
+                        text = stringResource(R.string.settings_backup_now),
+                        onClick = {
+                            // v1.27.13 — on demande AVANT de faire travailler l'utilisateur. Le selecteur
+                            // n'est meme pas ouvert si la sauvegarde ne peut pas aboutir : il aurait cree
+                            // un fichier vide qu'on aurait ensuite refuse de remplir.
+                            scope.launch {
+                                when (viewModel.exportSecondFactor()) {
+                                    com.filestech.sms.security.VaultSecondFactor.NONE ->
+                                        launcher.launch("smsrelay_${System.currentTimeMillis()}.smsbk")
+                                    // Le facteur se prouve ICI, pas dans un ecran qu'il faudrait quitter
+                                    // pour revenir — le quitter refermerait justement la session.
+                                    com.filestech.sms.security.VaultSecondFactor.PIN ->
+                                        askingVaultPin = true
+                                    // Seul cas non couvert : coffre garde par la biometrie SEULE. La porte
+                                    // biometrique est adossee au Keystore et vit dans l'ecran du coffre ; la
+                                    // recopier ici creerait deux implementations d'une meme garde, et c'est
+                                    // ce motif qui a produit les vrais defauts de ce depot. On le dit
+                                    // franchement, avec la seule action qui debloque.
+                                    com.filestech.sms.security.VaultSecondFactor.BIOMETRIC ->
+                                        vaultBiometricOnlyDialog = true
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+            RelaySection(title = stringResource(R.string.settings_restore)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.backup_restore_explainer),
+                        style = RelayText.Preview,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    RelayPrimaryButton(
+                        // v1.15.2 — Disable le bouton pendant l'opération crypto + import. Évite un
+                        // 2ᵉ pick file qui produirait 2 restores concurrents (le VM a déjà un guard
+                        // anti-réentrance, mais on défend en profondeur côté UI).
+                        enabled = !isRestoring,
+                        text = if (isRestoring) {
+                            stringResource(R.string.backup_restore_in_progress)
+                        } else {
+                            stringResource(R.string.backup_restore_pick_file)
+                        },
+                        onClick = {
+                            // mime `*/*` car certains pickers (Samsung My Files) ne reconnaissent pas
+                            // le mime SMS Tech custom — la validation se fait via magic bytes côté
+                            // BackupService.readSmsbk.
+                            restoreLauncher.launch(arrayOf("*/*"))
+                        },
+                    )
+                    if (isRestoring) {
+                        Spacer(Modifier.size(12.dp))
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp),
+                            color = RelayColors.Blue,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        )
                     }
                 }
-            }) {
-                Text(stringResource(R.string.settings_backup_now))
-            }
-            Spacer(Modifier.size(24.dp))
-            HorizontalDivider()
-            Text(
-                text = stringResource(R.string.settings_restore),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 16.dp),
-            )
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = stringResource(R.string.backup_restore_explainer),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.size(12.dp))
-            Button(
-                // v1.15.2 — Disable le bouton pendant l'opération crypto + import. Évite un
-                // 2ᵉ pick file qui produirait 2 restores concurrents (le VM a déjà un guard
-                // anti-réentrance, mais on défend en profondeur côté UI).
-                enabled = !isRestoring,
-                onClick = {
-                    // mime `*/*` car certains pickers (Samsung My Files) ne reconnaissent pas
-                    // le mime SMS Tech custom — la validation se fait via magic bytes côté
-                    // BackupService.readSmsbk.
-                    restoreLauncher.launch(arrayOf("*/*"))
-                },
-            ) {
-                Text(
-                    text = if (isRestoring) {
-                        stringResource(R.string.backup_restore_in_progress)
-                    } else {
-                        stringResource(R.string.backup_restore_pick_file)
-                    },
-                )
             }
         }
     }
@@ -447,14 +476,22 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
     }
 
     if (vaultBiometricOnlyDialog) {
-        AlertDialog(
+        RelayDialog(
             onDismissRequest = { vaultBiometricOnlyDialog = false },
-            title = { Text(stringResource(R.string.backup_vault_biometric_title)) },
-            text = { Text(stringResource(R.string.backup_vault_biometric_body)) },
+            title = stringResource(R.string.backup_vault_biometric_title),
+            content = {
+                Text(
+                    text = stringResource(R.string.backup_vault_biometric_body),
+                    style = RelayText.Preview,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { vaultBiometricOnlyDialog = false }) {
-                    Text(stringResource(R.string.action_confirm))
-                }
+                RelayTextButton(
+                    text = stringResource(R.string.action_confirm),
+                    onClick = { vaultBiometricOnlyDialog = false },
+                    confirm = true,
+                )
             },
         )
     }
@@ -475,7 +512,6 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PassphraseDialog(
     onConfirm: (CharArray) -> Unit,
@@ -510,79 +546,86 @@ private fun PassphraseDialog(
         onConfirm(chars)
     }
 
-    AlertDialog(
+    RelayDialog(
         // v1.28.6 — LE DEFILEMENT SEUL NE SUFFISAIT PAS, et Patrice l'a constate : un
         // `verticalScroll` ne sert a rien tant que la FENETRE du dialogue garde toute la hauteur
         // de l'ecran. Une `Dialog` Compose a sa propre fenetre ; avec `decorFitsSystemWindows`
         // a `true` — le defaut — elle ignore l'encart du clavier, et les boutons se retrouvent
         // simplement dessous, hors de l'ecran. Il n'y avait donc rien a faire defiler.
         //
-        // En passant a `false`, l'application prend la main sur les encarts : `imePadding` remonte
-        // le dialogue au-dessus du clavier, `safeDrawingPadding` le garde hors de la barre d'etat
-        // et de la barre de navigation, et le contenu defile pour le cas ou meme cette hauteur
-        // reduite ne suffirait pas. Les trois sont necessaires : le premier resout le defaut, le
-        // deuxieme empeche de le remplacer par un dialogue sous la barre d'etat, le troisieme
-        // couvre les tres petits ecrans et les polices agrandies.
+        // En passant a `false` (via les `properties` du dialogue partage), l'application prend la
+        // main sur les encarts : `imePadding` remonte le dialogue au-dessus du clavier,
+        // `safeDrawingPadding` le garde hors de la barre d'etat et de la barre de navigation, et
+        // le contenu defile pour le cas ou meme cette hauteur reduite ne suffirait pas. Les trois
+        // sont necessaires : le premier resout le defaut, le deuxieme empeche de le remplacer par
+        // un dialogue sous la barre d'etat, le troisieme couvre les tres petits ecrans et les
+        // polices agrandies.
         modifier = Modifier
             .safeDrawingPadding()
             .imePadding(),
         properties = DialogProperties(decorFitsSystemWindows = false),
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.backup_passphrase_title)) },
-        text = {
+        title = stringResource(R.string.backup_passphrase_title),
+        content = {
             // v1.27.1 (N3) — DANS le contenu du dialogue : phrase secrète d'export.
             ProtectSecretInput()
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
                     text = stringResource(R.string.backup_passphrase_explain),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
+                RelayTextField(
                     value = pw,
                     onValueChange = { pw = it },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.backup_passphrase)) },
-                    visualTransformation = if (pwVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    placeholder = stringResource(R.string.backup_passphrase),
+                    visualTransformation = if (pwVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Next,
                     ),
                     trailingIcon = {
-                        IconButton(onClick = { pwVisible = !pwVisible }) {
-                            Icon(
-                                imageVector = if (pwVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = stringResource(
-                                    if (pwVisible) R.string.action_hide_password else R.string.action_show_password,
-                                ),
-                            )
-                        }
+                        PassphraseVisibilityToggle(
+                            visible = pwVisible,
+                            onToggle = { pwVisible = !pwVisible },
+                        )
                     },
-                    // v1.15.2 — Indicateur visuel du minimum requis (sous le champ).
-                    // v1.28.6 — il ne s'affiche PLUS EN PERMANENCE. Le texte d'explication juste
-                    // au-dessus dit déjà « Au minimum 8 caractères » : la même phrase sous le champ
-                    // était un doublon, et elle coûtait une ligne — celle qui, clavier ouvert,
-                    // faisait sortir le second champ et les boutons de l'écran. Elle ne paraît donc
-                    // plus que quand elle APPREND quelque chose : la saisie est trop courte.
-                    // `supportingText = null` ne réserve aucune place, contrairement à un `Text` vide.
-                    supportingText = if (tooShort) {
-                        {
-                            Text(stringResource(R.string.backup_passphrase_min_length, MIN_PASSPHRASE_LEN))
-                        }
-                    } else {
-                        null
-                    },
-                    isError = tooShort,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.size(8.dp))
-                OutlinedTextField(
+                // v1.15.2 — Indicateur visuel du minimum requis (sous le champ).
+                // v1.28.6 — il ne s'affiche PLUS EN PERMANENCE. Le texte d'explication juste
+                // au-dessus dit déjà « Au minimum 8 caractères » : la même phrase sous le champ
+                // était un doublon, et elle coûtait une ligne — celle qui, clavier ouvert,
+                // faisait sortir le second champ et les boutons de l'écran. Elle ne paraît donc
+                // plus que quand elle APPREND quelque chose : la saisie est trop courte.
+                if (tooShort) {
+                    Text(
+                        text = stringResource(
+                            R.string.backup_passphrase_min_length,
+                            MIN_PASSPHRASE_LEN,
+                        ),
+                        style = RelayText.Timestamp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                RelayTextField(
                     value = pw2,
                     onValueChange = { pw2 = it },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.backup_passphrase_repeat)) },
-                    visualTransformation = if (pwVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    placeholder = stringResource(R.string.backup_passphrase_repeat),
+                    visualTransformation = if (pwVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
@@ -595,39 +638,39 @@ private fun PassphraseDialog(
                     // (les deux champs se masquent/affichent ensemble). Permet à l'user de
                     // toggler depuis le champ qu'il est en train de remplir.
                     trailingIcon = {
-                        IconButton(onClick = { pwVisible = !pwVisible }) {
-                            Icon(
-                                imageVector = if (pwVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = stringResource(
-                                    if (pwVisible) R.string.action_hide_password else R.string.action_show_password,
-                                ),
-                            )
-                        }
+                        PassphraseVisibilityToggle(
+                            visible = pwVisible,
+                            onToggle = { pwVisible = !pwVisible },
+                        )
                     },
-                    // v1.28.6 — L'ÉCART EST DIT PAR LE CHAMP CONCERNÉ, et non par un `Text` posé
-                    // dessous en `labelSmall` : cette taille-là était illisible (constaté par
-                    // Patrice), et le message flottait sans être rattaché à un champ. En
-                    // `supportingText`, Material lui donne sa taille, sa couleur d'erreur et sa
-                    // place, et le champ se souligne en rouge avec lui.
-                    supportingText = if (mismatch) {
-                        { Text(stringResource(R.string.backup_passphrase_mismatch)) }
-                    } else {
-                        null
-                    },
-                    isError = mismatch,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // v1.28.6 — L'ÉCART EST DIT PAR LE CHAMP CONCERNÉ, et non par un `Text` posé
+                // dessous en `labelSmall` : cette taille-là était illisible (constaté par
+                // Patrice), et le message flottait sans être rattaché à un champ. En ligne
+                // d'erreur sous le champ, il a sa taille, sa couleur d'erreur et sa place.
+                if (mismatch) {
+                    Text(
+                        text = stringResource(R.string.backup_passphrase_mismatch),
+                        style = RelayText.Timestamp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = matches, onClick = enregistrer) {
-                Text(stringResource(R.string.action_save))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_save),
+                onClick = enregistrer,
+                enabled = matches,
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = { pw = ""; pw2 = ""; onDismiss() }) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = { pw = ""; pw2 = ""; onDismiss() },
+            )
         },
     )
 }
@@ -643,7 +686,6 @@ private const val MIN_PASSPHRASE_LEN = 8
  *  - CharArray construite à la confirmation, wipée par [BackupService.readSmsbk] côté service.
  *  - String UI wipée immédiatement après conversion en CharArray pour réduire l'exposition.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RestorePassphraseDialog(
     onConfirm: (CharArray) -> Unit,
@@ -663,7 +705,7 @@ private fun RestorePassphraseDialog(
         pw = ""
         onConfirm(chars)
     }
-    AlertDialog(
+    RelayDialog(
         // v1.28.6 — meme correction que [PassphraseDialog], son jumeau : cf. le commentaire y
         // figurant pour le raisonnement complet.
         modifier = Modifier
@@ -671,51 +713,81 @@ private fun RestorePassphraseDialog(
             .imePadding(),
         properties = DialogProperties(decorFitsSystemWindows = false),
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.backup_restore_passphrase_title)) },
-        text = {
+        title = stringResource(R.string.backup_restore_passphrase_title),
+        content = {
             // v1.27.1 (N3) — DANS le contenu du dialogue : phrase secrète de restauration.
             ProtectSecretInput()
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(
                     text = stringResource(R.string.backup_restore_explainer),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.size(12.dp))
-                OutlinedTextField(
+                RelayTextField(
                     value = pw,
                     onValueChange = { pw = it },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.backup_restore_passphrase_field)) },
-                    visualTransformation = if (pwVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    placeholder = stringResource(R.string.backup_restore_passphrase_field),
+                    visualTransformation = if (pwVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                     ),
                     keyboardActions = KeyboardActions(onDone = { if (pw.isNotEmpty()) restaurer() }),
                     trailingIcon = {
-                        IconButton(onClick = { pwVisible = !pwVisible }) {
-                            Icon(
-                                imageVector = if (pwVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = stringResource(
-                                    if (pwVisible) R.string.action_hide_password else R.string.action_show_password,
-                                ),
-                            )
-                        }
+                        PassphraseVisibilityToggle(
+                            visible = pwVisible,
+                            onToggle = { pwVisible = !pwVisible },
+                        )
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
         confirmButton = {
-            TextButton(enabled = pw.isNotEmpty(), onClick = restaurer) {
-                Text(stringResource(R.string.backup_restore_action))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.backup_restore_action),
+                onClick = restaurer,
+                enabled = pw.isNotEmpty(),
+                confirm = true,
+            )
         },
         dismissButton = {
-            TextButton(onClick = { pw = ""; onDismiss() }) {
-                Text(stringResource(R.string.action_cancel))
-            }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = { pw = ""; onDismiss() },
+            )
         },
     )
+}
+
+/** Œil de visibilité d'une passphrase : même geste et même état sur les deux champs. */
+@Composable
+private fun PassphraseVisibilityToggle(
+    visible: Boolean,
+    onToggle: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+            contentDescription = stringResource(
+                if (visible) R.string.action_hide_password else R.string.action_show_password,
+            ),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
 }

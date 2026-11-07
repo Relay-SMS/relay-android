@@ -11,11 +11,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +24,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.domain.settings.TextScale
+import com.filestech.sms.ui.components.RelayColors
+import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.factor
 import com.filestech.sms.ui.theme.scaledBy
 
@@ -40,14 +43,14 @@ internal fun TextScalePickerDialog(
     onPick: (TextScale) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    RelayDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_text_scale)) },
-        text = {
+        title = stringResource(R.string.settings_text_scale),
+        content = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     stringResource(R.string.settings_text_scale_hint),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.size(8.dp))
@@ -65,7 +68,10 @@ internal fun TextScalePickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
@@ -81,7 +87,11 @@ private fun TextScaleOption(label: String, style: TextStyle, selected: Boolean, 
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = null)
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            colors = RadioButtonDefaults.colors(selectedColor = RelayColors.Blue),
+        )
         Spacer(Modifier.size(8.dp))
         Text(label, style = style)
     }

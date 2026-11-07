@@ -4,12 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +25,7 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Contactless
 import androidx.compose.material.icons.outlined.DarkMode
@@ -38,25 +37,17 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PrivacyTip
-import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material.icons.outlined.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -69,7 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -78,16 +69,20 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.filestech.sms.BuildConfig
 import com.filestech.sms.R
+import com.filestech.sms.ui.components.RelayRow
+import com.filestech.sms.ui.components.RelaySection
+import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.theme.RelayText
 
 /**
- * v1.2.6: re-skinned to mirror the PDF Tech About screen design — centered icon header with a
- * version pill, a privacy "badges card", grouped Material cards for features, an author card,
- * help recipes, then the SMS-Tech-specific permissions list and the legal/credits block at
- * the bottom. Visual identity unified across the Files Tech apps.
+ * About screen in the grouped-list treatment of the Relay design system: same section/row
+ * primitives as Settings (canvas rows, 50dp, chevron trailing, blue leading glyphs), privacy
+ * badges as quiet chips, version and credit lines as 13sp secondary text. No copy changes —
+ * only the presentation moved onto the shared kit.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,7 +90,17 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
     val context = LocalContext.current
     var tapCount by remember { mutableStateOf(0) }
 
+    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section rows sit on
+    // the canvas (see RelaySection). Picked from the surface luminance so it follows the
+    // active scheme, dark variants included.
+    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        RelayColors.CanvasDark
+    } else {
+        RelayColors.Surface
+    }
+
     Scaffold(
+        containerColor = pageBackground,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.about_title)) },
@@ -115,7 +120,7 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 24.dp),
+                .padding(vertical = 24.dp),
         ) {
             HeaderBlock(
                 onCheckUpdate = {
@@ -128,118 +133,163 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                 tapCount = tapCount,
             )
 
-            Spacer(Modifier.size(28.dp))
-            SectionTitle(stringResource(R.string.about_section_privacy))
-            Spacer(Modifier.size(8.dp))
-            PrivacyCard()
-
-            Spacer(Modifier.size(24.dp))
-            SectionTitle(stringResource(R.string.about_section_features))
-            Spacer(Modifier.size(8.dp))
-            features(isPanicDecoy).forEach { f ->
-                FeatureRow(icon = f.icon, label = f.label, desc = f.desc)
-            }
-
-            Spacer(Modifier.size(24.dp))
-            SectionTitle(stringResource(R.string.about_section_author))
-            Spacer(Modifier.size(8.dp))
-            AuthorCard()
-
-            Spacer(Modifier.size(24.dp))
-            SectionTitle(stringResource(R.string.about_section_help))
-            Spacer(Modifier.size(8.dp))
-            helpRecipes(isPanicDecoy).forEach { h -> HelpCard(title = h.title, steps = h.steps) }
-
-            Spacer(Modifier.size(24.dp))
-            SectionTitle(stringResource(R.string.about_security_title))
-            Spacer(Modifier.size(8.dp))
-            SecurityCard()
-
-            Spacer(Modifier.size(24.dp))
-            SectionTitle(stringResource(R.string.about_permissions_title))
-            Spacer(Modifier.size(8.dp))
-            permissions(isPanicDecoy).forEach { p -> PermissionLine(name = p.name, why = p.why) }
-
-            Spacer(Modifier.size(24.dp))
-            SectionTitle(stringResource(R.string.about_section_links))
-            Spacer(Modifier.size(8.dp))
-            LinkItem(
-                icon = Icons.Outlined.Code,
-                label = stringResource(R.string.about_source_code),
-                trailing = Icons.Outlined.Public,
-                onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) },
-            )
-            LinkItem(
-                icon = Icons.Outlined.BugReport,
-                label = stringResource(R.string.about_report_issue),
-                onClick = {
-                    // Fork: issues go to the SMS Relay repo, not to the upstream author's inbox.
-                    safeStartActivity(
-                        context,
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com/realquink/relay/issues/new")
+            RelaySection(title = stringResource(R.string.about_section_privacy)) {
+                RelayRow(
+                    title = stringResource(R.string.about_privacy_headline),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Shield,
+                            contentDescription = null,
+                            tint = RelayColors.Blue,
+                            modifier = Modifier.size(22.dp),
                         )
-                    )
-                },
-            )
-            LinkItem(
-                icon = Icons.Outlined.Language,
-                label = stringResource(R.string.about_website),
-                supporting = WEBSITE_URL,
-                onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL))) },
-            )
-            LinkItem(
-                icon = Icons.Outlined.Gavel,
-                label = stringResource(R.string.about_license),
-                supporting = "Apache License 2.0",
-                onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(LICENSE_URL))) },
-            )
-            // v1.28.13 — la politique et les conditions existent dans les cinq langues de
-            // l'application : le lien ouvre celle de la langue AFFICHÉE, l'anglais à défaut.
-            // Masqués en session leurre (revue de sécurité de la 1.28.13) : ces deux documents
-            // décrivent le mode urgence et le Safety call, que le reste de cet écran tait en leurre
-            // (fonctions, aide, permissions). Un agresseur ne peut pas savoir qu'ils manquent.
-            val langue = LocalConfiguration.current.locales[0].language
-            if (!isPanicDecoy) {
-                LinkItem(
-                    icon = Icons.Outlined.PrivacyTip,
-                    label = stringResource(R.string.about_privacy),
-                    onClick = { ouvrirTexteJuridique(context, "PRIVACY", langue) },
+                    },
                 )
-                LinkItem(
-                    icon = Icons.Outlined.Description,
-                    label = stringResource(R.string.about_terms),
-                    onClick = { ouvrirTexteJuridique(context, "TERMS", langue) },
+                BadgesFlow(
+                    badges = privacyBadges(),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 )
             }
-            // 2026-10-29 — soutenir le projet : la page de dons du site, ouverte dans le navigateur
-            // comme les autres liens (l'application n'a toujours pas la permission Internet).
-            // Visible aussi en session leurre : une page publique de dons ne révèle rien.
-            LinkItem(
-                icon = Icons.Outlined.VolunteerActivism,
-                label = stringResource(R.string.about_support),
-                supporting = stringResource(R.string.about_support_desc),
-                onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, urlPageDeDons(langue).toUri())) },
-            )
+
+            RelaySection(title = stringResource(R.string.about_section_features)) {
+                features(isPanicDecoy).forEach { f ->
+                    FeatureRow(icon = f.icon, label = f.label, desc = f.desc)
+                }
+            }
+
+            RelaySection(title = stringResource(R.string.about_section_author)) {
+                RelayRow(
+                    title = AUTHOR_NAME,
+                    subtitle = stringResource(R.string.about_author_role),
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Contactless,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    },
+                )
+            }
+
+            RelaySection(title = stringResource(R.string.about_section_help)) {
+                helpRecipes(isPanicDecoy).forEach { h -> HelpCard(title = h.title, steps = h.steps) }
+            }
+
+            RelaySection(title = stringResource(R.string.about_security_title)) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.about_security_body),
+                        style = RelayText.Preview,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            RelaySection(title = stringResource(R.string.about_permissions_title)) {
+                permissions(isPanicDecoy).forEach { p ->
+                    RelayRow(title = p.name, subtitle = p.why)
+                }
+            }
+
+            RelaySection(title = stringResource(R.string.about_section_links)) {
+                LinkItem(
+                    icon = Icons.Outlined.Code,
+                    label = stringResource(R.string.about_source_code),
+                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) },
+                )
+                LinkItem(
+                    icon = Icons.Outlined.BugReport,
+                    label = stringResource(R.string.about_report_issue),
+                    onClick = {
+                        // Fork: issues go to the SMS Relay repo, not to the upstream author's inbox.
+                        safeStartActivity(
+                            context,
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/realquink/relay/issues/new")
+                            )
+                        )
+                    },
+                )
+                LinkItem(
+                    icon = Icons.Outlined.Language,
+                    label = stringResource(R.string.about_website),
+                    supporting = WEBSITE_URL,
+                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL))) },
+                )
+                LinkItem(
+                    icon = Icons.Outlined.Gavel,
+                    label = stringResource(R.string.about_license),
+                    supporting = "Apache License 2.0",
+                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(LICENSE_URL))) },
+                )
+                // v1.28.13 — la politique et les conditions existent dans les cinq langues de
+                // l'application : le lien ouvre celle de la langue AFFICHÉE, l'anglais à défaut.
+                // Masqués en session leurre (revue de sécurité de la 1.28.13) : ces deux documents
+                // décrivent le mode urgence et le Safety call, que le reste de cet écran tait en leurre
+                // (fonctions, aide, permissions). Un agresseur ne peut pas savoir qu'ils manquent.
+                val langue = LocalConfiguration.current.locales[0].language
+                if (!isPanicDecoy) {
+                    LinkItem(
+                        icon = Icons.Outlined.PrivacyTip,
+                        label = stringResource(R.string.about_privacy),
+                        onClick = { ouvrirTexteJuridique(context, "PRIVACY", langue) },
+                    )
+                    LinkItem(
+                        icon = Icons.Outlined.Description,
+                        label = stringResource(R.string.about_terms),
+                        onClick = { ouvrirTexteJuridique(context, "TERMS", langue) },
+                    )
+                }
+                // 2026-10-29 — soutenir le projet : la page de dons du site, ouverte dans le navigateur
+                // comme les autres liens (l'application n'a toujours pas la permission Internet).
+                // Visible aussi en session leurre : une page publique de dons ne révèle rien.
+                LinkItem(
+                    icon = Icons.Outlined.VolunteerActivism,
+                    label = stringResource(R.string.about_support),
+                    supporting = stringResource(R.string.about_support_desc),
+                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, urlPageDeDons(langue).toUri())) },
+                )
+            }
 
             Spacer(Modifier.size(24.dp))
             Text(
                 text = stringResource(R.string.about_credits_body, AUTHOR_NAME),
-                style = MaterialTheme.typography.bodySmall,
+                style = RelayText.Timestamp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
             )
             Spacer(Modifier.size(8.dp))
             Text(
                 text = stringResource(R.string.about_legal_body, "2026", AUTHOR_NAME),
-                style = MaterialTheme.typography.bodySmall,
+                style = RelayText.Timestamp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
             )
-            Spacer(Modifier.size(24.dp))
         }
     }
 }
@@ -256,7 +306,9 @@ private fun HeaderBlock(
 ) {
     val cs = MaterialTheme.colorScheme
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Image(
@@ -269,7 +321,7 @@ private fun HeaderBlock(
         Spacer(Modifier.size(14.dp))
         Text(
             text = stringResource(R.string.app_name),
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            style = RelayText.LargeTitle,
         )
         Spacer(Modifier.size(4.dp))
         Box(
@@ -281,102 +333,74 @@ private fun HeaderBlock(
         ) {
             Text(
                 text = "v${BuildConfig.VERSION_NAME}",
-                color = cs.primary,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
+                // Phase 8 — le texte vit sur `primaryContainer` : `primary` donnait 1.40:1
+                // sur `#004788` en sombre (5.56:1 en clair). `onPrimaryContainer` donne
+                // 7.23:1 en sombre et 14.41:1 en clair.
+                color = cs.onPrimaryContainer,
+                style = RelayText.Timestamp.copy(fontWeight = FontWeight.SemiBold),
             )
         }
         if (tapCount >= 7) {
             Spacer(Modifier.size(6.dp))
             Text(
                 text = stringResource(R.string.about_easter_egg),
-                style = MaterialTheme.typography.labelSmall,
+                style = RelayText.Timestamp,
                 color = cs.onSurfaceVariant,
             )
         }
         Spacer(Modifier.size(8.dp))
         Text(
             text = stringResource(R.string.about_tagline_short),
-            style = MaterialTheme.typography.bodySmall,
+            style = RelayText.Timestamp,
             color = cs.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.size(14.dp))
-        FilledTonalButton(onClick = onCheckUpdate) {
-            Icon(Icons.Outlined.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.about_check_updates))
-        }
+        RelayTextButton(
+            text = stringResource(R.string.about_check_updates),
+            onClick = onCheckUpdate,
+        )
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Privacy card with coloured badges
+//  Privacy badges as quiet chips
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun PrivacyCard() {
-    val cs = MaterialTheme.colorScheme
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerHigh),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Outlined.Shield,
-                    contentDescription = null,
-                    tint = Color(0xFF43A047),
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.size(6.dp))
-                Text(
-                    text = stringResource(R.string.about_privacy_headline),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = cs.onSurface,
-                )
-            }
-            Spacer(Modifier.size(12.dp))
-            BadgesFlow(
-                badges = privacyBadges(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun BadgesFlow(badges: List<PrivacyBadge>) {
+private fun BadgesFlow(badges: List<PrivacyBadge>, modifier: Modifier = Modifier) {
     // Compose's FlowRow is in foundation since 1.4 — use a manual two-row layout that splits
     // the badges roughly evenly. Keeps the dependency surface flat (no new artifact).
     val mid = (badges.size + 1) / 2
     val rows = listOf(badges.take(mid), badges.drop(mid))
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         rows.forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { b -> Badge(icon = b.icon, label = b.label, color = b.color) }
+                row.forEach { b -> Badge(icon = b.icon, label = b.label) }
             }
         }
     }
 }
 
 @Composable
-private fun Badge(icon: ImageVector, label: String, color: Color) {
+private fun Badge(icon: ImageVector, label: String) {
+    val cs = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(color.copy(alpha = 0.12f))
-            .border(width = 1.dp, color = color.copy(alpha = 0.3f), shape = RoundedCornerShape(20.dp))
+            .background(cs.surfaceVariant)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
+        Icon(icon, contentDescription = null, tint = cs.onSurfaceVariant, modifier = Modifier.size(14.dp))
         Spacer(Modifier.size(5.dp))
         Text(
             text = label,
-            fontSize = 11.sp,
-            color = color,
-            fontWeight = FontWeight.SemiBold,
+            style = RelayText.Timestamp,
+            color = cs.onSurfaceVariant,
         )
     }
 }
@@ -387,61 +411,18 @@ private fun Badge(icon: ImageVector, label: String, color: Color) {
 
 @Composable
 private fun FeatureRow(icon: ImageVector, label: String, desc: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 6.dp),
-    ) {
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-            },
-            headlineContent = {
-                Text(label, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp))
-            },
-            supportingContent = {
-                Text(desc, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp))
-            },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            modifier = Modifier.padding(horizontal = 0.dp),
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Author card
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun AuthorCard() {
-    val cs = MaterialTheme.colorScheme
-    Card(modifier = Modifier.fillMaxWidth()) {
-        ListItem(
-            leadingContent = {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(cs.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Contactless,
-                        contentDescription = null,
-                        tint = cs.primary,
-                    )
-                }
-            },
-            headlineContent = { Text(AUTHOR_NAME) },
-            supportingContent = { Text(stringResource(R.string.about_author_role)) },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        )
-    }
+    RelayRow(
+        title = label,
+        subtitle = desc,
+        leadingIcon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = RelayColors.Blue,
+                modifier = Modifier.size(22.dp),
+            )
+        },
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -451,91 +432,31 @@ private fun AuthorCard() {
 @Composable
 private fun HelpCard(title: String, steps: List<String>) {
     val cs = MaterialTheme.colorScheme
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp),
-    ) {
-        Column(modifier = Modifier.padding(PaddingValues(horizontal = 14.dp, vertical = 12.dp))) {
-            Text(
-                text = title,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                color = cs.onSurface,
-            )
-            Spacer(Modifier.size(6.dp))
-            steps.forEachIndexed { i, step ->
-                Row(
-                    modifier = Modifier.padding(bottom = 3.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Text(
-                        text = "${i + 1}. ",
-                        fontSize = 12.sp,
-                        color = cs.primary,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = step,
-                        fontSize = 12.sp,
-                        color = cs.onSurface,
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Security card (SMS / MMS unencrypted at the protocol level)
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun SecurityCard() {
-    val cs = MaterialTheme.colorScheme
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerHigh),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Outlined.Warning,
-                    contentDescription = null,
-                    tint = cs.tertiary,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.size(6.dp))
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(
+            text = title,
+            style = RelayText.MessageBody.copy(fontWeight = FontWeight.SemiBold),
+            color = cs.onSurface,
+        )
+        Spacer(Modifier.size(6.dp))
+        steps.forEachIndexed { i, step ->
+            Row(
+                modifier = Modifier.padding(bottom = 3.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
                 Text(
-                    text = stringResource(R.string.about_security_title),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    text = "${i + 1}. ",
+                    style = RelayText.Timestamp.copy(fontWeight = FontWeight.SemiBold),
+                    color = RelayColors.Blue,
+                )
+                Text(
+                    text = step,
+                    style = RelayText.Timestamp,
                     color = cs.onSurface,
                 )
             }
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = stringResource(R.string.about_security_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = cs.onSurfaceVariant,
-            )
         }
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Permissions list
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun PermissionLine(name: String, why: String) {
-    ListItem(
-        headlineContent = { Text(name, style = MaterialTheme.typography.bodyMedium) },
-        supportingContent = { Text(why, style = MaterialTheme.typography.bodySmall) },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.fillMaxWidth(),
-    )
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -548,34 +469,33 @@ private fun LinkItem(
     label: String,
     onClick: () -> Unit,
     supporting: String? = null,
-    trailing: ImageVector? = null,
 ) {
-    ListItem(
-        leadingContent = { Icon(icon, contentDescription = null) },
-        headlineContent = { Text(label) },
-        supportingContent = supporting?.let { { Text(it, style = MaterialTheme.typography.bodySmall) } },
-        trailingContent = trailing?.let { { Icon(it, contentDescription = null) } },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.clickable(onClick = onClick),
+    RelayRow(
+        title = label,
+        subtitle = supporting,
+        onClick = onClick,
+        leadingIcon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = RelayColors.Blue,
+                modifier = Modifier.size(22.dp),
+            )
+        },
+        trailing = {
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+        },
     )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun SectionTitle(text: String) {
-    // v1.2.6 polish : aligné sur les titres de Réglages (titleMedium SemiBold + primary blue).
-    // Visuellement le même style entre les deux écrans, ce qui donne une identité Files Tech
-    // cohérente.
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 2.dp),
-    )
-}
 
 /** Audit U4: never crash if no Activity is registered for the intent. */
 private fun safeStartActivity(context: android.content.Context, intent: android.content.Intent) {
@@ -627,7 +547,7 @@ private fun ouvrirTexteJuridique(context: android.content.Context, document: Str
     safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(urlTexteJuridique(document, langue))))
 }
 
-private data class PrivacyBadge(val icon: ImageVector, val label: String, val color: Color)
+private data class PrivacyBadge(val icon: ImageVector, val label: String)
 
 // v1.14.9 audit I18N-M3 — Conversion vers factory @Composable. Avant : `val PRIVACY_BADGES =
 // listOf(...)` top-level avec strings FR hardcodées → un user EN voyait du français dans
@@ -635,10 +555,10 @@ private data class PrivacyBadge(val icon: ImageVector, val label: String, val co
 // qui résout chaque label via [stringResource], parité FR↔EN complète.
 @androidx.compose.runtime.Composable
 private fun privacyBadges(): List<PrivacyBadge> = listOf(
-    PrivacyBadge(Icons.Outlined.Block, stringResource(R.string.about_badge_no_ads), Color(0xFFE53935)),
-    PrivacyBadge(Icons.Outlined.VisibilityOff, stringResource(R.string.about_badge_no_tracker), Color(0xFFFF7043)),
-    PrivacyBadge(Icons.Outlined.Security, stringResource(R.string.about_badge_no_collection), Color(0xFF1976D2)),
-    PrivacyBadge(Icons.Outlined.PrivacyTip, stringResource(R.string.about_badge_no_sharing), Color(0xFF7B1FA2)),
+    PrivacyBadge(Icons.Outlined.Block, stringResource(R.string.about_badge_no_ads)),
+    PrivacyBadge(Icons.Outlined.VisibilityOff, stringResource(R.string.about_badge_no_tracker)),
+    PrivacyBadge(Icons.Outlined.Security, stringResource(R.string.about_badge_no_collection)),
+    PrivacyBadge(Icons.Outlined.PrivacyTip, stringResource(R.string.about_badge_no_sharing)),
 )
 
 /**

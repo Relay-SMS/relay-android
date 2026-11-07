@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,7 +32,6 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -41,8 +41,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
+import com.filestech.sms.ui.components.RelayEmptyState
 import com.filestech.sms.ui.components.modeleImage
 import com.filestech.sms.ui.components.ouvrirPieceJointe
+import com.filestech.sms.ui.theme.RelayText
 
 /** Issue #59 — la grille des photos et vidéos. Toucher une vignette ouvre le fichier comme depuis la bulle. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,7 +64,12 @@ fun MediaGalleryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.media_gallery_title)) },
+                title = {
+                    Text(
+                        stringResource(R.string.media_gallery_title),
+                        style = RelayText.ThreadTitle,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -90,21 +97,23 @@ internal fun MediaGalleryContent(
         media.isEmpty() -> Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 32.dp),
+                .padding(padding),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = stringResource(R.string.media_gallery_empty),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
+            RelayEmptyState(
+                icon = Icons.Outlined.PhotoLibrary,
+                headline = stringResource(R.string.media_gallery_empty),
             )
         }
         else -> LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = TILE_MIN_SIZE),
+            columns = GridCells.Fixed(GALLERY_COLUMNS),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = padding,
+            contentPadding = PaddingValues(
+                start = TILE_GAP,
+                end = TILE_GAP,
+                top = padding.calculateTopPadding() + TILE_GAP,
+                bottom = padding.calculateBottomPadding() + TILE_GAP,
+            ),
             horizontalArrangement = Arrangement.spacedBy(TILE_GAP),
             verticalArrangement = Arrangement.spacedBy(TILE_GAP),
         ) {
@@ -152,7 +161,7 @@ private fun MediaTile(attachment: Attachment, onClick: () -> Unit) {
     }
 }
 
-private val TILE_MIN_SIZE = 110.dp
-private val TILE_GAP = 2.dp
+private const val GALLERY_COLUMNS = 3
+private val TILE_GAP = 4.dp
 private val VIDEO_ICON_SIZE = 40.dp
 private const val THUMBNAIL_PX = 360
