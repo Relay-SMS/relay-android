@@ -151,7 +151,6 @@
 
     <!-- Thread -->
     <string name="thread_compose_placeholder">Nachricht schreiben…</string>
-    <string name="thread_segments_indicator">%1$d / %2$d • %3$d Seg.</string>
     <string name="thread_status_pending">Wird gesendet…</string>
     <string name="thread_status_sent">Gesendet</string>
     <string name="thread_status_delivered">Zugestellt</string>
