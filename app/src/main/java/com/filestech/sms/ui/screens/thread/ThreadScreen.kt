@@ -1669,20 +1669,8 @@ private fun ComposingRow(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Default,
                         ),
-                        supportingText = if (segments.segmentCount > 0) {
-                            {
-                                Text(
-                                    text = stringResource(
-                                        R.string.thread_segments_indicator,
-                                        segments.length,
-                                        segments.length + segments.charsRemainingInCurrentSegment,
-                                        segments.segmentCount,
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = cs.onSurfaceVariant,
-                                )
-                            }
-                        } else null,
+                        // No character/segment counter under the composer.
+                        supportingText = null,
                     )
                 }
             }
