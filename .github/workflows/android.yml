@@ -184,6 +184,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: smstech-instrumented-report
+          name: relay-instrumented-report
           path: app/build/reports/androidTests/connected/**
           if-no-files-found: warn
