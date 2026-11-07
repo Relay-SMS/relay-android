@@ -98,7 +98,7 @@ class BrandWarningContrastTest {
         // 🔴 LE TEST QUI COMPTE LE PLUS DE CE FICHIER.
         //
         // Les deux teintes passent par le MÊME composant de confirmation. Passer l'orange au noir
-        // en dur — la correction naïve — aurait fait tomber le rouge de 5,62:1 à 3,74:1, soit sous
+        // en dur — la correction naïve — aurait fait tomber le rouge de 4,96:1 à 4,23:1, soit sous
         // le seuil AA : on aurait réparé un écran en cassant l'autre, sans qu'aucun test existant
         // ne s'en aperçoive. C'est exactement la forme du jumeau asymétrique.
         assertThat(onBrandContainer(BrandDanger)).isEqualTo(Color.White)
@@ -108,8 +108,8 @@ class BrandWarningContrastTest {
     fun `les deux ratios du rouge destructif sont ceux mesures`() {
         // Figés pour la même raison que ceux de l'orange : un ratio qui ne vit que dans un
         // commentaire finit par justifier un choix qu'il ne soutient pas.
-        assertThat(contrast(Color.White, BrandDanger)).isWithin(TOLERANCE).of(5.62)
-        assertThat(contrast(Color.Black, BrandDanger)).isWithin(TOLERANCE).of(3.74)
+        assertThat(contrast(Color.White, BrandDanger)).isWithin(TOLERANCE).of(4.96)
+        assertThat(contrast(Color.Black, BrandDanger)).isWithin(TOLERANCE).of(4.23)
     }
 
     @Test

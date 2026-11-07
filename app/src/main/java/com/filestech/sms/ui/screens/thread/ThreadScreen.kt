@@ -1590,8 +1590,8 @@ private fun DestructiveConfirmDialog(
                 //
                 // Ce bouton sert DEUX teintes : le rouge [BrandDanger] par défaut, et l'orange
                 // [com.filestech.sms.ui.theme.BrandBlocked] pour un blocage. Blanc convenait au
-                // rouge (**5,62:1**) et pas à l'orange (**3,79:1**, sous le seuil AA de 4,5:1) —
-                // mais forcer le noir aurait fait tomber le rouge à **3,74:1**. Un seul premier plan
+                // rouge (**4,96:1**) et pas à l'orange (**3,79:1**, sous le seuil AA de 4,5:1) —
+                // mais forcer le noir aurait fait tomber le rouge à **4,23:1**. Un seul premier plan
                 // écrit en dur ne pouvait pas être juste pour les deux : c'est le jumeau
                 // asymétrique, et il était ici invisible parce que les deux appelants partagent
                 // cette ligne. Voir [com.filestech.sms.ui.theme.onBrandContainer].
