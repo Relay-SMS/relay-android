@@ -120,8 +120,7 @@ object IncomingReactionDecoder {
     /**
      * Tries to decode [body] as a reaction-back. Returns `null` when [body] is plain
      * text — caller falls back to the regular "store as incoming SMS" path.
-     */
-    /**
+     *
      * Tries to decode [body] as a reaction-back. Returns `null` when [body] is plain
      * text — caller falls back to the regular "store as incoming SMS" path.
      *
@@ -377,10 +376,9 @@ object IncomingReactionDecoder {
             val emoji = body.substring(positions.firstSep + 1, positions.secondSep)
             val rawPreview = body.substring(positions.openQuote + 1, positions.closeQuote)
             val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
-            if (
-                emoji.isEmpty() || emoji.none { isLikelyEmojiChar(it) } ||
-                    emoji.any { it == GOOGLE_FRAME } || preview.isEmpty()
-            ) {
+            val emojiInvalid = emoji.isEmpty() || emoji.none { isLikelyEmojiChar(it) }
+            val framingInvalid = emoji.any { it == GOOGLE_FRAME } || preview.isEmpty()
+            if (emojiInvalid || framingInvalid) {
                 null
             } else {
                 DecodedReaction(
