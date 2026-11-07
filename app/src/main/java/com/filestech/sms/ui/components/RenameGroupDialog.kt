@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.GroupName
 import com.filestech.sms.ui.theme.RelayText
