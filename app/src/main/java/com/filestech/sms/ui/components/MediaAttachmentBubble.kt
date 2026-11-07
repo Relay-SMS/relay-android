@@ -104,7 +104,6 @@ fun MediaAttachmentBubble(
      * surfaces a [PhoneActionsDialog] in response.
      */
     onPhoneClick: (String) -> Unit = {},
-    onRemoveReaction: () -> Unit,
     repliedToPreview: com.filestech.sms.ui.components.ReplyQuotePreview? = null,
     /** v1.3.3 #7 — étiquette d'expéditeur ; voir [MessageBubble] pour la sémantique. */
     senderLabel: String? = null,
@@ -167,7 +166,7 @@ fun MediaAttachmentBubble(
             BubbleReactionOverlay(
                 reactionEmoji = message.reactionEmoji,
                 isOutgoing = isOut,
-                onRemoveReaction = onRemoveReaction,
+                bubbleColor = bgColor,
             ) {
                 MediaPreview(attachment, shape, bgColor, isOut) { ouvrir(attachment) }
             }

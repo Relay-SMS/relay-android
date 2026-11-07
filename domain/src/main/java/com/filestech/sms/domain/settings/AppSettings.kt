@@ -54,7 +54,8 @@ enum class ListDensity { COMFORT, STANDARD, COMPACT }
 
 data class ConversationSettings(
     val sortMode: SortMode = SortMode.DATE,
-    val previewLines: Int = 1,
+    // Two preview lines (was 1): the list shows more of each message.
+    val previewLines: Int = 2,
     val showAvatars: Boolean = true,
     val signature: String? = null,
 )

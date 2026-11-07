@@ -17,6 +17,7 @@ import com.filestech.sms.data.sync.TelephonySyncManager
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.MessageSearchHit
+import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.SortMode
@@ -39,10 +40,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -68,6 +71,7 @@ class ConversationsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val toggle: ToggleConversationStateUseCase,
     private val mirror: ConversationMirror,
+    private val contacts: ContactRepository,
     private val syncManager: TelephonySyncManager,
     private val appLock: AppLockManager,
     private val blockNumber: BlockNumberUseCase,
@@ -112,6 +116,13 @@ class ConversationsViewModel @Inject constructor(
      * single bump is enough to refresh the banner.
      */
     private val defaultRefreshTick = MutableStateFlow(0L)
+
+    /**
+     * Bumped when contact-photo lookups may newly succeed — e.g. after `READ_CONTACTS` is
+     * granted ([requestSyncNow] runs right after the permission result). The photo flow
+     * also re-runs on every [state] emission, so this is only the explicit re-trigger.
+     */
+    private val contactPhotoTick = MutableStateFlow(0L)
 
     init {
         // Backfill contact names for conversations that existed before READ_CONTACTS was granted
@@ -296,6 +307,35 @@ class ConversationsViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
 
+    /**
+     * Contact photos for the list, keyed by conversation id.
+     *
+     * Root cause of the missing avatars: nothing ever resolved them. The list only ever
+     * carried `Conversation.avatarUri` — the custom avatar a user picks per conversation —
+     * whose KDoc promises a native-contact fallback that no code implemented: the mirror
+     * resolves only the display name from `ContactsReader.lookupByPhone` and drops the
+     * photo URI it already fetches (`PHOTO_THUMBNAIL_URI`). Every row therefore fell back
+     * to initials. Resolved here, on IO, through the cached `ContactRepository` lookup; a
+     * custom avatar still wins, groups are skipped (no single contact to show), and a
+     * denied `READ_CONTACTS` just yields no photos — initials stay the fallback.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val contactPhotos: StateFlow<Map<Long, String>> =
+        combine(state, contactPhotoTick) { ui, _ -> ui.conversations }
+            .mapLatest { conversations ->
+                withContext(io) {
+                    conversations
+                        .filter { !it.isGroup && it.avatarUri == null }
+                        .mapNotNull { conv ->
+                            val phone = conv.firstAddress?.raw ?: return@mapNotNull null
+                            runCatching { contacts.lookupByPhone(phone)?.photoUri }
+                                .getOrNull()?.let { conv.id to it }
+                        }
+                        .toMap()
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
+
     /** Forces a re-evaluation of [DefaultSmsAppManager.isDefault]. Call from ON_RESUME / role result. */
     fun refreshDefaultStatus() {
         defaultRefreshTick.update { it + 1 }
@@ -316,6 +356,9 @@ class ConversationsViewModel @Inject constructor(
      */
     fun requestSyncNow() {
         syncManager.requestSync(reason = "permission granted")
+        // Re-resolve contact photos: the caller just got READ_CONTACTS (or came back from
+        // the role dialog), so lookups that previously failed may now succeed.
+        contactPhotoTick.update { it + 1 }
     }
 
     /**

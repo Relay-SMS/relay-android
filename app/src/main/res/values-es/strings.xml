@@ -151,7 +151,8 @@
     <string name="conversations_preview_attachment">Archivo adjunto</string>
 
     <!-- Thread -->
-    <string name="thread_compose_placeholder">Escriba un mensaje…</string>
+    <string name="thread_compose_placeholder">Relay message</string>
+    <string name="thread_compose_emoji">Emoji</string>
     <string name="thread_status_pending">Enviando…</string>
     <string name="thread_status_sent">Enviado</string>
     <string name="thread_status_delivered">Entregado</string>
@@ -379,6 +380,7 @@
 
     <!-- Settings -->
     <string name="settings_title">Ajustes</string>
+    <string name="settings_app_subtitle">Relay – SMS &amp; MMS Messenger</string>
 
     <string name="settings_section_appearance">Apariencia</string>
     <string name="settings_theme_system">Sistema</string>
@@ -644,7 +646,6 @@
     <string name="reaction_picker_validate_count">Enviar la reacción %1$s</string>
     <!-- v1.6.0 — a11y reaction badge (TalkBack) -->
     <string name="reaction_badge_content_description">Reacción %1$s</string>
-    <string name="reaction_badge_remove_action">Quitar la reacción</string>
     <!-- v1.6.1 — body of the system notification fired when someone reacts to our message -->
     <string name="reaction_notif_body_with_preview">Ha reaccionado %1$s a: %2$s</string>
     <string name="reaction_notif_body_no_preview">Ha reaccionado %1$s a su mensaje</string>

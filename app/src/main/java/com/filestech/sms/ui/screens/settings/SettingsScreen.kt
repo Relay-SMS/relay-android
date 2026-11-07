@@ -107,8 +107,10 @@ import com.filestech.sms.system.notifications.CANAL_DU_RACCOURCI_D_URGENCE
 import com.filestech.sms.system.notifications.canalDesMessages
 import com.filestech.sms.system.settings.ouvrirLesNotificationsDeLApplication
 import com.filestech.sms.ui.components.BanniereNotificationsCoupees
+import com.filestech.sms.ui.components.RelayCard
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayDivider
 import com.filestech.sms.ui.components.RelayPickerDialog
 import com.filestech.sms.ui.components.RelayPickerOption
 import com.filestech.sms.ui.components.RelayPrimaryButton
@@ -354,8 +356,8 @@ fun SettingsScreen(
         }
     }
 
-    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section rows sit on
-    // the canvas (see RelaySection). Picked from the surface luminance so it follows the
+    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section cards sit on
+    // it (see RelaySection). Picked from the surface luminance so it follows the
     // active scheme, dark variants included.
     val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
         RelayColors.CanvasDark
@@ -383,7 +385,29 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Spacer(Modifier.size(4.dp))
+            Spacer(Modifier.size(16.dp))
+
+            // Identity card at the top of the page, as in the grouped-list reference:
+            // app name over the store title. No section label above it — it is the
+            // page header, not a settings group.
+            RelayCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = RelayText.ThreadTitle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_app_subtitle),
+                        style = RelayText.Timestamp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
             RelaySection(
                 title = stringResource(R.string.settings_section_appearance),
@@ -397,12 +421,14 @@ fun SettingsScreen(
                     leadingIcon = Icons.Outlined.Palette,
                     value = state.appearance.dynamicColors,
                     onChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(dynamicColors = v)) } },
+                    dividerAbove = true,
                 )
                 ToggleRow(
                     title = stringResource(R.string.settings_amoled),
                     leadingIcon = Icons.Outlined.DarkMode,
                     value = state.appearance.amoledTrueBlack,
                     onChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(amoledTrueBlack = v)) } },
+                    dividerAbove = true,
                 )
                 // 2026-10-29 — taille du texte des messages, cf. [com.filestech.sms.ui.theme.MessageTextSize].
                 NavigationRow(
@@ -413,6 +439,7 @@ fun SettingsScreen(
                         textScaleLabel(state.appearance.textScale),
                     ),
                     onClick = { textScalePickerOpen = true },
+                    dividerAbove = true,
                 )
             }
 
@@ -455,6 +482,7 @@ fun SettingsScreen(
                     onChange = { v ->
                         viewModel.update { it.copy(conversations = it.conversations.copy(signature = v)) }
                     },
+                    dividerAbove = true,
                 )
             }
 
@@ -472,6 +500,7 @@ fun SettingsScreen(
                     leadingIcon = Icons.Outlined.WarningAmber,
                     value = state.sending.confirmBeforeBroadcast,
                     onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) } },
+                    dividerAbove = true,
                 )
                 // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
                 ToggleRow(
@@ -480,6 +509,7 @@ fun SettingsScreen(
                     value = state.sending.groupMms,
                     onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) } },
                     description = stringResource(R.string.settings_group_mms_hint),
+                    dividerAbove = true,
                 )
                 // v1.2.6 audit F4 — saisie facultative du MSISDN. Sans cette valeur, les MMS
                 // envoyés peuvent afficher "insert-address-token" comme expéditeur dans
@@ -489,6 +519,7 @@ fun SettingsScreen(
                     onChange = { v ->
                         viewModel.update { it.copy(sending = it.sending.copy(userMsisdn = v?.takeIf { s -> s.isNotBlank() })) }
                     },
+                    dividerAbove = true,
                 )
                 // v1.21.0 — indicatif pays par défaut pour convertir les numéros nationaux
                 // au format international (E.164) avant l'envoi. "Auto" = pays de la SIM.
@@ -502,6 +533,7 @@ fun SettingsScreen(
                     leadingIcon = Icons.Outlined.Public,
                     description = defaultRegionLabel,
                     onClick = { defaultRegionPickerOpen = true },
+                    dividerAbove = true,
                 )
                 // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
                 // OFF, les réactions restent strictement locales (badge visible uniquement
@@ -514,6 +546,7 @@ fun SettingsScreen(
                     onChange = { v ->
                         viewModel.update { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
                     },
+                    dividerAbove = true,
                 )
                 // v1.8.0 (bug 5 fix) — format du SMS de réaction. 3 options
                 // (anciennement boolean reactionEmojiOnly à 2 valeurs) :
@@ -549,6 +582,7 @@ fun SettingsScreen(
                         leadingIcon = Icons.Outlined.ChatBubbleOutline,
                         description = reactionFormatLabel,
                         onClick = { reactionFormatPickerOpen = true },
+                        dividerAbove = true,
                     )
                 }
                 // v1.8.1 — nom inclus dans les SMS de réaction sortants au
@@ -572,6 +606,7 @@ fun SettingsScreen(
                                 )
                             }
                         },
+                        dividerAbove = true,
                     )
                 }
             }
@@ -750,6 +785,7 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_manage_blocked),
                     leadingIcon = Icons.Outlined.PersonOff,
                     onClick = onOpenBlocked,
+                    dividerAbove = true,
                 )
             }
 
@@ -804,11 +840,13 @@ fun SettingsScreen(
                         title = stringResource(R.string.settings_restore),
                         leadingIcon = Icons.Outlined.Refresh,
                         onClick = onOpenBackup,
+                        dividerAbove = true,
                     )
                     NavigationRow(
                         title = stringResource(R.string.migration_title),
                         leadingIcon = Icons.Outlined.SystemUpdate,
                         onClick = onOpenMigration,
+                        dividerAbove = true,
                     )
                 }
             }
@@ -879,6 +917,7 @@ fun SettingsScreen(
                     // des conversations précédemment supprimées si toujours
                     // présentes dans le content provider système).
                     onClick = { showResyncConfirm = true },
+                    dividerAbove = true,
                 )
                 // v1.3.10 + v1.4.1 — Mode résistant OPT-IN (KeepAliveService foreground
                 // permanent). Toggle exposé pour TOUS les téléphones car la détection ROM
@@ -894,6 +933,7 @@ fun SettingsScreen(
                     leadingIcon = Icons.Outlined.Bolt,
                     description = stringResource(R.string.settings_keep_alive_desc),
                     value = state.advanced.keepAliveService,
+                    dividerAbove = true,
                     onChange = { v ->
                         // v1.3.10 (C4) — single source of truth: only persist the flag here.
                         // [MainApplication] observes the DataStore via `distinctUntilChanged`
@@ -919,22 +959,27 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_reset_all),
                     leadingIcon = Icons.Outlined.RestartAlt,
                     onClick = { showResetAllConfirm = true },
+                    dividerAbove = true,
                 )
                 NavigationRow(
                     title = stringResource(R.string.settings_nuke_data),
                     leadingIcon = Icons.Outlined.DeleteForever,
                     onClick = { showNuke = true },
                     destructive = true,
+                    dividerAbove = true,
                 )
             }
 
-            Spacer(Modifier.size(8.dp))
-            // About lives outside the section stack — it's a meta link, not a settings group.
-            NavigationRow(
-                title = stringResource(R.string.about_title),
-                leadingIcon = Icons.Outlined.Info,
-                onClick = onOpenAbout,
-            )
+            Spacer(Modifier.size(24.dp))
+            // About lives outside the section stack — it's a meta link, not a settings group —
+            // but it still sits in a card, like every other row on this page.
+            RelayCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                NavigationRow(
+                    title = stringResource(R.string.about_title),
+                    leadingIcon = Icons.Outlined.Info,
+                    onClick = onOpenAbout,
+                )
+            }
             Spacer(Modifier.size(24.dp))
         }
     }
@@ -1900,10 +1945,11 @@ private fun PinSetupDialog(
 }
 
 /**
- * Single toggle line of the grouped list: a 50dp row with a 22dp blue leading glyph, a
+ * Single toggle line of the grouped list: a 56dp row with a 22dp blue leading glyph, a
  * 16sp/400 title and an optional 13sp secondary description, trailing switch. Pass
  * [description] to surface a small explanatory line under the title — useful for
  * security/privacy toggles whose effect is not obvious from the title alone.
+ * Pass [dividerAbove] for every row but the first of a card (see [RelayRow]).
  *
  * The whole row is one TalkBack node (`Modifier.toggleable(role = Role.Switch)`); the
  * inner Switch has `onCheckedChange = null` and delegates to it.
@@ -1915,6 +1961,7 @@ private fun ToggleRow(
     onChange: (Boolean) -> Unit,
     description: String? = null,
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    dividerAbove: Boolean = false,
 ) {
     // v1.2.6 polish : Row compact à la place du `ListItem` (qui forçait min-height 56/72 dp et
     // un Switch pleine taille). On garde un touch target ≥ 48 dp via `heightIn` tout en
@@ -1927,43 +1974,48 @@ private fun ToggleRow(
     // a `onCheckedChange = null` (délègue au parent toggleable). Pattern Material 3 officiel
     // recommandé pour les "selectable list items" → toggle entier sans double-tap a11y.
     val cs = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = value,
-                role = Role.Switch,
-                onValueChange = onChange,
-            )
-            .heightIn(min = 50.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (leadingIcon != null) {
-            Icon(
-                imageVector = leadingIcon,
-                contentDescription = null,
-                tint = RelayColors.Blue,
-                modifier = Modifier.size(22.dp),
-            )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (dividerAbove) {
+            RelayDivider()
         }
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = RelayText.MessageBody, color = cs.onSurface)
-            if (description != null) {
-                Text(
-                    description,
-                    style = RelayText.Timestamp,
-                    color = cs.onSurfaceVariant,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = value,
+                    role = Role.Switch,
+                    onValueChange = onChange,
+                )
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = RelayColors.Blue,
+                    modifier = Modifier.size(22.dp),
                 )
             }
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(title, style = RelayText.MessageBody, color = cs.onSurface)
+                if (description != null) {
+                    Text(
+                        description,
+                        style = RelayText.Timestamp,
+                        color = cs.onSurfaceVariant,
+                    )
+                }
+            }
+            Switch(
+                checked = value,
+                // v1.3.7 U1 audit — `null` délègue le clic au `Modifier.toggleable` parent
+                // (fusion sémantique, un seul élément interactif côté TalkBack/Switch Access).
+                onCheckedChange = null,
+            )
         }
-        Switch(
-            checked = value,
-            // v1.3.7 U1 audit — `null` délègue le clic au `Modifier.toggleable` parent
-            // (fusion sémantique, un seul élément interactif côté TalkBack/Switch Access).
-            onCheckedChange = null,
-        )
     }
 }
 
@@ -1974,14 +2026,17 @@ private fun NavigationRow(
     destructive: Boolean = false,
     description: String? = null,
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    dividerAbove: Boolean = false,
 ) {
     // One grouped-list row: 22dp blue leading glyph, 16sp/400 title, optional 13sp
     // secondary description, trailing chevron. The danger-zone row renders its title in
-    // the error red instead.
+    // the error red instead. Pass [dividerAbove] for every row but the first of a card
+    // (see [RelayRow]).
     RelayRow(
         title = title,
         subtitle = description,
         onClick = onClick,
+        dividerAbove = dividerAbove,
         leadingIcon = if (leadingIcon != null) {
             {
                 Icon(
@@ -2277,7 +2332,7 @@ private val MSISDN_PATTERN = Regex("^\\+?[0-9 ()\\-]{4,20}$")
  * donc en facturation multiple. Le compteur le rappelle.
  */
 @Composable
-private fun SignatureRow(current: String?, onChange: (String?) -> Unit) {
+private fun SignatureRow(current: String?, onChange: (String?) -> Unit, dividerAbove: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     var dialogOpen by remember { mutableStateOf(false) }
     NavigationRow(
@@ -2286,6 +2341,7 @@ private fun SignatureRow(current: String?, onChange: (String?) -> Unit) {
         description = current?.takeIf { it.isNotBlank() }
             ?: stringResource(R.string.settings_signature_none),
         onClick = { dialogOpen = true },
+        dividerAbove = dividerAbove,
     )
     if (dialogOpen) {
         var value by remember { mutableStateOf(current.orEmpty()) }
@@ -2337,7 +2393,7 @@ private fun SignatureRow(current: String?, onChange: (String?) -> Unit) {
 private const val SIGNATURE_MAX_CHARS = 80
 
 @Composable
-private fun MyNumberRow(current: String?, onChange: (String?) -> Unit) {
+private fun MyNumberRow(current: String?, onChange: (String?) -> Unit, dividerAbove: Boolean = false) {
     var dialogOpen by remember { mutableStateOf(false) }
     NavigationRow(
         title = stringResource(R.string.settings_my_number),
@@ -2345,6 +2401,7 @@ private fun MyNumberRow(current: String?, onChange: (String?) -> Unit) {
             ?: stringResource(R.string.settings_my_number_not_set),
         leadingIcon = Icons.Outlined.PhoneAndroid,
         onClick = { dialogOpen = true },
+        dividerAbove = dividerAbove,
     )
     if (dialogOpen) {
         MyNumberDialog(
@@ -2495,7 +2552,7 @@ private fun MyNumberDialog(
  * détection via `ContactsContract.Profile` (le "moi" Android).
  */
 @Composable
-private fun SenderNameRow(current: String?, onChange: (String?) -> Unit) {
+private fun SenderNameRow(current: String?, onChange: (String?) -> Unit, dividerAbove: Boolean = false) {
     var dialogOpen by remember { mutableStateOf(false) }
     NavigationRow(
         title = stringResource(R.string.settings_sender_name_title),
@@ -2503,6 +2560,7 @@ private fun SenderNameRow(current: String?, onChange: (String?) -> Unit) {
             ?: stringResource(R.string.settings_sender_name_auto),
         leadingIcon = Icons.Outlined.PersonOutline,
         onClick = { dialogOpen = true },
+        dividerAbove = dividerAbove,
     )
     if (dialogOpen) {
         SenderNameDialog(
@@ -3337,7 +3395,7 @@ private fun NotificationsSection(
         if (notifications.enabled) {
             BanniereNotificationsCoupees(
                 message = stringResource(R.string.notifications_off_messages),
-                modifier = Modifier.padding(vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 canaux = listOf(canalDesMessages(notifications.style)),
             )
         }
@@ -3346,6 +3404,7 @@ private fun NotificationsSection(
             leadingIcon = Icons.AutoMirrored.Outlined.Reply,
             value = notifications.inlineReply,
             onChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(inlineReply = v)) } },
+            dividerAbove = true,
         )
         // v1.28.3 (audit global D-01) — le toggle « Vibrer » est retiré : aucun code ne le
         // lisait, la vibration appartient au canal et se règle dans les paramètres système.
@@ -3366,6 +3425,7 @@ private fun NotificationsSection(
             leadingIcon = Icons.Outlined.Visibility,
             description = previewLabel,
             onClick = onOpenPreviewPicker,
+            dividerAbove = true,
         )
         // v1.8.0 (bug 3 fix MEDIUM 3b) — wire NotificationStyle (dead field).
         val styleLabel = when (notifications.style) {
@@ -3381,6 +3441,7 @@ private fun NotificationsSection(
             leadingIcon = Icons.Outlined.Tune,
             description = styleLabel,
             onClick = onOpenStylePicker,
+            dividerAbove = true,
         )
         // v1.8.0 (bug 3 fix MEDIUM 3c) — deeplink réglages système app.
         // ACTION_APP_NOTIFICATION_SETTINGS (API 26+) ouvre directement la
@@ -3392,6 +3453,7 @@ private fun NotificationsSection(
             description = stringResource(R.string.settings_notif_open_system_desc),
             // v1.28.13 — même ouverture que la bannière ci-dessus, avec repli sur la fiche.
             onClick = { ouvrirLesNotificationsDeLApplication(ctx) },
+            dividerAbove = true,
         )
     }
 }
@@ -3475,6 +3537,7 @@ private fun SecuritySection(
                 description = autoLockDelayOptions()
                     .firstOrNull { it.first == security.autoLockDelay }?.second.orEmpty(),
                 onClick = onOpenAutoLockDelayPicker,
+                dividerAbove = true,
             )
         }
         // v1.26.0 — deux conditions, pour deux raisons sans rapport entre elles.
@@ -3500,6 +3563,7 @@ private fun SecuritySection(
                     stringResource(R.string.settings_panic_code_desc)
                 },
                 onClick = if (panicCodeSet) onOpenPanicCodeClearConfirm else onOpenPanicCodeSetup,
+                dividerAbove = true,
             )
         }
         ToggleRow(
@@ -3508,6 +3572,9 @@ private fun SecuritySection(
             description = stringResource(R.string.settings_flag_secure_desc),
             value = security.flagSecure,
             onChange = { v -> onUpdate { it.copy(security = it.security.copy(flagSecure = v)) } },
+            // In a decoy session the rows above are all hidden, so this is the first
+            // visible row of the card and must not draw a divider at its top.
+            dividerAbove = !isPanicDecoy,
         )
         // v1.26.1 (audit H3) — masqué en leurre comme ses deux voisines. Cette ligne était la
         // seule des trois à ne pas porter la garde, alors qu'elle nomme le coffre dans son
@@ -3521,6 +3588,7 @@ private fun SecuritySection(
                 description = stringResource(R.string.settings_lock_vault_on_leave_desc),
                 value = security.lockVaultOnLeave,
                 onChange = { v -> onUpdate { it.copy(security = it.security.copy(lockVaultOnLeave = v)) } },
+                dividerAbove = true,
             )
         }
         // v1.11.0 — Sujet 3 anti-smishing.
@@ -3534,6 +3602,7 @@ private fun SecuritySection(
                     it.copy(security = it.security.copy(smishingDetectionEnabled = v))
                 }
             },
+            dividerAbove = true,
         )
         // v1.13.0 — PIN/pass distinct pour le coffre (second-factor).
         // ToggleRow non-onChange (le toggle déclenche un setup dialog au lieu d'écrire
@@ -3556,12 +3625,14 @@ private fun SecuritySection(
                         onOpenVaultPinDisable()
                     }
                 },
+                dividerAbove = true,
             )
             if (security.vaultPinEnabled) {
                 NavigationRow(
                     title = stringResource(R.string.settings_vault_pin_change),
                     leadingIcon = Icons.Outlined.Edit,
                     onClick = onOpenVaultPinSetup,
+                    dividerAbove = true,
                 )
                 // v1.27.10 — la porte de sortie « PIN oublie » a sa propre entree, visible, au
                 // lieu d'etre le fonctionnement par defaut de la bascule OFF. Elle annonce ce
@@ -3571,6 +3642,7 @@ private fun SecuritySection(
                     leadingIcon = Icons.Outlined.WarningAmber,
                     description = stringResource(R.string.settings_vault_pin_forgot_desc),
                     onClick = onOpenVaultPinForgetConfirm,
+                    dividerAbove = true,
                 )
             }
         }
@@ -3580,6 +3652,7 @@ private fun SecuritySection(
             description = stringResource(R.string.settings_purge_blocked_desc),
             // v1.8.0 — dialog de confirmation (action irréversible).
             onClick = onOpenPurgeBlockedConfirm,
+            dividerAbove = true,
         )
         // v1.3.0 — auto-purge historique selon rétention choisie. Description sur
         // 2 lignes : statut courant + rappel du filet de sécurité 5 j + favoris.
@@ -3590,6 +3663,7 @@ private fun SecuritySection(
             leadingIcon = Icons.Outlined.History,
             description = "$currentRetentionLabel\n$explainer",
             onClick = onOpenAutoDeletePicker,
+            dividerAbove = true,
         )
     }
 }
@@ -3651,13 +3725,14 @@ private fun EmergencySection(
                         it.copy(security = it.security.copy(emergencyShortcutEnabled = v))
                     }
                 },
+                dividerAbove = true,
             )
             // v1.28.13 — le raccourci EST une notification : sans elles, l'interrupteur reste sur
             // « activé » alors que rien n'apparaît sur l'écran verrouillé.
             if (security.emergencyShortcutEnabled) {
                 BanniereNotificationsCoupees(
                     message = stringResource(R.string.notifications_off_emergency_shortcut),
-                    modifier = Modifier.padding(vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     canaux = listOf(CANAL_DU_RACCOURCI_D_URGENCE),
                 )
             }
@@ -3677,6 +3752,7 @@ private fun EmergencySection(
                             it.copy(security = it.security.copy(emergencyCallPoliceEnabled = v))
                         }
                     },
+                    dividerAbove = true,
                 )
             }
             // v1.14.0 — `emergencyCallBehavior` picker retiré v1.14.1 : l'écran Mode urgence
@@ -3696,6 +3772,7 @@ private fun EmergencySection(
                         it.copy(security = it.security.copy(sendIAmOkSmsOnReset = v))
                     }
                 },
+                dividerAbove = true,
             )
             // v1.14.5 — Toggle "Inclure position GPS dans le SMS" accessible directement
             // depuis Settings (avant : seul EmergencySetupScreen exposait ce toggle, l'user
@@ -3707,6 +3784,7 @@ private fun EmergencySection(
                 leadingIcon = Icons.Outlined.PushPin,
                 description = stringResource(R.string.settings_emergency_include_location_desc),
                 value = emergency.includeLocation,
+                dividerAbove = true,
                 onChange = { v ->
                     onUpdate {
                         it.copy(security = it.security.copy(

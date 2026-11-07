@@ -294,7 +294,7 @@ class SettingsRepository(
             ),
             conversations = ConversationSettings(
                 sortMode = enumOr(p, K.sortMode, SortMode.DATE, SortMode::valueOf),
-                previewLines = p[K.previewLines] ?: 1,
+                previewLines = p[K.previewLines] ?: 2,
                 showAvatars = p[K.showAvatars] ?: true,
                 signature = p[K.signature],
             ),

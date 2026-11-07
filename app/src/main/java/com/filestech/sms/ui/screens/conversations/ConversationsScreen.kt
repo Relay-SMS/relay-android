@@ -59,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -79,6 +80,7 @@ import com.filestech.sms.ui.components.RelaySheet
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
+import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -104,6 +106,7 @@ fun ConversationsScreen(
     // faisait apparaitre l'icone du Coffre en session leurre.
     val isPanicDecoy by viewModel.isPanicDecoy.collectAsStateWithLifecycle()
     val messageHits by viewModel.messageHits.collectAsStateWithLifecycle()
+    val contactPhotos by viewModel.contactPhotos.collectAsStateWithLifecycle()
     val cs = MaterialTheme.colorScheme
 
     val defaultAppLauncher = rememberLauncherForActivityResult(
@@ -308,29 +311,6 @@ fun ConversationsScreen(
                     }
                 },
                 actions = {
-                    if (!archived) {
-                        // Audit S-P0-1: the panic-decoy session must not expose any vault entry
-                        // point. We hide the icon entirely (rather than disable it) so the feature
-                        // looks like it doesn't exist to a coerced observer — matches the decoy
-                        // illusion. Defense in depth: the AppRoot navigation guard and the
-                        // repository-level filter back-stop this UI gate.
-                        if (!isPanicDecoy) {
-                            IconButton(onClick = onOpenVault) {
-                                Icon(
-                                    Icons.Outlined.Lock,
-                                    contentDescription = stringResource(R.string.tab_vault),
-                                )
-                            }
-                        }
-                        IconButton(onClick = onOpenArchived) {
-                            Icon(
-                                Icons.Outlined.Inventory2,
-                                contentDescription = stringResource(R.string.tab_archived),
-                            )
-                        }
-                        // v1.2.6 polish : icône Numéros bloqués retirée du topbar (redondante).
-                        // L'accès se fait via Réglages → Numéros bloqués (NavigationRow déjà câblée).
-                    }
                     IconButton(onClick = { overflowOpen = true }) {
                         Icon(
                             Icons.Outlined.MoreVert,
@@ -375,6 +355,31 @@ fun ConversationsScreen(
                             text = { Text(stringResource(R.string.action_new_group)) },
                             onClick = { overflowOpen = false; onComposeGroup() },
                         )
+                        // Archived chats and the vault used to live as icons on the top bar;
+                        // they now live here, so the bar stays a title plus the overflow.
+                        // Same destinations, same behaviour — just reached from the menu.
+                        // The vault stays hidden in a panic-decoy session (audit S-P0-1):
+                        // hiding it entirely keeps the feature looking non-existent to a
+                        // coerced observer, backed by the navigation guard and the
+                        // repository-level filter.
+                        if (!archived) {
+                            if (!isPanicDecoy) {
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Lock, contentDescription = null)
+                                    },
+                                    text = { Text(stringResource(R.string.tab_vault)) },
+                                    onClick = { overflowOpen = false; onOpenVault() },
+                                )
+                            }
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Inventory2, contentDescription = null)
+                                },
+                                text = { Text(stringResource(R.string.tab_archived)) },
+                                onClick = { overflowOpen = false; onOpenArchived() },
+                            )
+                        }
                         DropdownMenuItem(
                             leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                             text = { Text(stringResource(R.string.settings_title)) },
@@ -424,14 +429,15 @@ fun ConversationsScreen(
             )
         },
         floatingActionButton = {
-            // 56dp circle in the theme primary (the Relay blue by default; a user-chosen
-            // custom accent re-tints it, as it does the unread pills), white outlined pencil.
+            // 56dp circle in the fixed brand blue in both themes — filled surfaces keep
+            // the brand blue; the dark scheme's lightened primary (#7AA0F5) is for text
+            // and icons, not for filled tiles. White pencil on the brand blue is 6.63:1.
             FloatingActionButton(
                 onClick = onCompose,
                 modifier = Modifier.size(56.dp),
                 shape = CircleShape,
-                containerColor = cs.primary,
-                contentColor = cs.onPrimary,
+                containerColor = RelayColors.Blue,
+                contentColor = Color.White,
             ) {
                 Icon(
                     Icons.Outlined.Edit,
@@ -499,6 +505,8 @@ fun ConversationsScreen(
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
+                    // A little breathing room between rows (was 0dp — rows touched).
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     // Relay — AUCUNE ligne de séparation entre les conversations :
                     // la liste se lit sans filets, comme dans Relay.
@@ -528,6 +536,7 @@ fun ConversationsScreen(
                             subtitleNumber = rowSubtitleNumber,
                             showAvatars = state.settings.conversations.showAvatars,
                             previewLines = state.settings.conversations.previewLines.coerceIn(1, 2),
+                            contactPhotoUri = contactPhotos[conv.id],
                             // v1.13.0 — en mode sélection, tap = toggle de l'item, pas
                             // ouverture du thread. Hors mode sélection, comportement
                             // normal. Le swipe est désactivé en mode sélection pour
@@ -605,6 +614,7 @@ fun ConversationsScreen(
                                 showAvatars = state.settings.conversations.showAvatars,
                                 previewLines = state.settings.conversations.previewLines
                                     .coerceIn(1, 2),
+                                contactPhotoUri = contactPhotos[conv.id],
                                 // v1.25.3 — les lignes bloquées ne participent PAS au mode
                                 // sélection : elles utilisent `ConversationRow` nu, sans l'état
                                 // visuel de sélection de `SwipeableConversationRow`. Les y
@@ -624,6 +634,7 @@ fun ConversationsScreen(
                         hits = messageHits,
                         showAvatars = state.settings.conversations.showAvatars,
                         selectionMode = state.selectionMode,
+                        contactPhotos = contactPhotos,
                         onOpenThread = onOpenThread,
                     )
                 }
@@ -844,6 +855,11 @@ private fun SwipeableConversationRow(
     subtitleNumber: String? = null,
     showAvatars: Boolean,
     previewLines: Int,
+    /**
+     * Contact photo from the system contacts (`PHOTO_THUMBNAIL_URI`), resolved by the
+     * ViewModel. The per-conversation custom avatar still wins inside [ConversationRow].
+     */
+    contactPhotoUri: String? = null,
     onOpenThread: () -> Unit,
     onDelete: () -> Unit,
     onBlock: () -> Unit,
@@ -966,6 +982,7 @@ private fun SwipeableConversationRow(
                 onClick = onOpenThread,
                 showAvatars = showAvatars,
                 previewLines = previewLines,
+                contactPhotoUri = contactPhotoUri,
                 // v1.13.1 — long-press routing :
                 //  - en mode sélection multiple → toggle de l'item (pattern Gmail).
                 //  - sinon → ActionsSheet legacy (Block/Delete/Move to vault +

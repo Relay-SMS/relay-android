@@ -23,6 +23,7 @@ internal fun LazyListScope.messageHitsSection(
     hits: List<MessageSearchHit>,
     showAvatars: Boolean,
     selectionMode: Boolean,
+    contactPhotos: Map<Long, String> = emptyMap(),
     onOpenThread: (Long) -> Unit,
 ) {
     if (hits.isEmpty()) return
@@ -41,6 +42,7 @@ internal fun LazyListScope.messageHitsSection(
             hit = hit,
             onClick = if (selectionMode) null else { { onOpenThread(hit.conversation.id) } },
             showAvatars = showAvatars,
+            contactPhotoUri = contactPhotos[hit.conversation.id],
         )
     }
 }

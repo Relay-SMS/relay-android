@@ -43,7 +43,7 @@ import com.filestech.sms.ui.theme.placeholderColor
 
 /**
  * Filled text field of the Relay design system: no border, surface fill, 10dp corners by
- * default ([cornerRadius] is 18dp for the composer pill), placeholder in
+ * default ([cornerRadius] is 24dp for the composer pill), placeholder in
  * [placeholderColor] (theme-aware: the fixed tertiary failed AA on the light field),
  * cursor in [RelayColors.Blue]. Focus changes no border — the cursor colour alone
  * marks the focused field.

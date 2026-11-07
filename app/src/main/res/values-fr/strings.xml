@@ -145,7 +145,8 @@
     <string name="conversations_draft_prefix">Brouillon : %1$s</string>
     <string name="conversations_preview_attachment">Pièce jointe</string>
 
-    <string name="thread_compose_placeholder">Écrire un message…</string>
+    <string name="thread_compose_placeholder">Relay message</string>
+    <string name="thread_compose_emoji">Emoji</string>
     <string name="thread_status_pending">Envoi…</string>
     <string name="thread_status_sent">Envoyé</string>
     <string name="thread_status_delivered">Remis</string>
@@ -368,6 +369,7 @@
     <string name="lock_lockout_message">Trop d\'essais. Nouvelle tentative dans %1$d s.</string>
 
     <string name="settings_title">Réglages</string>
+    <string name="settings_app_subtitle">Relay – SMS &amp; MMS Messenger</string>
 
     <string name="settings_section_appearance">Apparence</string>
     <string name="settings_theme_system">Système</string>
@@ -634,7 +636,6 @@
     <string name="reaction_picker_validate_count">Envoyer la réaction %1$s</string>
     <!-- v1.6.0 — a11y badge réaction (TalkBack) -->
     <string name="reaction_badge_content_description">Réaction %1$s</string>
-    <string name="reaction_badge_remove_action">Retirer la réaction</string>
     <!-- v1.6.1 — corps de la notification système quand quelqu'un réagit à notre message -->
     <string name="reaction_notif_body_with_preview">A réagi %1$s à : %2$s</string>
     <string name="reaction_notif_body_no_preview">A réagi %1$s à votre message</string>

@@ -46,7 +46,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
@@ -54,14 +53,12 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonSearch
 import androidx.compose.material.icons.outlined.Phone
-import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -75,7 +72,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -108,12 +104,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -329,6 +326,13 @@ fun ThreadScreen(
     // is a special case: opening a conversation must land on the most recent message, not
     // the start. We track `initialScrollDone` to discriminate the two.
     var initialScrollDone by remember { mutableStateOf(false) }
+    // Opening a conversation must land directly on the last message: the list starts at
+    // index 0 and only jumps to the bottom once the first page loads (see the
+    // LaunchedEffect below), which flashed the "load older" row and a fast scroll down.
+    // Keep the list invisible until that first scroll has landed; an empty conversation
+    // has nothing to scroll to, so it shows immediately. The header and composer sit
+    // outside the list, so they stay visible while the messages settle.
+    val listSettled = initialScrollDone || state.messages.isEmpty()
     // v1.24.0 — `LazyListItemInfo.index` et l'argument de `scrollToItem` vivent dans l'espace
     // d'index GLOBAL du LazyColumn, où l'item « charger plus ancien » occupe la position 0 quand
     // il est affiché. `state.messages[i]` est donc à l'index global `i + headOffset`. Confondre
@@ -715,11 +719,6 @@ fun ThreadScreen(
                 onDelete = { msg -> pendingDelete = msg },
                 onReply = { msg -> viewModel.startReply(msg) },
                 onReact = { msgId -> pickingReactionFor = msgId },
-                // v1.4.1 — Tap-pour-retirer le badge autorisé uniquement sur incoming (la
-                // réaction a été posée localement par l'user). Pour outgoing (Tapback fold du
-                // destinataire), ignore (sinon désync : badge local disparaît mais reste chez
-                // l'autre — convention iMessage).
-                onRemoveReaction = { msg -> if (msg.isIncoming) viewModel.setReaction(msg.id, null) },
                 onForward = { msg -> forwardingMessage = msg },
                 onTranslate = { msg -> translateMessageExternal(msg) },
                 onCopy = { msg -> copyMessageBody(msg) },
@@ -736,7 +735,7 @@ fun ThreadScreen(
         val simLabeler = rememberSimLabeler()
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().alpha(if (listSettled) 1f else 0f),
             state = listState,
         ) {
             // v1.24.0 (finding A) — tête de fenêtre. `key` stable pour que l'insertion des
@@ -1231,11 +1230,11 @@ fun ThreadScreen(
 }
 
 /**
- * Relay UI refresh — thread header: 44dp, canvas background with a hairline underneath.
- * Back chevron (22dp, brand blue) + 32dp avatar + name (17sp/600); the call glyph is
- * 22dp brand blue. The two 44dp hit areas side by side leave ~20dp of air between the
- * call glyph and the overflow glyph. Tapping the avatar or the name opens the
- * conversation details; the overflow menu is unchanged.
+ * Relay UI refresh — thread header: 56dp, canvas background. Back chevron (22dp,
+ * brand blue) + 32dp avatar + name (17sp/600); the call glyph is 22dp brand blue.
+ * The two 44dp hit areas side by side leave ~20dp of air between the call glyph
+ * and the overflow glyph. Tapping the avatar or the name opens the conversation
+ * details; the overflow menu is unchanged.
  */
 @Composable
 private fun ThreadHeader(
@@ -1259,7 +1258,7 @@ private fun ThreadHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
+                .height(56.dp)
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1346,7 +1345,6 @@ private fun ThreadHeader(
                 menu()
             }
         }
-        HorizontalDivider(color = cs.outline)
     }
 }
 
@@ -1639,7 +1637,6 @@ private fun ComposerBar(
     onAttachClick: () -> Unit,
     onMicPermissionDenied: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
 
     val micPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO) { granted ->
@@ -1650,8 +1647,6 @@ private fun ComposerBar(
     val permissionGranted = micPermission.status == PermissionStatus.Granted
 
     Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
-        HorizontalDivider(color = cs.outline)
-
         when (voice) {
             // Idle and Recording share the same row layout — switching between them must NOT
             // remove the mic button from the composition tree, otherwise its pointer-input
@@ -1703,10 +1698,12 @@ private fun ComposerBar(
  * mic stays in the composition tree across the Idle↔Recording transition so the in-flight
  * pointer gesture is never interrupted.
  *
- * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 18dp radius, min
- * 36dp, grows to 5 lines) with the attach glyph leading and the camera inside trailing;
- * the send affordance is a 32dp blue circle with a white up-arrow, shown only when there
- * is text (or staged attachments), and a mic glyph when the composer is empty.
+ * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 24dp radius, min
+ * 48dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
+ * inside trailing (both open the attachment sheet); the send affordance is a 48dp blue
+ * circle with a white up-arrow, shown only when there is text (or staged attachments),
+ * and a mic glyph when the composer is empty. The mic circle is the same 48dp height
+ * as the pill, so the row reads as one aligned unit.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1734,6 +1731,14 @@ private fun ComposingRow(
     // doit pouvoir envoyer les PJ via le bouton Send même sans texte.
     val showMic = isRecording || (draft.isBlank() && !hasPendingAttachments)
 
+    // Smiley : pas d'API publique pour forcer le clavier en disposition emoji — le tap
+    // met donc le focus sur le champ et ouvre le clavier, d'où l'utilisateur atteint
+    // la touche emoji de son propre clavier. (La popup emoji + l'onglet GIF arrivent
+    // plus tard ; le bouton est en place dès maintenant.)
+    val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val keyboardController =
+        androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
     // Live cancel hint: true once the finger has dragged past the cancel threshold while pressing.
     var cancelHinted by remember { mutableStateOf(false) }
     // Reset the hint when leaving Recording (release/cancel finished).
@@ -1760,32 +1765,46 @@ private fun ComposingRow(
                             onValueChange = onDraftChanged,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 36.dp),
+                                .heightIn(min = 48.dp)
+                                .focusRequester(composerFocus),
                             placeholder = stringResource(R.string.thread_compose_placeholder),
                             maxLines = 5,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Sentences,
                                 imeAction = ImeAction.Default,
                             ),
-                            cornerRadius = 18.dp,
+                            cornerRadius = 24.dp,
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                             textStyle = MaterialTheme.typography.bodyLarge,
                             leadingIcon = {
+                                // Smiley de Kristin : ouvre le clavier (touche emoji du
+                                // clavier système) — pas de popup emoji pour l'instant.
                                 ComposerIconButton(
-                                    icon = Icons.Outlined.AttachFile,
-                                    contentDescription = stringResource(R.string.action_attach),
-                                    onClick = onAttachClick,
+                                    painter = painterResource(R.drawable.ic_emoji_happy_outline),
+                                    contentDescription = stringResource(R.string.thread_compose_emoji),
+                                    onClick = {
+                                        composerFocus.requestFocus()
+                                        keyboardController?.show()
+                                    },
                                 )
                             },
                             trailingIcon = {
-                                // Opens the same attachment sheet as the attach glyph: the
-                                // app has no direct camera capture, the sheet is where the
-                                // photo picker lives.
-                                ComposerIconButton(
-                                    icon = Icons.Outlined.PhotoCamera,
-                                    contentDescription = stringResource(R.string.action_attach),
-                                    onClick = onAttachClick,
-                                )
+                                // Dans l'ordre des captures de Kristin : caméra puis +.
+                                // Les deux ouvrent la même feuille de pièces jointes que
+                                // l'ancien trombone : l'appli n'a pas de capture directe,
+                                // c'est la feuille qui héberge le sélecteur de photos.
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    ComposerIconButton(
+                                        painter = painterResource(R.drawable.ic_camera_outline),
+                                        contentDescription = stringResource(R.string.action_attach),
+                                        onClick = onAttachClick,
+                                    )
+                                    ComposerIconButton(
+                                        painter = painterResource(R.drawable.ic_add_circle_outline),
+                                        contentDescription = stringResource(R.string.action_attach),
+                                        onClick = onAttachClick,
+                                    )
+                                }
                             },
                         )
                     }
@@ -1814,12 +1833,13 @@ private fun ComposingRow(
 }
 
 /**
- * Small round hit area (36dp) for a glyph living inside the composer pill — attach
- * leading, camera trailing. The glyph itself is 22dp in the secondary colour.
+ * Small round hit area (36dp) for a glyph living inside the composer pill — Kristin's
+ * smiley leading, camera and + trailing. The glyph itself is 22dp in the secondary
+ * colour; the vector drawables are Kristin's own icons, tinted here from the theme.
  */
 @Composable
 private fun ComposerIconButton(
-    icon: ImageVector,
+    painter: Painter,
     contentDescription: String?,
     onClick: () -> Unit,
 ) {
@@ -1832,7 +1852,7 @@ private fun ComposerIconButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = icon,
+            painter = painter,
             contentDescription = contentDescription,
             tint = cs.onSurfaceVariant,
             modifier = Modifier.size(22.dp),
@@ -1841,8 +1861,8 @@ private fun ComposerIconButton(
 }
 
 /**
- * Relay UI refresh — send affordance: a 32dp blue circle with a white up-arrow, on a
- * 48dp hit area. It slides up with a spring each time it appears (when text is typed)
+ * Relay UI refresh — send affordance: a 48dp blue circle with a white up-arrow, the
+ * same height as the composer pill. It slides up with a spring each time it appears
  * and scales to 0.90 while pressed; the haptic tick is fired by the caller's
  * [onClick] (see [ComposerBar]).
  */
@@ -1892,7 +1912,7 @@ private fun SendCircleButton(
             imageVector = Icons.Filled.ArrowUpward,
             contentDescription = stringResource(R.string.action_send),
             tint = Color.White,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -1995,16 +2015,16 @@ private fun MicButton(
     val density = LocalDensity.current
     val cancelThresholdPx = with(density) { CANCEL_THRESHOLD_DP.toPx() }
     val danger = BrandDanger
-    val cs = MaterialTheme.colorScheme
 
+    // Filled surfaces keep the fixed brand blue in both themes: the dark scheme's
+    // lightened primary (#7AA0F5) is for text/icons, not for filled tiles. White on
+    // the brand blue is 6.63:1, white on the recording red 4.96:1.
     val containerColor = when {
         cancelHinted -> danger
         isRecording -> danger
-        else -> cs.primary
+        else -> RelayColors.Blue
     }
-    // Phase 8 — blanc sur le rouge d'enregistrement (4.96:1), `onPrimary` sur le bleu :
-    // blanc sur le bleu éclairci du thème sombre ne donnerait que 2.57:1.
-    val contentColor = if (cancelHinted || isRecording) Color.White else cs.onPrimary
+    val contentColor = Color.White
 
     val pushToTalk = Modifier.pointerInput(permissionGranted) {
         awaitEachGesture {
@@ -2036,8 +2056,9 @@ private fun MicButton(
         }
     }
 
-    // Relay UI refresh: a 32dp blue circle with a white mic on a 48dp hit area, matching
-    // the send circle. While recording it grows to 56dp and turns red, as before.
+    // Relay UI refresh: a 48dp blue circle with Kristin's white mic — the same height
+    // as the composer pill, matching the send circle. While recording it grows to 56dp
+    // and turns red, as before.
     // Phase 8 — TalkBack : le geste press-and-hold (`pointerInput`) n'expose aucune
     // action d'accessibilité — un utilisateur TalkBack entendait « Enregistrer un
     // message vocal » sans pouvoir le déclencher. La sémantique ci-dessous donne au
@@ -2068,16 +2089,16 @@ private fun MicButton(
     ) {
         Box(
             modifier = Modifier
-                .size(if (isRecording) 56.dp else 32.dp)
+                .size(if (isRecording) 56.dp else 48.dp)
                 .clip(CircleShape)
                 .background(containerColor),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Mic,
+                painter = painterResource(R.drawable.ic_mic_outline),
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(if (isRecording) 24.dp else 16.dp),
+                modifier = Modifier.size(if (isRecording) 24.dp else 20.dp),
             )
         }
     }
@@ -2343,7 +2364,6 @@ private class ThreadMessageItemActions(
     val onDelete: (Message) -> Unit,
     val onReply: (Message) -> Unit,
     val onReact: (Long) -> Unit,
-    val onRemoveReaction: (Message) -> Unit,
     val onForward: (Message) -> Unit,
     val onTranslate: (Message) -> Unit,
     val onCopy: (Message) -> Unit,
@@ -2455,7 +2475,6 @@ private fun ThreadMessageItem(
                     onForward = { actions.onForward(msg) },
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
                     onToggleStar = { actions.onToggleStar(msg) },
-                    onRemoveReaction = { actions.onRemoveReaction(msg) },
                     repliedToPreview = repliedToPreview,
                     showTimestamp = showTimestamp,
                     senderLabel = senderLabel,
@@ -2477,7 +2496,6 @@ private fun ThreadMessageItem(
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
                     onToggleStar = { actions.onToggleStar(msg) },
                     onPhoneClick = actions.onPhoneClick,
-                    onRemoveReaction = { actions.onRemoveReaction(msg) },
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,
                 )
@@ -2500,7 +2518,6 @@ private fun ThreadMessageItem(
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
                     onToggleStar = { actions.onToggleStar(msg) },
                     onPhoneClick = actions.onPhoneClick,
-                    onRemoveReaction = { actions.onRemoveReaction(msg) },
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,
                     customBubbleColorArgb = bubbleColorArgb,

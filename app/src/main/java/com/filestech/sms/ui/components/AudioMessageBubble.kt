@@ -87,7 +87,6 @@ fun AudioMessageBubble(
     onForward: (() -> Unit)? = null,
     /** v1.26.1 (audit F2) — bascule « favori » ; l'état est lu sur [message]. */
     onToggleStar: (() -> Unit)? = null,
-    onRemoveReaction: () -> Unit = {},
     repliedToPreview: ReplyQuotePreview? = null,
     showTimestamp: Boolean = false,
     /** v1.3.3 #7 — étiquette d'expéditeur ; voir [MessageBubble] pour la sémantique. */
@@ -174,7 +173,7 @@ fun AudioMessageBubble(
             BubbleReactionOverlay(
                 reactionEmoji = message.reactionEmoji,
                 isOutgoing = isOut,
-                onRemoveReaction = onRemoveReaction,
+                bubbleColor = bgColor,
             ) {
                 Box(
                     modifier = Modifier

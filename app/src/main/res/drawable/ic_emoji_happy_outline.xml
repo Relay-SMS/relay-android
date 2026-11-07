@@ -1,0 +1,24 @@
+<!-- Kristin's own icon (happy-outline.svg, Ionicons style): smiley face, 22x22 viewBox.
+     Grey fills/stroke in the source; the vector keeps black and the tint is applied at
+     the Icon() call site from the theme, so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="22"
+    android:viewportHeight="22">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M7.90625,11C8.47579,11 8.9375,10.5383 8.9375,9.96875C8.9375,9.39921 8.47579,8.9375 7.90625,8.9375C7.33671,8.9375 6.875,9.39921 6.875,9.96875C6.875,10.5383 7.33671,11 7.90625,11Z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M11.0021,16.5C9.05051,16.5 7.4091,15.2311 6.88961,13.4995C6.87508,13.4479 6.87279,13.3937 6.88292,13.3412C6.89305,13.2886 6.91532,13.2391 6.94795,13.1967C6.98059,13.1542 7.02269,13.12 7.0709,13.0967C7.11911,13.0734 7.17209,13.0617 7.22562,13.0625H14.7748C14.8283,13.0617 14.8813,13.0734 14.9295,13.0967C14.9777,13.12 15.0198,13.1542 15.0525,13.1967C15.0851,13.2391 15.1074,13.2886 15.1175,13.3412C15.1276,13.3937 15.1253,13.4479 15.1108,13.4995C14.5956,15.2311 12.9538,16.5 11.0021,16.5Z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M14.0938,11C14.6633,11 15.125,10.5383 15.125,9.96875C15.125,9.39921 14.6633,8.9375 14.0938,8.9375C13.5242,8.9375 13.0625,9.39921 13.0625,9.96875C13.0625,10.5383 13.5242,11 14.0938,11Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M19.9375,11C19.9375,15.936 15.936,19.9375 11,19.9375C6.06395,19.9375 2.0625,15.936 2.0625,11C2.0625,6.06395 6.06395,2.0625 11,2.0625C15.936,2.0625 19.9375,6.06395 19.9375,11Z"
+        android:strokeWidth="1.375"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+</vector>

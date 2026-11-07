@@ -75,7 +75,6 @@ fun MessageBubble(
      * surfaces a [PhoneActionsDialog] in response.
      */
     onPhoneClick: (String) -> Unit = {},
-    onRemoveReaction: () -> Unit = {},
     repliedToPreview: ReplyQuotePreview? = null,
     /**
      * v1.3.3 #7 — étiquette d'expéditeur intégrée dans la bulle ("Vous" pour les
@@ -162,7 +161,11 @@ fun MessageBubble(
             BubbleReactionOverlay(
                 reactionEmoji = message.reactionEmoji,
                 isOutgoing = isOut,
-                onRemoveReaction = onRemoveReaction,
+                bubbleColor = if (isOut) {
+                    outgoingBaseColor
+                } else {
+                    com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
+                },
             ) {
                 Box(
                     modifier = Modifier

@@ -1,0 +1,23 @@
+<!-- Kristin's own icon (mic-outline.svg, Ionicons style): microphone, 23x23 viewBox.
+     White strokes in the source (designed for the blue mic tile); the vector keeps black
+     and the Icon() call site tints it white, so it stays white on the blue/red tile. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="23"
+    android:viewportHeight="23">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M8.625,20.125H11.5M11.5,20.125H14.375M11.5,20.125V16.5312M17.25,9.34375V10.7812C17.25,13.9437 14.6625,16.5312 11.5,16.5312M11.5,16.5312C8.3375,16.5312 5.75,13.9437 5.75,10.7812V9.34375"
+        android:strokeWidth="1.4375"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M11.5,2.87504C11.122,2.87313 10.7472,2.9462 10.3976,3.09C10.0479,3.23381 9.73021,3.44551 9.46286,3.71286C9.19551,3.98021 8.98381,4.2979 8.84,4.64757C8.6962,4.99724 8.62313,5.37195 8.62504,5.75004V10.7364C8.62504,12.3176 9.92777,13.6563 11.5,13.6563C13.0723,13.6563 14.375,12.3536 14.375,10.7364V5.75004C14.375,4.13285 13.1172,2.87504 11.5,2.87504Z"
+        android:strokeWidth="1.4375"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

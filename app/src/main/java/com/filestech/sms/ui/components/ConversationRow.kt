@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.ui.theme.BrandBlocked
 import com.filestech.sms.ui.theme.BrandDanger
@@ -46,8 +46,10 @@ import com.filestech.sms.ui.util.rememberChatFormatters
 /**
  * One row of the main conversations list, in the Relay design-system geometry:
  *
- *  - 72dp row, 16dp horizontal inset, 48dp [RelayAvatar] leading, 12dp gap to the text.
- *  - Name 17sp/500, preview 15sp/400 in the secondary colour, one line; time 13sp in the
+ *  - 72dp row (minimum — it grows when the content needs it, e.g. a second preview line
+ *    under a disambiguating number), 16dp horizontal inset, 48dp [RelayAvatar] leading,
+ *    12dp gap to the text.
+ *  - Name 17sp/500, preview 14sp/400 in the secondary colour, two lines; time 13sp in the
  *    secondary colour. The name and preview still follow the message-text-size setting
  *    (see below); the time is layout-fixed.
  *  - Circular unread pill in the brand primary, min 20dp, white count, "99+" cap.
@@ -70,6 +72,12 @@ fun ConversationRow(
     onClick: () -> Unit,
     showAvatars: Boolean = true,
     previewLines: Int = 1,
+    /**
+     * Contact photo from the system contacts, resolved by the list ViewModel. The
+     * per-conversation custom avatar ([Conversation.avatarUri]) still wins; when both are
+     * null the avatar falls back to initials.
+     */
+    contactPhotoUri: String? = null,
     /**
      * v1.23.x — numéro affiché sous le nom UNIQUEMENT pour lever l'ambiguïté quand plusieurs
      * conversations partagent le même nom de contact (ex. un contact avec un numéro FR et un
@@ -106,6 +114,11 @@ fun ConversationRow(
     val formatters = rememberChatFormatters()
     // Message-text-size factor, read above [MessageTextSize] (which masks it to 1f inside).
     val textFactor = LocalMessageTextFactor.current
+    // Preview text: 14sp on an 18sp line (was [RelayText.Preview], 15sp/20sp) — one point
+    // smaller, so two lines fit the row without crowding. The message-text-size setting
+    // still scales it, like before.
+    val previewStyle =
+        RelayText.Preview.copy(fontSize = 14.sp, lineHeight = 18.sp).scaledBy(textFactor)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -116,12 +129,16 @@ fun ConversationRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(72.dp)
+                .heightIn(min = 72.dp)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showAvatars) {
-                RelayAvatar(label = title, customUri = conversation.avatarUri, isGroup = conversation.isGroup)
+                RelayAvatar(
+                    label = title,
+                    customUri = conversation.avatarUri ?: contactPhotoUri,
+                    isGroup = conversation.isGroup,
+                )
                 Spacer(Modifier.width(12.dp))
             }
             // Taille du texte des messages : la colonne de texte seulement — l'avatar écrit ses
@@ -210,7 +227,7 @@ fun ConversationRow(
                                 text = androidx.compose.ui.res.stringResource(
                                     id = com.filestech.sms.R.string.conversation_blocked_label,
                                 ),
-                                style = RelayText.Preview.scaledBy(textFactor).copy(
+                                style = previewStyle.copy(
                                     fontWeight = FontWeight.SemiBold,
                                 ),
                                 // Phase 8 — l'orange [BrandBlocked] ne donnait que 3.79:1 sur
@@ -221,7 +238,7 @@ fun ConversationRow(
                             )
                             Text(
                                 text = " · ",
-                                style = RelayText.Preview.scaledBy(textFactor),
+                                style = previewStyle,
                                 color = cs.onSurfaceVariant,
                             )
                         }
@@ -261,7 +278,7 @@ fun ConversationRow(
                                     preview
                                 }
                             },
-                            style = RelayText.Preview.scaledBy(textFactor),
+                            style = previewStyle,
                             color = cs.onSurfaceVariant,
                             maxLines = previewLines,
                             overflow = TextOverflow.Ellipsis,
