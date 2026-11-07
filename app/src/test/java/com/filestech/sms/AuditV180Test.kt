@@ -94,7 +94,11 @@ class AuditV180Test {
         // IOS_TAPBACK ajouté ensuite : forme textuelle Apple par défaut.
         val values = ReactionFormat.values().map { it.name }.toSet()
         assertThat(values).containsExactly(
-            "READABLE_FR", "TAPBACK_EN", "EMOJI_ONLY", "EMOJI_WITH_QUOTE", "IOS_TAPBACK",
+            "READABLE_FR",
+            "TAPBACK_EN",
+            "EMOJI_ONLY",
+            "EMOJI_WITH_QUOTE",
+            "IOS_TAPBACK",
         )
     }
 

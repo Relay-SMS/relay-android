@@ -208,10 +208,14 @@ class SendReactionUseCaseTest {
 
     @Test fun `ios tapback round-trips through our own decoder for every verb`() {
         val cases = listOf(
-            "❤️" to "Loved", "👍" to "Liked", "👎" to "Disliked",
-            "😂" to "Laughed at", "‼️" to "Emphasized", "❓" to "Questioned",
+            "❤️" to "Loved",
+            "👍" to "Liked",
+            "👎" to "Disliked",
+            "😂" to "Laughed at",
+            "‼️" to "Emphasized",
+            "❓" to "Questioned",
         )
-        for ((emoji, verb) in cases) {
+        for ((emoji, _) in cases) {
             val added = buildIosTapbackBody(emoji, "Hello world")
             val decodedAdd = IncomingReactionDecoder.decode(added)
             assertThat(decodedAdd?.emoji).isEqualTo(emoji)

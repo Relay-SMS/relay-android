@@ -653,7 +653,6 @@ fun ThreadScreen(
                     voice = state.voice,
                     playback = playbackState,
                     draft = state.draft,
-                    segments = state.segments,
                     isSendingVoice = state.isSendingVoice,
                     isSending = state.isSending,
                     hasPendingAttachments = state.pendingAttachments.isNotEmpty(),
@@ -1518,7 +1517,6 @@ private fun ComposerBar(
     voice: ThreadViewModel.VoiceState,
     playback: VoicePlaybackController.PlaybackState,
     draft: String,
-    segments: com.filestech.sms.data.sms.SmsSegmentCounter.Stats,
     isSendingVoice: Boolean,
     /** v1.26.1 (audit H7) — envoi texte/media en cours : desactive le bouton Envoyer. */
     isSending: Boolean,
@@ -1559,7 +1557,6 @@ private fun ComposerBar(
                 elapsedMs = (voice as? ThreadViewModel.VoiceState.Recording)?.elapsedMs ?: 0L,
                 amplitude = (voice as? ThreadViewModel.VoiceState.Recording)?.amplitude ?: 0,
                 draft = draft,
-                segments = segments,
                 permissionGranted = permissionGranted,
                 hasPendingAttachments = hasPendingAttachments,
                 isSending = isSending,
@@ -1608,7 +1605,6 @@ private fun ComposingRow(
     elapsedMs: Long,
     amplitude: Int,
     draft: String,
-    segments: com.filestech.sms.data.sms.SmsSegmentCounter.Stats,
     permissionGranted: Boolean,
     /** v1.3.4 M1 — quand `true`, force l'affichage du bouton Send au lieu du mic même
      *  si `draft.isBlank()` (l'user a juste empilé des PJ et veut les envoyer sans texte). */
