@@ -97,7 +97,11 @@ class PinnedMessagePreviewTest {
         val groupNamed = msg(3, "hi")
         assertThat(
             pinnedSenderLabel(
-                groupNamed, true, "Family", mapOf("+33612345678" to "Marie"), "You",
+                groupNamed,
+                true,
+                "Family",
+                mapOf("+33612345678" to "Marie"),
+                "You",
             ),
         ).isEqualTo("Marie")
         val groupUnknown = msg(4, "hi")
