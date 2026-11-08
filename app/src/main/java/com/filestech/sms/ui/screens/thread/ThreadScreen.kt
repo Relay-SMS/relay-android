@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
@@ -12,6 +15,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -122,6 +131,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -133,6 +143,7 @@ import com.filestech.sms.core.result.AppError
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.SendErrorCode
+import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.components.AttachmentPickerSheet
 import com.filestech.sms.ui.components.AudioMessageBubble
 import com.filestech.sms.ui.components.BurstPosition
@@ -163,6 +174,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Date
 import kotlin.math.max
 
@@ -310,6 +322,36 @@ fun ThreadScreen(
     var reactionConfirmRequest by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var askDelete by remember { mutableStateOf(false) }
     var attachmentSheetOpen by remember { mutableStateOf(false) }
+    // Round 4 — the camera icon opens the camera DIRECTLY instead of the attachment
+    // sheet. The capture file lives in `cacheDir/mms_outgoing/`, one of the
+    // FileProvider cache-paths declared in `file_provider_paths.xml`, so the
+    // system camera app can write to it via the content URI. On success the
+    // photo reuses the picker's staging path: `onAttachmentPicked` copies it
+    // into `media_outgoing/` and stages it in the composer. No CAMERA permission
+    // is needed — the external camera app does the capture. If creating the file
+    // or the URI fails, fall back to the attachment sheet so the user can still
+    // attach a photo.
+    var pendingCameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { success ->
+        if (success) {
+            pendingCameraPhotoUri?.let { viewModel.onAttachmentPicked(it, AttachmentKind.PHOTO) }
+        }
+        pendingCameraPhotoUri = null
+    }
+    val onCameraClick: () -> Unit = {
+        runCatching {
+            val dir = File(context.cacheDir, "mms_outgoing").apply { mkdirs() }
+            val file = File(dir, "camera-${System.currentTimeMillis()}.jpg")
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.onSuccess { uri ->
+            pendingCameraPhotoUri = uri
+            takePictureLauncher.launch(uri)
+        }.onFailure {
+            attachmentSheetOpen = true
+        }
+    }
     // Audit R3 (v1.14.8) — Retry d'un message FAILED avec errorCode WATCHDOG_TIMEOUT
     // peut produire un doublon (le radio a peut-être livré, on n'a juste pas reçu le
     // broadcast de confirmation). On confirme via dialog avant retry. SYNCHRONOUS reste
@@ -658,6 +700,7 @@ fun ThreadScreen(
                         focusManager.clearFocus()
                     },
                     onAttachClick = { attachmentSheetOpen = true },
+                    onCameraClick = onCameraClick,
                     onMicPermissionDenied = {
                         // v1.3.7 — refus de permission = erreur utilisateur visible → rouge.
                         scope.launch {
@@ -1258,7 +1301,10 @@ private fun ThreadHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
+                // Round 4 — 56dp -> 64dp: the header was still cramped after round 3
+                // (44dp -> 56dp). Same elements and order; the extra height is pure
+                // breathing room.
+                .height(64.dp)
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1635,6 +1681,8 @@ private fun ComposerBar(
     onDiscardDraft: () -> Unit,
     onSendVoice: () -> Unit,
     onAttachClick: () -> Unit,
+    /** Round 4 — camera icon: direct capture (TakePicture), not the sheet. */
+    onCameraClick: () -> Unit,
     onMicPermissionDenied: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -1674,6 +1722,7 @@ private fun ComposerBar(
                 onReleaseCancel = onCancelRecording,
                 onCancelHintCrossed = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
                 onAttachClick = onAttachClick,
+                onCameraClick = onCameraClick,
             )
 
             is ThreadViewModel.VoiceState.Reviewing -> ReviewingMode(
@@ -1700,10 +1749,11 @@ private fun ComposerBar(
  *
  * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 24dp radius, min
  * 48dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
- * inside trailing (both open the attachment sheet); the send affordance is a 48dp blue
- * circle with a white up-arrow, shown only when there is text (or staged attachments),
- * and a mic glyph when the composer is empty. The mic circle is the same 48dp height
- * as the pill, so the row reads as one aligned unit.
+ * inside trailing; the send affordance is a 48dp blue circle with a white up-arrow,
+ * shown only when there is text (or staged attachments), and a mic glyph when the
+ * composer is empty. The mic circle is the same 48dp height as the pill, so the row
+ * reads as one aligned unit. Round 4: the camera opens the camera directly
+ * ([onCameraClick]), only the + opens the attachment sheet ([onAttachClick]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1726,6 +1776,8 @@ private fun ComposingRow(
     onReleaseCancel: () -> Unit,
     onCancelHintCrossed: () -> Unit,
     onAttachClick: () -> Unit,
+    /** Round 4 — camera icon: direct capture (TakePicture), not the sheet. */
+    onCameraClick: () -> Unit,
 ) {
     // v1.3.4 M1 — afficher le Mic seulement si pas de PJ stagées ; sinon l'utilisateur
     // doit pouvoir envoyer les PJ via le bouton Send même sans texte.
@@ -1790,15 +1842,29 @@ private fun ComposingRow(
                             },
                             trailingIcon = {
                                 // Dans l'ordre des captures de Kristin : caméra puis +.
-                                // Les deux ouvrent la même feuille de pièces jointes que
-                                // l'ancien trombone : l'appli n'a pas de capture directe,
-                                // c'est la feuille qui héberge le sélecteur de photos.
+                                // La caméra ouvre l'appareil photo directement (capture
+                                // TakePicture) ; seul le + ouvre la feuille de pièces jointes.
+                                // Round 4 — la caméra s'efface dès qu'on tape : elle glisse
+                                // vers la droite en fondu, et le champ gagne la place libérée.
+                                // Piloté par `showMic`, le même état qui fait muter mic ->
+                                // envoyer, pour que les deux restent synchronisés. Le
+                                // `shrink/expandHorizontally` referme le créneau lui-même :
+                                // sans lui, le champ ne se ré-élargirait qu'une fois
+                                // l'animation terminée, en laissant un trou entre-temps.
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    ComposerIconButton(
-                                        painter = painterResource(R.drawable.ic_camera_outline),
-                                        contentDescription = stringResource(R.string.action_attach),
-                                        onClick = onAttachClick,
-                                    )
+                                    AnimatedVisibility(
+                                        visible = showMic,
+                                        enter = slideInHorizontally { it } + fadeIn() +
+                                            expandHorizontally(expandFrom = Alignment.End),
+                                        exit = slideOutHorizontally { it } + fadeOut() +
+                                            shrinkHorizontally(shrinkTowards = Alignment.End),
+                                    ) {
+                                        ComposerIconButton(
+                                            painter = painterResource(R.drawable.ic_camera_outline),
+                                            contentDescription = stringResource(R.string.attach_photo),
+                                            onClick = onCameraClick,
+                                        )
+                                    }
                                     ComposerIconButton(
                                         painter = painterResource(R.drawable.ic_add_circle_outline),
                                         contentDescription = stringResource(R.string.action_attach),
@@ -1834,8 +1900,9 @@ private fun ComposingRow(
 
 /**
  * Small round hit area (36dp) for a glyph living inside the composer pill — Kristin's
- * smiley leading, camera and + trailing. The glyph itself is 22dp in the secondary
- * colour; the vector drawables are Kristin's own icons, tinted here from the theme.
+ * smiley leading, camera and + trailing. The glyph itself is 24dp in the secondary
+ * colour (round 4 — 22dp still read small next to the 48dp mic/send tile); the vector
+ * drawables are Kristin's own icons, tinted here from the theme.
  */
 @Composable
 private fun ComposerIconButton(
@@ -1855,7 +1922,7 @@ private fun ComposerIconButton(
             painter = painter,
             contentDescription = contentDescription,
             tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -1912,7 +1979,7 @@ private fun SendCircleButton(
             imageVector = Icons.Filled.ArrowUpward,
             contentDescription = stringResource(R.string.action_send),
             tint = Color.White,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -2098,7 +2165,10 @@ private fun MicButton(
                 painter = painterResource(R.drawable.ic_mic_outline),
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(if (isRecording) 24.dp else 20.dp),
+                // Round 4 — 24dp in both states (was 20dp idle): the mic glyph now
+                // matches the other composer icons and the send arrow at 24dp, so
+                // the whole row reads at one visual weight. The tile stays 48dp.
+                modifier = Modifier.size(24.dp),
             )
         }
     }
@@ -2262,6 +2332,42 @@ private fun sameDay(a: Long, b: Long): Boolean {
 }
 
 /**
+ * Feedback round 4 — one timestamp per same-sender run, on its LAST message.
+ *
+ * The time shows on message M when M is the last message of its same-sender
+ * run: the next message in the thread is from a different sender, or M is the
+ * last message in the thread. A run of length 1 (senders alternating) shows the
+ * time on every message. Waits between messages do NOT split a run — only a
+ * reply from the other side does — so texting, waiting, texting again, waiting,
+ * texting again (all within a minute, same sender, no reply in between) shows
+ * exactly one timestamp, on the last message.
+ *
+ * Sender here is the direction ([Message.isOutgoing]), the same notion the
+ * burst-shape grouping ([computeBurstPosition]) uses: in a 1:1 thread direction
+ * IS the sender. (In a group thread, consecutive incoming messages from two
+ * different people therefore share one run, exactly as the shape grouping
+ * treats them as one burst.)
+ */
+internal fun isLastOfSenderRun(
+    msg: com.filestech.sms.domain.model.Message,
+    next: com.filestech.sms.domain.model.Message?,
+): Boolean = next == null || next.isOutgoing != msg.isOutgoing
+
+/**
+ * Feedback round 4 — the delivery status ("Sent" / "Delivered" / …) is shown
+ * independently of the timestamp rule: it belongs on the last outgoing message
+ * of a run, so a delivered message can say "Delivered" even when its timestamp
+ * is suppressed. (Before, the status label only rendered where the timestamp
+ * did, so a burst hid every "Delivered" except on the timestamped message —
+ * and the timestamped message is usually the newest, whose delivery report
+ * hasn't landed yet, so the thread showed "Sent" and never "Delivered".)
+ */
+internal fun isLastOutgoingOfRun(
+    msg: com.filestech.sms.domain.model.Message,
+    next: com.filestech.sms.domain.model.Message?,
+): Boolean = msg.isOutgoing && (next == null || !next.isOutgoing)
+
+/**
  * Decides where a message sits inside its burst (a run of consecutive messages from the same
  * sender, within [BURST_GAP_MS] of one another, not crossing a calendar day).
  *
@@ -2422,9 +2528,21 @@ private fun ThreadMessageItem(
             DateSeparator(label = label)
         }
 
-        // Show the time when a message is more than 1 minute after the previous
-        // one — back-to-back messages in a quick burst stay clean.
-        val showTimestamp = prev?.date?.let { msg.date - it > 60_000L } ?: true
+        // Feedback round 4 — one timestamp per same-sender run, on its LAST
+        // message: the time shows when the next message is from a different
+        // sender, or this is the last message in the thread. Waits between
+        // messages do NOT split a run — only a reply from the other side does
+        // (texting, waiting, texting again, all within a minute = one run, one
+        // timestamp, on the last message). Replaces the old 1-minute gap rule
+        // (`msg.date - prev.date > 60_000L`), which hid the time on every
+        // message sent within a minute of the previous one.
+        val showTimestamp = isLastOfSenderRun(msg, next)
+        // Feedback round 4 — delivery status, decoupled from the timestamp:
+        // it belongs on the last outgoing message of a run, so a delivered
+        // message can say "Delivered" even when its timestamp is suppressed.
+        // (Before, the status label only rendered where the timestamp did, so
+        // a burst hid every "Delivered" except on the timestamped message.)
+        val showStatus = isLastOutgoingOfRun(msg, next)
         val burstPosition = computeBurstPosition(prev, msg, next)
         val audio = msg.audioAttachment
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à
@@ -2477,6 +2595,7 @@ private fun ThreadMessageItem(
                     onToggleStar = { actions.onToggleStar(msg) },
                     repliedToPreview = repliedToPreview,
                     showTimestamp = showTimestamp,
+                    showStatus = showStatus,
                     senderLabel = senderLabel,
                 )
             }
@@ -2486,6 +2605,7 @@ private fun ThreadMessageItem(
                     attachment = mediaAttachment,
                     autres = mediaAttachments.drop(1),
                     showTimestamp = showTimestamp,
+                    showStatus = showStatus,
                     onDelete = { actions.onDelete(msg) },
                     onReply = { actions.onReply(msg) },
                     onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
@@ -2504,6 +2624,7 @@ private fun ThreadMessageItem(
                 MessageBubble(
                     message = msg,
                     showTimestamp = showTimestamp,
+                    showStatus = showStatus,
                     burstPosition = burstPosition,
                     onTap = { if (msg.status == Message.Status.FAILED) actions.onTapFailed(msg) },
                     onDelete = { actions.onDelete(msg) },

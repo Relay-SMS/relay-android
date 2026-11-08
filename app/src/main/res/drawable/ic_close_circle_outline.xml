@@ -1,0 +1,23 @@
+<!-- Kristin's own icon (close-circle-outline.svg): circle + X, 25x25 viewBox.
+     Grey (#6B6B6B) strokes in the source, stroke width 1.5625; the vector keeps
+     black and the Icon() call site tints it from the theme, so it follows
+     light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="25"
+    android:viewportHeight="25">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M21.875,12.5 C21.875,7.32422,17.6758,3.125,12.5,3.125 C7.32422,3.125,3.125,7.32422,3.125,12.5 C3.125,17.6758,7.32422,21.875,12.5,21.875 C17.6758,21.875,21.875,17.6758,21.875,12.5 Z"
+        android:strokeWidth="1.5625"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M15.625,15.625 L12.5,12.5 M12.5,12.5 L9.375,9.375 M12.5,12.5 L9.375,15.625 M12.5,12.5 L15.625,9.375"
+        android:strokeWidth="1.5625"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

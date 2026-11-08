@@ -2,6 +2,11 @@ package com.filestech.sms.ui.screens.conversations
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,12 +17,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
@@ -42,6 +53,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,25 +71,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.ui.components.ContactIntents
 import com.filestech.sms.ui.components.ConversationRow
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayEmptyState
-import com.filestech.sms.ui.components.RelaySearchField
 import com.filestech.sms.ui.components.RelaySheet
 import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.theme.RelayColors
@@ -168,6 +187,25 @@ fun ConversationsScreen(
     }
 
     var overflowOpen by remember { mutableStateOf(false) }
+    // Round 4 — search opens on demand from the magnifier in the top bar instead of
+    // living permanently under it. While it is open the list is a flat filtered list:
+    // the Pinned/Chats section headers are hidden (see the LazyColumn below).
+    var searchOpen by remember { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    // Closes the pill, clears the query and drops focus (which hides the keyboard).
+    // Shared by the pill's X button and by back.
+    val closeSearch: () -> Unit = {
+        searchOpen = false
+        viewModel.clearQuery()
+        focusManager.clearFocus()
+    }
+    androidx.compose.runtime.LaunchedEffect(searchOpen) {
+        if (searchOpen) runCatching { searchFocusRequester.requestFocus() }
+    }
+    // Back closes the search pill before it leaves the screen. Registered before the
+    // selection-mode handler below, so exiting selection still wins when both apply.
+    androidx.activity.compose.BackHandler(enabled = searchOpen) { closeSearch() }
     // v1.8.0 — dialog de confirmation pour "Tout marquer comme lu".
     var showMarkAllReadConfirm by remember { mutableStateOf(false) }
 
@@ -291,151 +329,201 @@ fun ConversationsScreen(
                 )
                 return@topBar
             }
-            TopAppBar(
-                title = {
-                    // Title only — no logo next to it (Kristin, 2026-11-06). The old
-                    // ic_app_logo image used to sit here in front of the name.
-                    Text(
-                        text = if (archived) stringResource(R.string.tab_archived)
-                        else stringResource(R.string.app_name),
-                    )
-                },
-                navigationIcon = {
-                    onBack?.let {
-                        IconButton(onClick = it) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.ArrowBack,
-                                contentDescription = stringResource(R.string.action_back),
+            // Round 4 — the top bar swaps between the title bar and the search pill.
+            // The pill slides in from the right over the title bar and slides back out
+            // when the X closes it; the title bar just fades. Selection mode above
+            // still wins over both.
+            val sortMode = state.settings.conversations.sortMode
+            Box {
+                AnimatedVisibility(
+                    visible = !searchOpen,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
+                    TopAppBar(
+                        title = {
+                            // Title only — no logo next to it (Kristin, 2026-11-06). The old
+                            // ic_app_logo image used to sit here in front of the name.
+                            Text(
+                                text = if (archived) stringResource(R.string.tab_archived)
+                                else stringResource(R.string.app_name),
                             )
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { overflowOpen = true }) {
-                        Icon(
-                            Icons.Outlined.MoreVert,
-                            contentDescription = stringResource(R.string.action_more),
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = overflowOpen,
-                        onDismissRequest = { overflowOpen = false },
-                    ) {
-                        // v1.8.0 — action "Tout marquer comme lu". Utile quand l'user a
-                        // lu ses messages dans une autre app SMS et que les badges SMS
-                        // Tech persistent (cache `messages.read` désynchronisé du système).
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Outlined.Check, contentDescription = null) },
-                            text = { Text(stringResource(R.string.action_mark_all_read)) },
-                            onClick = {
-                                overflowOpen = false
-                                showMarkAllReadConfirm = true
-                            },
-                        )
-                        // Ouvre l'éditeur de contacts du système sur un formulaire vierge
-                        // (aucun numéro de contexte à ce niveau). Feedback snackbar si aucune
-                        // app Contacts n'est installée. Partage le helper ContactIntents avec
-                        // l'écran de composition.
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
-                            text = { Text(stringResource(R.string.action_create_contact)) },
-                            onClick = {
-                                overflowOpen = false
-                                if (!ContactIntents.createContact(ctx)) {
-                                    scope.launch {
-                                        snackbarHost.showError(ctx.getString(R.string.phone_action_no_contacts))
-                                    }
+                        },
+                        navigationIcon = {
+                            onBack?.let {
+                                IconButton(onClick = it) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.ArrowBack,
+                                        contentDescription = stringResource(R.string.action_back),
+                                    )
                                 }
-                            },
-                        )
-                        // v1.28.3 — créer un groupe ouvre le composeur en mode groupe : toucher
-                        // un contact y ajoute une puce au lieu d'ouvrir le fil.
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Outlined.Group, contentDescription = null) },
-                            text = { Text(stringResource(R.string.action_new_group)) },
-                            onClick = { overflowOpen = false; onComposeGroup() },
-                        )
-                        // Archived chats and the vault used to live as icons on the top bar;
-                        // they now live here, so the bar stays a title plus the overflow.
-                        // Same destinations, same behaviour — just reached from the menu.
-                        // The vault stays hidden in a panic-decoy session (audit S-P0-1):
-                        // hiding it entirely keeps the feature looking non-existent to a
-                        // coerced observer, backed by the navigation guard and the
-                        // repository-level filter.
-                        if (!archived) {
-                            if (!isPanicDecoy) {
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(Icons.Outlined.Lock, contentDescription = null)
-                                    },
-                                    text = { Text(stringResource(R.string.tab_vault)) },
-                                    onClick = { overflowOpen = false; onOpenVault() },
+                            }
+                        },
+                        actions = {
+                            // Round 4 — Kristin's magnifier opens the search pill.
+                            IconButton(onClick = { searchOpen = true }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_search),
+                                    contentDescription = stringResource(
+                                        R.string.conversations_search_hint,
+                                    ),
+                                    tint = cs.onSurface,
+                                    modifier = Modifier.size(24.dp),
                                 )
                             }
-                            DropdownMenuItem(
-                                leadingIcon = {
-                                    Icon(Icons.Outlined.Inventory2, contentDescription = null)
-                                },
-                                text = { Text(stringResource(R.string.tab_archived)) },
-                                onClick = { overflowOpen = false; onOpenArchived() },
-                            )
-                        }
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-                            text = { Text(stringResource(R.string.settings_title)) },
-                            onClick = { overflowOpen = false; onOpenSettings() },
-                        )
-                        DropdownMenuItem(
-                            leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
-                            text = { Text(stringResource(R.string.about_title)) },
-                            onClick = { overflowOpen = false; onOpenAbout() },
-                        )
-                        // Sort section. Header is a non-interactive label rendered with
-                        // `enabled = false` so the user can read it without it looking like
-                        // an action item. The 3 sort options follow with a trailing check on
-                        // the active mode.
-                        androidx.compose.material3.HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    stringResource(R.string.sort_section),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            IconButton(onClick = { overflowOpen = true }) {
+                                Icon(
+                                    Icons.Outlined.MoreVert,
+                                    contentDescription = stringResource(R.string.action_more),
                                 )
-                            },
-                            onClick = { },
-                            enabled = false,
-                        )
-                        SortMenuItem(
-                            label = stringResource(R.string.sort_date),
-                            selected = state.settings.conversations.sortMode == com.filestech.sms.domain.settings.SortMode.DATE,
-                            onClick = {
-                                overflowOpen = false
-                                viewModel.setSortMode(com.filestech.sms.domain.settings.SortMode.DATE)
-                            },
-                        )
-                        SortMenuItem(
-                            label = stringResource(R.string.sort_unread),
-                            selected = state.settings.conversations.sortMode == com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST,
-                            onClick = {
-                                overflowOpen = false
-                                viewModel.setSortMode(com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST)
-                            },
-                        )
-                    }
-                },
-            )
+                            }
+                            // Round 4 — rounded menu like the rest of the refreshed UI:
+                            // 18dp, the same radius as the bubble long-press menu
+                            // (BubbleMenuTrigger) and the theme's large shape.
+                            DropdownMenu(
+                                expanded = overflowOpen,
+                                onDismissRequest = { overflowOpen = false },
+                                shape = RoundedCornerShape(18.dp),
+                            ) {
+                                // v1.8.0 — action "Tout marquer comme lu". Utile quand l'user a
+                                // lu ses messages dans une autre app SMS et que les badges SMS
+                                // Tech persistent (cache `messages.read` désynchronisé du système).
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Outlined.Check, contentDescription = null) },
+                                    text = { Text(stringResource(R.string.action_mark_all_read)) },
+                                    onClick = {
+                                        overflowOpen = false
+                                        showMarkAllReadConfirm = true
+                                    },
+                                )
+                                // Ouvre l'éditeur de contacts du système sur un formulaire vierge
+                                // (aucun numéro de contexte à ce niveau). Feedback snackbar si aucune
+                                // app Contacts n'est installée. Partage le helper ContactIntents avec
+                                // l'écran de composition.
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
+                                    text = { Text(stringResource(R.string.action_create_contact)) },
+                                    onClick = {
+                                        overflowOpen = false
+                                        if (!ContactIntents.createContact(ctx)) {
+                                            scope.launch {
+                                                snackbarHost.showError(ctx.getString(R.string.phone_action_no_contacts))
+                                            }
+                                        }
+                                    },
+                                )
+                                // v1.28.3 — créer un groupe ouvre le composeur en mode groupe : toucher
+                                // un contact y ajoute une puce au lieu d'ouvrir le fil.
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Outlined.Group, contentDescription = null) },
+                                    text = { Text(stringResource(R.string.action_new_group)) },
+                                    onClick = { overflowOpen = false; onComposeGroup() },
+                                )
+                                // Archived chats and the vault used to live as icons on the top bar;
+                                // they now live here, so the bar stays a title plus the overflow.
+                                // Same destinations, same behaviour — just reached from the menu.
+                                // The vault stays hidden in a panic-decoy session (audit S-P0-1):
+                                // hiding it entirely keeps the feature looking non-existent to a
+                                // coerced observer, backed by the navigation guard and the
+                                // repository-level filter.
+                                if (!archived) {
+                                    if (!isPanicDecoy) {
+                                        DropdownMenuItem(
+                                            leadingIcon = {
+                                                Icon(Icons.Outlined.Lock, contentDescription = null)
+                                            },
+                                            text = { Text(stringResource(R.string.tab_vault)) },
+                                            onClick = { overflowOpen = false; onOpenVault() },
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        leadingIcon = {
+                                            Icon(Icons.Outlined.Inventory2, contentDescription = null)
+                                        },
+                                        text = { Text(stringResource(R.string.tab_archived)) },
+                                        onClick = { overflowOpen = false; onOpenArchived() },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
+                                    text = { Text(stringResource(R.string.settings_title)) },
+                                    onClick = { overflowOpen = false; onOpenSettings() },
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                                    text = { Text(stringResource(R.string.about_title)) },
+                                    onClick = { overflowOpen = false; onOpenAbout() },
+                                )
+                                // Sort section. Header is a non-interactive label rendered with
+                                // `enabled = false` so the user can read it without it looking like
+                                // an action item. The 3 sort options follow with a trailing check on
+                                // the active mode.
+                                androidx.compose.material3.HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            stringResource(R.string.sort_section),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                    onClick = { },
+                                    enabled = false,
+                                )
+                                SortMenuItem(
+                                    label = stringResource(R.string.sort_date),
+                                    selected = sortMode == com.filestech.sms.domain.settings.SortMode.DATE,
+                                    onClick = {
+                                        overflowOpen = false
+                                        viewModel.setSortMode(com.filestech.sms.domain.settings.SortMode.DATE)
+                                    },
+                                )
+                                SortMenuItem(
+                                    label = stringResource(R.string.sort_unread),
+                                    selected = sortMode == com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST,
+                                    onClick = {
+                                        overflowOpen = false
+                                        viewModel.setSortMode(com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST)
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
+                AnimatedVisibility(
+                    visible = searchOpen,
+                    enter = slideInHorizontally { it } + fadeIn(),
+                    exit = slideOutHorizontally { it } + fadeOut(),
+                ) {
+                    SearchTopBar(
+                        // v1.27.9 — état Compose lu directement : la frappe doit revenir
+                        // au champ dans la MÊME recomposition (cf.
+                        // [ConversationsViewModel.searchInput]). `state.query` arrivait
+                        // après le debounce de 200 ms et réécrivait le champ avec du périmé.
+                        query = viewModel.searchInput,
+                        onQueryChange = viewModel::setQuery,
+                        onClose = closeSearch,
+                        focusRequester = searchFocusRequester,
+                    )
+                }
+            }
         },
         floatingActionButton = {
-            // 56dp circle in the fixed brand blue in both themes — filled surfaces keep
-            // the brand blue; the dark scheme's lightened primary (#7AA0F5) is for text
-            // and icons, not for filled tiles. White pencil on the brand blue is 6.63:1.
+            // Round 4 — 56dp rounded square in the fixed brand blue in both themes:
+            // the pre-refresh default shape, restored after the refresh made it a
+            // circle. Before the refresh (commit 9d69566) the button carried NO size
+            // or shape modifier at all, so it rendered the Material 3 default — 56dp
+            // with FloatingActionButtonDefaults.shape (baseline token CornerLarge,
+            // i.e. the theme's Shapes.large, 18dp here). That default is restored
+            // exactly, instead of a hardcoded radius. The brand blue is kept: filled
+            // surfaces keep it, the dark scheme's lightened primary (#7AA0F5) is for
+            // text and icons, not for filled tiles. White pencil on it is 6.63:1.
             FloatingActionButton(
                 onClick = onCompose,
                 modifier = Modifier.size(56.dp),
-                shape = CircleShape,
+                shape = FloatingActionButtonDefaults.shape,
                 containerColor = RelayColors.Blue,
                 contentColor = Color.White,
             ) {
@@ -448,14 +536,9 @@ fun ConversationsScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            SearchField(
-                // v1.27.9 — état Compose lu directement : la frappe doit revenir au champ dans
-                // la MÊME recomposition (cf. [ConversationsViewModel.searchInput]). `state.query`
-                // arrivait après le debounce de 200 ms et réécrivait le champ avec du périmé.
-                query = viewModel.searchInput,
-                onQueryChange = viewModel::setQuery,
-                onClear = viewModel::clearQuery,
-            )
+            // Round 4 — no search field here any more: it lives in the top bar as the
+            // pill ([SearchTopBar]), opened from the magnifier. The filtering itself
+            // is unchanged — the ViewModel still filters on the same query.
             if (!state.isDefaultSmsApp && !archived) {
                 DefaultAppBanner(onSetDefault = {
                     viewModel.buildChangeDefaultIntent()?.let { intent ->
@@ -505,8 +588,12 @@ fun ConversationsScreen(
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
-                    // A little breathing room between rows (was 0dp — rows touched).
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    // Round 4 — 8dp between rows (was 4dp, added in round 3). The 4dp
+                    // WAS reaching the list — this is the only conversations list — but
+                    // 4dp between 72dp rows with no row background reads as no gap at
+                    // all. The same 8dp also lands around the section headers, so their
+                    // paddings below stay small (see ConversationSectionHeader).
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     // Relay — AUCUNE ligne de séparation entre les conversations :
                     // la liste se lit sans filets, comme dans Relay.
@@ -516,15 +603,19 @@ fun ConversationsScreen(
                     // (`partition` est stable), donc rien ne bouge pour qui n'a rien bloqué.
                     val (activeConversations, blockedConversations) =
                         state.conversations.partition { !it.blocked }
+                    // Round 4 — pinned chats get their own "Pinned" section above
+                    // "Chats", like Kristin's list screenshot (see
+                    // [conversationSections]). While the search pill is open the
+                    // headers are hidden and the list is flat.
+                    val (pinnedConversations, otherConversations) =
+                        splitPinnedSections(activeConversations, searching = searchOpen)
 
-                    items(
-                        activeConversations,
-                        key = { it.id },
-                        // Audit PERF-M2 (v1.14.8) — `contentType` stable indique au recycleur
-                        // que toutes les rows partagent le même layout. Sans ce hint, Compose
-                        // ne peut pas optimiser le recyclage entre rows sélectionnés / non-sél.
-                        contentType = { "row" },
-                    ) { conv ->
+                    // One row renderer shared by the Pinned and Chats sections, so the
+                    // two sections can never drift apart.
+                    // Audit PERF-M2 (v1.14.8) — `contentType` stable indique au recycleur
+                    // que toutes les rows partagent le même layout. Sans ce hint, Compose
+                    // ne peut pas optimiser le recyclage entre rows sélectionnés / non-sél.
+                    val conversationItem: @Composable LazyItemScope.(Conversation) -> Unit = { conv ->
                         val isSelected = state.selectedIds.contains(conv.id)
                         // v1.23.x — numéro affiché sous le nom seulement si ce nom est ambigu
                         // (partagé par ≥2 conversations) et que la conversation est 1-to-1.
@@ -584,6 +675,12 @@ fun ConversationsScreen(
                             selectionMode = state.selectionMode,
                         )
                     }
+
+                    conversationSections(
+                        pinned = pinnedConversations,
+                        other = otherConversations,
+                        itemContent = conversationItem,
+                    )
 
                     if (blockedConversations.isNotEmpty()) {
                         item(key = "header-blocked", contentType = "header") {
@@ -688,19 +785,140 @@ fun ConversationsScreen(
     }
 }
 
+/**
+ * Round 4 — splits the list into the "Pinned" section and the rest. While the
+ * search pill is open the list stays flat: nothing is pinned out.
+ */
+private fun splitPinnedSections(
+    conversations: List<Conversation>,
+    searching: Boolean,
+): Pair<List<Conversation>, List<Conversation>> {
+    return if (searching) {
+        emptyList<Conversation>() to conversations
+    } else {
+        conversations.partition { it.pinned }
+    }
+}
+
+/**
+ * Round 4 — emits the Pinned/Chats sections for the conversations list: the
+ * pinned chats under a "Pinned" header, everything else under "Chats". No pinned
+ * chats means no sections at all — just the plain list.
+ */
+private fun LazyListScope.conversationSections(
+    pinned: List<Conversation>,
+    other: List<Conversation>,
+    itemContent: @Composable LazyItemScope.(Conversation) -> Unit,
+) {
+    if (pinned.isNotEmpty()) {
+        item(key = "header-pinned", contentType = "header") {
+            ConversationSectionHeader(
+                text = stringResource(R.string.conversations_section_pinned),
+                topPadding = 16.dp,
+            )
+        }
+    }
+    items(
+        pinned,
+        key = { it.id },
+        contentType = { "row" },
+        itemContent = itemContent,
+    )
+    if (pinned.isNotEmpty()) {
+        item(key = "header-chats", contentType = "header") {
+            ConversationSectionHeader(
+                text = stringResource(R.string.conversations_section_chats),
+                topPadding = 12.dp,
+            )
+        }
+    }
+    items(
+        other,
+        key = { it.id },
+        contentType = { "row" },
+        itemContent = itemContent,
+    )
+}
+
+/**
+ * Round 4 — the search pill that replaces the top bar while searching, like
+ * Kristin's search-open screenshot: a full-width pill (48dp high, fully rounded),
+ * "Search" placeholder, no magnifier inside, and Kristin's close-circle icon at
+ * the right end — tapping it closes the pill (see `closeSearch` in
+ * [ConversationsScreen]). The filtering itself is unchanged: the ViewModel still
+ * filters on the same query, and while the pill is open the list is a flat
+ * filtered list with no section headers.
+ */
 @Composable
-private fun SearchField(
+private fun SearchTopBar(
     query: String,
     onQueryChange: (String) -> Unit,
-    onClear: () -> Unit,
+    onClose: () -> Unit,
+    focusRequester: FocusRequester,
 ) {
-    RelaySearchField(
-        query = query,
-        onQueryChange = onQueryChange,
-        placeholder = stringResource(R.string.conversations_search_hint),
-        onClear = onClear,
-        clearContentDescription = stringResource(R.string.action_close),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    val cs = MaterialTheme.colorScheme
+    // Hoisted: stringResource is @Composable and cannot run inside .semantics {}.
+    val closeLabel = stringResource(R.string.action_close)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RelayTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            placeholder = stringResource(R.string.conversations_search_short),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            cornerRadius = 24.dp,
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+            focusRequester = focusRequester,
+            trailingIcon = {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onClose)
+                        .semantics {
+                            contentDescription = closeLabel
+                            role = Role.Button
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close_circle_outline),
+                        contentDescription = null,
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            },
+        )
+    }
+}
+
+/**
+ * Round 4 — "Pinned" / "Chats" section label, sentence case like Kristin's list
+ * screenshot (unlike the Blocked header, which is uppercased). The LazyColumn's
+ * 8dp spacing also lands around the header, so the paddings stay small: 12dp
+ * below the label (4dp here + 8dp spacing) and, for the Chats header, 20dp above
+ * it (12dp here + 8dp spacing).
+ */
+@Composable
+private fun ConversationSectionHeader(text: String, topPadding: Dp) {
+    Text(
+        text = text,
+        style = RelayText.SectionHeader,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(
+            start = 16.dp,
+            end = 16.dp,
+            top = topPadding,
+            bottom = 4.dp,
+        ),
     )
 }
 
@@ -1357,11 +1575,15 @@ private fun ImportingPlaceholder(count: Int) {
             color = cs.primary,
             strokeWidth = 3.dp,
         )
+        // Round 4 — the column already centres its children, but a Text that wraps
+        // grows to full width and its lines stay left-aligned by default — that is
+        // why "Reading your existing SMS…" sat left. Full width + centred lines.
         Text(
             text = stringResource(R.string.conversations_importing_title),
             style = RelayText.ConvoName,
             color = cs.onSurface,
-            modifier = Modifier.padding(top = 24.dp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
         )
         Text(
             text = if (count > 0) {
@@ -1371,7 +1593,8 @@ private fun ImportingPlaceholder(count: Int) {
             },
             style = RelayText.Preview,
             color = cs.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         )
     }
 }

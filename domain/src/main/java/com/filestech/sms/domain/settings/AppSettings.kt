@@ -35,7 +35,14 @@ data class Appearance(
     val amoledTrueBlack: Boolean = false,
 )
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK, DARK_TECH }
+/**
+ * Feedback round 4 (2026-11-07) — `DARK_TECH` is removed: Settings offers System,
+ * Light and Dark only. A stored `DARK_TECH` value falls back to [SYSTEM] at read
+ * time (`SettingsRepository.enumOr` returns the default for an unknown name), which
+ * is the same dark-or-light behaviour it produced — DarkTech always resolved onto
+ * the Dark scheme (see `SmsTechTheme`).
+ */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
  * Taille du texte des messages (Réglages → Apparence). Le coefficient de chaque cran vit côté
@@ -226,7 +233,11 @@ enum class PreviewMode { ALWAYS, WHEN_UNLOCKED, NEVER }
 data class SecuritySettings(
     val lockMode: LockMode = LockMode.OFF,
     val autoLockDelay: AutoLockDelay = AutoLockDelay.ONE_MINUTE,
-    val flagSecure: Boolean = true,
+    val flagSecure: Boolean = false,
+    // Feedback round 4 (2026-11-07) — FLAG_SECURE ("Hide preview in Recents") is
+    // OFF by default at Kristin's request, so fresh installs can take screenshots
+    // out of the box. The toggle stays in Settings for anyone who wants it on.
+    // Existing installs keep their stored value; only the default changed.
     val lockVaultOnLeave: Boolean = true,
     val panicCodeEnabled: Boolean = false,
     /**

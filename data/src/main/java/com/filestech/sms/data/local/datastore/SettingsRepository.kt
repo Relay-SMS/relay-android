@@ -350,7 +350,10 @@ class SettingsRepository(
             security = SecuritySettings(
                 lockMode = enumOr(p, K.lockMode, LockMode.OFF, LockMode::valueOf),
                 autoLockDelay = enumOr(p, K.autoLockDelay, AutoLockDelay.ONE_MINUTE, AutoLockDelay::valueOf),
-                flagSecure = p[K.flagSecure] ?: true,
+                // Feedback round 4 (2026-11-07) — FLAG_SECURE defaults to OFF at
+                // Kristin's request, so fresh installs can take screenshots out of
+                // the box. A stored value still wins over this fallback.
+                flagSecure = p[K.flagSecure] ?: false,
                 lockVaultOnLeave = p[K.lockVault] ?: true,
                 panicCodeEnabled = p[K.panicCode] ?: false,
                 autoDeleteOlderThanDays = p[K.autoDeleteDays],

@@ -84,6 +84,8 @@ fun MediaAttachmentBubble(
      */
     autres: List<Attachment> = emptyList(),
     showTimestamp: Boolean,
+    // Feedback round 4 — statut découplé de l'heure (voir [MessageBubble]).
+    showStatus: Boolean = false,
     onDelete: () -> Unit,
     onReply: () -> Unit,
     onReact: (() -> Unit)?,
@@ -163,18 +165,42 @@ fun MediaAttachmentBubble(
                     ),
                 )
             }
-            BubbleReactionOverlay(
-                reactionEmoji = message.reactionEmoji,
-                isOutgoing = isOut,
-                bubbleColor = bgColor,
-            ) {
-                MediaPreview(attachment, shape, bgColor, isOut) { ouvrir(attachment) }
-            }
-            // X-04 — les pièces jointes suivantes, empilées sous la première, chacune avec son
-            // propre tap-to-view. La réaction et la légende restent celles du message.
-            autres.forEach { autre ->
-                Spacer(Modifier.size(4.dp))
-                MediaPreview(autre, shape, bgColor, isOut) { ouvrir(autre) }
+            // Feedback round 4 — l'heure (+ statut) est TOUJOURS dans la bulle :
+            // sans légende, elle est en surimpression en bas à droite de la
+            // dernière vignette (pastille sombre pour rester lisible sur
+            // n'importe quelle image, dans les deux thèmes) ; avec une légende,
+            // elle vit dans le fond de la légende (voir ci-dessous). Avant, elle
+            // se plaçait sous la vignette, hors de tout fond de bulle.
+            Box {
+                Column {
+                    BubbleReactionOverlay(
+                        reactionEmoji = message.reactionEmoji,
+                        isOutgoing = isOut,
+                        bubbleColor = bgColor,
+                    ) {
+                        MediaPreview(attachment, shape, bgColor, isOut) { ouvrir(attachment) }
+                    }
+                    // X-04 — les pièces jointes suivantes, empilées sous la première, chacune avec son
+                    // propre tap-to-view. La réaction et la légende restent celles du message.
+                    autres.forEach { autre ->
+                        Spacer(Modifier.size(4.dp))
+                        MediaPreview(autre, shape, bgColor, isOut) { ouvrir(autre) }
+                    }
+                }
+                if (message.body.isBlank()) {
+                    BubbleTimestamp(
+                        message = message,
+                        showTimestamp = showTimestamp,
+                        showStatus = showStatus,
+                        textColor = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 8.dp, bottom = 8.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
             }
             // v1.3.10 — caption text affiché EN DESSOUS de l'image / icône quand
             // l'utilisateur a saisi du texte avant d'envoyer un MMS image / vidéo /
@@ -188,29 +214,32 @@ fun MediaAttachmentBubble(
                 Spacer(Modifier.size(4.dp))
                 // v1.3.11 (F4) — linkify the caption so phone numbers + URLs inside an
                 // image / file / video caption are tappable just like in a plain SMS body.
-                MessageTextWithLinks(
-                    text = message.body,
-                    style = MaterialTheme.typography.bodyLarge,
-                    // Phase 8 — blanc fixe sur le bleu de marque fixe sortant : `onPrimary`
-                    // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
-                    color = if (isOut) Color.White else cs.onSurface,
-                    onPhoneClick = onPhoneClick,
+                // Feedback round 4 — la légende porte l'heure (+ statut) DANS son
+                // fond, en bas à droite, comme une bulle texte.
+                Column(
                     modifier = Modifier
                         .widthIn(max = 240.dp)
                         .clip(shape)
                         .background(bgColor)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
-                )
+                ) {
+                    MessageTextWithLinks(
+                        text = message.body,
+                        style = MaterialTheme.typography.bodyLarge,
+                        // Phase 8 — blanc fixe sur le bleu de marque fixe sortant : `onPrimary`
+                        // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
+                        color = if (isOut) Color.White else cs.onSurface,
+                        onPhoneClick = onPhoneClick,
+                    )
+                    BubbleTimestamp(
+                        message = message,
+                        showTimestamp = showTimestamp,
+                        showStatus = showStatus,
+                        textColor = if (isOut) Color.White else cs.onSurface,
+                        modifier = Modifier.padding(top = 2.dp).align(Alignment.End),
+                    )
+                }
             }
-            // Relay — heure (+ statut sortant) en petit, en bas à droite de la
-            // bulle. Pour une pièce jointe sans légende, elle se place sous la vignette,
-            // faute de fond de bulle où l'inscrire.
-            BubbleTimestamp(
-                message = message,
-                showTimestamp = showTimestamp,
-                textColor = cs.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, end = 4.dp),
-            )
             BubbleMenu(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },

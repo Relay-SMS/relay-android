@@ -117,6 +117,9 @@
     <string name="group_avatar_cd">Gruppo</string>
     <string name="action_call">Chiama</string>
     <string name="conversations_search_hint">Cerchi un numero, un contatto, un messaggio…</string>
+    <string name="conversations_section_pinned">Fissati</string>
+    <string name="conversations_section_chats">Chat</string>
+    <string name="conversations_search_short">Cerca</string>
     <string name="conversations_no_match">Nessuna conversazione corrispondente.</string>
     <string name="thread_create_contact">Crea un contatto</string>
     <string name="thread_update_contact">Aggiorna un contatto</string>

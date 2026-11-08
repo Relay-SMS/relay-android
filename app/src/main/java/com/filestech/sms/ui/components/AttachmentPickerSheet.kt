@@ -89,6 +89,14 @@ fun AttachmentPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
+                // Round 4 — restore the breathing room above the title that the
+                // pre-refresh sheet had. Before the refresh this sheet was a bare
+                // ModalBottomSheet whose DEFAULT drag handle carries 22dp of
+                // vertical padding (material3 1.4.0, `DragHandleVerticalPadding`,
+                // verified in the library jar — same BOM then as now, 2026.09.00).
+                // The refresh switched to RelaySheet, whose handle is a bare 4dp
+                // pill with no padding, so the title ended up flush against it.
+                .padding(top = 22.dp)
                 .padding(bottom = 24.dp)
                 .navigationBarsPadding(),
         ) {

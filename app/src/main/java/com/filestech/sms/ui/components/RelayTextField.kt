@@ -27,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +49,10 @@ import com.filestech.sms.ui.theme.placeholderColor
  * [placeholderColor] (theme-aware: the fixed tertiary failed AA on the light field),
  * cursor in [RelayColors.Blue]. Focus changes no border — the cursor colour alone
  * marks the focused field.
+ *
+ * [focusRequester] (when given) is attached to the inner text field itself, so a
+ * caller can move focus into the field — e.g. the conversations search pill, which
+ * requests focus the moment it slides open.
  */
 @Composable
 fun RelayTextField(
@@ -66,6 +72,7 @@ fun RelayTextField(
     leadingIcon: (@Composable () -> Unit)? = null,
     trailingIcon: (@Composable () -> Unit)? = null,
     textStyle: TextStyle = RelayText.MessageBody,
+    focusRequester: FocusRequester? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val interactionSource = remember { MutableInteractionSource() }
@@ -84,7 +91,9 @@ fun RelayTextField(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(
+                focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,
+            ),
             enabled = enabled,
             readOnly = readOnly,
             textStyle = textStyle.copy(color = textColor),

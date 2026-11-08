@@ -46,6 +46,9 @@ enum class BurstPosition { Solo, First, Middle, Last }
 fun MessageBubble(
     message: Message,
     showTimestamp: Boolean,
+    // Feedback round 4 — statut découplé de l'heure : il s'affiche sur le
+    // dernier message sortant d'une rafale, même si son heure est masquée.
+    showStatus: Boolean = false,
     burstPosition: BurstPosition = BurstPosition.Solo,
     onTap: () -> Unit = {},
     /** Emitted when the user picks "Supprimer" in the bubble's overflow menu. */
@@ -263,11 +266,15 @@ fun MessageBubble(
                         }
                         // Relay — heure (+ statut sortant) en petit, en bas à droite,
                         // À L'INTÉRIEUR de la bulle, alignée sur la dernière ligne de texte.
+                        // Feedback round 4 — la ligne ne s'étire plus sur toute la
+                        // largeur : elle se cale à droite dans la bulle (`align(End)`),
+                        // donc elle ne peut plus sortir du fond sur une bulle étroite.
                         BubbleTimestamp(
                             message = message,
                             showTimestamp = showTimestamp,
+                            showStatus = showStatus,
                             textColor = textColor,
-                            modifier = Modifier.padding(top = 2.dp),
+                            modifier = Modifier.padding(top = 2.dp).align(Alignment.End),
                         )
                     }
                 }

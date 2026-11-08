@@ -115,6 +115,9 @@
     <string name="group_avatar_cd">Groupe</string>
     <string name="action_call">Appeler</string>
     <string name="conversations_search_hint">Rechercher un numéro, un contact, un message…</string>
+    <string name="conversations_section_pinned">Épinglés</string>
+    <string name="conversations_section_chats">Chats</string>
+    <string name="conversations_search_short">Rechercher</string>
     <string name="conversations_no_match">Aucune conversation correspondante.</string>
     <string name="thread_create_contact">Créer un contact</string>
     <string name="thread_update_contact">Mettre à jour un contact</string>

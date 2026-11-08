@@ -10,8 +10,10 @@ class AppSettingsTest {
         val s = AppSettings()
         // Notifications enabled by default but content preview can be capped
         assertThat(s.notifications.enabled).isTrue()
-        // Security: lock disabled out-of-the-box (user has to enable) but FLAG_SECURE on
-        assertThat(s.security.flagSecure).isTrue()
+        // Security: lock disabled out-of-the-box (user has to enable) and FLAG_SECURE
+        // off — feedback round 4 (2026-11-07), Kristin's request: fresh installs can
+        // take screenshots out of the box; the toggle in Settings turns it back on.
+        assertThat(s.security.flagSecure).isFalse()
         // Vault locks on leave by default
         assertThat(s.security.lockVaultOnLeave).isTrue()
         // Sending: delivery reports on by default; no confirm-before-send dialog

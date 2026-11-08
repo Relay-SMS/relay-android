@@ -121,9 +121,13 @@ class SettingsResetGuardsTest {
 
     @Test
     fun `resetting the preferences keeps the lock and the vault PIN armed`() = runTest(dispatcher) {
+        // Feedback round 4 — `ThemeMode.DARK_TECH` was removed (Settings offers System,
+        // Light and Dark only); DARK is the non-default theme value here now. The theme
+        // choice itself is incidental to this test — it just needs a non-default value
+        // to prove the reset restores the comfort defaults.
         stored = AppSettings().let {
             it.copy(
-                appearance = it.appearance.copy(themeMode = ThemeMode.DARK_TECH),
+                appearance = it.appearance.copy(themeMode = ThemeMode.DARK),
                 security = it.security.copy(
                     lockMode = LockMode.PIN,
                     vaultPinEnabled = true,
@@ -145,8 +149,10 @@ class SettingsResetGuardsTest {
     fun `resetting the preferences still restores the comfort defaults`() = runTest(dispatcher) {
         // Le pendant du test precedent : preserver la securite ne doit pas vider le bouton de sa
         // fonction. Sans cette assertion, un `resetAll` devenu no-op passerait la premiere.
+        // (Feedback round 4 — was `ThemeMode.DARK_TECH`, removed; DARK is the
+        // non-default theme value here now, see the test above.)
         stored = AppSettings().let {
-            it.copy(appearance = it.appearance.copy(themeMode = ThemeMode.DARK_TECH))
+            it.copy(appearance = it.appearance.copy(themeMode = ThemeMode.DARK))
         }
 
         viewModel().resetAll()

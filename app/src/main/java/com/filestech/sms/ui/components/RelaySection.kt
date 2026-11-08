@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.ui.theme.RelayText
 import java.util.Locale
@@ -98,7 +99,7 @@ fun RelayDivider(modifier: Modifier = Modifier) {
 }
 
 /**
- * One 56dp row of a grouped list: optional leading glyph (22dp, blue, supplied by the
+ * One 56dp row of a grouped list: optional leading glyph (22dp, supplied by the
  * caller), a 16sp/400 title with an optional 13sp secondary subtitle, and an optional
  * trailing slot (chevron, switch, value). Pass [onClick] to make the whole row tappable;
  * without it the row is static. Pass [titleColor] to tint the title — the danger-zone rows
@@ -106,13 +107,17 @@ fun RelayDivider(modifier: Modifier = Modifier) {
  * it draws a [RelayDivider] above the row so rows read as separate entries without a
  * full-bleed line. The first row of a card must leave it off — including when it is
  * only first because the rows above it are hidden (e.g. in a decoy session), so call
- * sites with conditional rows above compute it instead of hardcoding it.
+ * sites with conditional rows above compute it instead of hardcoding it. Pass
+ * [subtitleTopPadding] to open a gap between the title and the subtitle; it defaults
+ * to 0 so the other screens using this row (About, Backup, Emergency Setup, Safety
+ * Call Setup) are untouched — only the Settings rows ask for the gap.
  */
 @Composable
 fun RelayRow(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    subtitleTopPadding: Dp = 0.dp,
     onClick: (() -> Unit)? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -145,6 +150,7 @@ fun RelayRow(
                         text = subtitle,
                         style = RelayText.Timestamp,
                         color = cs.onSurfaceVariant,
+                        modifier = Modifier.padding(top = subtitleTopPadding),
                     )
                 }
             }

@@ -19,17 +19,17 @@ fun SmsTechTheme(
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
-    // Two fixed schemes only: Light and one Dark (`#1B1B1B`). The DarkTech mode, the
-    // dynamic-colours toggle and the AMOLED true-black toggle still exist in Settings,
-    // but they resolve onto these two schemes — DarkTech picks the same Dark scheme,
-    // and dynamic colours / true black no longer re-derive the palette from the
-    // wallpaper. The options are kept (and their stored values untouched) so a later
-    // pass can refresh or remove them without a settings migration.
+    // Two fixed schemes only: Light and one Dark (`#1B1B1B`). The dynamic-colours
+    // toggle and the AMOLED true-black toggle still exist in Settings, but they
+    // resolve onto these two schemes — dynamic colours / true black no longer
+    // re-derive the palette from the wallpaper. The options are kept (and their
+    // stored values untouched) so a later pass can refresh or remove them without
+    // a settings migration. (The DarkTech theme mode was removed in feedback
+    // round 4; a stored `DARK_TECH` value falls back to System at read time.)
     val useDark = when (appearance.themeMode) {
         ThemeMode.SYSTEM -> systemDark
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
-        ThemeMode.DARK_TECH -> true
     }
     val baseScheme: ColorScheme = if (useDark) darkScheme() else lightScheme()
 

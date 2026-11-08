@@ -385,30 +385,10 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Spacer(Modifier.size(16.dp))
-
-            // Identity card at the top of the page, as in the grouped-list reference:
-            // app name over the store title. No section label above it — it is the
-            // page header, not a settings group.
-            RelayCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.app_name),
-                        style = RelayText.ThreadTitle,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_app_subtitle),
-                        style = RelayText.Timestamp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
+            // Feedback round 4 (2026-11-07) — the identity card that used to sit here
+            // is removed: the page starts directly with the first section, whose
+            // header already carries the normal 24dp top spacing. `settings_app_subtitle`
+            // stays in strings.xml (unused now) — strings are never deleted.
             RelaySection(
                 title = stringResource(R.string.settings_section_appearance),
             ) {
@@ -872,7 +852,10 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.Outlined.Sms,
                             contentDescription = null,
-                            tint = RelayColors.Blue,
+                            // Feedback round 4 — row icons follow the theme's on-surface
+                            // colour (white in dark mode, black in light) instead of the
+                            // brand blue, which was hard to see in dark mode.
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(22.dp),
                         )
                         Column(modifier = Modifier.weight(1f)) {
@@ -889,6 +872,9 @@ fun SettingsScreen(
                                 },
                                 style = RelayText.Timestamp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                // Feedback round 4 — a little gap between the row title
+                                // and its description line (same 2dp as [RelayRow]).
+                                modifier = Modifier.padding(top = 2.dp),
                             )
                         }
                     }
@@ -1995,7 +1981,10 @@ private fun ToggleRow(
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
-                    tint = RelayColors.Blue,
+                    // Feedback round 4 — row icons follow the theme's on-surface colour
+                    // (white in dark mode, black in light) instead of the brand blue,
+                    // which was hard to see in dark mode.
+                    tint = cs.onSurface,
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -2006,6 +1995,9 @@ private fun ToggleRow(
                         description,
                         style = RelayText.Timestamp,
                         color = cs.onSurfaceVariant,
+                        // Feedback round 4 — a little gap between the row title and its
+                        // description line (same 2dp as [RelayRow]).
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }
@@ -2028,13 +2020,17 @@ private fun NavigationRow(
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     dividerAbove: Boolean = false,
 ) {
-    // One grouped-list row: 22dp blue leading glyph, 16sp/400 title, optional 13sp
-    // secondary description, trailing chevron. The danger-zone row renders its title in
-    // the error red instead. Pass [dividerAbove] for every row but the first of a card
-    // (see [RelayRow]).
+    // One grouped-list row: 22dp leading glyph in the theme's on-surface colour
+    // (feedback round 4 — the brand blue was hard to see in dark mode), 16sp/400
+    // title, optional 13sp secondary description, trailing chevron. The danger-zone
+    // row renders its title in the error red instead. Pass [dividerAbove] for every
+    // row but the first of a card (see [RelayRow]).
     RelayRow(
         title = title,
         subtitle = description,
+        // Feedback round 4 — a little gap between the row title and its description
+        // line (same 2dp as [ToggleRow]).
+        subtitleTopPadding = 2.dp,
         onClick = onClick,
         dividerAbove = dividerAbove,
         leadingIcon = if (leadingIcon != null) {
@@ -2042,7 +2038,7 @@ private fun NavigationRow(
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
-                    tint = RelayColors.Blue,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -2062,14 +2058,18 @@ private fun NavigationRow(
 }
 
 /**
- * Visual theme picker: a horizontal row of four phone-shaped swatches, each rendering a tiny
+ * Visual theme picker: a horizontal row of three phone-shaped swatches, each rendering a tiny
  * mock of the conversation list under the corresponding theme (background, accent strip, two
  * message-bubble bars). The active swatch is wrapped in a primary-colored ring; tapping any
  * swatch commits the selection immediately.
  *
  * Beats both the previous radio list and the dropdown attempt: the user sees the actual look
- * of the theme before committing, and the four-up layout makes the choice scannable at a glance
+ * of the theme before committing, and the three-up layout makes the choice scannable at a glance
  * (no menu to open, no scrolling).
+ *
+ * Feedback round 4 (2026-11-07) — the "Dark Tech" swatch is removed: Settings offers
+ * System, Light and Dark only. A stored `DARK_TECH` value falls back to System at read
+ * time (`SettingsRepository.enumOr`), so no migration is needed.
  */
 @Composable
 private fun ThemeSwatchPicker(
@@ -2080,7 +2080,6 @@ private fun ThemeSwatchPicker(
         com.filestech.sms.domain.settings.ThemeMode.SYSTEM to stringResource(R.string.settings_theme_system),
         com.filestech.sms.domain.settings.ThemeMode.LIGHT to stringResource(R.string.settings_theme_light),
         com.filestech.sms.domain.settings.ThemeMode.DARK to stringResource(R.string.settings_theme_dark),
-        com.filestech.sms.domain.settings.ThemeMode.DARK_TECH to stringResource(R.string.settings_theme_dark_tech),
     )
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2093,14 +2092,6 @@ private fun ThemeSwatchPicker(
                     modifier = Modifier.weight(1f),
                 )
             }
-        }
-        if (current == com.filestech.sms.domain.settings.ThemeMode.DARK_TECH) {
-            Spacer(Modifier.size(10.dp))
-            Text(
-                text = stringResource(R.string.settings_theme_dark_tech_desc),
-                style = RelayText.Timestamp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -2224,12 +2215,6 @@ private fun swatchPalette(mode: com.filestech.sms.domain.settings.ThemeMode): Sw
             accent = Color(0xFF82B1FF),
             incomingBubble = Color(0xFF2A2E36),
             outgoingBubble = Color(0xFF3D6FE0),
-        )
-        com.filestech.sms.domain.settings.ThemeMode.DARK_TECH -> SwatchPalette(
-            background = Color(0xFF050505),
-            accent = Color(0xFF00E5FF),
-            incomingBubble = Color(0xFF111418),
-            outgoingBubble = Color(0xFFE040FB),
         )
     }
 

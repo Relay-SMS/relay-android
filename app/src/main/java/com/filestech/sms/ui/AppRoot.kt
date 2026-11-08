@@ -1,8 +1,11 @@
 package com.filestech.sms.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
@@ -313,6 +316,20 @@ fun AppRoot() {
     // deux ecrans se perd completement sans animation, et 80 ms suffisent a la preserver.
     val fonduEntrant = fadeIn(animationSpec = tween(NAV_TRANSITION_MS))
     val fonduSortant = fadeOut(animationSpec = tween(NAV_TRANSITION_MS))
+    // Round 4 — the thread slides in from the right when a conversation opens
+    // and slides back out to the right on back, like other messaging apps.
+    // Scoped to the Thread destination only (see `composable<Thread>` below):
+    // every other destination keeps the 80 ms fade above. The round-3
+    // smooth-open gating (the list stays hidden until scrolled to the bottom)
+    // lives inside ThreadScreen and is untouched — the slide animates the whole
+    // destination around it. 300 ms FastOutSlowIn is the Material 3 standard
+    // for screen transitions.
+    val glissementEntrant = slideInHorizontally(
+        animationSpec = tween(THREAD_TRANSITION_MS, easing = FastOutSlowInEasing),
+    ) { it }
+    val glissementSortant = slideOutHorizontally(
+        animationSpec = tween(THREAD_TRANSITION_MS, easing = FastOutSlowInEasing),
+    ) { it }
     NavHost(
         navController = nav,
         startDestination = Conversations(),
@@ -422,7 +439,14 @@ fun AppRoot() {
                 onUnlocked = { nav.popBackStack(route = Lock, inclusive = true) },
             )
         }
-        composable<Thread> { backStackEntry ->
+        composable<Thread>(
+            // Round 4 — slide over from the right on open, back out to the right
+            // on back. Only `enter` / `popExit` are overridden: leaving the thread
+            // forward (e.g. to the media gallery) and coming back to it keep the
+            // NavHost-level fade, so the change stays scoped to open/back.
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) { backStackEntry ->
             val args = backStackEntry.toRoute<Thread>()
             ThreadScreen(
                 conversationId = args.conversationId,
@@ -607,3 +631,16 @@ private fun SafetyCallAckOverlay(
  * retour, sur un appareil reel.
  */
 private const val NAV_TRANSITION_MS = 80
+
+/**
+ * Round 4 — duration of the Thread destination's slide (open / back), in milliseconds.
+ * 300 ms with FastOutSlowIn is the Material 3 standard for screen transitions (it is
+ * also the duration of the bottom-sheet animation spec in material3 1.4.0). Deliberately
+ * NOT the 80 ms of [NAV_TRANSITION_MS]: a slide that fast would read as a glitch, not a
+ * transition.
+ *
+ * Trade-off, cf. the v1.27.12 note above: the screen that comes back ignores gestures
+ * while a transition runs, so the first swipe on the list right after going back may be
+ * ignored for up to ~300 ms. Re-check the immediate swipe after back on a real device.
+ */
+private const val THREAD_TRANSITION_MS = 300

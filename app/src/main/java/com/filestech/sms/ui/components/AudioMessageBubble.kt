@@ -89,6 +89,8 @@ fun AudioMessageBubble(
     onToggleStar: (() -> Unit)? = null,
     repliedToPreview: ReplyQuotePreview? = null,
     showTimestamp: Boolean = false,
+    // Feedback round 4 — statut découplé de l'heure (voir [MessageBubble]).
+    showStatus: Boolean = false,
     /** v1.3.3 #7 — étiquette d'expéditeur ; voir [MessageBubble] pour la sémantique. */
     senderLabel: String? = null,
 ) {
@@ -318,12 +320,15 @@ fun AudioMessageBubble(
                         }
                     }
                     // Relay — heure (+ statut sortant) en petit, en bas à droite,
-                    // À L'INTÉRIEUR de la bulle.
+                    // À L'INTÉRIEUR de la bulle. Feedback round 4 — la ligne ne
+                    // s'étire plus sur toute la largeur : elle se cale à droite
+                    // dans la bulle (`align(End)`).
                     BubbleTimestamp(
                         message = message,
                         showTimestamp = showTimestamp,
+                        showStatus = showStatus,
                         textColor = labelColor,
-                        modifier = Modifier.padding(top = 2.dp, end = 4.dp),
+                        modifier = Modifier.padding(top = 2.dp, end = 4.dp).align(Alignment.End),
                     )
                   } // ferme Column senderLabel + Row + horodatage
                 }
