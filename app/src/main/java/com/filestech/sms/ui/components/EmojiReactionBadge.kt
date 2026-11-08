@@ -100,9 +100,16 @@ fun BubbleReactionOverlay(
             bubbleColor = bubbleColor,
             modifier = Modifier
                 .align(if (isOutgoing) Alignment.BottomStart else Alignment.BottomEnd)
+                // Feedback round 5 — the badge hung 12dp below the edge, so it
+                // overlapped the bubble's bottom by its height minus 12dp
+                // (~15dp: the 10dp bottom padding plus 5dp of the text or the
+                // timestamp above it, measured on the dark-mode screenshot).
+                // At 20dp it overlaps only ~7dp, inside the bottom padding,
+                // and clears both the text and the time while still
+                // straddling the edge.
                 .offset(
                     x = if (isOutgoing) (-8).dp else 8.dp,
-                    y = 12.dp,
+                    y = 20.dp,
                 ),
         )
     }

@@ -34,6 +34,13 @@ data class Conversation(
     val blocked: Boolean = false,
     /** v1.28.3 — nom choisi par l'utilisateur pour un groupe, local au téléphone. Cf. [GroupName]. */
     val customName: String? = null,
+    /**
+     * Feedback round 5 — message épinglé du fil (un seul par conversation)
+     * et date de l'épinglage (epoch ms, affichée par la bannière).
+     * `null` = rien d'épinglé.
+     */
+    val pinnedMessageId: Long? = null,
+    val pinnedMessageAt: Long? = null,
 ) {
     val isGroup: Boolean get() = addresses.size > 1
 

@@ -38,6 +38,8 @@
     <!-- v1.3.11 (F3) — `action_copy` / `action_forward` already defined below (line 91-92);
          only the toast string is new. -->
     <string name="toast_copied">Message copied</string>
+    <string name="toast_code_copied">Code copied</string>
+    <string name="otp_copy_code">Copy verification code</string>
     <!-- v1.3.11 (F4) — phone number actions dialog -->
     <string name="phone_action_subtitle">Choose an action for this phone number.</string>
     <string name="phone_action_call">Call</string>
@@ -390,7 +392,7 @@
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_dark_tech">Dark Tech</string>
     <string name="settings_theme_dark_tech_desc">Developer-friendly dark palette. Overrides dynamic colors and AMOLED.</string>
-    <string name="settings_dynamic_colors">Dynamic colors (Android 12+)</string>
+    <string name="settings_dynamic_colors">Dynamic colors</string>
     <string name="settings_amoled">AMOLED true black</string>
     <string name="settings_text_scale">Message text size</string>
     <string name="settings_text_scale_desc">%1$s · messages, typing field and conversation list. Comes on top of Android\'s font size.</string>
@@ -609,10 +611,6 @@
     <string name="emergency_setup_contacts_cta">Manage contacts</string>
     <string name="action_edit">Edit</string>
     <string name="snack_generic_error">Something went wrong.</string>
-    <string name="reaction_send_confirm_title">Send reaction?</string>
-    <string name="reaction_send_confirm_body">An SMS containing only this emoji will be sent to your recipient. Counts as a regular SMS (plan rate). You can disable this in Settings → Sending.</string>
-    <string name="reaction_send_confirm_never_ask">Don\'t ask again, send directly</string>
-    <string name="reaction_send_confirm_fallback_recipient">this contact</string>
     <string name="attachment_image_label">Image</string>
     <string name="attachment_video_label">Video</string>
     <string name="media_gallery_title">Photos and videos</string>
@@ -678,7 +676,7 @@
     <string name="settings_notif_style_banner_hint">No pop-up, no sound. Just an icon in the shade.</string>
     <string name="settings_notif_style_silent">Silent</string>
     <string name="settings_notif_style_silent_hint">Routed to a low-importance channel. The system masks sound and the heads-up pop-up.</string>
-    <string name="settings_notif_open_system">Open system notification settings</string>
+    <string name="settings_notif_open_system">Notification settings</string>
     <string name="settings_notif_open_system_desc">Check or fix permissions, channels, and sound at the OS level.</string>
     <string name="notifications_off_title">Notifications are off</string>
     <string name="notifications_off_fix">Allow in Android settings</string>
@@ -731,10 +729,11 @@
     <string name="about_section_features">Features</string>
     <string name="about_section_author">Author</string>
     <string name="about_section_help">Quick help</string>
+    <string name="help_title">Help</string>
     <string name="about_section_links">Links</string>
     <string name="about_check_updates">View updates</string>
     <string name="about_privacy_headline">100% private — zero tracking</string>
-    <string name="about_author_role">Developer</string>
+    <string name="about_author_role">Author of SMS Tech</string>
     <!-- v1.25.3 (audit H20) — permission rationales were hardcoded in English. The permission
          names themselves stay untranslated: they are the Android identifiers, verbatim. -->
     <string name="about_perm_sms">Required for any SMS app.</string>
@@ -750,7 +749,8 @@
     <string name="about_permissions_title">Permissions we use</string>
     <string name="about_security_title">Security &amp; limits</string>
     <string name="about_security_body">SMS and MMS travel unencrypted across the carrier network — this is a protocol limitation, not a choice. SMS Relay only protects what is stored on your device. For end-to-end encrypted messaging, use Matrix.</string>
-    <string name="about_credits_body">Created by %1$s. UI inspired by Material 3 motion principles. Built with Kotlin, Compose, Hilt, Room and SQLCipher.</string>
+    <string name="about_credits_body">Based on SMS Tech by %1$s. Built with Kotlin, Compose, Hilt, Room and SQLCipher.</string>
+    <string name="about_ui_copyright">Relay UI © 2026 Relay Messaging</string>
     <string name="about_legal_body">© %1$s %2$s. Released under the Apache License 2.0.</string>
     <string name="about_source_code">Source code</string>
     <string name="about_report_issue">Report an issue</string>
@@ -781,6 +781,8 @@
     <!-- Notification actions -->
     <string name="notif_reply_label">Reply</string>
     <string name="notif_mark_read_label">Mark as read</string>
+    <string name="notif_copy_code_label">Copy code</string>
+    <string name="notif_code_copied">Code copied</string>
     <string name="notif_preview_hidden_content">New message</string>
 
     <!-- PDF export -->
@@ -876,6 +878,11 @@
     <string name="thread_schedule_empty_body">Type a message before scheduling</string>
     <string name="thread_schedule_success">Message scheduled</string>
     <string name="thread_schedule_failed">Failed to schedule the message</string>
+    <string name="thread_search_hint">Search in this conversation</string>
+    <string name="thread_search_match_count">%1$d of %2$d</string>
+    <string name="thread_search_no_results">No results</string>
+    <string name="thread_search_previous">Previous match</string>
+    <string name="thread_search_next">Next match</string>
 
     <!-- v1.14.9 audit I18N-M3 — AboutScreen strings extracted from hardcoded FR to support EN locale. -->
 
@@ -982,6 +989,11 @@
     <!-- v1.24.0 sliding window: head-of-thread control to widen the loaded window -->
     <string name="thread_load_older">Load older messages</string>
     <string name="thread_load_older_remaining">Load older messages (%1$d)</string>
+    <string name="thread_loading_older">Loading messages</string>
+    <string name="thread_pinned_label">Pinned · %1$s at %2$s</string>
+    <string name="thread_pinned_voice">Voice message</string>
+    <string name="thread_pinned_attachment">Attachment</string>
+    <string name="thread_pinned_latest">Latest</string>
     <!-- v1.24.0 : ecran de recuperation quand la base ne peut pas etre ouverte -->
     <string name="db_recovery_title">SMS Relay cannot open its database</string>
     <string name="db_recovery_body">Your messages are still on this device — Android keeps its own copy, and SMS Relay has not deleted anything. Only SMS Relay’s own encrypted database is unreadable right now.</string>

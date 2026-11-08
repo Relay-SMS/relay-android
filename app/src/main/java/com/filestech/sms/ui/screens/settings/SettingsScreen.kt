@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
@@ -136,6 +137,9 @@ import java.util.Date
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenAbout: () -> Unit,
+    // Feedback round 5 — Help lives on its own screen now (was the
+    // "Quick help" section of About).
+    onOpenHelp: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenMigration: () -> Unit,
     onOpenBlocked: () -> Unit,
@@ -391,6 +395,7 @@ fun SettingsScreen(
             // stays in strings.xml (unused now) — strings are never deleted.
             RelaySection(
                 title = stringResource(R.string.settings_section_appearance),
+                materialHeader = true,
             ) {
                 ThemeSwatchPicker(
                     current = state.appearance.themeMode,
@@ -414,40 +419,14 @@ fun SettingsScreen(
                 NavigationRow(
                     title = stringResource(R.string.settings_text_scale),
                     leadingIcon = Icons.Outlined.FormatSize,
-                    description = stringResource(
-                        R.string.settings_text_scale_desc,
-                        textScaleLabel(state.appearance.textScale),
-                    ),
                     onClick = { textScalePickerOpen = true },
                     dividerAbove = true,
                 )
             }
 
-            // v1.28.12 — LA LANGUE DE L'APPLICATION, enfin atteignable.
-            //
-            // `settings_section_locale` et `settings_language` existaient dans les trois langues
-            // depuis longtemps et n'étaient branchées NULLE PART : des chaînes traduites que
-            // personne ne pouvait lire. Le sélecteur de langue par application existe désormais
-            // (`res/xml/locales_config.xml`), mais il vit dans les réglages d'Android, où
-            // personne ne va le chercher — le déclarer sans y mener, c'est l'offrir à moitié.
-            //
-            // Réservé à Android 13+ : en dessous, la page n'existe pas et l'intent n'ouvrirait
-            // rien. Une entrée qui ne fait rien est pire que pas d'entrée.
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                RelaySection(
-                    title = stringResource(R.string.settings_section_locale),
-                ) {
-                    NavigationRow(
-                        title = stringResource(R.string.settings_language),
-                        leadingIcon = Icons.Outlined.Language,
-                        description = stringResource(R.string.settings_language_desc),
-                        onClick = { ouvrirLaLangueDeLApplication(ctx) },
-                    )
-                }
-            }
-
             RelaySection(
                 title = stringResource(R.string.settings_section_conversations),
+                materialHeader = true,
             ) {
                 ToggleRow(
                     title = stringResource(R.string.settings_show_avatars),
@@ -468,6 +447,7 @@ fun SettingsScreen(
 
             RelaySection(
                 title = stringResource(R.string.settings_section_sending),
+                materialHeader = true,
             ) {
                 ToggleRow(
                     title = stringResource(R.string.settings_delivery_reports),
@@ -505,13 +485,9 @@ fun SettingsScreen(
                 // au format international (E.164) avant l'envoi. "Auto" = pays de la SIM.
                 // Indispensable pour envoyer des numéros nationaux d'un pays depuis une SIM
                 // étrangère (ex. 06… français depuis une SIM luxembourgeoise).
-                val defaultRegionLabel = state.sending.defaultRegionIso
-                    ?.let { iso -> "${isoToFlagEmoji(iso)} ${regionDisplayName(iso)}" }
-                    ?: stringResource(R.string.settings_default_region_auto)
                 NavigationRow(
                     title = stringResource(R.string.settings_default_region_title),
                     leadingIcon = Icons.Outlined.Public,
-                    description = defaultRegionLabel,
                     onClick = { defaultRegionPickerOpen = true },
                     dividerAbove = true,
                 )
@@ -545,22 +521,9 @@ fun SettingsScreen(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically(),
                 ) {
-                    val reactionFormatLabel = when (state.sending.reactionFormat) {
-                        com.filestech.sms.domain.model.ReactionFormat.IOS_TAPBACK ->
-                            stringResource(R.string.settings_reaction_format_ios)
-                        com.filestech.sms.domain.model.ReactionFormat.READABLE_FR ->
-                            stringResource(R.string.settings_reaction_format_fr)
-                        com.filestech.sms.domain.model.ReactionFormat.TAPBACK_EN ->
-                            stringResource(R.string.settings_reaction_format_en)
-                        com.filestech.sms.domain.model.ReactionFormat.EMOJI_ONLY ->
-                            stringResource(R.string.settings_reaction_format_emoji)
-                        com.filestech.sms.domain.model.ReactionFormat.EMOJI_WITH_QUOTE ->
-                            stringResource(R.string.settings_reaction_format_emoji_quote)
-                    }
                     NavigationRow(
                         title = stringResource(R.string.settings_reaction_format_title),
                         leadingIcon = Icons.Outlined.ChatBubbleOutline,
-                        description = reactionFormatLabel,
                         onClick = { reactionFormatPickerOpen = true },
                         dividerAbove = true,
                     )
@@ -627,6 +590,7 @@ fun SettingsScreen(
             if (!isPanicDecoy) {
                 RelaySection(
                     title = stringResource(R.string.settings_section_safety_call),
+                    materialHeader = true,
                 ) {
                     val safetyCall = state.security.safetyCall
                     // Hissés au niveau de la composition : les appeler dans le lambda déclencherait
@@ -739,6 +703,7 @@ fun SettingsScreen(
 
             RelaySection(
                 title = stringResource(R.string.settings_section_blocking),
+                materialHeader = true,
             ) {
                 // v1.28.13 (balayage des permissions refusées, MR F-Droid !38458) — sans accès aux
                 // contacts, `IncomingBlockPolicy` ne peut savoir qui est inconnu et laisse TOUT
@@ -786,11 +751,11 @@ fun SettingsScreen(
             // que les conversations — en leurre comme coffre fermé, la liste est vide.
             RelaySection(
                 title = stringResource(R.string.settings_section_scheduled),
+                materialHeader = true,
             ) {
                 NavigationRow(
                     title = stringResource(R.string.settings_scheduled_messages),
                     leadingIcon = Icons.Outlined.Schedule,
-                    description = stringResource(R.string.settings_scheduled_messages_desc),
                     onClick = onOpenScheduledMessages,
                 )
             }
@@ -810,6 +775,7 @@ fun SettingsScreen(
             if (!isPanicDecoy) {
                 RelaySection(
                     title = stringResource(R.string.settings_section_backup),
+                    materialHeader = true,
                 ) {
                     NavigationRow(
                         title = stringResource(R.string.settings_backup_now),
@@ -833,6 +799,7 @@ fun SettingsScreen(
 
             RelaySection(
                 title = stringResource(R.string.settings_section_advanced),
+                materialHeader = true,
             ) {
                 // v1.27.12 — le bouton passe SOUS la description au lieu d'occuper le
                 // `trailingContent`. Meme defaut que le bandeau de [ConversationsScreen] et meme
@@ -845,6 +812,10 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
+                    // Feedback round 5 — the glyph centres on the title line,
+                    // not on the whole row (same nesting as [ToggleRow] and
+                    // [RelayRow]): the icon and the title share an inner row,
+                    // and the description starts under the title text.
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -858,26 +829,25 @@ fun SettingsScreen(
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(22.dp),
                         )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.settings_default_sms_app),
-                                style = RelayText.MessageBody,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = if (estParDefaut) {
-                                    stringResource(R.string.settings_is_default)
-                                } else {
-                                    stringResource(R.string.error_not_default_app)
-                                },
-                                style = RelayText.Timestamp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                // Feedback round 4 — a little gap between the row title
-                                // and its description line (same 2dp as [RelayRow]).
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.settings_default_sms_app),
+                            style = RelayText.MessageBody,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
+                    Text(
+                        text = if (estParDefaut) {
+                            stringResource(R.string.settings_is_default)
+                        } else {
+                            stringResource(R.string.error_not_default_app)
+                        },
+                        style = RelayText.Timestamp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // Feedback round 4 — a little gap between the row title
+                        // and its description line (same 2dp as [RelayRow]).
+                        modifier = Modifier.padding(start = 34.dp, top = 2.dp),
+                    )
                     if (!estParDefaut) {
                         Spacer(Modifier.size(10.dp))
                         RelayPrimaryButton(
@@ -957,13 +927,33 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.size(24.dp))
-            // About lives outside the section stack — it's a meta link, not a settings group —
-            // but it still sits in a card, like every other row on this page.
+            // Feedback round 5 — the bottom card holds the meta rows, in
+            // order: App Language (Android 13+ only), Help, About. The
+            // language row moved here from its own section up the page, and
+            // Help moved here from the About screen.
             RelayCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                // Réservé à Android 13+ : en dessous, la page de langue
+                // n'existe pas et l'intent n'ouvrirait rien.
+                val languageShown =
+                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+                if (languageShown) {
+                    NavigationRow(
+                        title = stringResource(R.string.settings_language),
+                        leadingIcon = Icons.Outlined.Language,
+                        onClick = { ouvrirLaLangueDeLApplication(ctx) },
+                    )
+                }
+                NavigationRow(
+                    title = stringResource(R.string.help_title),
+                    leadingIcon = Icons.Outlined.HelpOutline,
+                    onClick = onOpenHelp,
+                    dividerAbove = languageShown,
+                )
                 NavigationRow(
                     title = stringResource(R.string.about_title),
                     leadingIcon = Icons.Outlined.Info,
                     onClick = onOpenAbout,
+                    dividerAbove = true,
                 )
             }
             Spacer(Modifier.size(24.dp))
@@ -1977,19 +1967,35 @@ private fun ToggleRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (leadingIcon != null) {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    // Feedback round 4 — row icons follow the theme's on-surface colour
-                    // (white in dark mode, black in light) instead of the brand blue,
-                    // which was hard to see in dark mode.
-                    tint = cs.onSurface,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
+            // Feedback round 5 — the glyph centres on the title line, not
+            // on the whole row: the icon and the title share an inner row,
+            // so on a two-line row the icon sits next to the title (see
+            // [RelayRow]); the switch stays centred on the row. The
+            // description starts under the title text, past the 22dp glyph
+            // + 12dp gap.
             Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(title, style = RelayText.MessageBody, color = cs.onSurface)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (leadingIcon != null) {
+                        Icon(
+                            imageVector = leadingIcon,
+                            contentDescription = null,
+                            // Feedback round 4 — row icons follow the theme's on-surface colour
+                            // (white in dark mode, black in light) instead of the brand blue,
+                            // which was hard to see in dark mode.
+                            tint = cs.onSurface,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Text(
+                        title,
+                        style = RelayText.MessageBody,
+                        color = cs.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 if (description != null) {
                     Text(
                         description,
@@ -1997,7 +2003,10 @@ private fun ToggleRow(
                         color = cs.onSurfaceVariant,
                         // Feedback round 4 — a little gap between the row title and its
                         // description line (same 2dp as [RelayRow]).
-                        modifier = Modifier.padding(top = 2.dp),
+                        modifier = Modifier.padding(
+                            start = if (leadingIcon != null) 34.dp else 0.dp,
+                            top = 2.dp,
+                        ),
                     )
                 }
             }
@@ -2033,6 +2042,9 @@ private fun NavigationRow(
         subtitleTopPadding = 2.dp,
         onClick = onClick,
         dividerAbove = dividerAbove,
+        // Feedback round 5 — the glyph centres on the title line, not on
+        // the whole row (see [RelayRow]).
+        leadingIconTopAligned = true,
         leadingIcon = if (leadingIcon != null) {
             {
                 Icon(
@@ -2323,8 +2335,7 @@ private fun SignatureRow(current: String?, onChange: (String?) -> Unit, dividerA
     NavigationRow(
         title = stringResource(R.string.settings_signature),
         leadingIcon = Icons.Outlined.Edit,
-        description = current?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.settings_signature_none),
+
         onClick = { dialogOpen = true },
         dividerAbove = dividerAbove,
     )
@@ -2382,8 +2393,7 @@ private fun MyNumberRow(current: String?, onChange: (String?) -> Unit, dividerAb
     var dialogOpen by remember { mutableStateOf(false) }
     NavigationRow(
         title = stringResource(R.string.settings_my_number),
-        description = current?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.settings_my_number_not_set),
+
         leadingIcon = Icons.Outlined.PhoneAndroid,
         onClick = { dialogOpen = true },
         dividerAbove = dividerAbove,
@@ -3367,6 +3377,7 @@ private fun NotificationsSection(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     RelaySection(
         title = stringResource(R.string.settings_section_notifications),
+        materialHeader = true,
     ) {
         ToggleRow(
             title = stringResource(R.string.settings_notifications_enabled),
@@ -3393,38 +3404,15 @@ private fun NotificationsSection(
         )
         // v1.28.3 (audit global D-01) — le toggle « Vibrer » est retiré : aucun code ne le
         // lisait, la vibration appartient au canal et se règle dans les paramètres système.
-        // v1.8.0 (bug 3 fix HIGH 3a) — expose PreviewMode dans l'UI.
-        // L'option existait en DataStore mais aucun toggle ne l'exposait.
-        // Sous-titre = libellé localisé de la valeur actuelle pour que
-        // l'utilisateur voit du premier coup d'œil son réglage actif.
-        val previewLabel = when (notifications.previewMode) {
-            com.filestech.sms.domain.settings.PreviewMode.ALWAYS ->
-                stringResource(R.string.settings_notif_preview_always)
-            com.filestech.sms.domain.settings.PreviewMode.WHEN_UNLOCKED ->
-                stringResource(R.string.settings_notif_preview_unlocked)
-            com.filestech.sms.domain.settings.PreviewMode.NEVER ->
-                stringResource(R.string.settings_notif_preview_never)
-        }
         NavigationRow(
             title = stringResource(R.string.settings_notif_preview),
             leadingIcon = Icons.Outlined.Visibility,
-            description = previewLabel,
             onClick = onOpenPreviewPicker,
             dividerAbove = true,
         )
-        // v1.8.0 (bug 3 fix MEDIUM 3b) — wire NotificationStyle (dead field).
-        val styleLabel = when (notifications.style) {
-            com.filestech.sms.domain.settings.NotificationStyle.HEADS_UP ->
-                stringResource(R.string.settings_notif_style_heads_up)
-            com.filestech.sms.domain.settings.NotificationStyle.BANNER ->
-                stringResource(R.string.settings_notif_style_banner)
-            com.filestech.sms.domain.settings.NotificationStyle.SILENT ->
-                stringResource(R.string.settings_notif_style_silent)
-        }
         NavigationRow(
             title = stringResource(R.string.settings_notif_style),
             leadingIcon = Icons.Outlined.Tune,
-            description = styleLabel,
             onClick = onOpenStylePicker,
             dividerAbove = true,
         )
@@ -3435,7 +3423,6 @@ private fun NotificationsSection(
         NavigationRow(
             title = stringResource(R.string.settings_notif_open_system),
             leadingIcon = Icons.Outlined.Settings,
-            description = stringResource(R.string.settings_notif_open_system_desc),
             // v1.28.13 — même ouverture que la bannière ci-dessus, avec repli sur la fiche.
             onClick = { ouvrirLesNotificationsDeLApplication(ctx) },
             dividerAbove = true,
@@ -3474,6 +3461,7 @@ private fun SecuritySection(
 ) {
     RelaySection(
         title = stringResource(R.string.settings_section_security),
+        materialHeader = true,
     ) {
         // App lock entry — opens the lock-mode picker (None / PIN / Biometric). Subtitle
         // reflects the current state so the user sees at a glance whether the lock is armed.
@@ -3676,6 +3664,7 @@ private fun EmergencySection(
 ) {
     RelaySection(
         title = stringResource(R.string.settings_section_emergency),
+        materialHeader = true,
     ) {
         val emergency = security.emergency
         if (emergency.enabled) {

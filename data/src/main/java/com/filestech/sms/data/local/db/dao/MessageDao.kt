@@ -102,6 +102,64 @@ interface MessageDao {
     )
     fun observeStatsForConversation(conversationId: Long): Flow<ThreadStats>
 
+    /**
+     * Feedback round 5 — full-history thread search: ids of the messages in
+     * [conversationId] whose body contains the (already escaped) LIKE [pattern],
+     * oldest first, over the WHOLE thread — not just the loaded window. `LIKE`
+     * keeps the literal-substring semantics of the thread search (an FTS `MATCH`
+     * would only match whole tokens, so "trad" would miss "trading"). The caller
+     * builds the pattern as `"%" + escapeLikePattern(query) + "%"`; SQLite `LIKE`
+     * is ASCII-only case-insensitive, so an accented query ("café") misses an
+     * all-caps accented body ("CAFÉ") — the UI-side range computation is
+     * Unicode-aware, so a match the SQL finds is always highlighted.
+     *
+     * A `Flow` (not a one-shot suspend): Room re-runs it on table invalidation,
+     * so the match count stays fresh if a matching message arrives mid-search.
+     */
+    @Query(
+        """
+        SELECT id FROM messages
+        WHERE conversation_id = :conversationId
+          AND hidden = 0
+          AND body LIKE :pattern ESCAPE '\'
+        ORDER BY date ASC, id ASC
+        """
+    )
+    fun observeSearchIdsInConversation(conversationId: Long, pattern: String): Flow<List<Long>>
+
+    /**
+     * Feedback round 5 — bounded window ENDING at a message: the [limit] most
+     * recent messages at or before ([anchorDate], [anchorId]), oldest first.
+     * The target message is the LAST row of the window, so the thread lands on it
+     * at the bottom with its preceding messages as context. The keyset predicate
+     * mirrors the tail window's ordering (`date DESC, id DESC`) — the `id`
+     * tie-breaker is not optional, multipart MMS parts share timestamps.
+     *
+     * The caller passes `limit + 1` and drops the oldest row when more arrive:
+     * that is how it knows whether older messages exist beyond the window
+     * (a stats-based `messages.size < total` check would lie near the thread
+     * start — the window can be smaller than the thread while no older message
+     * exists past the anchor).
+     */
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE conversation_id = :conversationId
+              AND hidden = 0
+              AND (date < :anchorDate OR (date = :anchorDate AND id <= :anchorId))
+            ORDER BY date DESC, id DESC
+            LIMIT :limit
+        ) ORDER BY date ASC, id ASC
+        """
+    )
+    fun observeWindowEndingAt(
+        conversationId: Long,
+        anchorDate: Long,
+        anchorId: Long,
+        limit: Int,
+    ): Flow<List<MessageEntity>>
+
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun findById(id: Long): MessageEntity?
 

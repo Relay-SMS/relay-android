@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
@@ -49,8 +50,16 @@ fun RelaySheet(
 @Composable
 private fun RelayDragHandle() {
     val cs = MaterialTheme.colorScheme
+    // Feedback round 5 — restore the 22dp of space ABOVE the handle that the
+    // pre-refresh sheet had: it used ModalBottomSheet's DEFAULT drag handle,
+    // whose vertical padding is 22dp (material3 1.4.0, `DragHandleVerticalPadding`,
+    // same BOM then as now). The refresh's bare 4dp pill had no padding, so
+    // the handle touched the sheet's top edge. Bottom padding stays off: the
+    // 22dp the content carries above its title already covers the gap below
+    // the handle (restored in round 4 from the same source).
     Box(
         modifier = Modifier
+            .padding(top = 22.dp)
             .width(32.dp)
             .height(4.dp)
             .background(cs.outline, RoundedCornerShape(2.dp)),

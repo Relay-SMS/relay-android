@@ -3,13 +3,16 @@ package com.filestech.sms.system.notifications
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.core.app.RemoteInput
+import com.filestech.sms.R
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.usecase.SendSmsUseCase
 import com.filestech.sms.security.AppLockManager
+import com.filestech.sms.ui.security.copyToClipboardSensitive
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -116,6 +119,26 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     ACTION_MARK_READ -> {
                         markReadAndCancelNotifs(address ?: return@launch, conversationIdOuNull)
                     }
+                    // Feedback round 5 — "Copy code" from the notification of an
+                    // incoming message carrying a login code. The code goes to
+                    // the clipboard marked sensitive (no system preview of it,
+                    // cf. [copyToClipboardSensitive]) and a toast confirms — the
+                    // shade has no snackbar. The code is never logged.
+                    // Refused while the app is locked like every other action
+                    // here (the lock check above runs first).
+                    ACTION_COPY_CODE -> {
+                        val code = intent.getStringExtra(EXTRA_CODE)
+                            ?.takeIf { it.isNotBlank() } ?: return@launch
+                        context.copyToClipboardSensitive(
+                            label = "verification code",
+                            text = code,
+                        )
+                        Toast.makeText(
+                            context,
+                            R.string.notif_code_copied,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                     // v1.28.3 — « Renvoyer » depuis la notification d'echec d'envoi.
                     //
                     // Le geste est celui de la bulle rouge dans le fil, et il passe par le MEME
@@ -176,11 +199,17 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val ACTION_REPLY = "com.filestech.sms.action.NOTIF_REPLY"
         const val ACTION_MARK_READ = "com.filestech.sms.action.NOTIF_MARK_READ"
 
+        /** Feedback round 5 — copy a detected login code from the notification. */
+        const val ACTION_COPY_CODE = "com.filestech.sms.action.NOTIF_COPY_CODE"
+
         /** v1.28.3 — relance d'un envoi en echec, depuis sa notification. */
         const val ACTION_RETRY_SEND = "com.filestech.sms.action.NOTIF_RETRY_SEND"
         const val EXTRA_ADDRESS = "extra_address"
         const val EXTRA_MESSAGE_ID = "extra_message_id"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
+
+        /** Feedback round 5 — the detected login code, carried by [ACTION_COPY_CODE]. */
+        const val EXTRA_CODE = "extra_code"
 
         /**
          * v1.28.12 — la CONVERSATION visee, et non son seul expediteur.

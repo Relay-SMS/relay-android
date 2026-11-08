@@ -40,13 +40,26 @@ import java.util.Locale
 fun RelaySection(
     title: String,
     modifier: Modifier = Modifier,
+    /**
+     * Feedback round 5 — current Material 3 section header: `titleSmall`
+     * (14sp/500) in sentence case instead of the 13sp/600 all-caps header.
+     * Opt-in per section: the shared kit keeps the all-caps header by
+     * default, so the other screens using it (About, Backup, Emergency
+     * Setup, Safety Call Setup) are untouched — only Settings and the new
+     * Help screen ask for the Material header.
+     */
+    materialHeader: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     Column(modifier = modifier.padding(horizontal = 16.dp)) {
         Text(
-            text = title.uppercase(Locale.ROOT),
-            style = RelayText.SectionHeader,
+            text = if (materialHeader) title else title.uppercase(Locale.ROOT),
+            style = if (materialHeader) {
+                MaterialTheme.typography.titleSmall
+            } else {
+                RelayText.SectionHeader
+            },
             color = cs.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
         )
@@ -110,7 +123,13 @@ fun RelayDivider(modifier: Modifier = Modifier) {
  * sites with conditional rows above compute it instead of hardcoding it. Pass
  * [subtitleTopPadding] to open a gap between the title and the subtitle; it defaults
  * to 0 so the other screens using this row (About, Backup, Emergency Setup, Safety
- * Call Setup) are untouched — only the Settings rows ask for the gap.
+ * Call Setup) are untouched — only the Settings rows ask for the gap. Pass
+ * [leadingIconTopAligned] to centre the leading glyph on the title line instead of
+ * on the whole row: the icon and the title share an inner row, so on a two-line row
+ * the icon sits next to the title (as in the grouped-list reference, where the icon
+ * is 9dp above the row centre on a two-line row) while on a one-line row it stays
+ * exactly where the centred layout put it. Only the Settings rows ask for it — the
+ * other screens keep the centred icon.
  */
 @Composable
 fun RelayRow(
@@ -123,6 +142,7 @@ fun RelayRow(
     trailing: (@Composable () -> Unit)? = null,
     titleColor: Color? = null,
     dividerAbove: Boolean = false,
+    leadingIconTopAligned: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val rowModifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier
@@ -138,20 +158,51 @@ fun RelayRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            leadingIcon?.invoke()
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = RelayText.MessageBody,
-                    color = titleColor ?: cs.onSurface,
-                )
-                if (subtitle != null) {
+            if (leadingIconTopAligned) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        leadingIcon?.invoke()
+                        Text(
+                            text = title,
+                            style = RelayText.MessageBody,
+                            color = titleColor ?: cs.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            style = RelayText.Timestamp,
+                            color = cs.onSurfaceVariant,
+                            modifier = Modifier.padding(
+                                // The subtitle starts under the title text, past
+                                // the 22dp glyph + 12dp gap (no indent when there
+                                // is no glyph).
+                                start = if (leadingIcon != null) 34.dp else 0.dp,
+                                top = subtitleTopPadding,
+                            ),
+                        )
+                    }
+                }
+            } else {
+                leadingIcon?.invoke()
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = subtitle,
-                        style = RelayText.Timestamp,
-                        color = cs.onSurfaceVariant,
-                        modifier = Modifier.padding(top = subtitleTopPadding),
+                        text = title,
+                        style = RelayText.MessageBody,
+                        color = titleColor ?: cs.onSurface,
                     )
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            style = RelayText.Timestamp,
+                            color = cs.onSurfaceVariant,
+                            modifier = Modifier.padding(top = subtitleTopPadding),
+                        )
+                    }
                 }
             }
             trailing?.invoke()

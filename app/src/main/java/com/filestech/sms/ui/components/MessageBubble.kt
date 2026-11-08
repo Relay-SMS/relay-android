@@ -1,5 +1,6 @@
 package com.filestech.sms.ui.components
 
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,8 +12,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,10 +31,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.domain.otp.OtpCodeDetector
+import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.BrandBlue
 
 /**
@@ -70,14 +85,26 @@ fun MessageBubble(
     onSelectText: (() -> Unit)? = null,
     /** v1.3.11 (F5) — forward the bubble's text body to another conversation. */
     onForward: (() -> Unit)? = null,
-    /** v1.26.1 (audit F2) — bascule « favori » ; l'état est lu sur [message]. */
-    onToggleStar: (() -> Unit)? = null,
+    /**
+     * Feedback round 5 — bascules « favori » / « épingler »
+     * ([BubbleMenuToggles]) ; l'état épinglé est lu sur la conversation
+     * (un seul message épinglé par fil), pas sur [message]. Un seul
+     * paramètre pour les deux bascules : la bulle texte est à la limite
+     * Detekt de 20 paramètres.
+     */
+    toggles: BubbleMenuToggles? = null,
     /**
      * v1.3.11 (F4) — invoked when the user taps a phone number rendered inside the
      * bubble body. Forwarded to [MessageTextWithLinks]; the host (`ThreadScreen`)
      * surfaces a [PhoneActionsDialog] in response.
      */
     onPhoneClick: (String) -> Unit = {},
+    /**
+     * Feedback round 5 — thread search highlight for this bubble's body: every
+     * occurrence of the query, and whether the search is currently sitting on
+     * this message. Empty by default: no search, no highlight.
+     */
+    searchHighlight: SearchHighlight = SearchHighlight(),
     repliedToPreview: ReplyQuotePreview? = null,
     /**
      * v1.3.3 #7 — étiquette d'expéditeur intégrée dans la bulle ("Vous" pour les
@@ -106,6 +133,14 @@ fun MessageBubble(
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
+
+    // Feedback round 5 — login/authentication code in an incoming message,
+    // for the copy pill below. Pure regexes on the body, remembered per body
+    // so a busy thread does not re-scan on every recomposition. Outgoing
+    // messages never carry a pill — a code the user sent needs no copying.
+    val otpCode: String? = remember(message.body, isOut) {
+        if (isOut) null else OtpCodeDetector.detect(message.body)
+    }
 
     // Outgoing bubbles use a subtle vertical gradient on top of the primary color — gives the
     // bubble depth without committing to a hard shadow or a custom drawable. Incoming bubbles
@@ -262,6 +297,18 @@ fun MessageBubble(
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = textColor,
                                 onPhoneClick = onPhoneClick,
+                                searchHighlight = searchHighlight,
+                            )
+                        }
+                        // Feedback round 5 — detected login code: a copy pill under
+                        // the text, incoming messages only (see [OtpCodePill]).
+                        // The pill copies by itself (no extra parameter: the bubble
+                        // is already at the parameter limit) — clipboard, haptic
+                        // and toast all happen inside it.
+                        if (otpCode != null) {
+                            OtpCodePill(
+                                code = otpCode,
+                                modifier = Modifier.padding(top = 6.dp).align(Alignment.Start),
                             )
                         }
                         // Relay — heure (+ statut sortant) en petit, en bas à droite,
@@ -274,7 +321,9 @@ fun MessageBubble(
                             showTimestamp = showTimestamp,
                             showStatus = showStatus,
                             textColor = textColor,
-                            modifier = Modifier.padding(top = 2.dp).align(Alignment.End),
+                            // Feedback round 5 — 12dp above the timestamp (was 2dp):
+                            // the time sat too close under the text.
+                            modifier = Modifier.padding(top = 12.dp).align(Alignment.End),
                         )
                     }
                 }
@@ -289,7 +338,7 @@ fun MessageBubble(
                 onTranslate = onTranslate,
                 onReact = onReact,
                 starred = message.starred,
-                onToggleStar = onToggleStar,
+                toggles = toggles,
                 onDelete = onDelete,
             )
             // v1.7.1 — inline TranslationBlock removed (was rendering an in-app
@@ -304,6 +353,71 @@ fun MessageBubble(
     // qu'il écrit). Full-width pour maximiser la visibilité.
     if (!isOut && smishingReasons.isNotEmpty()) {
         SmishingBanner(reasons = smishingReasons)
+    }
+}
+
+/**
+ * Feedback round 5 — one-tap copy for a detected login/authentication code:
+ * the code as a rounded pill under the message text, with a copy glyph.
+ * `primaryContainer` reads on the incoming bubble in both themes (light blue
+ * on the light bubble, navy on the dark bubble), with `onPrimaryContainer`
+ * text. The code is set in monospace so it reads as a code, not prose.
+ *
+ * The pill copies by itself — no callback parameter, the bubble is already at
+ * the parameter limit: the code goes to the clipboard marked sensitive (no
+ * system preview of it, cf. [copyToClipboardSensitive]), with a haptic tick
+ * and a toast as confirmation. The pill carries its own `clickable`: it sits
+ * inside the bubble's `combinedClickable` (tap opens the menu), and the inner
+ * clickable wins, so tapping the pill copies instead of opening the menu.
+ */
+@Composable
+private fun OtpCodePill(
+    code: String,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    // Hoisted: stringResource is @Composable and cannot run inside .semantics {}.
+    val copyCodeLabel = stringResource(R.string.otp_copy_code)
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(cs.primaryContainer)
+            .clickable(
+                onClick = {
+                    context.copyToClipboardSensitive(
+                        label = "verification code",
+                        text = code,
+                    )
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    Toast.makeText(
+                        context,
+                        R.string.toast_code_copied,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                },
+            )
+            .semantics {
+                contentDescription = copyCodeLabel
+                role = Role.Button
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = code,
+            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+            color = cs.onPrimaryContainer,
+            maxLines = 1,
+        )
+        Icon(
+            imageVector = Icons.Outlined.ContentCopy,
+            contentDescription = null,
+            tint = cs.onPrimaryContainer,
+            modifier = Modifier.size(14.dp),
+        )
     }
 }
 

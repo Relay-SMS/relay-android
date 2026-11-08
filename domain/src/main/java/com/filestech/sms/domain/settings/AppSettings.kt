@@ -123,12 +123,6 @@ data class SendingSettings(
      */
     val sendReactionsToRecipient: Boolean = true,
     /**
-     * v1.3.1 — `false` tant que l'utilisateur n'a pas validé le dialog de confirmation
-     * du premier envoi (avec case "Ne plus demander"). Tant que `false`, chaque premier
-     * envoi de réaction ouvre le dialog ; quand `true`, l'envoi est silencieux et direct.
-     */
-    val reactionConfirmDismissed: Boolean = false,
-    /**
      * v1.3.6 (legacy) — flag boolean conservé pour rétro-compat DataStore. Supplanté
      * en v1.8.0 par [reactionFormat] qui propose 3 options. Migration côté
      * [com.filestech.sms.data.local.datastore.SettingsRepository] : pour un user

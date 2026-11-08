@@ -307,7 +307,6 @@ class SettingsRepository(
                 userMsisdn = p[K.userMsisdn],
                 groupMms = p[K.groupMms] ?: true,
                 sendReactionsToRecipient = p[K.sendReactionsToRecipient] ?: true,
-                reactionConfirmDismissed = p[K.reactionConfirmDismissed] ?: false,
                 reactionEmojiOnly = p[K.reactionEmojiOnly] ?: false,
                 // v1.8.0 (bug 5 fix) — migration douce. Si la nouvelle clé existe,
                 // on l'utilise. Sinon (user qui upgrade depuis v1.7.x) :
@@ -475,7 +474,6 @@ class SettingsRepository(
         s.sending.userMsisdn?.takeIf { it.isNotBlank() }?.let { this[K.userMsisdn] = it } ?: remove(K.userMsisdn)
         this[K.groupMms] = s.sending.groupMms
         this[K.sendReactionsToRecipient] = s.sending.sendReactionsToRecipient
-        this[K.reactionConfirmDismissed] = s.sending.reactionConfirmDismissed
         this[K.reactionEmojiOnly] = s.sending.reactionEmojiOnly
         // v1.8.0 (bug 5 fix) — persiste le nouveau format. La clé legacy
         // `reactionEmojiOnly` continue à être écrite au-dessus pour ne pas
@@ -615,7 +613,6 @@ class SettingsRepository(
         val userMsisdn = stringPreferencesKey("send.userMsisdn")
         val groupMms = booleanPreferencesKey("send.groupMms")
         val sendReactionsToRecipient = booleanPreferencesKey("send.reactions.toRecipient")
-        val reactionConfirmDismissed = booleanPreferencesKey("send.reactions.confirmDismissed")
         val reactionEmojiOnly = booleanPreferencesKey("send.reactions.emojiOnly")
         // v1.8.0 (bug 5 fix) — nouveau format avec 3 valeurs (READABLE_FR / TAPBACK_EN
         // / EMOJI_ONLY). La clé `reactionEmojiOnly` ci-dessus reste écrite pour la

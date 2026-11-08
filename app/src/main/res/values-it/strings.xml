@@ -37,6 +37,8 @@
     <!-- v1.3.11 (F3) — `action_copy` / `action_forward` already defined below (line 91-92);
          only the toast string is new. -->
     <string name="toast_copied">Messaggio copiato</string>
+    <string name="toast_code_copied">Codice copiato</string>
+    <string name="otp_copy_code">Copia il codice di verifica</string>
     <!-- v1.3.11 (F4) — phone number actions dialog -->
     <string name="phone_action_subtitle">Scelga un\'azione per questo numero di telefono.</string>
     <string name="phone_action_call">Chiama</string>
@@ -391,7 +393,7 @@
     <string name="settings_theme_dark">Scuro</string>
     <string name="settings_theme_dark_tech">Dark Tech</string>
     <string name="settings_theme_dark_tech_desc">Palette scura pensata per chi sviluppa. Ha la precedenza sui colori dinamici e su AMOLED.</string>
-    <string name="settings_dynamic_colors">Colori dinamici (Android 12+)</string>
+    <string name="settings_dynamic_colors">Colori dinamici</string>
     <string name="settings_amoled">Nero assoluto AMOLED</string>
     <string name="settings_text_scale">Dimensione del testo dei messaggi</string>
     <string name="settings_text_scale_desc">%1$s · messaggi, campo di scrittura ed elenco delle conversazioni. Si aggiunge alla dimensione dei caratteri di Android.</string>
@@ -614,10 +616,6 @@
     <string name="emergency_setup_contacts_cta">Gestisci i contatti</string>
     <string name="action_edit">Modifica</string>
     <string name="snack_generic_error">Qualcosa è andato storto.</string>
-    <string name="reaction_send_confirm_title">Inviare la reazione?</string>
-    <string name="reaction_send_confirm_body">Al destinatario verrà inviato un SMS che contiene solo questa emoji. Conta come un SMS normale (tariffa del suo piano). Può disattivarlo in Impostazioni → Invio.</string>
-    <string name="reaction_send_confirm_never_ask">Non chiedere più, invia direttamente</string>
-    <string name="reaction_send_confirm_fallback_recipient">questo contatto</string>
     <string name="attachment_image_label">Immagine</string>
     <string name="attachment_video_label">Video</string>
     <string name="media_gallery_title">Foto e video</string>
@@ -683,7 +681,7 @@
     <string name="settings_notif_style_banner_hint">Nessuna comparsa, nessun suono. Solo un\'icona nel pannello.</string>
     <string name="settings_notif_style_silent">Silenziose</string>
     <string name="settings_notif_style_silent_hint">Instradate su un canale a bassa importanza. Il sistema toglie il suono e la comparsa in primo piano.</string>
-    <string name="settings_notif_open_system">Apri le impostazioni di notifica del sistema</string>
+    <string name="settings_notif_open_system">Impostazioni notifiche</string>
     <string name="settings_notif_open_system_desc">Verifichi o corregga autorizzazioni, canali e suono a livello di sistema.</string>
     <string name="notifications_off_title">Notifiche disattivate</string>
     <string name="notifications_off_fix">Consenti nelle impostazioni Android</string>
@@ -737,10 +735,11 @@
     <string name="about_section_features">Funzioni</string>
     <string name="about_section_author">Autore</string>
     <string name="about_section_help">Aiuto rapido</string>
+    <string name="help_title">Aiuto</string>
     <string name="about_section_links">Collegamenti</string>
     <string name="about_check_updates">Vedi gli aggiornamenti</string>
     <string name="about_privacy_headline">100% privata — zero tracciamento</string>
-    <string name="about_author_role">Sviluppatore</string>
+    <string name="about_author_role">Autore di SMS Tech</string>
     <!-- v1.25.3 (audit H20) — permission rationales were hardcoded in English. The permission
          names themselves stay untranslated: they are the Android identifiers, verbatim. -->
     <string name="about_perm_sms">Necessaria per qualsiasi app SMS.</string>
@@ -756,7 +755,8 @@
     <string name="about_permissions_title">Autorizzazioni che usiamo</string>
     <string name="about_security_title">Sicurezza e limiti</string>
     <string name="about_security_body">SMS e MMS viaggiano in chiaro sulla rete dell\'operatore: è un limite del protocollo, non una scelta. SMS Relay protegge soltanto ciò che è conservato sul suo dispositivo. Per una messaggistica cifrata da un capo all\'altro, usi Matrix.</string>
-    <string name="about_credits_body">Creata da %1$s. Interfaccia ispirata ai principi di movimento di Material 3. Realizzata con Kotlin, Compose, Hilt, Room e SQLCipher.</string>
+    <string name="about_credits_body">Basata su SMS Tech di %1$s. Realizzata con Kotlin, Compose, Hilt, Room e SQLCipher.</string>
+    <string name="about_ui_copyright">Relay UI © 2026 Relay Messaging</string>
     <string name="about_legal_body">© %1$s %2$s. Distribuita con licenza Apache 2.0.</string>
     <string name="about_source_code">Codice sorgente</string>
     <string name="about_report_issue">Segnala un problema</string>
@@ -787,6 +787,8 @@
     <!-- Notification actions -->
     <string name="notif_reply_label">Rispondi</string>
     <string name="notif_mark_read_label">Segna come letto</string>
+    <string name="notif_copy_code_label">Copia codice</string>
+    <string name="notif_code_copied">Codice copiato</string>
     <string name="notif_preview_hidden_content">Nuovo messaggio</string>
 
     <!-- PDF export -->
@@ -882,6 +884,11 @@
     <string name="thread_schedule_empty_body">Scriva un messaggio prima di programmarlo</string>
     <string name="thread_schedule_success">Messaggio programmato</string>
     <string name="thread_schedule_failed">Impossibile programmare il messaggio</string>
+    <string name="thread_search_hint">Cerca in questa conversazione</string>
+    <string name="thread_search_match_count">%1$d di %2$d</string>
+    <string name="thread_search_no_results">Nessun risultato</string>
+    <string name="thread_search_previous">Risultato precedente</string>
+    <string name="thread_search_next">Risultato successivo</string>
 
     <!-- v1.14.9 audit I18N-M3 — AboutScreen strings extracted from hardcoded FR to support EN locale. -->
 
@@ -992,6 +999,11 @@
     <!-- v1.24.0 sliding window: head-of-thread control to widen the loaded window -->
     <string name="thread_load_older">Carica i messaggi più vecchi</string>
     <string name="thread_load_older_remaining">Carica i messaggi più vecchi (%1$d)</string>
+    <string name="thread_loading_older">Caricamento dei messaggi</string>
+    <string name="thread_pinned_label">Fissato · %1$s alle %2$s</string>
+    <string name="thread_pinned_voice">Messaggio vocale</string>
+    <string name="thread_pinned_attachment">Allegato</string>
+    <string name="thread_pinned_latest">Ultimi messaggi</string>
     <!-- v1.24.0 : ecran de recuperation quand la base ne peut pas etre ouverte -->
     <string name="db_recovery_title">SMS Relay non riesce ad aprire il suo database</string>
     <string name="db_recovery_body">I suoi messaggi sono ancora su questo dispositivo — Android ne conserva una copia propria e SMS Relay non ha eliminato nulla. In questo momento è illeggibile soltanto il database cifrato di SMS Relay.</string>

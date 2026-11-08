@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -67,7 +68,13 @@ fun BubbleMenu(
      * libellé. `null` désactive l'entrée (mode leurre).
      */
     starred: Boolean = false,
-    onToggleStar: (() -> Unit)? = null,
+    /**
+     * Feedback round 5 — bascules « favori » / « épingler »
+     * ([BubbleMenuToggles]). `null` désactive les deux entrées. Un seul
+     * message épinglé par conversation : épingler un autre message remplace
+     * l'épingle courante.
+     */
+    toggles: BubbleMenuToggles? = null,
     modifier: Modifier = Modifier,
 ) {
     DropdownMenu(
@@ -181,7 +188,7 @@ fun BubbleMenu(
         // sur le drapeau (`DELETE … AND starred = 0`). La promesse ne protégeait donc rien :
         // aucun message ne POUVAIT être mis en favori. Placé juste avant la suppression,
         // parce que c'est précisément ce dont il protège.
-        if (onToggleStar != null) {
+        if (toggles != null) {
             DropdownMenuItem(
                 leadingIcon = {
                     Icon(
@@ -206,7 +213,31 @@ fun BubbleMenu(
                 },
                 onClick = {
                     onDismissRequest()
-                    onToggleStar()
+                    toggles.onToggleStar()
+                },
+            )
+        }
+        // Feedback round 5 — « Épingler » / « Désépingler », juste après le
+        // favori : même intention « marquer ce message », avant l'action
+        // destructive. L'icône punaise pleine signale l'état épinglé.
+        if (toggles != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.PushPin,
+                        contentDescription = null,
+                    )
+                },
+                text = {
+                    Text(
+                        stringResource(
+                            if (toggles.isPinned) R.string.action_unpin else R.string.action_pin,
+                        ),
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    toggles.onTogglePin()
                 },
             )
         }

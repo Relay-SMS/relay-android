@@ -72,6 +72,7 @@ import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.textFieldCursorColor
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -351,7 +352,10 @@ private fun RecipientField(
                             .focusRequester(focusRequester),
                         textStyle = RelayText.MessageBody.copy(color = cs.onSurface),
                         singleLine = true,
-                        cursorBrush = SolidColor(RelayColors.Blue),
+                        // Cursor in `textFieldCursorColor`, not the fixed brand blue: the
+                        // fixed blue is near-invisible on the dark field background
+                        // (2.16:1); dark mode uses white, light mode the brand blue.
+                        cursorBrush = SolidColor(textFieldCursorColor(cs)),
                         decorationBox = { innerTextField ->
                             Box {
                                 if (query.isEmpty()) {

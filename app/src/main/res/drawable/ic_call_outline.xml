@@ -1,0 +1,17 @@
+<!-- Kristin's own icon (call-outline.svg): handset outline, 19x19 viewBox, black
+     stroke 1.71. The vector keeps black; the Icon() call site tints it to match the
+     other thread-header icons (on-surface, like the search magnifier and the overflow).
+     The source clip-path (a 19x19 rect, the viewport itself) is dropped — the viewport
+     clips the same way. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="19dp"
+    android:height="19dp"
+    android:viewportWidth="19"
+    android:viewportHeight="19">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M16.7363 13.8789C16.147 13.2852 14.7198 12.4187 14.0273 12.0695C13.1256 11.6152 13.0513 11.5781 12.3425 12.1047C11.8698 12.4561 11.5555 12.7701 11.0022 12.6521C10.4489 12.5341 9.24651 11.8687 8.19372 10.8192C7.14093 9.76978 6.43696 8.53256 6.31858 7.98111C6.2002 7.42967 6.51934 7.11906 6.86743 6.64518C7.35801 5.97721 7.32091 5.86588 6.90157 4.96412C6.57464 4.26275 5.6829 2.84889 5.08692 2.26256C4.44938 1.63281 4.44938 1.74414 4.03858 1.91484C3.70414 2.05556 3.38329 2.2266 3.08005 2.42584C2.4863 2.82031 2.15677 3.14799 1.92632 3.64043C1.69587 4.13287 1.59233 5.28734 2.78243 7.44934C3.97253 9.61133 4.80749 10.7168 6.53567 12.4402C8.26385 14.1635 9.59274 15.0902 11.5354 16.1797C13.9386 17.5256 14.8604 17.2633 15.3543 17.0332C15.8483 16.8031 16.1774 16.4766 16.5726 15.8828C16.7724 15.5801 16.9438 15.2596 17.0848 14.9254C17.2558 14.5161 17.3672 14.5161 16.7363 13.8789Z"
+        android:strokeWidth="1.71"
+        android:strokeColor="#FF000000"
+        android:strokeLineJoin="miter" />
+</vector>

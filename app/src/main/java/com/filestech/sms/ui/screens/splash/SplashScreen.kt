@@ -209,7 +209,7 @@ fun SplashScreen(
                 .fillMaxSize()
                 .padding(horizontal = 32.dp),
         ) {
-            // Relay logo: white radio-tower glyph (adaptive-icon foreground vector)
+            // Relay logo: white chat bubble (adaptive-icon foreground vector)
             // on a #1E4FD8 rounded tile. The old sms_tech_icon PNG is no longer used
             // here (Kristin, 2026-11-06 — the splash showed the old logo).
             androidx.compose.foundation.layout.Box(

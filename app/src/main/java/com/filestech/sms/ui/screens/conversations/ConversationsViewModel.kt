@@ -334,6 +334,13 @@ class ConversationsViewModel @Inject constructor(
                         .toMap()
                 }
             }
+            // The lookup re-runs on every `state` emission (new message, read change, sync
+            // tick) and always builds a brand-new Map, even when no photo changed. Without
+            // this, every one of those emissions re-composed the whole list with new row
+            // parameters — visible as stutter while scrolling during a sync or a burst of
+            // incoming messages. Photos change only when contacts do, so identical maps
+            // are dropped here and the list stays still.
+            .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
 
     /** Forces a re-evaluation of [DefaultSmsAppManager.isDefault]. Call from ON_RESUME / role result. */

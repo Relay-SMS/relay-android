@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -146,15 +145,6 @@ fun ConversationRow(
             MessageTextSize {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (conversation.pinned) {
-                            Icon(
-                                imageVector = Icons.Outlined.PushPin,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = cs.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.width(4.dp))
-                        }
                         Text(
                             text = title,
                             style = RelayText.ConvoName.scaledBy(textFactor),

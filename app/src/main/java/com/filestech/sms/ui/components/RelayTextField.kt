@@ -39,16 +39,27 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.placeholderColor
+import com.filestech.sms.ui.theme.textFieldCursorColor
 
 /**
  * Filled text field of the Relay design system: no border, surface fill, 10dp corners by
  * default ([cornerRadius] is 24dp for the composer pill), placeholder in
  * [placeholderColor] (theme-aware: the fixed tertiary failed AA on the light field),
- * cursor in [RelayColors.Blue]. Focus changes no border — the cursor colour alone
+ * cursor in [textFieldCursorColor]. Focus changes no border — the cursor colour alone
  * marks the focused field.
+ *
+ * The cursor deliberately does NOT use the fixed brand blue: in the dark scheme that
+ * blue measures 2.16:1 on the dark field background, so a 2dp cursor in it is
+ * effectively invisible. The lightened blue tried next in dark mode (`#7AA0F5`,
+ * 5.59:1) still read as invisible on the phone, so dark mode now uses white;
+ * light mode keeps the brand blue (`primary`), which works fine there.
+ *
+ * The outer [Box] centres its content vertically: without a `contentAlignment`
+ * the 32dp decoration row sat top-aligned inside a 48dp pill, so the icons
+ * and the text sat 8dp above the bar's centre (feedback round 5, measured on
+ * the dark-mode search screenshot).
  *
  * [focusRequester] (when given) is attached to the inner text field itself, so a
  * caller can move focus into the field — e.g. the conversations search pill, which
@@ -87,6 +98,7 @@ fun RelayTextField(
             .clip(RoundedCornerShape(cornerRadius))
             .background(cs.surfaceVariant)
             .padding(contentPadding),
+        contentAlignment = Alignment.Center,
     ) {
         BasicTextField(
             value = value,
@@ -103,7 +115,7 @@ fun RelayTextField(
             keyboardActions = keyboardActions,
             visualTransformation = visualTransformation,
             interactionSource = interactionSource,
-            cursorBrush = SolidColor(RelayColors.Blue),
+            cursorBrush = SolidColor(textFieldCursorColor(cs)),
             decorationBox = { innerTextField ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -130,8 +142,11 @@ fun RelayTextField(
 
 /**
  * Filled search field: 36dp high, 10dp corners, 16dp magnifier leading, placeholder in
- * [placeholderColor], blue cursor. The trailing clear affordance appears only while
- * [query] is non-empty.
+ * [placeholderColor], cursor in `textFieldCursorColor` (see [RelayTextField]). The trailing
+ * clear affordance appears only while [query] is non-empty.
+ *
+ * [focusRequester] (when given) is attached to the inner text field itself, so a
+ * caller can move focus into the field when it appears.
  */
 @Composable
 fun RelaySearchField(
@@ -141,6 +156,7 @@ fun RelaySearchField(
     onClear: () -> Unit,
     clearContentDescription: String,
     modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     RelayTextField(
@@ -152,6 +168,7 @@ fun RelaySearchField(
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         cornerRadius = 10.dp,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        focusRequester = focusRequester,
         leadingIcon = {
             Icon(
                 imageVector = Icons.Outlined.Search,

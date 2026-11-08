@@ -62,6 +62,9 @@ fun ConversationEntity.toDomain(): Conversation = Conversation(
     bubbleColorArgb = bubbleColorArgb,
     avatarUri = avatarUri,
     customName = customName,
+    /** Feedback round 5 — message épinglé du fil + date de l'épinglage. */
+    pinnedMessageId = pinnedMessageId,
+    pinnedMessageAt = pinnedMessageAt,
 )
 
 fun MessageEntity.toDomain(attachments: List<Attachment> = emptyList()): Message = Message(

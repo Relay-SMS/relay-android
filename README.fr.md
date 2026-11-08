@@ -6,7 +6,7 @@ Une application SMS & MMS moderne et privée pour Android — écrite en Kotlin,
 et Material 3. Sans publicité, sans traceur, sans analytique, **sans permission Internet**.
 Licence Apache 2.0.
 
-> **Note sur ce fork :** SMS Relay est un fork de [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) par Patrice Haltaya (Files Tech). Il reprend le moteur de SMS Tech et y ajoute le jumelage d'appareils et un service de synchronisation pour ordinateur.
+> **Note sur ce fork :** SMS Relay est un fork de [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) par Patrice Haltaya (Files Tech). Il reprend le moteur de SMS Tech et y ajoute le jumelage d'appareils et un service de synchronisation pour ordinateur. L'interface de Relay et ses nouvelles fonctionnalités sont © 2026 Relay Messaging.
 
 Source : [github.com/realquink/relay](https://github.com/realquink/relay) ·
 Versions : [GitHub Releases](https://github.com/realquink/relay/releases/latest)
@@ -15,8 +15,8 @@ Versions : [GitHub Releases](https://github.com/realquink/relay/releases/latest)
 
 - Application SMS / MMS par défaut pour Android 8.0 et suivants (testée jusqu'à Android 16), avec
   import unique de vos messages existants.
-- Interface Compose à activité unique, Material 3 avec couleurs dynamiques, noir AMOLED et thème
-  « Dark Tech ».
+- Interface Compose à activité unique, Material 3 avec couleurs dynamiques, noir AMOLED et thèmes
+  Système / Clair / Sombre.
 - Base Room chiffrée (SQLCipher), clé maîtresse enrobée par l'AndroidKeyStore.
 - Verrouillage de l'application : PIN dérivé en PBKDF2-HMAC-SHA512, temporisation exponentielle après
   des échecs ; déverrouillage biométrique facultatif, avec un PIN de secours obligatoire.
@@ -35,11 +35,14 @@ Versions : [GitHub Releases](https://github.com/realquink/relay/releases/latest)
 - **Messages vocaux** enregistrés sur l'appareil et envoyés en MMS audio.
 - Groupes nommés et MMS de groupe, réponses contextuelles avec citation, réponse directe depuis les
   notifications.
+- **Messages épinglés** : épinglez un message dans un fil et revenez-y depuis la bannière.
+- **Réactions emoji** sur les bulles de message, envoyées sous forme de tapbacks.
+- **Détection des codes OTP / de connexion** : copie en un geste depuis le message et depuis la notification.
 - **Détection d'arnaque** hors ligne (liens raccourcis, formules d'urgence, numéros surtaxés, domaines
   usurpés), fondée sur des règles : elle peut se tromper dans les deux sens.
 - Blocage synchronisé avec la liste de blocage de Téléphone / Samsung Messages ; blocage facultatif
   des numéros inconnus.
-- Recherche plein texte (FTS4), **export PDF** d'une conversation, envoi programmé (WorkManager).
+- Recherche plein texte (FTS4) dans les conversations et **dans un fil**, **export PDF** d'une conversation, envoi programmé (WorkManager).
 - Sauvegarde et restauration manuelles au format `.smsbk` (AES-256-GCM + PBKDF2). Les pièces jointes
   ne font pas partie de la sauvegarde.
 - Cinq langues : anglais, français, allemand, italien et espagnol — y compris chaque SMS que

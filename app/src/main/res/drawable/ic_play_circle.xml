@@ -1,0 +1,16 @@
+<!-- Kristin's own icon (play-circle.svg): filled disc with a play-triangle hole.
+     The disc and the triangle wind in OPPOSITE directions (signed areas -1193.5 and
+     +111.3), so under the default non-zero fill rule the triangle renders as a hole
+     showing the bubble colour through — no split into two paths needed. The vector
+     keeps the source fill (#353535); the Icon() call site tints it white on outgoing
+     bubbles (white disc, blue triangle) and #353535 on incoming (dark disc, light
+     triangle). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FF353535"
+        android:pathData="M24 4.5C13.2478 4.5 4.5 13.2478 4.5 24C4.5 34.7522 13.2478 43.5 24 43.5C34.7522 43.5 43.5 34.7522 43.5 24C43.5 13.2478 34.7522 4.5 24 4.5ZM31.0097 24.8719L20.28 31.3538C20.1262 31.4459 19.9507 31.4955 19.7714 31.4974C19.5921 31.4993 19.4156 31.4535 19.2598 31.3646C19.1041 31.2758 18.9748 31.1471 18.8852 30.9918C18.7956 30.8365 18.749 30.6602 18.75 30.4809V17.5191C18.749 17.3398 18.7956 17.1635 18.8852 17.0082C18.9748 16.8529 19.1041 16.7242 19.2598 16.6354C19.4156 16.5465 19.5921 16.5007 19.7714 16.5026C19.9507 16.5045 20.1262 16.5541 20.28 16.6462L31.0097 23.1281C31.1592 23.2192 31.2829 23.3473 31.3686 23.5C31.4544 23.6527 31.4995 23.8249 31.4995 24C31.4995 24.1751 31.4544 24.3473 31.3686 24.5C31.2829 24.6527 31.1592 24.7808 31.0097 24.8719Z" />
+</vector>

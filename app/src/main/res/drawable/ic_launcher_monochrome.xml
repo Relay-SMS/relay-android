@@ -2,48 +2,15 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="89"
-    android:viewportHeight="89">
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!--
+        Relay interim logo, monochrome (themed icon) — same mirrored chat
+        bubble as the foreground: tail at the BOTTOM RIGHT. See
+        ic_launcher_foreground.xml for why this is a mirror, not a 180°
+        rotation.
+    -->
     <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M18.1708 59.7042C3.70835 45.2417 3.70835 21.5083 18.1708 7.04583" />
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M28.925 17.4292C25.4069 21.0744 23.205 25.7888 22.6677 30.8262C22.1303 35.8636 23.2883 40.9364 25.9584 45.2417" />
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M51.9167 32.375C51.9167 36.4711 48.5962 39.7917 44.5 39.7917C40.4039 39.7917 37.0834 36.4711 37.0834 32.375C37.0834 28.2789 40.4039 24.9583 44.5 24.9583C48.5962 24.9583 51.9167 28.2789 51.9167 32.375Z" />
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M60.075 17.8C67.4916 25.2167 68.4558 36.7496 63.0416 45.5013" />
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M70.8292 7.04583C74.267 10.4765 76.9944 14.5516 78.8553 19.0377C80.7162 23.5238 81.674 28.3328 81.674 33.1896C81.674 38.0463 80.7162 42.8554 78.8553 47.3415C76.9944 51.8276 74.267 55.9026 70.8292 59.3333" />
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M35.2291 66.75H53.7708" />
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M29.6666 80.5833L44.5 39.7917L59.3333 80.5833" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,32C67.255,32 78,40.954 78,52C78,57.523 75.313,62.522 70.96,66.115L74,76L63.6,71.84C60.658,73.222 57.417,74 54,74C40.745,74 30,65.046 30,54C30,42.954 40.745,32 54,32Z" />
 </vector>

@@ -101,8 +101,12 @@ import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
+
+/** Delay before retrying the search focus request (see the `LaunchedEffect` below). */
+private const val SEARCH_FOCUS_RETRY_MS: Long = 100L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -201,7 +205,18 @@ fun ConversationsScreen(
         focusManager.clearFocus()
     }
     androidx.compose.runtime.LaunchedEffect(searchOpen) {
-        if (searchOpen) runCatching { searchFocusRequester.requestFocus() }
+        if (searchOpen) {
+            // Feedback round 5 — the pill slides in: a request landing before
+            // the field's focus node is attached is silently lost, leaving the
+            // field unfocused with no cursor and no keyboard. Retry once after
+            // the enter animation so opening search never strands it.
+            val focused = runCatching { searchFocusRequester.requestFocus() }
+                .getOrDefault(false)
+            if (!focused) {
+                delay(SEARCH_FOCUS_RETRY_MS)
+                runCatching { searchFocusRequester.requestFocus() }
+            }
+        }
     }
     // Back closes the search pill before it leaves the screen. Registered before the
     // selection-mode handler below, so exiting selection still wins when both apply.
@@ -367,7 +382,9 @@ fun ConversationsScreen(
                                     contentDescription = stringResource(
                                         R.string.conversations_search_hint,
                                     ),
-                                    tint = cs.onSurface,
+                                    // Round 5 — same tint as the overflow icon beside it
+                                    // (default TopAppBar action colour, onSurfaceVariant).
+                                    tint = cs.onSurfaceVariant,
                                     modifier = Modifier.size(24.dp),
                                 )
                             }
@@ -545,6 +562,11 @@ fun ConversationsScreen(
                         defaultAppLauncher.launch(intent)
                     }
                 })
+                // Feedback round 5 — breathing room between the prompt text and
+                // the 1px divider below it: the banner's own vertical padding
+                // is only 2dp, so the text sat almost on the divider. 12dp
+                // matches the banner's internal 12dp icon-to-text spacer.
+                Spacer(Modifier.height(12.dp))
                 HorizontalDivider()
             }
             // v1.14.0 — Chip "Je vais bien" si déclenchement urgence < 30 min.
@@ -588,12 +610,12 @@ fun ConversationsScreen(
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
-                    // Round 4 — 8dp between rows (was 4dp, added in round 3). The 4dp
-                    // WAS reaching the list — this is the only conversations list — but
-                    // 4dp between 72dp rows with no row background reads as no gap at
-                    // all. The same 8dp also lands around the section headers, so their
-                    // paddings below stay small (see ConversationSectionHeader).
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    // Round 5 — 16dp between rows (was 8dp, round 4; 4dp, round 3).
+                    // The 8dp still read as tight on the main screen. The same 16dp
+                    // also lands around the section headers, so their paddings below
+                    // stay small (see ConversationSectionHeader). Row height and
+                    // section header spacing are untouched — only the gap grows.
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     // Relay — AUCUNE ligne de séparation entre les conversations :
                     // la liste se lit sans filets, comme dans Relay.
@@ -622,6 +644,52 @@ fun ConversationsScreen(
                         val rowSubtitleNumber = conv.displayName
                             ?.takeIf { it in duplicateDisplayNames && conv.addresses.size == 1 }
                             ?.let { conv.addresses.firstOrNull()?.raw }
+                        // Laggy scrolling: every one of these callbacks was a fresh lambda
+                        // (and `rowActions` a fresh object) on every screen recomposition,
+                        // so no row could ever skip — each `state` emission (incoming SMS,
+                        // read change, sync tick) re-composed every visible row in full.
+                        // Memoised on the values they actually capture, the row keeps the
+                        // same parameter instances while its conversation is unchanged and
+                        // Compose can skip it. The null-conditions below stay at the pass
+                        // site, so a mode change still flips the row as before.
+                        val openThreadCallback = remember(
+                            conv.id,
+                            state.selectionMode,
+                            onOpenThread,
+                        ) {
+                            {
+                                if (state.selectionMode) viewModel.toggleSelection(conv.id)
+                                else onOpenThread(conv.id)
+                            }
+                        }
+                        val deleteCallback: () -> Unit = remember(conv.id) {
+                            {
+                                viewModel.delete(conv.id)
+                            }
+                        }
+                        val blockCallback: () -> Unit = remember(conv) {
+                            {
+                                viewModel.block(conv)
+                            }
+                        }
+                        val moveToVaultCallback: () -> Unit = remember(conv.id) {
+                            {
+                                viewModel.moveConversationToVault(conv.id)
+                            }
+                        }
+                        val rowActionsValue = remember(conv) {
+                            ConversationRowActions(
+                                onTogglePin = { viewModel.togglePinned(conv) },
+                                onToggleArchive = { viewModel.toggleArchived(conv) },
+                                onToggleMute = { viewModel.toggleMuted(conv) },
+                                onRename = { nom -> viewModel.rename(conv, nom) },
+                            )
+                        }
+                        val selectMultipleCallback = remember(conv.id) {
+                            {
+                                viewModel.toggleSelection(conv.id)
+                            }
+                        }
                         SwipeableConversationRow(
                             conversation = conv,
                             subtitleNumber = rowSubtitleNumber,
@@ -632,19 +700,16 @@ fun ConversationsScreen(
                             // ouverture du thread. Hors mode sélection, comportement
                             // normal. Le swipe est désactivé en mode sélection pour
                             // éviter les conflits de gestes.
-                            onOpenThread = {
-                                if (state.selectionMode) viewModel.toggleSelection(conv.id)
-                                else onOpenThread(conv.id)
-                            },
-                            onDelete = { viewModel.delete(conv.id) },
-                            onBlock = { viewModel.block(conv) },
+                            onOpenThread = openThreadCallback,
+                            onDelete = deleteCallback,
+                            onBlock = blockCallback,
                             // v1.11.0 — Trou #2 Vault polish : callback passé
                             // UNIQUEMENT hors PanicDecoy. L'item de menu n'apparaît
                             // donc pas en session decoy (cohérent avec masquage
                             // de l'icône cadenas top-bar). Désactivé aussi en mode
                             // sélection (l'action passe par la TopAppBar bulk).
                             onMoveToVault = if (isPanicDecoy || state.selectionMode) null else {
-                                { viewModel.moveConversationToVault(conv.id) }
+                                moveToVaultCallback
                             },
                             // v1.26.1 (audit F1) — mêmes conditions que le coffre : masqués en
                             // mode leurre et en mode sélection. Les trois gestes sont portés par
@@ -654,12 +719,7 @@ fun ConversationsScreen(
                             rowActions = if (isPanicDecoy || state.selectionMode) {
                                 null
                             } else {
-                                ConversationRowActions(
-                                    onTogglePin = { viewModel.togglePinned(conv) },
-                                    onToggleArchive = { viewModel.toggleArchived(conv) },
-                                    onToggleMute = { viewModel.toggleMuted(conv) },
-                                    onRename = { nom -> viewModel.rename(conv, nom) },
-                                )
+                                rowActionsValue
                             },
                             // v1.13.1 — restaure ActionsSheet legacy en long-press
                             // (quick actions Block/Delete/Move to vault). Ajoute en
@@ -669,7 +729,7 @@ fun ConversationsScreen(
                             // Gmail). PanicDecoy : pas de selection toggle non plus,
                             // l'ActionsSheet legacy sans item Vault est rendu.
                             onSelectMultiple = if (isPanicDecoy) null else {
-                                { viewModel.toggleSelection(conv.id) }
+                                selectMultipleCallback
                             },
                             selected = isSelected,
                             selectionMode = state.selectionMode,

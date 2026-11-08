@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -98,8 +99,14 @@ fun MediaAttachmentBubble(
     onSelectText: (() -> Unit)? = null,
     /** v1.3.11 (F5) — forward the attachment (+ caption if any) to another conversation. */
     onForward: (() -> Unit)? = null,
-    /** v1.26.1 (audit F2) — bascule « favori » ; l'état est lu sur [message]. */
-    onToggleStar: (() -> Unit)? = null,
+    /**
+     * Feedback round 5 — bascules « favori » / « épingler »
+     * ([BubbleMenuToggles]) ; l'état épinglé est lu sur la conversation
+     * (un seul message épinglé par fil), pas sur [message]. Un seul
+     * paramètre pour les deux bascules : la bulle texte est à la limite
+     * Detekt de 20 paramètres.
+     */
+    toggles: BubbleMenuToggles? = null,
     /**
      * v1.3.11 (F4) — invoked when the user taps a phone number rendered inside the
      * caption block. Forwarded to [MessageTextWithLinks]; the host (`ThreadScreen`)
@@ -109,6 +116,13 @@ fun MediaAttachmentBubble(
     repliedToPreview: com.filestech.sms.ui.components.ReplyQuotePreview? = null,
     /** v1.3.3 #7 — étiquette d'expéditeur ; voir [MessageBubble] pour la sémantique. */
     senderLabel: String? = null,
+    /**
+     * Feedback round 5 — thread search highlight for the caption, same
+     * semantics as [MessageBubble.searchHighlight]: every occurrence of the
+     * query in `message.body`, current when the search is sitting on this
+     * message. Empty by default.
+     */
+    searchHighlight: SearchHighlight = SearchHighlight(),
 ) {
     val context = LocalContext.current
     val isOut = message.isOutgoing
@@ -132,7 +146,12 @@ fun MediaAttachmentBubble(
     var menuExpanded by remember { mutableStateOf(false) }
 
     Row(
+        // Feedback round 5 — `fillMaxWidth` was missing: without it the row
+        // wrapped its content and `Arrangement.End` did nothing, so a SENT
+        // image landed on the left like a received one (text and audio rows
+        // both fill the width). The overlaid timestamp pill is untouched.
         modifier = Modifier
+            .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
             .heightIn(min = 32.dp),
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
@@ -230,13 +249,16 @@ fun MediaAttachmentBubble(
                         // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
                         color = if (isOut) Color.White else cs.onSurface,
                         onPhoneClick = onPhoneClick,
+                        searchHighlight = searchHighlight,
                     )
                     BubbleTimestamp(
                         message = message,
                         showTimestamp = showTimestamp,
                         showStatus = showStatus,
                         textColor = if (isOut) Color.White else cs.onSurface,
-                        modifier = Modifier.padding(top = 2.dp).align(Alignment.End),
+                        // Feedback round 5 — 12dp above the timestamp (was 2dp):
+                        // the time sat too close under the caption.
+                        modifier = Modifier.padding(top = 12.dp).align(Alignment.End),
                     )
                 }
             }
@@ -249,7 +271,7 @@ fun MediaAttachmentBubble(
                 onReply = onReply,
                 onReact = onReact,
                 starred = message.starred,
-                onToggleStar = onToggleStar,
+                toggles = toggles,
                 onDelete = onDelete,
             )
         }

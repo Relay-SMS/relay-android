@@ -1,5 +1,7 @@
 package com.filestech.sms.ui.components
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.buildAnnotatedString
 import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Test
 
@@ -109,5 +111,53 @@ class MessageTextWithLinksTest {
         // Common French national + international formats fall inside the band.
         assertThat(10 in PHONE_DIGITS_MIN..PHONE_DIGITS_MAX).isTrue() // 06 12 34 56 78
         assertThat(11 in PHONE_DIGITS_MIN..PHONE_DIGITS_MAX).isTrue() // +33 6 12 34 56 78
+    }
+
+    // ──────────────── Feedback round 5 — thread search highlight ────────────────
+    //
+    // [addSearchHighlight] is exercised directly (no `Patterns` involved, so it
+    // runs in plain JVM): the text itself is never rewritten, only the span
+    // styles over the matched ranges. The yellow block + black text must read
+    // on both bubble colours (white text on blue outgoing, dark text on grey
+    // incoming); the message the search sits on gets the stronger orange.
+
+    private fun highlighted(
+        text: String,
+        ranges: List<IntRange>,
+        current: Boolean = false,
+    ) = buildAnnotatedString {
+        append(text)
+        addSearchHighlight(text.length, ranges, current)
+    }
+
+    @Test fun `highlight covers every matched range and nothing else`() {
+        val out = highlighted("hello world hello", listOf(0..4, 12..16))
+        assertThat(out.text).isEqualTo("hello world hello")
+        assertThat(out.spanStyles.map { it.start to it.end })
+            .containsExactly(0 to 5, 12 to 17).inOrder()
+        assertThat(out.spanStyles.map { it.item.background })
+            .containsExactly(Color(0xFFFFEB3B), Color(0xFFFFEB3B))
+        assertThat(out.spanStyles.map { it.item.color })
+            .containsExactly(Color.Black, Color.Black)
+    }
+
+    @Test fun `current match uses the stronger orange`() {
+        val out = highlighted("hello world", listOf(0..4), current = true)
+        assertThat(out.spanStyles).hasSize(1)
+        assertThat(out.spanStyles[0].item.background).isEqualTo(Color(0xFFFF9800))
+        assertThat(out.spanStyles[0].item.color).isEqualTo(Color.Black)
+    }
+
+    @Test fun `no ranges means no spans`() {
+        val out = highlighted("hello world", emptyList())
+        assertThat(out.spanStyles).isEmpty()
+    }
+
+    @Test fun `ranges are clamped to the text and empty ones skipped`() {
+        val out = highlighted("hello world", listOf(6..20, 15..99))
+        // 6..20 covers "world" (clamped to the end); the fully out-of-range
+        // one produces nothing.
+        assertThat(out.spanStyles.map { it.start to it.end })
+            .containsExactly(6 to 11)
     }
 }

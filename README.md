@@ -5,7 +5,7 @@ English · 🇫🇷 [Version française](README.fr.md)
 A modern, private SMS & MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
 No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licensed.
 
-> **Fork note:** SMS Relay is a fork of [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine and adds device pairing and a synchronization service for desktop.
+> **Fork note:** SMS Relay is a fork of [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine and adds device pairing and a synchronization service for desktop. Relay's UI and new features are © 2026 Relay Messaging.
 
 Source: [github.com/realquink/relay](https://github.com/realquink/relay) ·
 Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
@@ -14,8 +14,8 @@ Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
 
 - Default SMS / MMS app for Android 8.0 and later (tested up to Android 16), with a one-time import
   of your existing messages.
-- Single-Activity Compose UI, Material 3 with dynamic colors, AMOLED true-black and a "Dark Tech"
-  theme.
+- Single-Activity Compose UI, Material 3 with dynamic colors, AMOLED true-black and
+  System / Light / Dark themes.
 - Encrypted Room database (SQLCipher), master key wrapped by the AndroidKeyStore.
 - App lock: PIN with PBKDF2-HMAC-SHA512 and exponential backoff after failed attempts; optional
   biometric unlock with a mandatory fallback PIN.
@@ -31,11 +31,14 @@ Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
   services — see the [terms of use](TERMS.md).
 - **Voice messages** recorded on the device and sent as audio MMS.
 - Named groups and group MMS, contextual replies with quotes, inline reply from notifications.
+- **Pinned messages**: pin a message in a thread and jump back to it from the banner.
+- **Emoji reactions** on message bubbles, sent as tapbacks.
+- **OTP / login-code detection**: one-tap copy from the message and from the notification.
 - Offline **scam detection** (shortened links, urgency wording, premium numbers, spoofed domains), on
   rules: it can be wrong both ways.
 - Blocking synchronized with the Phone / Samsung Messages blocklist; optional blocking of unknown
   numbers.
-- Full-text search (FTS4), **PDF export** of a conversation, scheduled sending (WorkManager).
+- Full-text search (FTS4) across conversations and **inside a thread**, **PDF export** of a conversation, scheduled sending (WorkManager).
 - Manual backup &amp; restore in `.smsbk` (AES-256-GCM + PBKDF2). Attachments are not part of the
   backup.
 - Five languages: English, French, German, Italian and Spanish — including every SMS the app sends

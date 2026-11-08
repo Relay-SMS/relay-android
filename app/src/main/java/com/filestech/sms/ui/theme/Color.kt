@@ -286,6 +286,19 @@ internal fun starColor(scheme: ColorScheme): Color {
 }
 
 /**
+ * Feedback round 5 — cursor colour for text fields, picked from the surface
+ * luminance (like [bubbleIncomingColor]): white in dark mode, the brand blue
+ * (`primary`) in light mode. The lightened blue used before in dark mode
+ * (`#7AA0F5`, 5.59:1 on the dark field) still read as invisible on the phone
+ * — white does not.
+ */
+internal fun textFieldCursorColor(scheme: ColorScheme): Color {
+    val s = scheme.surface
+    val luma = 0.2126f * s.red + 0.7152f * s.green + 0.0722f * s.blue
+    return if (luma < 0.5f) Color.White else scheme.primary
+}
+
+/**
  * Phase 8 — gris du placeholder des champs ([com.filestech.sms.ui.components
  * .RelayTextField] et donc [com.filestech.sms.ui.components.RelaySearchField]) :
  * le tertiaire fixe `#9A9A9A` ne donnait que 2.58:1 sur le fond de champ clair

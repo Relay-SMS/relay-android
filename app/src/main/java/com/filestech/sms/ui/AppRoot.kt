@@ -33,6 +33,7 @@ import com.filestech.sms.ui.navigation.Compose
 import com.filestech.sms.ui.navigation.Conversations
 import com.filestech.sms.ui.navigation.Emergency
 import com.filestech.sms.ui.navigation.EmergencySetup
+import com.filestech.sms.ui.navigation.Help
 import com.filestech.sms.ui.navigation.Lock
 import com.filestech.sms.ui.navigation.MediaGallery
 import com.filestech.sms.ui.navigation.Migration
@@ -42,6 +43,7 @@ import com.filestech.sms.ui.navigation.Settings
 import com.filestech.sms.ui.navigation.Thread
 import com.filestech.sms.ui.navigation.Vault
 import com.filestech.sms.ui.screens.about.AboutScreen
+import com.filestech.sms.ui.screens.about.HelpScreen
 import com.filestech.sms.ui.screens.backup.BackupScreen
 import com.filestech.sms.ui.screens.blocked.BlockedNumbersScreen
 import com.filestech.sms.ui.screens.compose.ComposeScreen
@@ -330,6 +332,18 @@ fun AppRoot() {
     val glissementSortant = slideOutHorizontally(
         animationSpec = tween(THREAD_TRANSITION_MS, easing = FastOutSlowInEasing),
     ) { it }
+    // Feedback round 5 — the missing half of the round-4 slide. Round 4 set
+    // the thread's enter (slide in from the right) and popExit (slide back
+    // out to the right), but the screen coming BACK — the conversation list —
+    // kept the NavHost-level popEnter, an 80 ms fade. The pair was asymmetric:
+    // the thread slid away while the list just faded in underneath, so going
+    // back read as a snap instead of the mirrored slide. This is the list's
+    // slide back in from the left, same 300 ms easing; it is applied only
+    // when popping from a Thread (see `composable<Conversations>` below), so
+    // every other return to the list keeps its 80 ms fade.
+    val glissementRetourEntrant = slideInHorizontally(
+        animationSpec = tween(THREAD_TRANSITION_MS, easing = FastOutSlowInEasing),
+    ) { -it }
     NavHost(
         navController = nav,
         startDestination = Conversations(),
@@ -338,7 +352,24 @@ fun AppRoot() {
         popEnterTransition = { fonduEntrant },
         popExitTransition = { fonduSortant },
     ) {
-        composable<Conversations> { entry ->
+        composable<Conversations>(
+            // Feedback round 5 — pop back from a thread slides the list back
+            // in from the left, mirroring the thread's slide out to the right
+            // (same 300 ms easing). The `initialState` here is the entry being
+            // popped, so the slide applies only to returns from a Thread;
+            // returns from Settings, the vault, Compose and the rest keep the
+            // NavHost-level 80 ms fade. Both the toolbar back arrow and the
+            // system back gesture/button pop through the NavController, so both
+            // take this same pop pair (no BackHandler in the thread screen
+            // intercepts back first).
+            popEnterTransition = {
+                if (initialState.destination.route?.contains("Thread") == true) {
+                    glissementRetourEntrant
+                } else {
+                    fonduEntrant
+                }
+            },
+        ) { entry ->
             val args = entry.toRoute<Conversations>()
             ConversationsScreen(
                 archived = args.archived,
@@ -378,6 +409,9 @@ fun AppRoot() {
             SettingsScreen(
                 onBack = { nav.popBackStack() },
                 onOpenAbout = { nav.navigate(About) },
+                // Feedback round 5 — Help lives on its own screen now (was
+                // the "Quick help" section of About).
+                onOpenHelp = { nav.navigate(Help) },
                 onOpenBackup = { nav.navigate(Backup) },
                 onOpenMigration = { nav.navigate(Migration) },
                 onOpenBlocked = { nav.navigate(Blocked) },
@@ -434,6 +468,15 @@ fun AppRoot() {
         composable<About> {
             AboutScreen(onBack = { nav.popBackStack() }, isPanicDecoy = isPanicDecoy)
         }
+        // Feedback round 5 — Help screen: same slide-in transition as the
+        // thread (300 ms horizontal slide, see `glissementEntrant` above),
+        // so opening Help from Settings feels like opening a thread.
+        composable<Help>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            HelpScreen(onBack = { nav.popBackStack() }, isPanicDecoy = isPanicDecoy)
+        }
         composable<Lock> {
             LockScreen(
                 onUnlocked = { nav.popBackStack(route = Lock, inclusive = true) },
@@ -443,7 +486,10 @@ fun AppRoot() {
             // Round 4 — slide over from the right on open, back out to the right
             // on back. Only `enter` / `popExit` are overridden: leaving the thread
             // forward (e.g. to the media gallery) and coming back to it keep the
-            // NavHost-level fade, so the change stays scoped to open/back.
+            // NavHost-level fade, so the change stays scoped to open/back. The
+            // list's half of the back slide — sliding back in from the left —
+            // lives on `composable<Conversations>` (feedback round 5): it is the
+            // returning destination's `popEnter`, not this destination's.
             enterTransition = { glissementEntrant },
             popExitTransition = { glissementSortant },
         ) { backStackEntry ->

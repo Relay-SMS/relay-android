@@ -49,14 +49,25 @@ fun MessageTextWithLinks(
      * recompositions without invalidating the (potentially expensive) regex pass.
      */
     onPhoneClick: (String) -> Unit = {},
+    /**
+     * Feedback round 5 — thread search highlight: every occurrence of the
+     * query in [text], and whether the search is currently sitting on this
+     * message. Empty by default: no search, no highlight.
+     */
+    searchHighlight: SearchHighlight = SearchHighlight(),
     modifier: Modifier = Modifier,
 ) {
     // v1.3.11 (F4) — keep the closure inside the AnnotatedString stable so the regex
     // pass below only re-runs when [text] changes, while the actual phone callback the
     // listener forwards to always points to the latest [onPhoneClick].
     val phoneClickState = rememberUpdatedState(onPhoneClick)
-    val annotated = remember(text) {
-        buildLinkifiedText(text) { number -> phoneClickState.value(number) }
+    val annotated = remember(text, searchHighlight) {
+        buildLinkifiedText(
+            text,
+            onPhoneClick = { number -> phoneClickState.value(number) },
+            highlightRanges = searchHighlight.ranges,
+            highlightCurrent = searchHighlight.current,
+        )
     }
     // Note : le SpanStyle des liens (dans buildLinkifiedText) ne fixe PAS de `color`,
     // de sorte que le lien hérite de la couleur du texte parent (gérée ici par
@@ -141,16 +152,25 @@ private data class LinkHit(val start: Int, val end: Int, val kind: HitKind)
 internal fun buildLinkifiedText(
     text: String,
     onPhoneClick: (String) -> Unit = {},
+    /**
+     * Feedback round 5 — thread search highlight, applied on top of the
+     * linkified text (see [addSearchHighlight]). The ranges index into
+     * [text] itself, so they stay valid whatever the link pass appends.
+     */
+    highlightRanges: List<IntRange> = emptyList(),
+    highlightCurrent: Boolean = false,
 ): AnnotatedString = buildAnnotatedString {
     if (text.isEmpty()) return@buildAnnotatedString
     if (text.length > LINKIFY_INPUT_CAP) {
         append(text)
+        addSearchHighlight(text.length, highlightRanges, highlightCurrent)
         return@buildAnnotatedString
     }
 
     val hits = collectLinkHits(text)
     if (hits.isEmpty()) {
         append(text)
+        addSearchHighlight(text.length, highlightRanges, highlightCurrent)
         return@buildAnnotatedString
     }
 
@@ -196,7 +216,55 @@ internal fun buildLinkifiedText(
     if (cursor < text.length) {
         append(text.substring(cursor))
     }
+    addSearchHighlight(text.length, highlightRanges, highlightCurrent)
 }
+
+/**
+ * Feedback round 5 — thread search highlight, as a span style on top of the
+ * built text. Black text on a solid yellow block reads on both bubble
+ * colours (white text on blue outgoing, dark text on grey incoming); the
+ * message the search is currently sitting on gets the stronger orange.
+ * Ranges are clamped to the text and empty ones skipped, so a stale range
+ * can never crash the render. Applied after the link spans: the two kinds
+ * of span overlap independently, and a highlighted link keeps its underline.
+ */
+internal fun AnnotatedString.Builder.addSearchHighlight(
+    textLength: Int,
+    ranges: List<IntRange>,
+    current: Boolean,
+) {
+    if (ranges.isEmpty() || textLength <= 0) return
+    val style = if (current) SEARCH_CURRENT_MATCH_STYLE else SEARCH_MATCH_STYLE
+    for (range in ranges) {
+        val start = range.first.coerceIn(0, textLength)
+        val end = (range.last + 1).coerceIn(0, textLength)
+        if (start < end) addStyle(style, start, end)
+    }
+}
+
+/**
+ * Feedback round 5 — thread search highlight: every occurrence of the query
+ * in a message body, as inclusive ranges, plus whether the search is
+ * currently sitting on this message ([current] gets the stronger colour).
+ * One object — not two parameters — so [MessageBubble] stays under the
+ * parameter-count limit.
+ */
+data class SearchHighlight(
+    val ranges: List<IntRange> = emptyList(),
+    val current: Boolean = false,
+)
+
+/** Feedback round 5 — search match highlight (see [addSearchHighlight]). */
+private val SEARCH_MATCH_STYLE = SpanStyle(
+    background = Color(0xFFFFEB3B),
+    color = Color.Black,
+)
+
+/** Feedback round 5 — current search match highlight (see [addSearchHighlight]). */
+private val SEARCH_CURRENT_MATCH_STYLE = SpanStyle(
+    background = Color(0xFFFF9800),
+    color = Color.Black,
+)
 
 /**
  * v1.3.11 (F4) — runs the URL and PHONE regexes once each, then merges + dedupes

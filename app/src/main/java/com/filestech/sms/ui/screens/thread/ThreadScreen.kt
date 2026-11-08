@@ -54,12 +54,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreVert
@@ -67,7 +68,6 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonSearch
-import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -101,12 +101,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -127,10 +129,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -146,6 +150,7 @@ import com.filestech.sms.domain.model.SendErrorCode
 import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.components.AttachmentPickerSheet
 import com.filestech.sms.ui.components.AudioMessageBubble
+import com.filestech.sms.ui.components.BubbleMenuToggles
 import com.filestech.sms.ui.components.BurstPosition
 import com.filestech.sms.ui.components.ComposerReplyChip
 import com.filestech.sms.ui.components.ContactIntents
@@ -156,6 +161,7 @@ import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.ReplyQuotePreview
+import com.filestech.sms.ui.components.SearchHighlight
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.SmsTechSnackbarVisuals
 import com.filestech.sms.ui.components.showError
@@ -210,6 +216,15 @@ fun ThreadScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
+    // Playback progress ticks at 5 Hz while a voice clip plays, and every tick recomposes
+    // this screen. Passing `{ playbackState }` inline to each message item would create a
+    // fresh lambda on every one of those recompositions, so no item could ever skip — the
+    // whole visible list would re-compose 5 times a second (and on every draft keystroke,
+    // which also recomposes the screen). This provider is one stable instance that always
+    // reads the latest tick through `rememberUpdatedState`: items can skip, and the one
+    // playing audio bubble still re-reads it through its own `derivedStateOf`.
+    val latestPlaybackState = rememberUpdatedState(playbackState)
+    val playbackProvider = remember { { latestPlaybackState.value } }
 
     // v1.26.1 (audit H1, suite de revue) — le Coffre s'est refermé alors qu'on est dans un de
     // ses fils : on ressort, au lieu de laisser un fil VIDE dont le bouton « Envoyer » ne fait
@@ -319,7 +334,6 @@ fun ThreadScreen(
     // l'utilisateur n'a pas validé le dialog de confirmation. `null` = pas de dialog ouvert.
     // Le messageId est porté pour permettre au ViewModel de re-vérifier l'état au moment du
     // confirm (anti-race F4 : l'user a pu changer/retirer la réaction entre temps).
-    var reactionConfirmRequest by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var askDelete by remember { mutableStateOf(false) }
     var attachmentSheetOpen by remember { mutableStateOf(false) }
     // Round 4 — the camera icon opens the camera DIRECTLY instead of the attachment
@@ -363,6 +377,72 @@ fun ThreadScreen(
     var scheduleStep by remember { mutableStateOf<String?>(null) }
     var scheduledEpochMidnight by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
 
+    // Feedback round 5 — search inside this conversation. The query searches
+    // the FULL history (see [mapThreadSearchMatches]): the repository returns
+    // every matching message id in the thread, and a jump to a match outside
+    // the loaded window loads the window around it. Matches stay in place
+    // with highlighting — nothing is hidden — and the up/down controls jump
+    // between matching messages. `threadSearchIndex` is the position inside
+    // [threadSearchMatches] (-1 = no matches); the count ("2 of 5") counts
+    // matching messages in the whole thread.
+    var threadSearchOpen by remember { mutableStateOf(false) }
+    var threadSearchQuery by remember { mutableStateOf("") }
+    var threadSearchIndex by remember { mutableStateOf(0) }
+    // Feedback round 5 — set when a jump loaded a window away from the tail,
+    // so closing the search knows to come back to the bottom.
+    var searchJumpedOutOfWindow by remember { mutableStateOf(false) }
+    var pendingJumpToBottom by remember { mutableStateOf(false) }
+    val threadSearchFocusRequester = remember { FocusRequester() }
+    val searchResults by viewModel.threadSearchResults.collectAsStateWithLifecycle()
+    val threadSearchMatches = remember(state.messages, searchResults) {
+        mapThreadSearchMatches(searchResults.messageIds, state.messages, searchResults.query)
+    }
+    val threadSearchCurrentIndex = if (threadSearchMatches.isEmpty()) {
+        -1
+    } else {
+        threadSearchIndex.coerceIn(0, threadSearchMatches.lastIndex)
+    }
+    val threadSearchCurrentMatch = threadSearchMatches.getOrNull(threadSearchCurrentIndex)
+    // Per-message highlight, keyed by message id so each bubble only
+    // re-composes when its own highlight changes.
+    val threadSearchHighlightById = remember(threadSearchMatches, threadSearchCurrentMatch) {
+        threadSearchMatches.associate { match ->
+            match.messageId to SearchHighlight(
+                ranges = match.ranges,
+                current = match.messageId == threadSearchCurrentMatch?.messageId,
+            )
+        }
+    }
+    val closeThreadSearch: () -> Unit = {
+        threadSearchOpen = false
+        threadSearchQuery = ""
+        threadSearchIndex = 0
+        viewModel.setThreadSearchQuery("")
+        if (searchJumpedOutOfWindow) {
+            searchJumpedOutOfWindow = false
+            viewModel.clearWindowAnchor()
+            pendingJumpToBottom = true
+        }
+        focusManager.clearFocus()
+    }
+    // Back closes the search pill before it leaves the screen — same pattern
+    // as the conversations list search.
+    androidx.activity.compose.BackHandler(enabled = threadSearchOpen) { closeThreadSearch() }
+    LaunchedEffect(threadSearchOpen) {
+        if (threadSearchOpen) {
+            // Feedback round 5 — same retry as the conversations list search:
+            // a request landing before the field's focus node is attached is
+            // silently lost, leaving the field unfocused with no cursor and no
+            // keyboard. Retry once after the pill slides in.
+            val focused = runCatching { threadSearchFocusRequester.requestFocus() }
+                .getOrDefault(false)
+            if (!focused) {
+                kotlinx.coroutines.delay(THREAD_SEARCH_FOCUS_RETRY_MS)
+                runCatching { threadSearchFocusRequester.requestFocus() }
+            }
+        }
+    }
+
     // v1.2.4 audit U12: scroll-to-bottom on new messages only when the user is already at
     // the bottom — preserves their reading position higher up the thread. The first paint
     // is a special case: opening a conversation must land on the most recent message, not
@@ -375,12 +455,48 @@ fun ThreadScreen(
     // has nothing to scroll to, so it shows immediately. The header and composer sit
     // outside the list, so they stay visible while the messages settle.
     val listSettled = initialScrollDone || state.messages.isEmpty()
-    // v1.24.0 — `LazyListItemInfo.index` et l'argument de `scrollToItem` vivent dans l'espace
-    // d'index GLOBAL du LazyColumn, où l'item « charger plus ancien » occupe la position 0 quand
-    // il est affiché. `state.messages[i]` est donc à l'index global `i + headOffset`. Confondre
-    // les deux ciblait l'avant-dernier message au lieu du dernier.
-    val headOffset = if (state.hasMoreMessages) 1 else 0
-    val bottomItemIndex = state.messages.lastIndex + headOffset
+    // The list holds messages only (the old "load older" row is gone since
+    // round 5 auto-load), so `state.messages[i]` is at global LazyColumn
+    // index `i` — no head offset to add when scrolling to a message.
+    val bottomItemIndex = state.messages.lastIndex
+    // Feedback round 5 — jump to the current search match. Plain scroll, not
+    // animated: a jump can span hundreds of messages, and animateScrollToItem
+    // over that distance is visibly choppy (same reason as the first-paint
+    // scroll below). A match outside the loaded window loads the window
+    // around it first; when that window lands the match gains an index and
+    // this effect re-runs to scroll to it.
+    LaunchedEffect(threadSearchCurrentMatch) {
+        val match = threadSearchCurrentMatch ?: return@LaunchedEffect
+        if (match.messageIndex >= 0) {
+            listState.scrollToItem(match.messageIndex)
+        } else {
+            searchJumpedOutOfWindow = true
+            viewModel.jumpToSearchMatch(match.messageId)
+        }
+    }
+    // Feedback round 5 — jump to the pinned message from the banner. Same
+    // shape as the search jump above: when the message is already in the
+    // loaded window, scroll to it right away; when the jump loaded a window
+    // around it, this re-runs once the window lands (state.messages is a
+    // key) and scrolls then. Plain scroll, not animated — same reason.
+    val pinJumpTarget by viewModel.pinJumpTarget.collectAsStateWithLifecycle()
+    LaunchedEffect(pinJumpTarget, state.messages) {
+        val target = pinJumpTarget ?: return@LaunchedEffect
+        val index = state.messages.indexOfFirst { it.id == target }
+        if (index >= 0) {
+            listState.scrollToItem(index)
+            viewModel.clearPinJumpTarget()
+        }
+    }
+    // Feedback round 5 — after closing a search that jumped away from the
+    // tail, come back to the bottom once the tail window is back (not before:
+    // scrolling while still anchored would land on the anchor).
+    val isWindowAnchored by viewModel.isWindowAnchored.collectAsStateWithLifecycle()
+    LaunchedEffect(isWindowAnchored, state.messages, pendingJumpToBottom) {
+        if (!pendingJumpToBottom || isWindowAnchored || state.messages.isEmpty()) return@LaunchedEffect
+        listState.scrollToItem(bottomItemIndex)
+        pendingJumpToBottom = false
+    }
     val isAtBottom by remember {
         androidx.compose.runtime.derivedStateOf {
             val li = listState.layoutInfo.visibleItemsInfo.lastOrNull()
@@ -424,7 +540,10 @@ fun ThreadScreen(
             listState.scrollToItem(bottomItemIndex)
             initialScrollDone = true
             lastSeenMessageId = newestMessageId
-        } else if (isAtBottom) {
+        } else if (isAtBottom && !threadSearchOpen) {
+            // Feedback round 5 — no auto-scroll while searching: a new message
+            // arriving mid-search must not drag the user away from the match
+            // they are looking at.
             listState.animateScrollToItem(bottomItemIndex)
             lastSeenMessageId = newestMessageId
         }
@@ -443,9 +562,45 @@ fun ThreadScreen(
         val (anchorId, anchorOffset) = pendingAnchor ?: return@LaunchedEffect
         val index = state.messages.indexOfFirst { it.id == anchorId }
         if (index >= 0) {
-            listState.scrollToItem(index + headOffset, -anchorOffset)
+            listState.scrollToItem(index, -anchorOffset)
             pendingAnchor = null
         }
+    }
+
+    // Feedback round 5 — auto-load older messages on scroll-up (replaces the
+    // "Load older messages" button). When the first visible message is within
+    // [AUTO_LOAD_TOP_THRESHOLD] items of the top of the loaded window and
+    // older history exists, the next page loads by itself. The anchor is
+    // captured here (the message the user is reading + its pixel offset) so
+    // the restore above keeps them looking at the same message when the
+    // older page lands above — prepending must not jump the view.
+    //
+    // Guards: [ThreadViewModel.loadOlder] is a no-op while a load is in flight
+    // or when fully loaded, so a fast fling cannot stack loads; and the
+    // trigger needs [listSettled], so the first paint (which briefly sits at
+    // index 0 before jumping to the bottom) never fires a spurious load that
+    // would defeat the 50-message first window. Once a load lands, the anchor
+    // restore leaves the user ~200 items from the top, so the trigger goes
+    // quiet until they scroll up again.
+    val nearTop by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            first != null && first.index <= AUTO_LOAD_TOP_THRESHOLD
+        }
+    }
+    LaunchedEffect(nearTop, state.hasMoreMessages, state.isLoadingOlder, listSettled) {
+        // The four-way guard lives in a plain `val`, not in the `if` condition,
+        // so the condition itself stays simple.
+        val canLoad = nearTop && state.hasMoreMessages && listSettled
+        if (!canLoad || state.isLoadingOlder) {
+            return@LaunchedEffect
+        }
+        val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            ?: return@LaunchedEffect
+        val anchorMsg = state.messages.getOrNull(firstVisible.index)
+            ?: return@LaunchedEffect
+        pendingAnchor = anchorMsg.id to firstVisible.offset
+        viewModel.loadOlder()
     }
 
     // v1.28.3 (F21) — gabarits resolus au niveau COMPOSABLE, et non via `LocalContext` dans le
@@ -517,18 +672,6 @@ fun ThreadScreen(
                     val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(e.rawNumber)}"))
                     runCatching { context.startActivity(intent) }
                 }
-                is ThreadViewModel.Event.RequestReactionConfirm -> {
-                    // X5 audit v1.3.1 — si un dialog est déjà ouvert (l'user n'a pas
-                    // encore validé/annulé), on ignore silencieusement le 2ᵉ event pour
-                    // ne pas écraser silencieusement l'intention en cours (le user verrait
-                    // un autre emoji/contact que celui qu'il vient de toucher). Le badge
-                    // local de la 2ᵉ réaction est déjà posé (côté repo), donc l'état UI
-                    // reste cohérent ; seule la dispatch SMS est ignorée pour cette pose,
-                    // ce qui est cohérent avec la sémantique "1 confirm = 1 envoi".
-                    if (reactionConfirmRequest == null) {
-                        reactionConfirmRequest = e.messageId to e.emoji
-                    }
-                }
             }
         }
     }
@@ -577,6 +720,16 @@ fun ThreadScreen(
 
     Scaffold(
         topBar = {
+            // Feedback round 5 — the top bar swaps between the thread header
+            // and the search pill, like the conversations list search (round 4):
+            // the pill slides in from the right over the header and slides back
+            // out when it closes; the header just fades.
+            Box {
+                AnimatedVisibility(
+                    visible = !threadSearchOpen,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
             ThreadHeader(
                 title = title,
                 subtitleNumber = headerSubtitleNumber,
@@ -586,6 +739,7 @@ fun ThreadScreen(
                 onBack = onBack,
                 onCall = { viewModel.requestCall() },
                 onDetails = { detailsOpen = true },
+                onSearchClick = { threadSearchOpen = true },
                 onMoreClick = { menuOpen = true },
                 menu = {
                     ThreadActionsMenu(
@@ -630,6 +784,47 @@ fun ThreadScreen(
                     )
                 },
             )
+                }
+                AnimatedVisibility(
+                    visible = threadSearchOpen,
+                    enter = slideInHorizontally { it } + fadeIn(),
+                    exit = slideOutHorizontally { it } + fadeOut(),
+                ) {
+                    ThreadSearchHeader(
+                        query = threadSearchQuery,
+                        onQueryChange = {
+                            threadSearchQuery = it
+                            threadSearchIndex = 0
+                            viewModel.setThreadSearchQuery(it)
+                        },
+                        matchLabel = when {
+                            threadSearchQuery.isBlank() -> null
+                            threadSearchMatches.isEmpty() ->
+                                stringResource(R.string.thread_search_no_results)
+                            else -> stringResource(
+                                R.string.thread_search_match_count,
+                                threadSearchCurrentIndex + 1,
+                                threadSearchMatches.size,
+                            )
+                        },
+                        canNavigate = threadSearchMatches.isNotEmpty(),
+                        onPrevious = {
+                            threadSearchIndex = previousThreadSearchIndex(
+                                threadSearchCurrentIndex,
+                                threadSearchMatches.size,
+                            )
+                        },
+                        onNext = {
+                            threadSearchIndex = nextThreadSearchIndex(
+                                threadSearchCurrentIndex,
+                                threadSearchMatches.size,
+                            )
+                        },
+                        onClose = closeThreadSearch,
+                        focusRequester = threadSearchFocusRequester,
+                    )
+                }
+            }
         },
         snackbarHost = {
             // v1.3.7 — branchement bi-couleur cohérent avec le système de marque :
@@ -768,6 +963,9 @@ fun ThreadScreen(
                 onSelectText = { msg -> textSelectionTarget = msg },
                 // v1.26.1 (audit F2) — bascule sur l'état courant du message.
                 onToggleStar = { msg -> viewModel.toggleMessageStarred(msg.id, !msg.starred) },
+                // Feedback round 5 — épingler / désépingler (la VM compare à
+                // l'épingle courante du fil).
+                onTogglePin = { msg -> viewModel.togglePin(msg.id) },
                 onPhoneClick = onPhoneClick,
             )
         }
@@ -776,29 +974,48 @@ fun ThreadScreen(
         // n'apparaît dans ces cas. Lambda stable (mémoïsée) : passable aux items sans casser le
         // scoping de recomposition de [ThreadMessageItem].
         val simLabeler = rememberSimLabeler()
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        // Feedback round 5 — pinned-message banner: the live copy from the
+        // loaded window wins when the message is loaded (so the banner
+        // follows text edits); the resolved outside-window copy is the
+        // fallback for an old pinned message. Hidden while searching — the
+        // search pill replaces the header, and the banner belongs to it.
+        val pinnedMessageId = state.conversation?.pinnedMessageId
+        val pinnedMessage = remember(state.messages, state.pinnedOutsideWindow, pinnedMessageId) {
+            pinnedMessageId?.let { id ->
+                state.messages.find { it.id == id } ?: state.pinnedOutsideWindow
+            }
+        }
+        val pinnedAt = state.conversation?.pinnedMessageAt
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
+                PinnedMessageBanner(
+                    message = pinnedMessage,
+                    pinnedAt = pinnedAt,
+                    isGroup = state.conversation?.isGroup == true,
+                    title = title,
+                    memberNames = state.memberNames,
+                    formatters = formatters,
+                    canUnpin = !state.isPanicDecoy,
+                    onJump = { viewModel.jumpToPinnedMessage(pinnedMessage.id) },
+                    onUnpin = { viewModel.togglePin(pinnedMessage.id) },
+                )
+            }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().alpha(if (listSettled) 1f else 0f),
             state = listState,
+            // Feedback round 5 — room below the last message for a reaction
+            // badge hanging off its bottom edge (see [BubbleReactionOverlay]):
+            // without it the badge on the last message is clipped by the list
+            // viewport, where the composer starts.
+            contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            // v1.24.0 (finding A) — tête de fenêtre. `key` stable pour que l'insertion des
+            // v1.24.0 (finding A) — `key` stable pour que l'insertion des
             // messages plus anciens ne détruise pas la position de scroll.
-            if (state.hasMoreMessages) {
-                item(key = "load-older", contentType = "load-older") {
-                    LoadOlderRow(
-                        isLoading = state.isLoadingOlder,
-                        remaining = (state.messageCount - state.messages.size).coerceAtLeast(0),
-                        onClick = {
-                            // Le premier item visible portant une clé Long est un message : c'est
-                            // lui que l'utilisateur regarde, et sur lui qu'on se ré-ancrera.
-                            pendingAnchor = listState.layoutInfo.visibleItemsInfo
-                                .firstOrNull { it.key is Long }
-                                ?.let { (it.key as Long) to it.offset }
-                            viewModel.loadOlder()
-                        },
-                    )
-                }
-            }
+            // Feedback round 5 — the "Load older messages" button is gone:
+            // older messages load automatically on scroll-up (see the
+            // auto-load effect below); the list holds messages only, so the
+            // global LazyColumn index IS the message index.
             itemsIndexed(
                 state.messages,
                 key = { _, m -> m.id },
@@ -820,6 +1037,8 @@ fun ThreadScreen(
                 // l'item Composable, plus dans le scope LazyColumn. Recompositions
                 // mieux scopées : un item ne re-compose que sur changement de SON msg / prev /
                 // next, pas sur changement du state global du parent.
+                // Feedback round 5 — search highlight for this message, if any.
+                val searchHighlight = threadSearchHighlightById[msg.id] ?: SearchHighlight()
                 ThreadMessageItem(
                     msg = msg,
                     prev = state.messages.getOrNull(index - 1),
@@ -836,13 +1055,17 @@ fun ThreadScreen(
                     isGroup = state.conversation?.isGroup == true,
                     bubbleColorArgb = state.conversation?.bubbleColorArgb,
                     smishingReasons = state.smishingVerdicts[msg.id] ?: emptyList(),
-                    playbackProvider = { playbackState },
+                    playbackProvider = playbackProvider,
                     repliedToPreview = previewFor(msg),
                     // v1.22.0 (double SIM) — tag SIM sur les messages REÇUS uniquement (la bulle
                     // du contact, cf. demande). Les sortants portent aussi un `sub_id` (SIM
                     // d'envoi par défaut) mais afficher "Vous · SIM 2" sur chaque burst sortant
                     // serait du bruit non sollicité.
                     simLabel = if (msg.isIncoming) simLabeler(msg.subId) else null,
+                    searchHighlight = searchHighlight,
+                    // Feedback round 5 — ce message est-il l'épinglé du fil ?
+                    // Le menu bulle affiche alors « Désépingler » au lieu d'« Épingler ».
+                    isPinnedMessage = msg.id == state.conversation?.pinnedMessageId,
                     actions = itemActions,
                 )
             }
@@ -850,7 +1073,65 @@ fun ThreadScreen(
         // Audit R4 (v1.14.8) — Chip flottant "↓ N nouveau(x) message(s)" affiché en
         // bas-droite quand l'user est scrollé vers le haut ET que de nouveaux messages
         // sont arrivés. Tap → scroll animé + reset du compteur via le LaunchedEffect.
-        if (!isAtBottom && unseenCount > 0 && state.messages.isNotEmpty()) {
+        // Feedback round 5 — auto-load indicator: while older messages are
+        // loading above, a small chip (spinner + text) floats at the top of
+        // the list. It is an overlay, not a list item, so it never shifts
+        // the message indices or the scroll anchor. It only ever shows
+        // during a top load — never when fully loaded.
+        if (state.isLoadingOlder) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = stringResource(R.string.thread_loading_older),
+                    style = RelayText.BubbleMeta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // Feedback round 5 — after a jump to the pinned message the window
+        // is anchored on it, so the newest messages are not loaded. This
+        // button (same spot and style as the unseen-messages chip) takes the
+        // user back to the latest window; the return-to-bottom effect above
+        // scrolls once the tail window lands. It takes precedence over the
+        // unseen chip while anchored — both would stack on the same corner.
+        val isPinAnchored by viewModel.isPinAnchored.collectAsStateWithLifecycle()
+        if (isPinAnchored && state.messages.isNotEmpty()) {
+            FilledTonalButton(
+                onClick = {
+                    viewModel.clearWindowAnchor()
+                    pendingJumpToBottom = true
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(text = stringResource(R.string.thread_pinned_latest))
+            }
+        }
+        // Feedback round 5 — the four-way guard lives in a plain val, not
+        // in the `if` condition (Detekt ComplexCondition, same fix as the
+        // auto-load guard in batch 2).
+        val showUnseenChip = !isAtBottom && unseenCount > 0 &&
+            state.messages.isNotEmpty() && !isPinAnchored
+        if (showUnseenChip) {
             FilledTonalButton(
                 onClick = {
                     scope.launch {
@@ -869,6 +1150,7 @@ fun ThreadScreen(
                     ),
                 )
             }
+        }
         }
         }
     }
@@ -1051,25 +1333,6 @@ fun ThreadScreen(
             onDismiss = { customReactionFor = null },
         )
     }
-    // v1.3.1 — dialog de confirmation du PREMIER envoi de réaction par SMS. Une fois la
-    // case "Ne plus demander" cochée et validée, l'envoi sera silencieux les fois suivantes.
-    // Le label destinataire pioche dans la conversation chargée ; en garde-fou (audit P5),
-    // si la conversation n'est pas (encore) résolue, on rend "ce contact" plutôt que vide
-    // pour ne jamais afficher un dialog sans destinataire visible.
-    reactionConfirmRequest?.let { (messageId, emoji) ->
-        val recipientLabel = state.conversation?.title?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.reaction_send_confirm_fallback_recipient)
-        com.filestech.sms.ui.components.ReactionSendConfirmDialog(
-            emoji = emoji,
-            recipientLabel = recipientLabel,
-            onConfirm = { neverAskAgain ->
-                viewModel.confirmReactionSend(messageId, emoji, neverAskAgain)
-                reactionConfirmRequest = null
-            },
-            onDismiss = { reactionConfirmRequest = null },
-        )
-    }
-
     pendingDelete?.let { msg ->
         DestructiveConfirmDialog(
             title = stringResource(R.string.action_delete),
@@ -1273,6 +1536,110 @@ fun ThreadScreen(
 }
 
 /**
+ * Feedback round 5 — pinned-message banner, measured off
+ * `02___Thread_Pinned.png` (390x844, 1x): a solid brand-blue card
+ * (16dp radius, 12dp side margins, 4dp under the header, ~63dp tall)
+ * with the sender on the first line ("You" for your own messages) and an
+ * X at the top-right, then the message text (one line, truncated) and the
+ * "Pinned · date at time" line (pin date, white at 70%) sharing the second
+ * line, bottom-aligned. Tapping the card jumps to the message (loading the
+ * window around it first when it is outside the loaded window); the X
+ * removes the pin. The card is a fixed header under the thread header, not
+ * a list item, so it never scrolls away.
+ */
+@Composable
+private fun PinnedMessageBanner(
+    message: Message,
+    pinnedAt: Long,
+    isGroup: Boolean,
+    title: String,
+    memberNames: Map<String, String>,
+    formatters: com.filestech.sms.ui.util.ChatFormatters,
+    canUnpin: Boolean,
+    onJump: () -> Unit,
+    onUnpin: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(RelayColors.Blue)
+            .clickable(onClick = onJump)
+            .semantics { role = Role.Button }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = pinnedSenderLabel(
+                        message = message,
+                        isGroup = isGroup,
+                        title = title,
+                        memberNames = memberNames,
+                        youLabel = stringResource(R.string.chat_you),
+                    ),
+                    style = RelayText.MessageBody.copy(
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (canUnpin) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onUnpin)
+                            .semantics { role = Role.Button },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close_circle_outline),
+                            contentDescription = stringResource(R.string.action_unpin),
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = pinnedPreviewText(
+                        message = message,
+                        photoLabel = stringResource(R.string.attach_photo),
+                        videoLabel = stringResource(R.string.attach_video),
+                        voiceLabel = stringResource(R.string.thread_pinned_voice),
+                        fileLabel = stringResource(R.string.thread_pinned_attachment),
+                    ),
+                    style = RelayText.MessageBody.copy(fontSize = 15.sp),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(
+                        R.string.thread_pinned_label,
+                        formatters.shortDate.format(Date(pinnedAt)),
+                        formatters.time.format(Date(pinnedAt)),
+                    ),
+                    style = RelayText.BubbleMeta,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/**
  * Relay UI refresh — thread header: 56dp, canvas background. Back chevron (22dp,
  * brand blue) + 32dp avatar + name (17sp/600); the call glyph is 22dp brand blue.
  * The two 44dp hit areas side by side leave ~20dp of air between the call glyph
@@ -1289,6 +1656,8 @@ private fun ThreadHeader(
     onBack: () -> Unit,
     onCall: () -> Unit,
     onDetails: () -> Unit,
+    /** Feedback round 5 — opens the in-conversation search pill. */
+    onSearchClick: () -> Unit,
     onMoreClick: () -> Unit,
     menu: @Composable () -> Unit,
 ) {
@@ -1337,7 +1706,10 @@ private fun ThreadHeader(
                     customUri = avatarUri,
                     isGroup = isGroup,
                 )
-                Spacer(Modifier.width(8.dp))
+                // Feedback round 5 — avatar-to-text gap 8dp -> 16dp, matching
+                // the pinned-thread screenshot (measured 17dp; 16dp is the
+                // standard step, within 1px).
+                Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
@@ -1349,7 +1721,9 @@ private fun ThreadHeader(
                     if (subtitleNumber != null) {
                         Text(
                             text = subtitleNumber,
-                            style = RelayText.Timestamp,
+                            // Feedback round 5 — 13sp -> 12sp, matching the
+                            // pinned-thread screenshot (number band ~7px tall).
+                            style = RelayText.Timestamp.copy(fontSize = 12.sp),
                             color = cs.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1357,27 +1731,56 @@ private fun ThreadHeader(
                     }
                 }
             }
+            // Feedback round 5 — header icon order matches the Figma thread:
+            // search (magnifier), call, ⋮. The magnifier opens the
+            // in-conversation search pill. Same icon and tint as the
+            // conversations list search (`ic_search`, on-surface like the ⋮
+            // next to it).
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    // Feedback round 5 — 44dp -> 36dp, matching the
+                    // pinned-thread screenshot (icon centres ~33-36dp apart).
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onSearchClick)
+                    .semantics { role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_search),
+                    contentDescription = stringResource(R.string.thread_search_hint),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
             if (canCall) {
-                Spacer(Modifier.width(8.dp))
+                // Feedback round 5 — Kristin's call icon (`ic_call_outline`,
+                // handset outline, black stroke in the vector) replaces the
+                // Material phone glyph. Tinted on-surface at the call site,
+                // like the search magnifier and the ⋮ next to it. The call
+                // action itself is unchanged.
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        // Feedback round 5 — 44dp -> 36dp, as the search box.
+                        .size(36.dp)
                         .clip(CircleShape)
                         .clickable(onClick = onCall)
                         .semantics { role = Role.Button },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Outlined.Phone,
+                        painter = painterResource(R.drawable.ic_call_outline),
                         contentDescription = stringResource(R.string.action_call),
-                        tint = cs.primary,
+                        tint = cs.onSurface,
                         modifier = Modifier.size(22.dp),
                     )
                 }
             }
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    // Feedback round 5 — 44dp -> 36dp, as the search box.
+                    .size(36.dp)
                     .clip(CircleShape)
                     .clickable(onClick = onMoreClick)
                     .semantics { role = Role.Button },
@@ -1389,6 +1792,107 @@ private fun ThreadHeader(
                     modifier = Modifier.size(24.dp),
                 )
                 menu()
+            }
+        }
+    }
+}
+
+/**
+ * Feedback round 5 — the in-conversation search pill that replaces the
+ * thread header while searching, matching the conversations list search
+ * pill (round 4): a full-width pill (48dp high, fully rounded), "Search in
+ * this conversation" placeholder, no magnifier inside, and Kristin's
+ * close-circle icon at the right end — tapping it closes the pill. The
+ * match count ("2 of 5", or "No results") and the up/down jump controls sit
+ * to the right of the pill; the keyboard's search key jumps to the next
+ * match. Matches stay in place in the thread with highlighting — nothing is
+ * hidden — so the user keeps the conversation context around a match.
+ */
+@Composable
+private fun ThreadSearchHeader(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    /** "2 of 5", "No results", or null while the query is still blank. */
+    matchLabel: String?,
+    canNavigate: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+    focusRequester: FocusRequester,
+) {
+    val cs = MaterialTheme.colorScheme
+    // Hoisted: stringResource is @Composable and cannot run inside .semantics {}.
+    val closeLabel = stringResource(R.string.action_close)
+    Column(
+        modifier = Modifier
+            .statusBarsPadding()
+            .background(cs.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RelayTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.weight(1f).height(48.dp),
+                placeholder = stringResource(R.string.thread_search_hint),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onSearch = { onNext() },
+                ),
+                cornerRadius = 24.dp,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                focusRequester = focusRequester,
+                trailingIcon = {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onClose)
+                            .semantics {
+                                contentDescription = closeLabel
+                                role = Role.Button
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close_circle_outline),
+                            contentDescription = null,
+                            tint = cs.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                },
+            )
+            matchLabel?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = cs.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
+            IconButton(onClick = onPrevious, enabled = canNavigate) {
+                Icon(
+                    Icons.Outlined.KeyboardArrowUp,
+                    contentDescription = stringResource(R.string.thread_search_previous),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            IconButton(onClick = onNext, enabled = canNavigate) {
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.thread_search_next),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
     }
@@ -1747,13 +2251,15 @@ private fun ComposerBar(
  * mic stays in the composition tree across the Idle↔Recording transition so the in-flight
  * pointer gesture is never interrupted.
  *
- * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 24dp radius, min
- * 48dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
- * inside trailing; the send affordance is a 48dp blue circle with a white up-arrow,
+ * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 18dp radius, min
+ * 36dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
+ * inside trailing; the send affordance is a 36dp blue circle with a white up-arrow,
  * shown only when there is text (or staged attachments), and a mic glyph when the
- * composer is empty. The mic circle is the same 48dp height as the pill, so the row
+ * composer is empty. The mic circle is the same 36dp height as the pill, so the row
  * reads as one aligned unit. Round 4: the camera opens the camera directly
  * ([onCameraClick]), only the + opens the attachment sheet ([onAttachClick]).
+ * Feedback round 5 — the pill was 48dp; Kristin asked for ~34px shorter (at xxhdpi
+ * ~3x that is ~11dp), so 48dp → 36dp, and the mic/send circle shrank to match.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1817,17 +2323,26 @@ private fun ComposingRow(
                             onValueChange = onDraftChanged,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .focusRequester(composerFocus),
+                                .heightIn(min = 36.dp),
                             placeholder = stringResource(R.string.thread_compose_placeholder),
                             maxLines = 5,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Sentences,
                                 imeAction = ImeAction.Default,
                             ),
-                            cornerRadius = 24.dp,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            cornerRadius = 18.dp,
+                            // Feedback round 5 — 6dp vertical: the pill is 36dp and a
+                            // bodyLarge line is 24dp, so 6 + 24 + 6 = 36dp exactly —
+                            // the text keeps comfortable padding without forcing the
+                            // pill taller.
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             textStyle = MaterialTheme.typography.bodyLarge,
+                            // Feedback round 5 — the requester belongs on the inner
+                            // text field, not on the outer modifier: attached to the
+                            // outer Box it pointed at a non-focusable node, so
+                            // `composerFocus.requestFocus()` (smiley tap) was a silent
+                            // no-op — no focus, no keyboard, no cursor.
+                            focusRequester = composerFocus,
                             leadingIcon = {
                                 // Smiley de Kristin : ouvre le clavier (touche emoji du
                                 // clavier système) — pas de popup emoji pour l'instant.
@@ -1899,9 +2414,10 @@ private fun ComposingRow(
 }
 
 /**
- * Small round hit area (36dp) for a glyph living inside the composer pill — Kristin's
- * smiley leading, camera and + trailing. The glyph itself is 24dp in the secondary
- * colour (round 4 — 22dp still read small next to the 48dp mic/send tile); the vector
+ * Small round hit area (30dp) for a glyph living inside the composer pill — Kristin's
+ * smiley leading, camera and + trailing. The glyph itself is 20dp in the secondary
+ * colour (feedback round 5 — 24dp crowded the 36dp pill; 20dp keeps the same visual
+ * weight the 24dp glyphs had against the old 48dp pill); the vector
  * drawables are Kristin's own icons, tinted here from the theme.
  */
 @Composable
@@ -1913,7 +2429,7 @@ private fun ComposerIconButton(
     val cs = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(30.dp)
             .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -1922,16 +2438,17 @@ private fun ComposerIconButton(
             painter = painter,
             contentDescription = contentDescription,
             tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(20.dp),
         )
     }
 }
 
 /**
- * Relay UI refresh — send affordance: a 48dp blue circle with a white up-arrow, the
- * same height as the composer pill. It slides up with a spring each time it appears
- * and scales to 0.90 while pressed; the haptic tick is fired by the caller's
- * [onClick] (see [ComposerBar]).
+ * Relay UI refresh — send affordance: a 36dp blue circle with a white paper-airplane
+ * send icon, the same height as the composer pill. It slides up with a spring each
+ * time it appears and scales to 0.90 while pressed; the haptic tick is fired by the
+ * caller's [onClick] (see [ComposerBar]). Feedback round 5 — the circle stays a
+ * circle: it shrank 48dp → 36dp with the pill, width = height, not a pill or oval.
  */
 @Composable
 private fun SendCircleButton(
@@ -1959,7 +2476,7 @@ private fun SendCircleButton(
     )
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(36.dp)
             .offset(y = slideOffset)
             .alpha(slideAlpha)
             .alpha(if (enabled) 1f else 0.38f)
@@ -1976,10 +2493,10 @@ private fun SendCircleButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Filled.ArrowUpward,
+            imageVector = Icons.AutoMirrored.Outlined.Send,
             contentDescription = stringResource(R.string.action_send),
             tint = Color.White,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -2018,11 +2535,13 @@ private fun RecordingStrip(
         label = "rec-cancel-bg",
     )
 
+    // Feedback round 5 — same height as the shortened composer pill (36dp),
+    // so the row keeps one height while recording.
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
             .background(cancelBg)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart,
@@ -2052,7 +2571,7 @@ private fun RecordingStrip(
                 WaveformLive(
                     history = history,
                     color = cs.primary,
-                    modifier = Modifier.weight(1f).height(28.dp),
+                    modifier = Modifier.weight(1f).height(24.dp),
                 )
             }
         }
@@ -2123,9 +2642,11 @@ private fun MicButton(
         }
     }
 
-    // Relay UI refresh: a 48dp blue circle with Kristin's white mic — the same height
-    // as the composer pill, matching the send circle. While recording it grows to 56dp
-    // and turns red, as before.
+    // Relay UI refresh: a 36dp blue circle with Kristin's white mic — the same height
+    // as the composer pill, matching the send circle. While recording it grows to 42dp
+    // and turns red, as before. Feedback round 5 — the button stays a circle in both
+    // states: it shrank 48dp → 36dp idle and 56dp → 42dp recording with the pill
+    // (proportional: 56 × 36 / 48 = 42), width = height, never a pill or oval.
     // Phase 8 — TalkBack : le geste press-and-hold (`pointerInput`) n'expose aucune
     // action d'accessibilité — un utilisateur TalkBack entendait « Enregistrer un
     // message vocal » sans pouvoir le déclencher. La sémantique ci-dessous donne au
@@ -2136,7 +2657,7 @@ private fun MicButton(
     )
     Box(
         modifier = Modifier
-            .size(if (isRecording) 56.dp else 48.dp)
+            .size(if (isRecording) 42.dp else 36.dp)
             .semantics(mergeDescendants = true) {
                 contentDescription = micDescription
                 role = Role.Button
@@ -2156,7 +2677,7 @@ private fun MicButton(
     ) {
         Box(
             modifier = Modifier
-                .size(if (isRecording) 56.dp else 48.dp)
+                .size(if (isRecording) 42.dp else 36.dp)
                 .clip(CircleShape)
                 .background(containerColor),
             contentAlignment = Alignment.Center,
@@ -2165,10 +2686,11 @@ private fun MicButton(
                 painter = painterResource(R.drawable.ic_mic_outline),
                 contentDescription = null,
                 tint = contentColor,
-                // Round 4 — 24dp in both states (was 20dp idle): the mic glyph now
-                // matches the other composer icons and the send arrow at 24dp, so
-                // the whole row reads at one visual weight. The tile stays 48dp.
-                modifier = Modifier.size(24.dp),
+                // Feedback round 5 — 20dp in both states (was 24dp): the mic
+                // glyph now matches the other composer icons and the send
+                // arrow at 20dp, so the whole row reads at one visual weight.
+                // The tile stays 36dp idle / 42dp recording.
+                modifier = Modifier.size(20.dp),
             )
         }
     }
@@ -2322,6 +2844,17 @@ private const val WAVE_BARS: Int = 28
 
 /** Max gap (ms) between two messages of the same sender to count as one burst. */
 private const val BURST_GAP_MS: Long = 60_000L
+
+/** Delay before retrying the thread search focus request (see `ThreadScreen`). */
+private const val THREAD_SEARCH_FOCUS_RETRY_MS: Long = 100L
+
+/**
+ * Feedback round 5 — auto-load older messages when the first visible message
+ * is within this many items of the top of the loaded window. 5 gives a
+ * 200 ms Room load time to land before the user reaches the top, without
+ * firing loads the user never scrolls near.
+ */
+private const val AUTO_LOAD_TOP_THRESHOLD: Int = 5
 
 /** True when [a] and [b] fall on the same calendar day. */
 private fun sameDay(a: Long, b: Long): Boolean {
@@ -2477,6 +3010,8 @@ private class ThreadMessageItemActions(
     val onSelectText: (Message) -> Unit,
     /** v1.26.1 (audit F2) — bascule « favori » ; le drapeau protège déjà de la purge auto. */
     val onToggleStar: (Message) -> Unit,
+    /** Feedback round 5 — bascule « épingler » (un seul message épinglé par fil). */
+    val onTogglePin: (Message) -> Unit,
     val onPhoneClick: (String) -> Unit,
 )
 
@@ -2519,6 +3054,15 @@ private fun ThreadMessageItem(
      * `sub_id` : aucun tag n'est alors ajouté. Résolu par le parent via [rememberSimLabeler].
      */
     simLabel: String? = null,
+    /**
+     * Feedback round 5 — thread search highlight for this message's body /
+     * caption: every occurrence of the query, and whether the search is
+     * currently sitting on this message. Empty by default: no search, no
+     * highlight.
+     */
+    searchHighlight: SearchHighlight = SearchHighlight(),
+    /** Feedback round 5 — ce message est l'épinglé du fil (menu « Désépingler »). */
+    isPinnedMessage: Boolean = false,
     actions: ThreadMessageItemActions,
 ) {
     // Taille du texte des messages : tout l'élément (séparateur, bulle, citation, horodatage).
@@ -2544,6 +3088,14 @@ private fun ThreadMessageItem(
         // a burst hid every "Delivered" except on the timestamped message.)
         val showStatus = isLastOutgoingOfRun(msg, next)
         val burstPosition = computeBurstPosition(prev, msg, next)
+        // Feedback round 5 — menu toggles for this message, built once for
+        // the three bubble types below (one bundle parameter instead of
+        // three — the text bubble is at the Detekt 20-parameter limit).
+        val menuToggles = BubbleMenuToggles(
+            onToggleStar = { actions.onToggleStar(msg) },
+            isPinned = isPinnedMessage,
+            onTogglePin = { actions.onTogglePin(msg) },
+        )
         val audio = msg.audioAttachment
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à
         // MediaAttachmentBubble qui ajoute le tap-to-view (ACTION_VIEW via FileProvider).
@@ -2592,11 +3144,15 @@ private fun ThreadMessageItem(
                     onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
                     onForward = { actions.onForward(msg) },
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    onToggleStar = { actions.onToggleStar(msg) },
+                    // Feedback round 5 — bascules « favori » / « épingler » sur les
+                    // trois types de bulle.
+                    toggles = menuToggles,
                     repliedToPreview = repliedToPreview,
                     showTimestamp = showTimestamp,
                     showStatus = showStatus,
                     senderLabel = senderLabel,
+                    // Feedback round 5 — voice messages carry no searchable text
+                    // body, so there is nothing to highlight on an audio bubble.
                 )
             }
             mediaAttachment != null -> {
@@ -2614,10 +3170,13 @@ private fun ThreadMessageItem(
                     onSelectText = if (msg.body.isNotBlank()) { { actions.onSelectText(msg) } } else null,
                     onForward = { actions.onForward(msg) },
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    onToggleStar = { actions.onToggleStar(msg) },
+                    // Feedback round 5 — bascules « favori » / « épingler » sur les
+                    // trois types de bulle.
+                    toggles = menuToggles,
                     onPhoneClick = actions.onPhoneClick,
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,
+                    searchHighlight = searchHighlight,
                 )
             }
             else -> {
@@ -2637,49 +3196,15 @@ private fun ThreadMessageItem(
                     onSelectText = if (msg.body.isNotBlank()) { { actions.onSelectText(msg) } } else null,
                     onForward = { actions.onForward(msg) },
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    onToggleStar = { actions.onToggleStar(msg) },
+                    // Feedback round 5 — bascules « favori » / « épingler » sur les
+                    // trois types de bulle.
+                    toggles = menuToggles,
                     onPhoneClick = actions.onPhoneClick,
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,
                     customBubbleColorArgb = bubbleColorArgb,
                     smishingReasons = smishingReasons,
-                )
-            }
-        }
-    }
-}
-
-/**
- * Head-of-thread control that widens the loaded window (v1.24.0, finding A).
- *
- * Sits above the oldest loaded message and states how many older ones remain, so the boundary of
- * the window is explicit rather than looking like the start of the conversation.
- */
-@Composable
-private fun LoadOlderRow(
-    isLoading: Boolean,
-    remaining: Int,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-            )
-        } else {
-            TextButton(onClick = onClick) {
-                Text(
-                    text = if (remaining > 0) {
-                        stringResource(R.string.thread_load_older_remaining, remaining)
-                    } else {
-                        stringResource(R.string.thread_load_older)
-                    },
+                    searchHighlight = searchHighlight,
                 )
             }
         }

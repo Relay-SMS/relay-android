@@ -3,8 +3,9 @@ package com.filestech.sms.ui.components
 import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -18,15 +19,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,7 +34,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.data.voice.VoicePlaybackController
@@ -47,8 +51,16 @@ import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.RelayText
 
 /**
- * Audio bubble for an MMS voice message. Renders a compact mini-player (play/pause + slider +
- * duration label) inside a chat bubble that honours the same in/out colouring as [MessageBubble].
+ * Audio bubble for an MMS voice message. Renders a compact mini-player inside a chat bubble
+ * that honours the same in/out colouring as [MessageBubble]: solid brand blue outgoing, solid
+ * neutral grey incoming, with the timestamp bottom-right inside the bubble.
+ *
+ * Feedback round 5 — the player matches the Figma thread: a circular play button on the
+ * left (Kristin's `ic_play_circle`: a disc with a play-triangle hole), a waveform in the
+ * middle, and the duration at the right. The waveform IS the progress: bars before the
+ * playhead are full opacity, the rest sit at 30%. There is no slider / progress bar.
+ * Tapping (or dragging) anywhere on the waveform seeks to that point and starts playing
+ * from there.
  *
  * Playback is delegated to the singleton [VoicePlaybackController]: the [playback] state is
  * read from the parent so we know whether THIS bubble is the active one. Tapping play/pause for
@@ -71,8 +83,7 @@ fun AudioMessageBubble(
      * recompositions/s.
      *
      * The lambda is wrapped in `derivedStateOf` below and the value field that drives
-     * the slider (`positionMs`) is only re-read while the slider is mounted in the
-     * active bubble's composition.
+     * the waveform (`positionMs`) is only re-read while the bubble is the active one.
      */
     playbackProvider: () -> VoicePlaybackController.PlaybackState,
     onTogglePlay: () -> Unit,
@@ -85,8 +96,14 @@ fun AudioMessageBubble(
      * `onCopy` here: a voice MMS has no text payload to copy.
      */
     onForward: (() -> Unit)? = null,
-    /** v1.26.1 (audit F2) — bascule « favori » ; l'état est lu sur [message]. */
-    onToggleStar: (() -> Unit)? = null,
+    /**
+     * Feedback round 5 — bascules « favori » / « épingler »
+     * ([BubbleMenuToggles]) ; l'état épinglé est lu sur la conversation
+     * (un seul message épinglé par fil), pas sur [message]. Un seul
+     * paramètre pour les deux bascules : la bulle texte est à la limite
+     * Detekt de 20 paramètres.
+     */
+    toggles: BubbleMenuToggles? = null,
     repliedToPreview: ReplyQuotePreview? = null,
     showTimestamp: Boolean = false,
     // Feedback round 4 — statut découplé de l'heure (voir [MessageBubble]).
@@ -96,23 +113,25 @@ fun AudioMessageBubble(
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
-    // v1.2.6 design : la bulle vocale de l'expéditeur (outgoing) est désormais sans fond,
-    // juste un contour bleu de marque pour garder la silhouette. La bulle entrante reste
-    // inchangée (fill gris neutre + contrôles primary).
-    // Phase 8 — le contour sortant est le bleu fixe [BrandBlue], comme la bulle texte
-    // ([MessageBubble]) : le `primary` du thème s'éclaircit en sombre et les bulles
-    // sortantes ne doivent pas changer de bleu entre elles.
+    // Feedback round 5 — the voice bubble is a SOLID fill like the text bubbles
+    // (the Figma thread shows a solid blue outgoing bubble, not the old
+    // border-only one). Incoming keeps the neutral grey.
     val bgColor = if (isOut) BrandBlue else com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
-    // Sans fond plein côté outgoing, on ne peut plus utiliser `onPrimary` (blanc) pour les
-    // contrôles : ils deviendraient invisibles sur la surface du thème. Bascule en `primary`
-    // pour les deux directions (l'incoming, sur fond gris neutre, reste lisible aussi).
-    val controlColor = cs.primary
-    val sliderActive = cs.primary
-    val sliderInactive = cs.onSurfaceVariant.copy(alpha = 0.3f)
-    // Phase 8 — la durée et l'heure entrantes passent en `onSurface` : `onSurfaceVariant`
-    // ne donnait que 4.40:1 sur la bulle entrante claire `#E9E9EB`. Côté sortant, sans
-    // fond, `onSurfaceVariant` sur le fond de page passe (5.33:1 en clair, 6.12:1 en sombre).
-    val labelColor = if (isOut) cs.onSurfaceVariant else cs.onSurface
+    // Feedback round 5 — disc + waveform colour: white on the blue outgoing
+    // bubble; Kristin's dark `#353535` on the light incoming bubble, white in
+    // dark mode where `#353535` would vanish on the dark grey bubble. Picked
+    // from the surface luminance, like [com.filestech.sms.ui.theme.textFieldCursorColor].
+    val surfaceLuma = 0.2126f * cs.surface.red + 0.7152f * cs.surface.green + 0.0722f * cs.surface.blue
+    val controlColor = if (isOut) {
+        Color.White
+    } else if (surfaceLuma < 0.5f) {
+        Color.White
+    } else {
+        voiceDark
+    }
+    // Duration + timestamp sit ON the solid fill now: white outgoing, on-surface
+    // incoming (the old outgoing `onSurfaceVariant` assumed a transparent bubble).
+    val labelColor = if (isOut) Color.White else cs.onSurface
 
     // `derivedStateOf` blocks recomposition unless the *projected* slice changes — so a tick
     // that only moves `positionMs` on a non-active bubble emits the same `LocalPlayback.None`
@@ -143,7 +162,7 @@ fun AudioMessageBubble(
     val positionMs = (local as? LocalPlayback.Active)?.positionMs?.coerceAtMost(
         totalMs.coerceAtLeast(0),
     ) ?: 0
-    val sliderValue = if (totalMs <= 0) 0f else positionMs.toFloat() / totalMs
+    val progressFraction = if (totalMs <= 0) 0f else positionMs.toFloat() / totalMs
 
     val shape = RoundedCornerShape(
         topStart = 18.dp,
@@ -153,8 +172,35 @@ fun AudioMessageBubble(
     )
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle
-    // (hors bouton lecture et slider, qui gardent leurs gestes) ouvre le menu.
+    // (hors bouton lecture et waveform, qui gardent leurs gestes) ouvre le menu.
     var menuExpanded by remember { mutableStateOf(false) }
+
+    // Feedback round 5 — tap-to-seek on a clip that has never played: the
+    // controller only seeks inside a loaded clip, and loading is async
+    // (`prepareAsync`), so the target is stashed until the clip is prepared
+    // (duration known), then applied. A tap on an active clip seeks at once.
+    var pendingSeekMs by remember(key) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(isActiveClip, totalMs) {
+        val pending = pendingSeekMs ?: return@LaunchedEffect
+        if (isActiveClip && totalMs > 0) {
+            onSeekTo(pending)
+            pendingSeekMs = null
+        } else if (!isActiveClip) {
+            pendingSeekMs = null
+        }
+    }
+    val seekToFraction: (Float) -> Unit = { fraction ->
+        if (totalMs > 0) {
+            val targetMs = (fraction * totalMs).toInt()
+            if (isActiveClip) {
+                onSeekTo(targetMs)
+                if (!isPlaying) onTogglePlay()
+            } else {
+                pendingSeekMs = targetMs
+                onTogglePlay()
+            }
+        }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
@@ -181,132 +227,66 @@ fun AudioMessageBubble(
                     modifier = Modifier
                         .widthIn(min = 220.dp, max = 320.dp)
                         .clip(shape)
+                        .background(bgColor)
                         .clickable { menuExpanded = true }
-                        // v1.2.6 design : outgoing → border seul (allégé). Incoming → fond
-                        // slate-blue. v1.4.0 : the incoming bubble also gets a thin border
-                        // slightly darker than its fill so it pops off the surrounding
-                        // surface (the all-flat slate-blue felt washed-out next to outgoing
-                        // bubbles which already carry a rim).
-                        .then(
-                            if (isOut) {
-                                Modifier.border(width = 1.5.dp, color = bgColor, shape = shape)
-                            } else {
-                                Modifier
-                                    .background(bgColor)
-                                    .border(
-                                        width = 1.dp,
-                                        color = androidx.compose.ui.graphics.lerp(
-                                            bgColor,
-                                            androidx.compose.ui.graphics.Color.Black,
-                                            0.18f,
-                                        ),
-                                        shape = shape,
-                                    )
-                            },
-                        )
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                 ) {
                   androidx.compose.foundation.layout.Column {
                     if (!senderLabel.isNullOrBlank()) {
-                        // Phase 8 — l'étiquette est sur le fond de page côté sortant (la
-                        // bulle n'a qu'un contour, pas de fond) et sur la bulle entrante
-                        // côté entrant : `onSurface` passe partout. L'ancien `onPrimary`
-                        // sortant (blanc en clair) était invisible sur fond clair — le
-                        // commentaire Z5 supposait à tort un fond `primary` plein.
+                        // The label sits on the bubble fill in both directions now
+                        // (the outgoing bubble is solid blue): white outgoing,
+                        // on-surface incoming.
                         Text(
                             text = senderLabel,
                             style = MaterialTheme.typography.labelMedium,
-                            color = cs.onSurface,
+                            color = if (isOut) Color.White else cs.onSurface,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                             modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 2.dp),
                         )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // v1.2.6 : disque Play différencié par direction.
-                        //  - outgoing : rond rempli avec **exactement la même couleur** que le contour
-                        //    de la bulle (`bgColor`), pour cohérence visuelle. Icône blanche pleine.
-                        //  - incoming : disque primary 15 % + icône primary (inchangé).
-                        val playBg = if (isOut) bgColor else controlColor.copy(alpha = 0.15f)
-                        // Phase 8 — blanc fixe sur le disque bleu fixe sortant : `onPrimary`
-                        // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
-                        val playTint = if (isOut) Color.White else controlColor
-                        // Note : `Icons.Outlined.PlayArrow` / `Icons.Outlined.Pause` sont rendues
-                        // pleines visuellement par Material (forme triangle/bâtonnets sans contour
-                        // creux), donc une flèche blanche sur fond bleu apparaît bien
-                        // pleine — pas besoin de basculer vers `Filled.*`.
-                        val playIcon = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow
+                        // Feedback round 5 — Kristin's play disc (`ic_play_circle`):
+                        // a filled disc with the play triangle as a HOLE, so the
+                        // bubble colour shows through as the triangle. White disc
+                        // on the blue outgoing bubble (blue triangle), dark disc
+                        // on the light incoming bubble (grey triangle). While
+                        // playing, the same disc carries two pause bars in the
+                        // bubble colour instead.
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
-                                .background(playBg),
+                                .then(if (isPlaying) Modifier.background(controlColor) else Modifier)
+                                .clickable(onClick = onTogglePlay)
+                                .semantics { role = Role.Button },
                             contentAlignment = Alignment.Center,
                         ) {
-                            IconButton(onClick = onTogglePlay, modifier = Modifier.size(36.dp)) {
+                            if (isPlaying) {
                                 Icon(
-                                    imageVector = playIcon,
-                                    contentDescription = stringResource(
-                                        if (isPlaying) R.string.voice_action_pause else R.string.voice_action_play,
-                                    ),
-                                    tint = playTint,
+                                    imageVector = Icons.Filled.Pause,
+                                    contentDescription = stringResource(R.string.voice_action_pause),
+                                    tint = bgColor,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_play_circle),
+                                    contentDescription = stringResource(R.string.voice_action_play),
+                                    tint = controlColor,
+                                    modifier = Modifier.size(40.dp),
                                 )
                             }
                         }
-                        // v1.4.0 — decorative waveform at rest. When the clip is NOT playing,
-                        // overlay deterministic vertical bars BEHIND the slider track + force
-                        // the inactive track to transparent so the bars show through. During
-                        // playback the standard Material 3 slider takes over so the progress
-                        // animation stays clean (no flicker from bars under the moving thumb).
-                        // The bar heights are seeded by [audio.id] so the same voice clip
-                        // always renders the same wave silhouette across recompositions.
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 4.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (!isPlaying) {
-                                val barHeights = androidx.compose.runtime.remember(audio.id) {
-                                    val rng = kotlin.random.Random(audio.id.takeIf { it != 0L } ?: 1L)
-                                    IntArray(WAVE_BAR_COUNT) { rng.nextInt(3, 14) }
-                                }
-                                Canvas(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(20.dp),
-                                ) {
-                                    val n = barHeights.size
-                                    val barWidthPx = 2.dp.toPx()
-                                    val spacing = size.width / n
-                                    val cy = size.height / 2f
-                                    for (i in 0 until n) {
-                                        val cx = spacing * i + spacing / 2f
-                                        val halfH = barHeights[i].dp.toPx() / 2f
-                                        drawLine(
-                                            color = sliderInactive,
-                                            start = androidx.compose.ui.geometry.Offset(cx, cy - halfH),
-                                            end = androidx.compose.ui.geometry.Offset(cx, cy + halfH),
-                                            strokeWidth = barWidthPx,
-                                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                                        )
-                                    }
-                                }
-                            }
-                            Slider(
-                                value = sliderValue.coerceIn(0f, 1f),
-                                onValueChange = { f ->
-                                    if (totalMs > 0) onSeekTo((f * totalMs).toInt())
-                                },
-                                enabled = totalMs > 0,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = sliderActive,
-                                    activeTrackColor = sliderActive,
-                                    inactiveTrackColor = if (isPlaying) sliderInactive
-                                        else androidx.compose.ui.graphics.Color.Transparent,
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
+                        VoiceWaveform(
+                            audioId = audio.id,
+                            totalMs = totalMs,
+                            isActiveClip = isActiveClip,
+                            isPlaying = isPlaying,
+                            progressFraction = progressFraction,
+                            controlColor = controlColor,
+                            onSeekToFraction = { fraction -> seekToFraction(fraction) },
+                            modifier = Modifier.weight(1f),
+                        )
                         // Phase 8 — la durée est du méta-texte de mise en page, comme
                         // l'heure : 12sp fixe (voir [FixedTypeSize]), pas `labelSmall`
                         // multiplié par le coefficient « Taille du texte des messages ».
@@ -328,7 +308,9 @@ fun AudioMessageBubble(
                         showTimestamp = showTimestamp,
                         showStatus = showStatus,
                         textColor = labelColor,
-                        modifier = Modifier.padding(top = 2.dp, end = 4.dp).align(Alignment.End),
+                        // Feedback round 5 — 12dp above the timestamp (was 2dp):
+                        // the time sat too close under the waveform.
+                        modifier = Modifier.padding(top = 12.dp, end = 4.dp).align(Alignment.End),
                     )
                   } // ferme Column senderLabel + Row + horodatage
                 }
@@ -340,9 +322,101 @@ fun AudioMessageBubble(
                 onReact = onReact,
                 onForward = onForward,
                 starred = message.starred,
-                onToggleStar = onToggleStar,
+                toggles = toggles,
                 onDelete = onDelete,
             )
+        }
+    }
+}
+
+/**
+ * Feedback round 5 — the waveform IS the progress and the seek control: no
+ * slider. Bars before the playhead are full opacity, the rest sit at 30%. A tap
+ * (or a drag) anywhere on it seeks to that point and starts playing from there.
+ * The bar heights are seeded by [audioId] so the same voice clip always renders
+ * the same wave silhouette across recompositions.
+ *
+ * Kept out of [AudioMessageBubble] so that bubble stays under the complexity
+ * limit: the gesture loop and the bar drawing carry their own branches.
+ */
+@Composable
+private fun VoiceWaveform(
+    audioId: Long,
+    totalMs: Int,
+    isActiveClip: Boolean,
+    isPlaying: Boolean,
+    progressFraction: Float,
+    controlColor: Color,
+    onSeekToFraction: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Tap-to-seek uses the same gesture shape as the push-to-talk mic button
+    // (`awaitEachGesture` + `awaitFirstDown`, then a drag loop until the finger
+    // lifts): `awaitPointerEvent(PointerEventType.Press)` does not exist —
+    // `awaitPointerEvent` takes a `PointerEventPass`, not a type.
+    val seekGesture = Modifier.pointerInput(totalMs, isActiveClip, isPlaying) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            onSeekToFraction(
+                (down.position.x / size.width).coerceIn(0f, 1f),
+            )
+            down.consume()
+            // One flag instead of two `break`s: the drag loop ends
+            // when the finger lifts (or the change vanishes).
+            var dragging = true
+            while (dragging) {
+                val event = awaitPointerEvent()
+                val move = event.changes.firstOrNull()
+                if (move == null || !move.pressed) {
+                    dragging = false
+                } else {
+                    onSeekToFraction(
+                        (move.position.x / size.width).coerceIn(0f, 1f),
+                    )
+                    move.consume()
+                }
+            }
+        }
+    }
+    Box(
+        modifier = modifier
+            .padding(horizontal = 8.dp)
+            .then(seekGesture),
+        contentAlignment = Alignment.Center,
+    ) {
+        val barHeights = androidx.compose.runtime.remember(audioId) {
+            val rng = kotlin.random.Random(audioId.takeIf { it != 0L } ?: 1L)
+            IntArray(WAVE_BAR_COUNT) { rng.nextInt(4, 23) }
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp),
+        ) {
+            val n = barHeights.size
+            val barWidthPx = 2.dp.toPx()
+            val spacing = size.width / n
+            val cy = size.height / 2f
+            for (i in 0 until n) {
+                val cx = spacing * i + spacing / 2f
+                val halfH = barHeights[i].dp.toPx() / 2f
+                val played = (i + 0.5f) / n <= progressFraction
+                drawLine(
+                    color = controlColor.copy(
+                        alpha = if (played) 1f else 0.3f,
+                    ),
+                    start = androidx.compose.ui.geometry.Offset(
+                        cx,
+                        cy - halfH,
+                    ),
+                    end = androidx.compose.ui.geometry.Offset(
+                        cx,
+                        cy + halfH,
+                    ),
+                    strokeWidth = barWidthPx,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+            }
         }
     }
 }
@@ -369,10 +443,17 @@ private fun formatBubbleDuration(ms: Long): String {
 }
 
 /**
- * v1.4.0 — number of decorative waveform bars drawn behind the slider when the audio
- * clip is at rest. 28 reads as a "voice clip" silhouette in the ~280-dp bubble width
- * without crowding (≈ 10 dp / bar including spacing) and stays cheap to draw (single
- * Canvas pass, no recomposition during playback because the wave is hidden then).
+ * Feedback round 5 — dark colour of the play disc and the waveform bars on an incoming
+ * bubble (Kristin's `ic_play_circle` fill). White in dark mode instead — see the
+ * `controlColor` computation above.
+ */
+private val voiceDark: Color = Color(0xFF353535)
+
+/**
+ * v1.4.0 — number of waveform bars. 28 reads as a "voice clip" silhouette in the ~200-dp
+ * waveform width without crowding (≈ 7 dp / bar including spacing) and stays cheap to draw
+ * (single Canvas pass, no recomposition from the bars themselves — only the 5 Hz progress
+ * tick re-reads `positionMs`).
  */
 private const val WAVE_BAR_COUNT: Int = 28
 

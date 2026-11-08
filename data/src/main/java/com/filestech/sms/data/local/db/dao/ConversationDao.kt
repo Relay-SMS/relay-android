@@ -182,6 +182,31 @@ interface ConversationDao {
     @Query("UPDATE conversations SET pinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)
 
+    /**
+     * Feedback round 5 — message épinglé du fil. Un seul par conversation :
+     * épingler un autre message écrase l'épingle courante. `messageId = null`
+     * (avec `pinnedAt = null`) retire l'épingle.
+     */
+    @Query(
+        "UPDATE conversations SET pinned_message_id = :messageId, " +
+            "pinned_message_at = :pinnedAt WHERE id = :id",
+    )
+    suspend fun setPinnedMessage(id: Long, messageId: Long?, pinnedAt: Long?)
+
+    /**
+     * Feedback round 5 — retire l'épingle quand le message épinglé est
+     * supprimé. L'UPDATE ciblé ne touche que la conversation dont l'épingle
+     * pointe sur ce message ; appelé par le chemin de suppression explicite
+     * ([ConversationRepositoryImpl.deleteMessage]). Les autres chemins de
+     * disparition (purge auto, resynchro) sont rattrapés par l'auto-réparation
+     * côté ViewModel, qui efface l'épingle quand le message ne se résout plus.
+     */
+    @Query(
+        "UPDATE conversations SET pinned_message_id = NULL, pinned_message_at = NULL " +
+            "WHERE pinned_message_id = :messageId",
+    )
+    suspend fun clearPinnedMessageIfMessage(messageId: Long)
+
     @Query("UPDATE conversations SET archived = :archived WHERE id = :id")
     suspend fun setArchived(id: Long, archived: Boolean)
 

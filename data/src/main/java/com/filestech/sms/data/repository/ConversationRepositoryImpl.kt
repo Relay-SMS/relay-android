@@ -12,6 +12,7 @@ import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.ConversationEntity
+import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.local.db.mapper.toDomain
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.model.Attachment
@@ -19,6 +20,7 @@ import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.MessageSearchHit
 import com.filestech.sms.domain.model.MessageWindow
+import com.filestech.sms.domain.model.MessageWindowSpec
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.PhoneAddress.Companion.toCsv
 import com.filestech.sms.domain.notification.ConversationNotificationCanceller
@@ -295,19 +297,43 @@ class ConversationRepositoryImpl @Inject constructor(
      */
     override fun observeMessagesWindow(
         conversationId: Long,
-        limit: Flow<Int>,
+        window: Flow<MessageWindowSpec>,
     ): Flow<MessageWindow> {
         val inVaultFlow = conversationDao.observeById(conversationId)
             .map { it?.inVault == true }
             .distinctUntilChanged()
-        val rowsFlow = limit
+        // Feedback round 5 — the window is a spec now, not just a size: a search
+        // jump swaps the tail for a window ending at the target message. The
+        // anchored query asks for one row more than the window holds; the extra
+        // row is the proof that older messages exist past the anchor (see
+        // [MessageDao.observeWindowEndingAt]) — a stats-based check would lie
+        // near the thread start, where the window is smaller than the thread
+        // while no older message exists past the anchor.
+        val rowsFlow = window
             .distinctUntilChanged()
-            .flatMapLatest { size -> messageDao.observeWindowForConversation(conversationId, size) }
+            .flatMapLatest { spec ->
+                when (spec) {
+                    is MessageWindowSpec.Tail ->
+                        messageDao.observeWindowForConversation(conversationId, spec.limit)
+                            .map { rows -> WindowRows(rows, hasMoreOlder = null) }
+                    is MessageWindowSpec.EndingAt ->
+                        messageDao.observeWindowEndingAt(
+                            conversationId,
+                            spec.anchorDate,
+                            spec.anchorId,
+                            spec.limit + 1,
+                        ).map { rows ->
+                            val hasMoreOlder = rows.size > spec.limit
+                            val trimmed = if (hasMoreOlder) rows.drop(1) else rows
+                            WindowRows(trimmed, hasMoreOlder)
+                        }
+                }
+            }
         // Les statistiques sont volontairement HORS de ce combine : `messages` et l'agrégat sont
         // tous deux invalidés par la table `messages`, donc les réunir ici ferait tourner le
         // bulk-fetch des pièces jointes et le mapping des 200 lignes DEUX fois par message reçu —
         // annulant la moitié du gain visé. Ici on ne garde que le travail lourd.
-        val mapped = combine(inVaultFlow, rowsFlow) { inVault, rows ->
+        val mapped = combine(inVaultFlow, rowsFlow) { inVault, (rows, hasMoreOlder) ->
             val needAttachments = rows.any { it.attachmentsCount > 0 }
             val attachmentsByMessage: Map<Long, List<Attachment>> =
                 if (needAttachments) {
@@ -318,7 +344,7 @@ class ConversationRepositoryImpl @Inject constructor(
             val messages = rows.map { entity ->
                 entity.toDomain(attachmentsByMessage[entity.id].orEmpty())
             }
-            inVault to messages
+            Triple(inVault, messages, hasMoreOlder)
         }.flowOn(io)
 
         // Assemblage seulement : une ré-émission des stats ne coûte plus qu'une data class.
@@ -327,7 +353,7 @@ class ConversationRepositoryImpl @Inject constructor(
             messageDao.observeStatsForConversation(conversationId).distinctUntilChanged(),
             appLock.state,
             vaultSession.unlocked,
-        ) { (inVault, messages), stats, lockState, vaultOpen ->
+        ) { (inVault, messages, hasMoreOlder), stats, lockState, vaultOpen ->
             // v1.26.1 (audit H1) — même condition que [observeOne] et [observeMessages].
             if (inVault && (lockState is AppLockManager.LockState.PanicDecoy || !vaultOpen)) {
                 MessageWindow()
@@ -335,12 +361,41 @@ class ConversationRepositoryImpl @Inject constructor(
                 MessageWindow(
                     messages = messages,
                     totalCount = stats.total,
-                    hasMore = messages.size < stats.total,
+                    hasMore = hasMoreOlder ?: (messages.size < stats.total),
                     firstMessageAt = stats.firstAt,
                     lastMessageAt = stats.lastAt,
                 )
             }
         }
+    }
+
+    /**
+     * Feedback round 5 — full-history thread search. Same vault gate as
+     * [observeMessagesWindow]: a hidden conversation yields no ids. The LIKE
+     * pattern is built here (a SQL concern, not the caller's): the query wrapped
+     * in `%…%` after escaping its wildcards.
+     */
+    override fun observeSearchInConversation(
+        conversationId: Long,
+        query: String,
+    ): Flow<List<Long>> {
+        if (query.isBlank()) return flowOf(emptyList())
+        val inVaultFlow = conversationDao.observeById(conversationId)
+            .map { it?.inVault == true }
+            .distinctUntilChanged()
+        val pattern = "%${escapeLikePattern(query)}%"
+        return combine(
+            inVaultFlow,
+            messageDao.observeSearchIdsInConversation(conversationId, pattern),
+            appLock.state,
+            vaultSession.unlocked,
+        ) { inVault, ids, lockState, vaultOpen ->
+            if (inVault && (lockState is AppLockManager.LockState.PanicDecoy || !vaultOpen)) {
+                emptyList()
+            } else {
+                ids
+            }
+        }.flowOn(io)
     }
 
     override fun observeUnreadConversationCount(): Flow<Int> =
@@ -536,6 +591,9 @@ class ConversationRepositoryImpl @Inject constructor(
     override suspend fun setPinned(id: Long, pinned: Boolean) = withContext(io) { conversationDao.setPinned(id, pinned) }
     override suspend fun setArchived(id: Long, archived: Boolean) = withContext(io) { conversationDao.setArchived(id, archived) }
     override suspend fun setMuted(id: Long, muted: Boolean) = withContext(io) { conversationDao.setMuted(id, muted) }
+    override suspend fun setPinnedMessage(id: Long, messageId: Long?, pinnedAt: Long?) = withContext(io) {
+        conversationDao.setPinnedMessage(id, messageId, pinnedAt)
+    }
 
     override suspend fun findById(id: Long): Conversation? = withContext(io) {
         conversationDao.findById(id)?.toDomain()
@@ -649,6 +707,9 @@ class ConversationRepositoryImpl @Inject constructor(
         // v1.28.5 (audit de coherence C1) — meme chemin que [delete] : l'effaceur emporte la
         // copie systeme ET les fichiers de pieces jointes, que la cascade Room laissait en clair.
         eraser.eraseMessage(messageId)
+        // Feedback round 5 — si le message effacé était celui épinglé du fil,
+        // l'épingle part avec lui (la bannière ne doit pas survivre à son message).
+        conversationDao.clearPinnedMessageIfMessage(messageId)
     }
 
     override suspend fun setReaction(messageId: Long, emoji: String?): SetReactionResult =
@@ -758,3 +819,13 @@ class ConversationRepositoryImpl @Inject constructor(
     // v1.6.1 (audit QUAL-01) — SAFETY_NET_DAYS centralisé dans
     // [com.filestech.sms.domain.purge.PurgePolicy]. Plus de companion local nécessaire.
 }
+
+/**
+ * Feedback round 5 — one emission of the window query: the loaded rows plus,
+ * for an anchored window, whether older messages exist past the anchor
+ * (`null` for the tail window, which answers that from the stats instead).
+ */
+private data class WindowRows(
+    val rows: List<MessageEntity>,
+    val hasMoreOlder: Boolean?,
+)
