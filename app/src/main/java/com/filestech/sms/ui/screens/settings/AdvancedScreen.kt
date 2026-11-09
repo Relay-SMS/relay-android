@@ -41,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -91,7 +90,10 @@ fun AdvancedScreen(
     }
 
     val snackbarHost = remember { SnackbarHostState() }
-    val ctx = LocalContext.current
+    // The re-sync confirmation text, read in the composable scope (stringResource is
+    // @Composable, so it cannot be called from the LaunchedEffect coroutine below).
+    // Reading it here also keeps it configuration-aware: a locale change re-reads it.
+    val resyncStarted = stringResource(R.string.settings_resync_started)
 
     // Only the two events this screen's actions can emit: the re-sync
     // confirmation snackbar and the erase-data report dialog. The other
@@ -100,7 +102,7 @@ fun AdvancedScreen(
         viewModel.events.collect { e ->
             when (e) {
                 SettingsViewModel.Event.ResyncRequested -> {
-                    snackbarHost.showSnackbar(ctx.getString(R.string.settings_resync_started))
+                    snackbarHost.showSnackbar(resyncStarted)
                 }
                 // v1.28.6 — la purge totale a laisse des messages dans le telephone. Un DIALOGUE
                 // et non un message glissant : le processus redemarre juste apres, un snackbar
