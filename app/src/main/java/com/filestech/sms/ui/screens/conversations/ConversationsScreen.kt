@@ -42,16 +42,17 @@ import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -59,6 +60,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -81,8 +83,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -412,9 +416,17 @@ fun ConversationsScreen(
                                         .semantics { role = Role.Button },
                                     contentAlignment = Alignment.Center,
                                 ) {
+                                    // Feedback round 7 — `ic_more_vert_tall`
+                                    // instead of Material MoreVert: the drawn
+                                    // glyph is 19.4dp tall, matching the search
+                                    // magnifier beside it (MoreVert drew at
+                                    // 16dp). Same 24dp size and
+                                    // on-surface-variant tint as before.
                                     Icon(
-                                        Icons.Outlined.MoreVert,
+                                        painter = painterResource(R.drawable.ic_more_vert_tall),
                                         contentDescription = stringResource(R.string.action_more),
+                                        tint = cs.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp),
                                     )
                                 }
                             }
@@ -1119,38 +1131,69 @@ private fun BandeauJeVaisBien(visible: Boolean, onConfirmer: () -> Unit) {
     )
 }
 
+/**
+ * Soft "set me as default" banner rendered above the list when the app is not yet the system
+ * default SMS handler. Information nudge — not a failure — so we paint it in the brand-blue
+ * family (`primaryContainer` + `primary`) instead of error red. The lighter container alpha
+ * keeps the line visible without competing with the conversation list below.
+ *
+ * Feedback round 7 — the original SMS Tech card, restored: a tinted rounded card with
+ * the text on the left and a filled button on the right, in one row. It replaced the
+ * flat text-button row (v1.27.12) that had replaced the card.
+ *
+ * Narrow-screen guard (v1.27.12, kept): the filled button used to take its intrinsic
+ * width first and crush the text to a 7-character column on 360dp screens at font
+ * scale 1.33. The button now uses compact horizontal padding, and the text caps at
+ * 2 lines with an ellipsis — it can never collapse into a sliver. (A literal single
+ * line does not fit at 14sp next to the filled button on a phone — the original
+ * wrapped to two lines too — so the text reads in full on two lines at default
+ * scale and ellipsizes instead of crushing at large scales.)
+ */
 @Composable
 private fun DefaultAppBanner(onSetDefault: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    // Une seule ligne discrète sur le fond de la liste, pas un bloc coloré : une icône
-    // neutre, le libellé, et une action texte. Le texte peut passer sur deux lignes sur
-    // les écrans étroits ; il garde toute la largeur restante, sans être écrasé par le
-    // bouton (cf. v1.27.12 — le bouton rempli prenait sa largeur intrinsèque avant le
-    // texte, qui se retrouvait sur une colonne de sept caractères).
-    Row(
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = cs.primaryContainer.copy(alpha = 0.55f),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.Info,
-            contentDescription = null,
-            tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.size(12.dp))
-        Text(
-            text = stringResource(R.string.error_not_default_app),
-            style = RelayText.Preview,
-            color = cs.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.size(8.dp))
-        RelayTextButton(
-            text = stringResource(R.string.settings_set_default),
-            onClick = onSetDefault,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = cs.onPrimaryContainer,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.size(12.dp))
+            Text(
+                text = stringResource(R.string.error_not_default_app),
+                style = MaterialTheme.typography.bodyMedium,
+                color = cs.onPrimaryContainer,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.size(8.dp))
+            FilledTonalButton(
+                onClick = onSetDefault,
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = cs.primary,
+                    contentColor = cs.onPrimary,
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    stringResource(R.string.settings_set_default),
+                    fontWeight = FontWeight.Normal,
+                )
+            }
+        }
     }
 }
 

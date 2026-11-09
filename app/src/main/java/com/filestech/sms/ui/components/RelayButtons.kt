@@ -25,8 +25,12 @@ import com.filestech.sms.ui.theme.RelayText
 
 /**
  * Primary action button of the Relay design system: full-width, brand blue with white
- * 16sp/600 text, 10dp corners, 14dp vertical padding. Pressed state darkens to
- * [RelayColors.BluePressed] and scales to 0.99.
+ * 16sp regular text, fully rounded (pill), 14dp vertical padding. Pressed state darkens
+ * to [RelayColors.BluePressed] and scales to 0.99.
+ *
+ * Feedback round 7 — large full-width buttons are pill-shaped with a non-bold
+ * font, app-wide: the shape went from 10dp corners to a pill and the label
+ * from [RelayText.Button] (SemiBold) to [RelayText.ButtonText] (regular).
  */
 @Composable
 fun RelayPrimaryButton(
@@ -48,7 +52,7 @@ fun RelayPrimaryButton(
             .scale(pressScale),
         enabled = enabled,
         interactionSource = interactionSource,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(50),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (pressed) RelayColors.BluePressed else RelayColors.Blue,
             contentColor = Color.White,
@@ -57,7 +61,7 @@ fun RelayPrimaryButton(
         ),
         contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
     ) {
-        Text(text = text, style = RelayText.Button)
+        Text(text = text, style = RelayText.ButtonText)
     }
 }
 

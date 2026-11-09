@@ -493,6 +493,54 @@ interface MessageDao {
     )
     suspend fun findMostRecent(conversationId: Long): MessageEntity?
 
+    /**
+     * Feedback round 7 — candidates for the one-time retroactive reaction
+     * reparse ([com.filestech.sms.data.repository.ConversationMirror
+     * .reparseStoredReactions]).
+     *
+     * The `LIKE` pre-filter is deliberately a SUPERSET of what
+     * [com.filestech.sms.domain.reaction.IncomingReactionDecoder.decode] can
+     * match: every wire prefix it knows (`Reacted …`, the six iOS tapback
+     * verbs, `Removed …`, the French `Réagi …` / `J'ai réagi …` forms, the
+     * named `<Nom> a réagi par …` form, and the `»` that closes an
+     * emoji+quote body). False positives are harmless — `decode()` re-validates
+     * each candidate strictly in Kotlin. False negatives would lose a reaction
+     * forever, so when in doubt a shape is included.
+     *
+     * Deliberately NOT paged: the leading-wildcard arms (`% a réagi par %`,
+     * `%»%`) would force a full-table scan per page. One scan returning the
+     * (rare) candidates is cheaper than N scans, and the list stays small —
+     * reaction texts are a tiny fraction of any history.
+     *
+     * Incoming only (`direction = 0`): a reaction text is always received,
+     * never sent. Sentinels (`hidden = 1`) are excluded — their empty body
+     * could never decode anyway.
+     */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE hidden = 0
+          AND direction = 0
+          AND (
+            body LIKE 'Reacted %' OR
+            body LIKE 'Loved %' OR
+            body LIKE 'Liked %' OR
+            body LIKE 'Disliked %' OR
+            body LIKE 'Laughed at %' OR
+            body LIKE 'Emphasized %' OR
+            body LIKE 'Questioned %' OR
+            body LIKE 'Removed %' OR
+            body LIKE 'Réagi %' OR
+            body LIKE 'J''ai réagi %' OR
+            body LIKE 'J’ai réagi %' OR
+            body LIKE '% a réagi par %' OR
+            body LIKE '%»%'
+          )
+        ORDER BY id ASC
+        """
+    )
+    suspend fun findReactionCandidates(): List<MessageEntity>
+
     @Query(
         """
         SELECT * FROM messages

@@ -231,6 +231,12 @@ fun MessageBubble(
                 Box(
                     modifier = Modifier
                         .widthIn(min = 32.dp, max = 320.dp)
+                        // Feedback round 7 — the press translation must wrap the
+                        // WHOLE bubble: it used to sit after the background in
+                        // the chain, so only the text inside the layer moved and
+                        // the fill stayed put. First in the chain, the fill,
+                        // the clip and the content all sink 2dp together.
+                        .graphicsLayer { translationY = pressOffsetY }
                         .clip(shape)
                         .then(
                             if (isOut) Modifier.drawBehind { drawRect(outgoingBrush) }
@@ -256,8 +262,10 @@ fun MessageBubble(
                             onLongClick = { menuExpanded = true },
                         )
                         // Feedback round 6 — the bubble sinks 2dp while pressed
-                        // (see pressOffsetY above).
-                        .graphicsLayer { translationY = pressOffsetY }
+                        // (see pressOffsetY above). Feedback round 7 — the
+                        // graphicsLayer moved to the START of the chain (before
+                        // the clip/background): it used to sit here, after the
+                        // background, so only the text moved and the fill stayed.
                         .padding(PaddingValues(horizontal = 14.dp, vertical = 10.dp)),
                 ) {
                     // v1.3.2 — URLs détectées et rendues cliquables (ouvre le navigateur
@@ -326,9 +334,11 @@ fun MessageBubble(
                         // Feedback round 4 — la ligne ne s'étire plus sur toute la
                         // largeur : elle se cale à droite dans la bulle (`align(End)`),
                         // donc elle ne peut plus sortir du fond sur une bulle étroite.
-                        // Feedback round 6 — avec une pastille code, l'heure se cale à
-                        // GAUCHE sous la pastille, comme sur la maquette (02___Thread_
-                        // copy_code) : texte, pastille, heure — tout aligné à gauche.
+                        // Feedback round 7 — the timestamp is right-aligned again,
+                        // like every other text bubble: the round-6 left alignment
+                        // (to match the Figma copy-code mockup) is dropped with the
+                        // pill's surface fill, so text, pill and time all read as
+                        // one bubble again.
                         BubbleTimestamp(
                             message = message,
                             showTimestamp = showTimestamp,
@@ -336,9 +346,7 @@ fun MessageBubble(
                             textColor = textColor,
                             // Feedback round 5 — 12dp above the timestamp (was 2dp):
                             // the time sat too close under the text.
-                            modifier = Modifier.padding(top = 12.dp).align(
-                                if (otpCode != null) Alignment.Start else Alignment.End,
-                            ),
+                            modifier = Modifier.padding(top = 12.dp).align(Alignment.End),
                         )
                     }
                 }
@@ -381,6 +389,11 @@ fun MessageBubble(
  * glyph in the same colour. The timestamp sits bottom-left under the pill
  * (see the call site), so text, pill and time all align left.
  *
+ * Feedback round 7 — border only: the surface fill is dropped, so the pill
+ * is transparent with just its 1dp border, and the timestamp goes back to
+ * right-aligned like every other text bubble. Padding grows to 15dp
+ * horizontal / 9dp vertical.
+ *
  * The pill copies by itself — no callback parameter, the bubble is already at
  * the parameter limit: the code goes to the clipboard marked sensitive (no
  * system preview of it, cf. [copyToClipboardSensitive]), with a haptic tick
@@ -401,7 +414,6 @@ private fun OtpCodePill(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(cs.surface)
             .border(1.dp, cs.onSurface.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
             .clickable(
                 onClick = {
@@ -421,7 +433,7 @@ private fun OtpCodePill(
                 contentDescription = copyCodeLabel
                 role = Role.Button
             }
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 15.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {

@@ -433,6 +433,7 @@ class SettingsRepository(
                 unreadResetV180 = p[K.unreadResetV180] ?: false,
                 dedupSameNumberV1230 = p[K.dedupSameNumberV1230] ?: false,
                 attachmentsMovedToFilesDirV147 = p[K.attachmentsMovedToFilesDirV147] ?: false,
+                reactionReparseDone = p[K.reactionReparseDone] ?: false,
                 startupDbMigrationsDone = p[K.startupDbMigrationsDone] ?: false,
                 staleConversationPreviewsRepairedV1240 = p[K.staleConversationPreviewsRepairedV1240] ?: false,
                 reactionFormatMigreV12812 = p[K.reactionFormatMigreV12812] ?: false,
@@ -556,6 +557,7 @@ class SettingsRepository(
         this[K.keepAliveService] = s.advanced.keepAliveService
         this[K.unreadResetV180] = s.advanced.unreadResetV180
         this[K.dedupSameNumberV1230] = s.advanced.dedupSameNumberV1230
+        this[K.reactionReparseDone] = s.advanced.reactionReparseDone
         this[K.attachmentsMovedToFilesDirV147] = s.advanced.attachmentsMovedToFilesDirV147
         this[K.startupDbMigrationsDone] = s.advanced.startupDbMigrationsDone
         this[K.staleConversationPreviewsRepairedV1240] = s.advanced.staleConversationPreviewsRepairedV1240
@@ -719,6 +721,12 @@ class SettingsRepository(
          * ecrite. Voir [com.filestech.sms.domain.settings.AdvancedSettings.mmsImportCompleted].
          */
         val mmsImportCompleted = booleanPreferencesKey("advanced.mmsImportCompleted")
+
+        /**
+         * Feedback round 7 — one-shot flag for the retroactive reaction reparse.
+         * See [com.filestech.sms.domain.settings.AdvancedSettings.reactionReparseDone].
+         */
+        val reactionReparseDone = booleanPreferencesKey("advanced.reactionReparseDone")
         val splashShown = booleanPreferencesKey("advanced.splashShown")
         val keepAliveService = booleanPreferencesKey("advanced.keepAliveService")
         // v1.8.0 — flag one-shot pour la migration de purge des badges hérités v1.7.1.

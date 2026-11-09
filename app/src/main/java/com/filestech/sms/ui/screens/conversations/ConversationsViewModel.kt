@@ -124,10 +124,20 @@ class ConversationsViewModel @Inject constructor(
      */
     private val contactPhotoTick = MutableStateFlow(0L)
 
+    /**
+     * Feedback round 7 — in-memory guard for the one-time reaction reparse:
+     * prevents two `Idle` emissions from starting it twice in the same
+     * process. The durable gate is `AdvancedSettings.reactionReparseDone`.
+     */
+    private var reactionReparseStarted = false
+
     init {
         // Backfill contact names for conversations that existed before READ_CONTACTS was granted
         // or that imported with displayName=null. Cheap when there's nothing to do.
         viewModelScope.launch { runCatching { mirror.refreshContactNames() } }
+        // Feedback round 7 — fold old reaction texts into badges once the
+        // first post-grant sync has landed the history in Room (see below).
+        observeSyncForReactionReparse()
         // v1.13.0 audit SEC-4 — purge la sélection multiple à chaque entrée
         // en PanicDecoy (séparé du combine pour éviter une mutation depuis un
         // flow transform — anti-pattern fragile face à un futur changement de
@@ -379,6 +389,65 @@ class ConversationsViewModel @Inject constructor(
         // Re-resolve contact photos: the caller just got READ_CONTACTS (or came back from
         // the role dialog), so lookups that previously failed may now succeed.
         contactPhotoTick.update { it + 1 }
+    }
+
+    /**
+     * Feedback round 7 — one-time retroactive reaction reparse.
+     *
+     * Old reaction texts (`Reacted ❤️ to «…»`, iOS tapbacks, French readable
+     * forms) that arrived before this build — or before Relay became the
+     * default app — sit in Room as plain text bubbles. Once the history is in
+     * Room, [ConversationMirror.reparseStoredReactions] folds them onto their
+     * target messages; the DataStore flag
+     * `AdvancedSettings.reactionReparseDone` makes it run exactly once.
+     *
+     * Trigger — a sync completion observed while default:
+     *   - fresh install: the first sync after the role grant is the big
+     *     first-run import; its `Running → Idle` transition fires this (the
+     *     `sawRunning` arm). The cursor is > 0 by then, so the history is
+     *     actually in Room.
+     *   - existing install (already default, cursor > 0): no first-run sync
+     *     will ever come, so the cursor arm fires on the first `Idle`
+     *     emission — the history is already there, no sync to wait for.
+     *   - not default yet: nothing runs; the next `requestSyncNow()` after
+     *     the grant produces the `Running → Idle` transition.
+     *
+     * The `combine` with [state] re-evaluates on either side: a sync that
+     * completes before [UiState.isDefaultSmsApp] flips to `true` is still
+     * caught when the UiState emission lands.
+     *
+     * The flag is set only on success — a failed run (DB error) retries on
+     * the next sync completion instead of losing the reactions silently.
+     */
+    private fun observeSyncForReactionReparse() {
+        viewModelScope.launch {
+            var sawRunning = false
+            combine(syncManager.state, state) { syncState, ui ->
+                syncState to ui.isDefaultSmsApp
+            }.collect { (syncState, isDefault) ->
+                if (syncState is TelephonySyncManager.State.Running) {
+                    sawRunning = true
+                    return@collect
+                }
+                if (reactionReparseStarted || !isDefault) return@collect
+                val advanced = settings.state.value.advanced
+                if (advanced.reactionReparseDone) return@collect
+                if (!sawRunning && advanced.lastSyncedSmsId == 0L) return@collect
+                reactionReparseStarted = true
+                try {
+                    val result = mirror.reparseStoredReactions()
+                    Timber.i("ConversationsViewModel: reaction reparse done: %s", result)
+                    settings.update { s ->
+                        s.copy(advanced = s.advanced.copy(reactionReparseDone = true))
+                    }
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    throw ce
+                } catch (t: Throwable) {
+                    Timber.w(t, "ConversationsViewModel: reaction reparse failed — will retry")
+                    reactionReparseStarted = false
+                }
+            }
+        }
     }
 
     /**

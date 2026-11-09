@@ -251,7 +251,10 @@ fun AudioMessageBubble(
                         // on the blue outgoing bubble (blue triangle), dark disc
                         // on the light incoming bubble (grey triangle). While
                         // playing, the same disc carries two pause bars in the
-                        // bubble colour instead.
+                        // bubble colour instead. Feedback round 7 — the vector
+                        // now spans the full 48dp, so the play disc and the pause
+                        // disc are the same size (before, the play disc drew at
+                        // 39dp and the button grew to 48dp on play).
                         Box(
                             modifier = Modifier
                                 .size(48.dp)

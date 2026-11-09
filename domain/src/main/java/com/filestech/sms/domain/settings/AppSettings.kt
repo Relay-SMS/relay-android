@@ -493,6 +493,14 @@ data class AdvancedSettings(
      */
     val startupDbMigrationsDone: Boolean = false,
     /**
+     * Feedback round 7 — `true` once the one-time retroactive reaction reparse
+     * ([com.filestech.sms.data.repository.ConversationMirror
+     * .reparseStoredReactions]) has run after the first post-grant sync, so it
+     * never re-scans on later cold starts. Same one-shot pattern as
+     * [unreadResetV180] / [dedupSameNumberV1230].
+     */
+    val reactionReparseDone: Boolean = false,
+    /**
      * v1.24.0 — réparation one-shot des aperçus de conversation périmés par des suppressions de
      * message sous les versions ≤ 1.23.4 (qui ne recalculaient pas la ligne `conversations`).
      * `true` une fois la passe [com.filestech.sms.data.local.db.dao.MessageDao.repairStaleConversationPreviews]

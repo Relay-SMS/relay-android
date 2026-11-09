@@ -374,6 +374,15 @@ class ThreadViewModel @Inject constructor(
         val memberNames: Map<String, String> = emptyMap(),
         val draftSeeded: Boolean = false,
         val hasContact: Boolean = false,
+        /**
+         * Feedback round 7 — contact photo (`PHOTO_THUMBNAIL_URI`) for the
+         * thread header avatar, resolved from the first address via
+         * [ContactRepository.lookupByPhone] — the same lookup the main list
+         * uses for its contact photos. The user-picked custom avatar
+         * ([Conversation.avatarUri]) still wins at the call site; groups
+         * stay `null` (no single contact to show — the group glyph stays).
+         */
+        val contactPhotoUri: String? = null,
         val messageCount: Int = 0,
         /** Older messages exist beyond the loaded window. */
         val hasMoreMessages: Boolean = false,
@@ -526,6 +535,19 @@ class ThreadViewModel @Inject constructor(
     private var recorderJob: Job? = null
 
     /**
+     * Feedback round 7 — re-resolution trigger for the header contact photo.
+     * The address flow below only re-runs when the address changes, so a
+     * READ_CONTACTS grant while the thread is open needs an explicit nudge —
+     * same pattern as `ConversationsViewModel.contactPhotoTick`.
+     */
+    private val contactPhotoTick = MutableStateFlow(0)
+
+    /** Re-resolves [UiState.contactPhotoUri] (call on resume / permission grant). */
+    fun refreshContactPhoto() {
+        contactPhotoTick.update { it + 1 }
+    }
+
+    /**
      * v1.6.1 PERF-01 / v1.6.2 BUGFIX — snapshot chaud des AppSettings.
      *
      * **Bug v1.6.1** : la version précédente utilisait `stateIn(viewModelScope,
@@ -647,21 +669,34 @@ class ThreadViewModel @Inject constructor(
             // the pin is cleared so no banner points at a ghost.
             resolvePinnedMessage(conv?.pinnedMessageId)
         }.launchIn(viewModelScope)
-        convFlow
-            .map { conv -> conv?.addresses?.firstOrNull()?.raw }
-            .distinctUntilChanged()
-            .onEach { firstNumber ->
+        combine(
+            convFlow.map { conv ->
+                conv?.let { it.addresses.firstOrNull()?.raw to it.isGroup }
+            }.distinctUntilChanged(),
+            contactPhotoTick,
+        ) { address, _ -> address }
+            .onEach { address ->
+                val firstNumber = address?.first
+                val isGroup = address?.second == true
                 // v1.28.13 (MR F-Droid !38458) — sans `READ_CONTACTS`, la recherche lève
                 // `SecurityException` ; non rattrapée dans `viewModelScope`, ouvrir n'importe quelle
                 // conversation faisait planter l'app (jumeau de `ComposeViewModel.chargerContacts`).
                 // « Contact introuvable » est le bon repli ICI : il ne fait que proposer « Ajouter
                 // aux contacts », que l'appli Contacts du système traite sans notre permission.
-                val has = firstNumber?.let { numero ->
+                val contact = firstNumber?.let { numero ->
                     com.filestech.sms.core.result
-                        .runCatchingCancellable { contactRepo.lookupByPhone(numero) != null }
-                        .getOrDefault(false)
-                } ?: false
-                _state.update { it.copy(hasContact = has) }
+                        .runCatchingCancellable { contactRepo.lookupByPhone(numero) }
+                        .getOrNull()
+                }
+                _state.update {
+                    it.copy(
+                        hasContact = contact != null,
+                        // Feedback round 7 — header avatar photo, same lookup
+                        // as the main list. Groups keep the group glyph, so
+                        // the photo is only resolved for 1:1 threads.
+                        contactPhotoUri = if (isGroup) null else contact?.photoUri,
+                    )
+                }
             }
             .launchIn(viewModelScope)
 

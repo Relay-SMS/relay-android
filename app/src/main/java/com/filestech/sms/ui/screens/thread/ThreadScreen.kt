@@ -63,7 +63,6 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PersonAdd
@@ -94,6 +93,7 @@ import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -118,6 +118,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -137,6 +138,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -249,6 +251,18 @@ fun ThreadScreen(
     LifecycleStartEffect(viewModel) {
         viewModel.onVisibilityChanged(true)
         onStopOrDispose { viewModel.onVisibilityChanged(false) }
+    }
+    // Feedback round 7 — re-resolve the header contact photo when the screen
+    // comes back to foreground: covers a READ_CONTACTS grant made outside
+    // the thread (same pattern as the main list's contactPhotoTick).
+    DisposableEffect(threadNavOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshContactPhoto()
+            }
+        }
+        threadNavOwner.lifecycle.addObserver(observer)
+        onDispose { threadNavOwner.lifecycle.removeObserver(observer) }
     }
     val snackbarHost = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -732,7 +746,10 @@ fun ThreadScreen(
                 title = title,
                 subtitleNumber = headerSubtitleNumber,
                 isGroup = state.conversation?.isGroup == true,
-                avatarUri = state.conversation?.avatarUri,
+                // Feedback round 7 — contact photo fallback: the custom
+                // avatar still wins; the contact photo is resolved in
+                // [ThreadViewModel] like the main list does.
+                avatarUri = state.conversation?.avatarUri ?: state.contactPhotoUri,
                 canCall = canCall,
                 onBack = onBack,
                 onCall = { viewModel.requestCall() },
@@ -933,6 +950,29 @@ fun ThreadScreen(
                 } else null
             }
         }
+        // Feedback round 7 — sticky date header (Signal-style): the date of
+        // the topmost visible message, floating at the top of the list while
+        // scrolling. The label changes the moment the visible messages cross
+        // into another day; while many messages share one day the pill stays
+        // up for the whole stretch, so the user always knows what date they
+        // are viewing. `derivedStateOf` only re-emits when the label changes,
+        // so the overlay re-composes once per day boundary, not per frame.
+        // The inline separator lives at the top of the boundary item: the
+        // floating pill hides only while that item's top is still on screen
+        // (offset >= 0) — once it scrolls above the viewport the floating
+        // pill takes over, so the two never stack.
+        val stickyDateLabel by remember(daySeparatorLabels) {
+            derivedStateOf {
+                val visible = listState.layoutInfo.visibleItemsInfo
+                val firstIndex = visible.firstOrNull()?.index ?: return@derivedStateOf null
+                val boundaryIndex = (firstIndex downTo 0)
+                    .firstOrNull { daySeparatorLabels.getOrNull(it) != null }
+                    ?: return@derivedStateOf null
+                val label = daySeparatorLabels[boundaryIndex] ?: return@derivedStateOf null
+                val boundaryItem = visible.firstOrNull { it.index == boundaryIndex }
+                if (boundaryItem != null && boundaryItem.offset >= 0) null else label
+            }
+        }
         // v1.18.0 — Bundle de callbacks stable réutilisé par chaque item. Capture les setters
         // `var by remember` (pendingDelete, pickingReactionFor, forwardingMessage,
         // pendingRetryWatchdog) + les références ViewModel + les lambdas locales. Recréé
@@ -983,6 +1023,11 @@ fun ThreadScreen(
             }
         }
         val pinnedAt = state.conversation?.pinnedMessageAt
+        // Feedback round 7 — measured height of the floating pinned banner
+        // (px): the sticky date pill sits just below it, and the banner's
+        // height varies (32dp X box present or not), so it is measured
+        // rather than guessed.
+        var pinnedBannerHeightPx by remember { mutableStateOf(0) }
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(
@@ -1080,7 +1125,32 @@ fun ThreadScreen(
                 canUnpin = !state.isPanicDecoy,
                 onJump = { viewModel.jumpToPinnedMessage(pinnedMessage.id) },
                 onUnpin = { viewModel.togglePin(pinnedMessage.id) },
+                // Feedback round 7 — measured so the sticky date pill can
+                // sit just below the banner (see [pinnedBannerHeightPx]).
+                modifier = Modifier.onSizeChanged { pinnedBannerHeightPx = it.height },
             )
+        }
+        // Feedback round 7 — sticky date header, floating at the top of the
+        // list under the pinned banner (if any). `null` while the group's own
+        // inline separator is on screen, or when the list is empty. Hidden
+        // while older messages load: the "loading older" chip owns the same
+        // top-centre spot, and the list is mid-shift then anyway.
+        if (!state.isLoadingOlder) {
+            stickyDateLabel?.let { label ->
+                val bannerHeightPx = if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
+                    pinnedBannerHeightPx
+                } else {
+                    0
+                }
+                DatePill(
+                    label = label,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(
+                            top = with(LocalDensity.current) { bannerHeightPx.toDp() } + 8.dp,
+                        ),
+                )
+            }
         }
         if (state.isLoadingOlder) {
             Row(
@@ -1560,16 +1630,21 @@ private fun PinnedMessageBanner(
     canUnpin: Boolean,
     onJump: () -> Unit,
     onUnpin: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(RelayColors.Blue)
             .clickable(onClick = onJump)
             .semantics { role = Role.Button }
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            // Feedback round 7 — more air below the message text and date:
+            // the sender row's 32dp X box made the top read roomier than
+            // the bottom (~16dp vs ~11.5dp of visible blue). 12dp below
+            // evens them out.
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -1631,29 +1706,35 @@ private fun PinnedMessageBanner(
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(
-                        R.string.thread_pinned_label,
-                        // Feedback round 6 — no year: "11/8" instead of
-                        // "11/8/26" (see ChatFormatters.shortDateNoYear).
-                        formatters.shortDateNoYear.format(Date(pinnedAt)),
-                        formatters.time.format(Date(pinnedAt)),
-                    ),
-                    style = RelayText.BubbleMeta,
-                    color = Color.White.copy(alpha = 0.7f),
-                    maxLines = 1,
-                )
+                // Feedback round 7 — FixedTypeSize, like the bubble
+                // timestamps: without it the date followed the system font
+                // scale and rendered larger than the 12sp bubble times.
+                FixedTypeSize {
+                    Text(
+                        text = stringResource(
+                            R.string.thread_pinned_label,
+                            // Feedback round 6 — no year: "11/8" instead of
+                            // "11/8/26" (see ChatFormatters.shortDateNoYear).
+                            formatters.shortDateNoYear.format(Date(pinnedAt)),
+                            formatters.time.format(Date(pinnedAt)),
+                        ),
+                        style = RelayText.BubbleMeta,
+                        color = Color.White.copy(alpha = 0.7f),
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Relay UI refresh — thread header: 56dp, canvas background. Back chevron (22dp,
- * brand blue) + 32dp avatar + name (17sp/600); the call glyph is 22dp brand blue.
- * The two 44dp hit areas side by side leave ~20dp of air between the call glyph
- * and the overflow glyph. Tapping the avatar or the name opens the conversation
- * details; the overflow menu is unchanged.
+ * Relay UI refresh — thread header: 64dp, canvas background. Back chevron (24dp,
+ * on-surface) + 37dp avatar + name; the search, call and ⋮ glyphs are 24dp
+ * on-surface-variant, and the ⋮ uses `ic_more_vert_tall` so its DRAWN height
+ * (19.4dp) matches the search and call glyphs. The 36dp hit areas leave the
+ * ⋮ centre 27dp from the edge, like the home screen. Tapping the avatar or
+ * the name opens the conversation details; the overflow menu is unchanged.
  */
 @Composable
 private fun ThreadHeader(
@@ -1696,11 +1777,13 @@ private fun ThreadHeader(
                     .semantics { role = Role.Button },
                 contentAlignment = Alignment.Center,
             ) {
+                // Feedback round 7 — on-surface, 24dp, like the Settings
+                // back arrow (was brand blue, 22dp).
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = stringResource(R.string.action_back),
-                    tint = cs.primary,
-                    modifier = Modifier.size(22.dp),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
                 )
             }
             Row(
@@ -1749,8 +1832,9 @@ private fun ThreadHeader(
             // Feedback round 5 — header icon order matches the Figma thread:
             // search (magnifier), call, ⋮. The magnifier opens the
             // in-conversation search pill. Same icon and tint as the
-            // conversations list search (`ic_search`, on-surface like the ⋮
-            // next to it).
+            // conversations list search (`ic_search`, on-surface-variant like
+            // the ⋮ next to it — feedback round 7: the thread used on-surface,
+            // darker than the home header).
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
@@ -1765,7 +1849,7 @@ private fun ThreadHeader(
                 Icon(
                     painter = painterResource(R.drawable.ic_search),
                     contentDescription = stringResource(R.string.thread_search_hint),
-                    tint = cs.onSurface,
+                    tint = cs.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -1775,9 +1859,10 @@ private fun ThreadHeader(
                 Spacer(Modifier.width(5.dp))
                 // Feedback round 5 — Kristin's call icon (`ic_call_outline`,
                 // handset outline, black stroke in the vector) replaces the
-                // Material phone glyph. Tinted on-surface at the call site,
-                // like the search magnifier and the ⋮ next to it. The call
-                // action itself is unchanged.
+                // Material phone glyph. Tinted on-surface-variant at the call
+                // site, like the search magnifier and the ⋮ next to it
+                // (feedback round 7: was on-surface, darker than home).
+                // The call action itself is unchanged.
                 Box(
                     modifier = Modifier
                         // Feedback round 5 — 44dp -> 36dp, as the search box.
@@ -1790,9 +1875,12 @@ private fun ThreadHeader(
                     Icon(
                         painter = painterResource(R.drawable.ic_call_outline),
                         contentDescription = stringResource(R.string.action_call),
-                        tint = cs.onSurface,
+                        tint = cs.onSurfaceVariant,
                         // Feedback round 6 — 22dp -> 24dp: phone, search and
-                        // ⋮ are all the same height now.
+                        // ⋮ are all the same height now. Feedback round 7 —
+                        // only the BOXES were: the MoreVert glyph itself drew
+                        // at 16dp, so the ⋮ now uses `ic_more_vert_tall`
+                        // (19.4dp drawn, matching search and call).
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -1806,9 +1894,14 @@ private fun ThreadHeader(
                     .semantics { role = Role.Button },
                 contentAlignment = Alignment.Center,
             ) {
+                // Feedback round 7 — `ic_more_vert_tall` instead of Material
+                // MoreVert: the drawn glyph is 19.4dp tall, matching the
+                // search and call glyphs (MoreVert drew at 16dp). Tinted
+                // on-surface-variant like the home header's ⋮.
                 Icon(
-                    Icons.Outlined.MoreVert,
+                    painter = painterResource(R.drawable.ic_more_vert_tall),
                     contentDescription = stringResource(R.string.action_more),
+                    tint = cs.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
                 )
                 menu()
@@ -2354,7 +2447,15 @@ private fun ComposingRow(
                                 imeAction = ImeAction.Default,
                             ),
                             cornerRadius = 24.dp,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            // Feedback round 7 — vertical padding 8dp -> 6dp:
+                            // the decoration row is 36dp tall (the in-field
+                            // icon boxes), so at 8dp the pill rendered 52dp
+                            // while the 48dp mic/send circles bottom-aligned
+                            // against it sat 2dp low. At 6dp the pill is
+                            // genuinely 48dp (6+36+6) and the circles centre
+                            // on it. The icon boxes stay 36dp — the icons
+                            // themselves must not get any smaller.
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             textStyle = MaterialTheme.typography.bodyLarge,
                             // Feedback round 5 — the requester belongs on the inner
                             // text field, not on the outer modifier: attached to the
@@ -2437,6 +2538,12 @@ private fun ComposingRow(
  * smiley leading, camera and + trailing. The glyph itself is 24dp in the secondary
  * colour (round 4 — 22dp still read small next to the 48dp mic/send tile); the vector
  * drawables are Kristin's own icons, tinted here from the theme.
+ *
+ * Feedback round 7 — the boxes stay 36dp (the icons must not get any smaller): the
+ * pill is brought to 48dp by trimming the field's vertical content padding instead
+ * (8dp -> 6dp at the call site: 6+36+6 = 48), so the 48dp mic/send circles centre
+ * on it. The camera glyph itself was also re-centred in its vector (its artwork
+ * sat 1.5dp high — see `ic_camera_outline.xml`).
  */
 @Composable
 private fun ComposerIconButton(
@@ -2952,7 +3059,6 @@ private fun computeBurstPosition(
  */
 @Composable
 private fun DateSeparator(label: String) {
-    val cs = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2960,21 +3066,35 @@ private fun DateSeparator(label: String) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(cs.surfaceVariant)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            // Phase 8 — le libellé est du méta-texte de mise en page, fixe (voir
-            // [FixedTypeSize]), comme l'heure des bulles.
-            FixedTypeSize {
-                Text(
-                    text = label,
-                    style = RelayText.SystemNote,
-                    color = cs.onSurfaceVariant,
-                )
-            }
+        DatePill(label = label)
+    }
+}
+
+/**
+ * Feedback round 7 — the day pill itself, shared by the inline [DateSeparator]
+ * and the floating sticky date header: one styling, so the two can never drift
+ * apart. Quiet pill on the surface fill, 13sp secondary text.
+ */
+@Composable
+private fun DatePill(
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(cs.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        // Phase 8 — le libellé est du méta-texte de mise en page, fixe (voir
+        // [FixedTypeSize]), comme l'heure des bulles.
+        FixedTypeSize {
+            Text(
+                text = label,
+                style = RelayText.SystemNote,
+                color = cs.onSurfaceVariant,
+            )
         }
     }
 }

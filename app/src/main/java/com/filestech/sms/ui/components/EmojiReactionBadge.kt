@@ -47,8 +47,12 @@ fun EmojiReactionBadge(
     // appearance (min 24 dp, rounded-rect with corner radius half the height). Adding
     // a 2nd, 3rd or 4th emoji lets the Box widen naturally, so "❤️👍🎉" renders as a
     // horizontal pill instead of being cropped inside a circle. The 1 dp border in
-    // `cs.outline` outlines the pill against the thread canvas where it overhangs
+    // `cs.outlineVariant` outlines the pill against the thread canvas where it overhangs
     // the bubble, since the pill now shares the bubble's own background colour.
+    // Feedback round 7 — `outlineVariant`, not `outline`: the round-6 palette
+    // restore made `outline` a mid-contrast grey (dark in light mode, light in
+    // dark mode), so the badge border read as swapped. `outlineVariant` is the
+    // subtle same-side grey in both themes, as it was before round 6.
     val shape = RoundedCornerShape(12.dp)
     // v1.6.0 (audit U2) — a11y : TalkBack annonce "Réaction <emoji>" au lieu d'un Box
     // muet. Pas de `Role.Button` : le badge n'est pas une action (tap = rien).
@@ -59,7 +63,7 @@ fun EmojiReactionBadge(
             .widthIn(min = 24.dp)
             .clip(shape)
             .background(bubbleColor)
-            .border(width = 1.dp, color = cs.outline, shape = shape)
+            .border(width = 1.dp, color = cs.outlineVariant, shape = shape)
             .semantics {
                 contentDescription = badgeContentDescription
             }

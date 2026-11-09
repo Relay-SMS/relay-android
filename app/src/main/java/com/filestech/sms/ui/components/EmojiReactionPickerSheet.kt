@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filestech.sms.R
@@ -164,7 +165,10 @@ fun EmojiReactionPickerSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(10.dp),
+                    // Feedback round 7 — large full-width buttons are pill-shaped
+                    // with a non-bold font, app-wide (was 10dp corners + the
+                    // default labelLarge Medium weight).
+                    shape = RoundedCornerShape(50),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.AddReaction,
@@ -173,7 +177,10 @@ fun EmojiReactionPickerSheet(
                         tint = cs.onSecondaryContainer,
                     )
                     Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.reaction_picker_other))
+                    Text(
+                        stringResource(R.string.reaction_picker_other),
+                        fontWeight = FontWeight.Normal,
+                    )
                 }
 
                 Spacer(Modifier.height(8.dp))
