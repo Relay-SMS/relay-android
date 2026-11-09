@@ -46,7 +46,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * v1.3.7 — Splash de présentation joué **uniquement à la première ouverture** de
  * l'app après install (cf. [SplashViewModel.shouldShow]). 100% Compose natif, aucune
- * dépendance externe ajoutée — cohérent avec l'esprit léger / zéro-tracker de SMS Tech.
+ * dépendance externe ajoutée — cohérent avec l'esprit léger / zéro-tracker de Relay.
  *
  * **Animations** (durée totale ≈ [AUTO_DISMISS_MS] ms) :
  *   - **logo** : `scale 0.5 → 1.0` + `alpha 0 → 1` sur [LOGO_ANIM_MS] ms, ease-out cubic.

@@ -231,7 +231,7 @@ fun AdvancedScreen(
                 // permanent). Toggle exposé pour TOUS les téléphones car la détection ROM
                 // est conservatrice : certains utilisateurs sur ROM "propre" pourraient
                 // quand même vouloir activer ; certains sur ROM "agressive" pourraient avoir
-                // whitelisté SMS Tech à la main et ne pas vouloir la notif persistante. La
+                // whitelisté Relay à la main et ne pas vouloir la notif persistante. La
                 // description liste les ROMs concernées pour aider la décision.
                 // **v1.4.1** : retrait du dialog onboarding qui auto-proposait l'activation
                 // sur Xiaomi/Redmi — trop pushy, des users tapaient "Activer" sans
@@ -283,7 +283,7 @@ fun AdvancedScreen(
     }
 
     // v1.8.0 — Dialog de confirmation : Resync depuis le téléphone.
-    // Pattern Files Tech : autofocus Cancel + bouton confirm primary action.
+    // Pattern Relay : autofocus Cancel + bouton confirm primary action.
     // Action non destructive (re-importe depuis content://sms, pas de perte).
     if (showResyncConfirm) {
         val cancelFocus = remember { FocusRequester() }
@@ -315,7 +315,7 @@ fun AdvancedScreen(
     }
 
     // v1.8.0 — Dialog de confirmation : Réinitialiser tous les réglages.
-    // Pattern Files Tech : autofocus Cancel — l'user qui tape rapidement après
+    // Pattern Relay : autofocus Cancel — l'user qui tape rapidement après
     // un précédent dialog ne réinitialise pas par réflexe.
     // Action remet les réglages aux défauts mais NE touche PAS aux messages
     // (donc non-destructive au sens contenu utilisateur), ni — depuis v1.27.11 — aux
@@ -360,7 +360,7 @@ fun AdvancedScreen(
             onDismissRequest = { showNuke = false },
             title = stringResource(R.string.settings_nuke_data),
             // v1.28.6 — l'avertissement dit desormais que les messages du TELEPHONE partent aussi
-            // (c'est ce que la purge fait depuis cette version), et, quand SMS Tech n'est pas
+            // (c'est ce que la purge fait depuis cette version), et, quand Relay n'est pas
             // l'application SMS par defaut, que le systeme le lui refusera. Deux textes plutot
             // qu'un seul conditionnel : celui qui s'ajoute est un AVERTISSEMENT, il porte la
             // couleur d'erreur, et la promesse principale ne se reecrit pas selon l'etat.
@@ -399,7 +399,7 @@ fun AdvancedScreen(
     // v1.28.6 — L'EFFACEMENT N'A PAS TOUT EMPORTE, ET CELA SE DIT.
     //
     // Le dialogue de confirmation promet « irréversible ». Quand le système refuse la suppression
-    // des messages du téléphone — en pratique parce que SMS Tech n'est pas l'application SMS par
+    // des messages du téléphone — en pratique parce que Relay n'est pas l'application SMS par
     // défaut — la promesse est fausse, et une promesse fausse est pire que pas de promesse. Un
     // seul bouton : il n'y a rien à décider, seulement à savoir. Sa fermeture déclenche le
     // redémarrage que la purge avait mis en attente pour laisser ce message se lire.

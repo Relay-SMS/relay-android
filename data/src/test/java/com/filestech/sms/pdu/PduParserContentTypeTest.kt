@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test
  */
 class PduParserContentTypeTest {
 
-    /** `type=application/smil` sur le message, comme l'écrivent AOSP et, désormais, SMS Tech. */
+    /** `type=application/smil` sur le message, comme l'écrivent AOSP et, désormais, Relay. */
     private val typeDuMessage = forme(
         byteArrayOf(0xB3.toByte(), 0x89.toByte()) + "application/smil".toByteArray() + byteArrayOf(0),
     )

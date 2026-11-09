@@ -473,7 +473,7 @@ fun SettingsScreen(
                 )
                 // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
                 // OFF, les réactions restent strictement locales (badge visible uniquement
-                // dans SMS Tech). La description prévient explicitement du coût SMS.
+                // dans Relay). La description prévient explicitement du coût SMS.
                 // Feedback round 8 — renamed to "Send my reactions"; the long
                 // cost warning lives in the info popup now (chevron before the
                 // switch); the row stays one-line.
@@ -2485,7 +2485,7 @@ private fun SafetyCallArmedRecap(
     //
     // La valeur lue est [SafetyCallConfig.lastActivityAt], c'est-à-dire le dernier reset — pas la
     // date où la fonction a été activée une fois pour toutes. C'est volontaire, et c'est la seule
-    // valeur honnête : ouvrir SMS Tech relance le minuteur (cf. `MainActivity.onResume`), tout
+    // valeur honnête : ouvrir Relay relance le minuteur (cf. `MainActivity.onResume`), tout
     // comme « Je vais bien ». Afficher une date d'activation figée aurait laissé calculer une
     // échéance fausse sur une fonction où l'heure de déclenchement est précisément l'enjeu — d'où
     // le libellé « Minuteur lancé », et non « Activé le ».
@@ -3103,7 +3103,7 @@ private fun NotificationsSection(
         )
         // v1.8.0 (bug 3 fix MEDIUM 3c) — deeplink réglages système app.
         // ACTION_APP_NOTIFICATION_SETTINGS (API 26+) ouvre directement la
-        // page Paramètres → Apps → SMS Tech → Notifications, où l'user
+        // page Paramètres → Apps → Relay → Notifications, où l'user
         // peut vérifier que ses canaux ne sont pas désactivés.
         NavigationRow(
             title = stringResource(R.string.settings_notif_open_system),

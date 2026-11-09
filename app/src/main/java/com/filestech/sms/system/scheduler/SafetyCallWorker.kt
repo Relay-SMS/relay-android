@@ -305,7 +305,7 @@ class SafetyCallWorker @AssistedInject constructor(
             // exécute un travail urgent comme un **service de premier plan**, ce qui impose
             // `getForegroundInfo()` et affiche une **notification obligatoire** — publiée AVANT que
             // `doWork` n'ait pu exécuter sa garde mode leurre. Sous contrainte, une notification
-            // SMS Tech apparaîtrait pendant que la personne prétend n'avoir rien à cacher. On
+            // Relay apparaîtrait pendant que la personne prétend n'avoir rien à cacher. On
             // échangerait un défaut de ponctualité contre un défaut de SÉCURITÉ ; sur cette
             // application, l'échange n'est pas acceptable.
             //

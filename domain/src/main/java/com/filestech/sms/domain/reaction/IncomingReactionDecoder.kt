@@ -2,18 +2,18 @@ package com.filestech.sms.domain.reaction
 
 /**
  * v1.4.1 — pure-Kotlin decoder for incoming SMS bodies that look like a reaction sent
- * back by another SMS Tech instance, by Apple Messages, or by Google Messages.
+ * back by another Relay instance, by Apple Messages, or by Google Messages.
  *
  * Formats decoded (see [decode] and [decodeGoogleFormat]) :
  *
  *   - **`Reacted <emoji> to «<preview>»`** — the standard Tapback shape produced by
- *     SMS Tech's own [com.filestech.sms.domain.usecase.SendReactionUseCase
- *     .buildTapbackBody]. The preview may end with `…` if SMS Tech had to truncate
+ *     Relay's own [com.filestech.sms.domain.usecase.SendReactionUseCase
+ *     .buildTapbackBody]. The preview may end with `…` if Relay had to truncate
  *     the original body to fit the UCS-2 70-char segment cap. The trailing `…` is
  *     stripped before exposing [DecodedReaction.previewPrefix] so the caller can
  *     match it as a `LIKE prefix%` against stored outgoing message bodies.
  *
- *   - **`Reacted <emoji>`** (no `to «…»` tail) — produced by SMS Tech when reacting to
+ *   - **`Reacted <emoji>`** (no `to «…»` tail) — produced by Relay when reacting to
  *     a message with no text body (a voice MMS / image without caption). The caller
  *     should match the most recent outgoing message in the conversation (ordered by
  *     date desc) as the target.
@@ -29,7 +29,7 @@ package com.filestech.sms.domain.reaction
  *     strips U+200B from the body before [decode] runs, and the framing would be
  *     gone by then.
  *
- * **Pure emojis are NOT decoded.** SMS Tech's "emoji only" reaction mode (cf.
+ * **Pure emojis are NOT decoded.** Relay's "emoji only" reaction mode (cf.
  * `SendingSettings.reactionEmojiOnly`) sends just the emoji byte sequence — but a
  * real text message containing only an emoji ("👍 great job!") is ambiguous and we
  * MUST NOT silently swallow it as a reaction. Users on emoji-only mode trade
@@ -108,7 +108,7 @@ object IncomingReactionDecoder {
 
     /**
      * v1.5.1 — defensive cap on decoder input length. A Tapback always fits in a single
-     * UCS-2 SMS segment (70 chars) ; even with the longest preview SMS Tech emits, the
+     * UCS-2 SMS segment (70 chars) ; even with the longest preview Relay emits, the
      * body stays under 100 chars. We accept up to [MAX_DECODE_INPUT_LENGTH] to be lenient
      * with multi-cluster emojis but reject anything longer outright. This neutralises a
      * theoretical ReDoS on [TAPBACK_WITH_PREVIEW_REGEX] : an attacker sending a multi-part
@@ -454,7 +454,7 @@ object IncomingReactionDecoder {
         return true
     }
 
-    /** Lone Unicode horizontal ellipsis SMS Tech appends when the preview was truncated. */
+    /** Lone Unicode horizontal ellipsis Relay appends when the preview was truncated. */
     private const val TRUNCATION_MARKER: String = "…"
 
     /** Google Messages framing char (U+200A hair space): opens and closes the body. */
@@ -526,10 +526,10 @@ object IncomingReactionDecoder {
 
     /**
      * Matches `Reacted <emoji> to «<preview>»` with both standard Unicode guillemets
-     * `«»` (what SMS Tech always emits) and a defensive ASCII fallback using the plain
+     * `«»` (what Relay always emits) and a defensive ASCII fallback using the plain
      * double-quote `"..."` — covers carriers / OEMs that occasionally strip non-ASCII
      * punctuation from SMS bodies. The emoji group is non-greedy and the preview group
-     * accepts any char (including new lines, defensively) because SMS Tech sanitises
+     * accepts any char (including new lines, defensively) because Relay sanitises
      * but a third-party SMS app on the other end might inject CRLF that the parser
      * should still survive.
      */
@@ -639,7 +639,7 @@ object IncomingReactionDecoder {
      *  - ASCII pur.
      *
      * Note : strict mais robuste. Un emoji isolé du Latin Extended-A (rare)
-     * pourrait être rejeté, mais ce sont des cas que SMS Tech n'émet pas
+     * pourrait être rejeté, mais ce sont des cas que Relay n'émet pas
      * (encoder utilise le picker système qui produit du plane supplémentaire
      * pour la quasi-totalité des emojis usuels).
      */

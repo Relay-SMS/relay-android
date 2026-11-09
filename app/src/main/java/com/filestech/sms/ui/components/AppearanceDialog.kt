@@ -187,6 +187,7 @@ fun AppearanceDialog(
                     Spacer(Modifier.size(16.dp))
                     Column(modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
+                            shape = RoundedCornerShape(50),
                             onClick = {
                                 avatarPicker.launch(
                                     PickVisualMediaRequest(
@@ -203,6 +204,7 @@ fun AppearanceDialog(
                         if (pickedAvatarUri != null) {
                             Spacer(Modifier.height(4.dp))
                             TextButton(
+                                shape = RoundedCornerShape(50),
                                 onClick = {
                                     // Release la persistable permission pour ne pas
                                     // accumuler les permissions inutiles côté provider.
@@ -250,7 +252,7 @@ fun AppearanceDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, shape = RoundedCornerShape(50)) {
                 Text(stringResource(R.string.action_cancel))
             }
         },

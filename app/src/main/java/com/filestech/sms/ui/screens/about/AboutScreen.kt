@@ -164,9 +164,9 @@ fun AboutScreen(
             }
 
             // Feedback round 5 — the Author section lived here (name + role
-            // in its own row); it duplicated the "Based on SMS Tech by
-            // Patrice Haltaya" credit already in the footer below, so it
-            // was removed. The footer credit is the one that matters.
+            // in its own row); it duplicated the upstream credit already in
+            // the footer below, so it was removed. The footer credit is the
+            // one that matters.
 
             // Feedback round 5 — Quick Help moved out of About onto its own
             // Help screen, reached from Settings (see HelpScreen); this
@@ -231,7 +231,7 @@ fun AboutScreen(
                     dividerAbove = true,
                 )
                 // Feedback round 8 — the License link opens the License
-                // screen (Relay's copyright notice + the SMS Tech
+                // screen (Relay's copyright notice + the upstream
                 // attribution) instead of the Apache license in the browser,
                 // and it carries no subtext now.
                 LinkItem(
@@ -286,7 +286,7 @@ fun AboutScreen(
             // "Relay UI © 2026 Relay Messaging" and "© 2026 Patrice
             // Haltaya. Released under the Apache License 2.0." now live in
             // the License screen (reached from the License link above). The
-            // "Based on SMS Tech" credit stays: it is the visible in-app
+            // The upstream credit stays: it is the visible in-app
             // Apache attribution.
         }
     }

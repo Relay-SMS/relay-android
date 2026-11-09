@@ -128,7 +128,7 @@ private fun RelayTextButtonContent(
         onClick = onClick,
         modifier = modifier.heightIn(min = 44.dp),
         enabled = enabled,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(50),
         colors = ButtonDefaults.textButtonColors(
             containerColor = Color.Transparent,
             contentColor = color,

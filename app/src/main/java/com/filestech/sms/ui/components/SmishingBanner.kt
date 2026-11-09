@@ -60,7 +60,7 @@ fun SmishingBanner(
     if (reasons.isEmpty()) return
     var explainOpen by remember { mutableStateOf(false) }
     // v1.11.0 audit U4 — retour haptique au tap : alerte de sécurité =
-    // signal sensoriel cohérent avec le pattern Files Tech (cf. mode
+    // signal sensoriel cohérent avec le pattern Relay (cf. mode
     // urgence HoldButton + boutons destructifs Settings).
     val haptic = LocalHapticFeedback.current
 
@@ -134,7 +134,7 @@ private fun SmishingExplainDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, shape = RoundedCornerShape(50)) {
                 Text(stringResource(R.string.smishing_dialog_dismiss))
             }
         },

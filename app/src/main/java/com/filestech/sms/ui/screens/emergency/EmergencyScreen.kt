@@ -446,7 +446,7 @@ fun EmergencyScreen(
                 colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                     contentColor = RelayColors.Error,
                 ),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(50),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.emergency_disable_button)) }
             if (disableConfirmOpen) {
@@ -573,7 +573,7 @@ private fun EmergencyCallTile(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             horizontal = 16.dp, vertical = 18.dp,
         ),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(50),
         modifier = modifier.fillMaxWidth(),
     ) {
         androidx.compose.foundation.layout.Row(

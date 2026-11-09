@@ -66,8 +66,8 @@ class ConversationRepositoryImpl @Inject constructor(
     private val contactRepo: com.filestech.sms.domain.repository.ContactRepository,
     // v1.8.0 (post-audit fix badges après désinstallation) — propage `READ=1`
     // côté système quand l'user ouvre une conversation. Sans ça, désinstaller
-    // + réinstaller SMS Tech ramène les badges (le système avait toujours
-    // `READ=0`, jamais aligné par SMS Tech).
+    // + réinstaller Relay ramène les badges (le système avait toujours
+    // `READ=0`, jamais aligné par Relay).
     private val telephonyReader: com.filestech.sms.data.sms.TelephonyReader,
     // v1.27.2 (audit Codex, C-07) — voir [com.filestech.sms.data.sms.PhoneIdentity].
     private val phoneIdentity: com.filestech.sms.data.sms.PhoneIdentity,

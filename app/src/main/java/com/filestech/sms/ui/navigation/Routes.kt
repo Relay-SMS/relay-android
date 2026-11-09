@@ -17,7 +17,7 @@ import kotlinx.serialization.Serializable
 
 // Feedback round 8 — License / copyright notice screen, reached from the
 // License link on About. Shows Relay's proprietary-components notice and
-// the SMS Tech attribution (see THIRD_PARTY_NOTICES.md).
+// the upstream attribution (see THIRD_PARTY_NOTICES.md).
 @Serializable data object License : Route
 
 // Feedback round 6 — Advanced screen, reached from Settings (between App

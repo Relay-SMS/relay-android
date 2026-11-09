@@ -401,7 +401,7 @@ fun LockScreen(
                 Spacer(Modifier.size(8.dp))
                 TextButton(
                     onClick = { fallbackToPin = false },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = RelayColors.Blue,
                     ),

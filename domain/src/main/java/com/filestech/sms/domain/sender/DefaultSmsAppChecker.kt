@@ -1,7 +1,7 @@
 package com.filestech.sms.domain.sender
 
 /**
- * Port domaine étroit : « SMS Tech est-il l'application SMS par défaut ? ».
+ * Port domaine étroit : « Relay est-il l'application SMS par défaut ? ».
  *
  * Les use-cases d'envoi ([com.filestech.sms.domain.usecase.SendSmsUseCase],
  * [com.filestech.sms.domain.usecase.SendMediaMmsUseCase],

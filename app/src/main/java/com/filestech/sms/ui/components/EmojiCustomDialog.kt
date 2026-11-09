@@ -28,7 +28,7 @@ import com.filestech.sms.ui.theme.RelayText
  * et choisir n'importe quel emoji. Le bouton OK est désactivé tant que la saisie est vide.
  *
  * Pas de dépendance ajoutée (Google emoji2-emojipicker rejeté — ~300 KB pour ce besoin
- * occasionnel, cohérent avec le pattern "APK fin, zéro tracker" de SMS Tech).
+ * occasionnel, cohérent avec le pattern "APK fin, zéro tracker" de Relay).
  */
 @Composable
 fun EmojiCustomDialog(

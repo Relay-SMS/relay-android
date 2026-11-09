@@ -113,7 +113,7 @@ class SendReactionUseCase @Inject constructor(
      * @param format v1.8.0 (bug 5 fix) — format du SMS sortant :
      *   - [ReactionFormat.READABLE_FR] :
      *     "J'ai réagi par ❤️ à : «aperçu»" — naturel et compréhensible pour tout
-     *     destinataire francophone Android. Décodé côté SMS Tech via la regex FR.
+     *     destinataire francophone Android. Décodé côté Relay via la regex FR.
      *   - [ReactionFormat.TAPBACK_EN] :
      *     "Reacted ❤️ to «aperçu»" — compat iMessage iPhone + Google Messages.
      *   - [ReactionFormat.EMOJI_ONLY] :
@@ -181,7 +181,7 @@ class SendReactionUseCase @Inject constructor(
             // thread (the local badge on the incoming message they reacted to is
             // already the right feedback). The wire body + `content://sms`
             // writeback still carry the full Tapback so the correspondent's app
-            // (SMS Tech, iMessage, Google Messages) can fold or render it.
+            // (Relay, iMessage, Google Messages) can fold or render it.
             localMirrorBody = "",
         )
     }
@@ -349,7 +349,7 @@ fun buildTapbackBody(emoji: String, originalBody: String): String {
  *  - **"à votre message"** — explicite que c'est une réaction au message du
  *    destinataire (aligné iMessage "Reacted ❤️ to your message").
  *  - Guillemets typographiques `«»` — uniformes avec [buildTapbackBody]
- *    (forcent UCS-2 single-segment, et matchent le décodage côté SMS Tech).
+ *    (forcent UCS-2 single-segment, et matchent le décodage côté Relay).
  *  - Troncature à `…` identique aux autres formats.
  *
  * Garanties (cf. [buildTapbackBody]) :

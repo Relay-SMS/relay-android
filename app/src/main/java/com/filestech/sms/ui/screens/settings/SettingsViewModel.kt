@@ -122,7 +122,7 @@ class SettingsViewModel @Inject constructor(
          * sont pas : soit leur copie dans le fournisseur du systeme a survecu — elle reviendrait
          * a la resynchronisation suivante, hors du coffre — soit elles sont encore la.
          *
-         * Cause la plus courante, et la seule que l'utilisateur puisse corriger : SMS Tech n'est
+         * Cause la plus courante, et la seule que l'utilisateur puisse corriger : Relay n'est
          * plus l'application SMS par defaut, donc le systeme lui refuse la suppression.
          */
         data class VaultPurgeIncomplete(val deleted: Int, val left: Int) : Event
@@ -150,7 +150,7 @@ class SettingsViewModel @Inject constructor(
         /**
          * v1.28.6 — « Supprimer toutes mes données » a rendu la main. [restantes] compte les
          * conversations laissées dans la messagerie du téléphone, que le système a refusé de
-         * supprimer — en pratique parce que SMS Tech n'est pas l'application SMS par défaut.
+         * supprimer — en pratique parce que Relay n'est pas l'application SMS par défaut.
          *
          * Émis dans les DEUX cas, et non seulement en cas de résidu. Une action irréversible doit
          * dire ce qu'elle a fait : à zéro, l'écran confirme ; au-delà, il avertit en rouge. Sans la

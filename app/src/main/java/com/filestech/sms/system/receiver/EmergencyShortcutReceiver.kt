@@ -31,7 +31,7 @@ import timber.log.Timber
  *
  * **Sécurité** :
  *  - `exported = false` dans le Manifest — uniquement le PendingIntent de
- *    SMS Tech peut déclencher ces actions, pas une autre app.
+ *    Relay peut déclencher ces actions, pas une autre app.
  *  - Les numéros ne peuvent PAS être détournés : ils viennent d'un ensemble
  *    FERMÉ connu à la compilation (`EmergencyNumbers`), jamais d'un extra
  *    modifiable, et sont re-filtrés par la liste blanche d'`EmergencyCallHelper`.

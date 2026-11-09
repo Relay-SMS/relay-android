@@ -22,7 +22,7 @@ import org.junit.runner.RunWith
  *
  * La mesure du 2026-09-07 a etabli que `resolver.insert(Telephony.Sms.Sent.CONTENT_URI, …)` rend
  * `content://sms/sent/<id>` sous Android 10, forme que `TelephonyReader` enregistre telle quelle
- * pour tout message que SMS Tech ecrit lui-meme. L'import, lui, construit
+ * pour tout message que Relay ecrit lui-meme. L'import, lui, construit
  * `content://sms/<id>` (`TelephonyReader`, ligne 379).
  *
  * L'index `UNIQUE(telephony_uri)` compare des CHAINES. Deux ecritures qui designent la MEME ligne
@@ -105,7 +105,7 @@ class DuplicateOnResyncTest {
         conversationId = 1L,
         telephonyUri = telephonyUri,
         address = "+33612345678",
-        body = "Message ecrit par SMS Tech",
+        body = "Message ecrit par Relay",
         type = MessageType.SMS,
         direction = MessageDirection.OUTGOING,
         date = 1_700_000_000_000L,

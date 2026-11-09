@@ -245,7 +245,7 @@ class PanicService @Inject constructor(
      * v1.28.6 — ce qui a RÉSISTÉ, pour que l'application le dise au lieu de promettre le contraire.
      *
      * [copiesSystemeRestantes] compte les conversations dont la copie dans `content://sms` est
-     * toujours là. Cause quasi unique : SMS Tech n'est pas l'application SMS par défaut, et le
+     * toujours là. Cause quasi unique : Relay n'est pas l'application SMS par défaut, et le
      * système lui refuse alors la suppression. Un échec dont on ne sait rien compte ici aussi —
      * le doute se résout du côté « nous n'avons pas tout effacé », jamais de l'autre.
      *

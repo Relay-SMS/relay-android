@@ -148,7 +148,7 @@ data class SendingSettings(
      *     de l'expérience Tapback mais plus court et indépendant de la langue.
      *   - [ReactionFormat.READABLE_FR] : `"J'ai réagi par ❤️ à : «aperçu»"`.
      *     Format français lisible que tout destinataire Android francophone
-     *     comprend immédiatement. Décodé par SMS Tech (regex FR) pour afficher
+     *     comprend immédiatement. Décodé par Relay (regex FR) pour afficher
      *     la bulle de réaction native. Default v1.8.0–v1.14.3.
      *   - [ReactionFormat.TAPBACK_EN] : `"Reacted ❤️ to «aperçu»"`. Format
      *     Apple/Google Tapback détecté nativement par iMessage (iPhone) et
@@ -255,7 +255,7 @@ data class SecuritySettings(
         com.filestech.sms.domain.emergency.EmergencyConfig(),
     /**
      * v1.12.0 — Raccourci urgence en notification persistante. Quand `true`,
-     * SMS Tech pose une notif `IMPORTANCE_LOW` (silencieuse, persistante)
+     * Relay pose une notif `IMPORTANCE_LOW` (silencieuse, persistante)
      * visible sur l'écran verrouillé avec 2 actions :
      *  - "URGENCE" → déclenche [TriggerEmergencyUseCase] directement
      *  - "112" → ouvre le composeur téléphone pré-rempli (ACTION_DIAL)
@@ -560,9 +560,9 @@ data class AdvancedSettings(
     val emptyConversationsPurgedV1272: Boolean = false,
     /**
      * v1.3.10 — **opt-in** : démarre [com.filestech.sms.system.service.KeepAliveService]
-     * qui maintient le processus SMS Tech vivant via une notification persistante
+     * qui maintient le processus Relay vivant via une notification persistante
      * discrète (canal `IMPORTANCE_MIN`, ne fait ni son ni vibration). Indispensable pour
-     * que SMS Tech reçoive correctement les SMS / MMS / notifications sur :
+     * que Relay reçoive correctement les SMS / MMS / notifications sur :
      *
      *   - **Xiaomi MIUI / HyperOS 2024+** (Redmi 9A Android 10 Go, Poco F5 HyperOS,
      *     Redmi Note 14 Pro 5G `2410FPCC5G`…)
@@ -571,7 +571,7 @@ data class AdvancedSettings(
      *   - Certains **OnePlus** anciens (OxygenOS < 12) et **realme realmeUI**
      *
      * Ces ROMs whitelistent uniquement les apps SMS du constructeur ; toute app SMS
-     * tierce (SMS Tech, QKSMS, Silence, etc.) est silencieusement killée en
+     * tierce (Relay, QKSMS, Silence, etc.) est silencieusement killée en
      * background, ce qui empêche la réception MMS et l'affichage des notifications.
      *
      * Sur ROMs non-agressives (Pixel Android stock, Samsung One UI, Sony Xperia,

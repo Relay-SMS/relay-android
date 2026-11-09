@@ -952,7 +952,7 @@ fun ThreadScreen(
                 } else null
             }
         }
-        // Feedback round 7 — sticky date header (Signal-style): the date of
+        // Feedback round 7 — sticky date header: the date of
         // the topmost visible message, floating at the top of the list while
         // scrolling. The label changes the moment the visible messages cross
         // into another day; while many messages share one day the pill stays
@@ -1204,6 +1204,7 @@ fun ThreadScreen(
         val isPinAnchored by viewModel.isPinAnchored.collectAsStateWithLifecycle()
         if (isPinAnchored && state.messages.isNotEmpty()) {
             FilledTonalButton(
+                shape = RoundedCornerShape(50),
                 onClick = {
                     viewModel.clearWindowAnchor()
                     pendingJumpToBottom = true
@@ -1228,6 +1229,7 @@ fun ThreadScreen(
             state.messages.isNotEmpty() && !isPinAnchored
         if (showUnseenChip) {
             FilledTonalButton(
+                shape = RoundedCornerShape(50),
                 onClick = {
                     scope.launch {
                         listState.animateScrollToItem(bottomItemIndex)
@@ -1261,10 +1263,10 @@ fun ThreadScreen(
                     val id = msg.id
                     pendingRetryWatchdog = null
                     viewModel.retry(id)
-                }) { Text(stringResource(R.string.thread_retry_watchdog_confirm)) }
+                }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.thread_retry_watchdog_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRetryWatchdog = null }) {
+                TextButton(onClick = { pendingRetryWatchdog = null }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.thread_retry_watchdog_cancel))
                 }
             },
@@ -1287,10 +1289,10 @@ fun ThreadScreen(
                     } else {
                         scheduleStep = null
                     }
-                }) { Text(stringResource(R.string.action_continue)) }
+                }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.action_continue)) }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleStep = null }) {
+                TextButton(onClick = { scheduleStep = null }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1336,10 +1338,10 @@ fun ThreadScreen(
                     // v1.25.3 (audit L10) — « Programmer » et non « Continuer » : c'est l'étape
                     // finale du sélecteur, elle valide l'envoi différé. `action_schedule`
                     // existait déjà en FR et EN, simplement jamais référencée.
-                }) { Text(stringResource(R.string.action_schedule)) }
+                }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.action_schedule)) }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleStep = null }) {
+                TextButton(onClick = { scheduleStep = null }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1546,6 +1548,7 @@ fun ThreadScreen(
             text = { Text(body) },
             confirmButton = {
                 androidx.compose.material3.Button(
+                    shape = RoundedCornerShape(50),
                     onClick = { viewModel.confirmPendingSend() },
                     modifier = Modifier.focusRequester(sendFocus),
                 ) {
@@ -1553,7 +1556,7 @@ fun ThreadScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelPendingSend() }) {
+                TextButton(onClick = { viewModel.cancelPendingSend() }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1571,6 +1574,7 @@ fun ThreadScreen(
             text = { Text(stringResource(R.string.voice_confirm_body)) },
             confirmButton = {
                 androidx.compose.material3.Button(
+                    shape = RoundedCornerShape(50),
                     onClick = { viewModel.confirmPendingVoice() },
                     modifier = Modifier.focusRequester(sendFocus),
                 ) {
@@ -1578,7 +1582,7 @@ fun ThreadScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelPendingVoice() }) {
+                TextButton(onClick = { viewModel.cancelPendingVoice() }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1607,6 +1611,7 @@ fun ThreadScreen(
             },
             confirmButton = {
                 androidx.compose.material3.Button(
+                    shape = RoundedCornerShape(50),
                     onClick = { viewModel.confirmPendingAttachmentSend() },
                     modifier = Modifier.focusRequester(sendFocus),
                 ) {
@@ -1614,7 +1619,7 @@ fun ThreadScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelPendingAttachmentSend() }) {
+                TextButton(onClick = { viewModel.cancelPendingAttachmentSend() }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -2292,7 +2297,7 @@ private fun DestructiveConfirmDialog(
                     containerColor = confirmColor,
                     contentColor = com.filestech.sms.ui.theme.onBrandContainer(confirmColor),
                 ),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(50),
             ) { Text(confirmLabel) }
         },
         dismissButton = {

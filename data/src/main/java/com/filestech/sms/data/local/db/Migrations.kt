@@ -153,7 +153,7 @@ object Migrations {
      * Selon la version d'Android, `ContentResolver.insert` rend `content://sms/sent/<id>`
      * (mesure : Galaxy S9 / Android 10) ou `content://sms/<id>` (Galaxy S24 / Android 16).
      * `TelephonyReader` enregistrait la forme rendue, telle quelle, pour tout message que
-     * SMS Tech ecrit lui-meme ; l'import depuis le systeme, lui, a toujours construit la forme
+     * Relay ecrit lui-meme ; l'import depuis le systeme, lui, a toujours construit la forme
      * canonique. L'index `UNIQUE(telephony_uri)` compare des CHAINES : les deux ecritures
      * designant la meme ligne systeme ne se rencontraient jamais. Une resynchronisation
      * complete — le bouton « Resynchroniser », qui remet le curseur a zero — reimportait donc

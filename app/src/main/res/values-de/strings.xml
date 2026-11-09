@@ -846,7 +846,7 @@
     <string name="backup_restore_in_progress">Wird wiederhergestellt…</string>
     <string name="backup_restore_success">%1$d Unterhaltungen (%2$d neu), %3$d Nachrichten importiert (%4$d bereits vorhanden)</string>
     <string name="backup_restore_failed_wrong_pass">Falsche Passphrase oder beschädigte Datei</string>
-    <string name="backup_restore_failed_format">Keine gültige SMS-Tech-Sicherungsdatei</string>
+    <string name="backup_restore_failed_format">Keine gültige Relay-Sicherungsdatei</string>
     <string name="backup_restore_failed_storage">Die Datei konnte nicht gelesen werden</string>
 
     <!-- v1.15.1 — Scheduled messages screen + Thread schedule flow. -->

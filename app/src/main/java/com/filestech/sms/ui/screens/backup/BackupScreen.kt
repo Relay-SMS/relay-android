@@ -265,7 +265,7 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
     val isRestoring by viewModel.isRestoring.collectAsState()
     val restoreLauncher = rememberLauncherForActivityResult(
         // OpenDocument plutôt que GetContent : on garde une URI persistable / re-readable.
-        // Mime `*/*` car certains pickers FS ne reconnaissent pas le mime SMS Tech custom ;
+        // Mime `*/*` car certains pickers FS ne reconnaissent pas le mime custom ;
         // le service revalide via la magic bytes du fichier, donc safe.
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -422,7 +422,7 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                         },
                         onClick = {
                             // mime `*/*` car certains pickers (Samsung My Files) ne reconnaissent pas
-                            // le mime SMS Tech custom — la validation se fait via magic bytes côté
+                            // le mime custom — la validation se fait via magic bytes côté
                             // BackupService.readSmsbk.
                             restoreLauncher.launch(arrayOf("*/*"))
                         },

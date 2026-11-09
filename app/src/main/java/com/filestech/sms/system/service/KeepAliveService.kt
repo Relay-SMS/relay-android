@@ -17,7 +17,7 @@ import timber.log.Timber
 
 /**
  * v1.3.10 — Service permanent **opt-in** dont l'unique rôle est de **maintenir le
- * processus SMS Tech vivant** sur les ROM agressives qui tuent les apps en arrière-plan
+ * processus Relay vivant** sur les ROM agressives qui tuent les apps en arrière-plan
  * (Xiaomi MIUI / HyperOS, Huawei EMUI / HarmonyOS, certaines OnePlus OxygenOS antérieures,
  * Realme realmeUI).
  *
@@ -33,7 +33,7 @@ import timber.log.Timber
  * dans le shade. C'est exactement ce que font WhatsApp ("WhatsApp se reconnecte..."),
  * Telegram et toutes les apps anti-spam SMS. Le service ne fait RIEN d'autre :
  * pas de logique métier, pas de polling, pas de réseau, pas de wakelock — juste être
- * là pour que MIUI/HarmonyOS classent SMS Tech parmi les apps "user-active".
+ * là pour que MIUI/HarmonyOS classent Relay parmi les apps "user-active".
  *
  * **Opt-in strict** : ce service n'est PAS démarré par défaut. L'utilisateur doit activer
  * explicitement le toggle "Mode résistant Xiaomi/Huawei" dans Réglages → Avancé. La notif
@@ -192,7 +192,7 @@ class KeepAliveService : Service() {
          * **v1.3.10** — try/catch défensif : sur Android 12+ (API 31+), `startForegroundService`
          * peut throw `ForegroundServiceStartNotAllowedException` AVANT même que le service
          * soit instancié si l'app est en background sans dérogation applicable (cas rare car
-         * SMS Tech détient `ROLE_SMS` qui déroge, mais MIUI/HyperOS contourne parfois). On
+         * Relay détient `ROLE_SMS` qui déroge, mais MIUI/HyperOS contourne parfois). On
          * log et on continue silencieusement plutôt que de crasher l'app appelante (peut
          * être MainApplication observer, BootReceiver, ou SettingsScreen onChange — un crash
          * dans l'un de ces 3 chemins serait visible utilisateur).

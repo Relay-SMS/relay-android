@@ -28,7 +28,7 @@ import org.junit.runner.RunWith
  *
  * Elle a echoue, et pas sur le correctif : `resolver.insert(Telephony.Sms.Sent.CONTENT_URI, …)`
  * rend `content://sms/sent/<id>`, forme que le fournisseur **refuse en suppression**. Or c'est
- * elle que `TelephonyReader` enregistre pour tout message que SMS Tech ecrit lui-meme. La
+ * elle que `TelephonyReader` enregistre pour tout message que Relay ecrit lui-meme. La
  * suppression systeme de ces messages echouait donc **depuis toujours**, l'exception etant
  * absorbee sans un mot. Le defaut etait anterieur au correctif ; c'est le correctif, en cessant
  * de jeter le resultat, qui l'a rendu visible.
@@ -207,7 +207,7 @@ class SystemProviderContractTest {
     private fun insertProbeSms(date: Long): Uri? {
         val cv = ContentValues().apply {
             put(Telephony.Sms.ADDRESS, "+33000000000")
-            put(Telephony.Sms.BODY, "SMS Tech — sonde de test v1.27.11, a supprimer")
+            put(Telephony.Sms.BODY, "Relay — sonde de test v1.27.11, a supprimer")
             put(Telephony.Sms.DATE, date)
             put(Telephony.Sms.DATE_SENT, date)
             put(Telephony.Sms.READ, 1)

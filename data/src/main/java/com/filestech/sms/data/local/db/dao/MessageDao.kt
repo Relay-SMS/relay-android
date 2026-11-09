@@ -188,7 +188,7 @@ interface MessageDao {
      * purge l'état legacy v1.7.1 (compteurs inflated + flags `read=0`
      * désynchronisés du système Android). Aligne le cache Room sur la réalité
      * usuelle de l'utilisateur (les messages anciens sont déjà lus, dans
-     * SMS Tech ou ailleurs).
+     * Relay ou ailleurs).
      *
      * Direction INCOMING = `0`. Idempotent — re-exécuter ne change rien.
      * Aussi exposé via Settings → Avancé "Tout marquer comme lu" pour permettre
@@ -389,13 +389,13 @@ interface MessageDao {
 
     /**
      * v1.28.3 (F18) — **journal de propriété** : tous les identifiants de lignes
-     * `content://mms` que SMS Tech a écrites lui-même.
+     * `content://mms` que Relay a écrites lui-même.
      *
      * Sert au chien de garde de l'OUTBOX système
      * ([com.filestech.sms.data.mms.MmsSystemWriteback.purgeStaleOutbox]), qui supprimait
      * jusqu'ici **toute** ligne du fournisseur en `msg_box = OUTBOX` plus vieille que quinze
      * minutes, sans se demander qui l'avait créée. Une application tierce ayant laissé un MMS
-     * en échec — une application constructeur cohabitante, ou celle utilisée avant SMS Tech —
+     * en échec — une application constructeur cohabitante, ou celle utilisée avant Relay —
      * voyait sa ligne détruite par un chien de garde qui n'avait rien à y faire.
      *
      * La colonne existait déjà et servait déjà de preuve de propriété ailleurs :
@@ -403,7 +403,7 @@ interface MessageDao {
      * la sienne. La purge était le seul chemin destructeur du dépôt à ne pas faire ce contrôle,
      * alors qu'elle est de loin le plus large.
      *
-     * Conséquence assumée : une ligne dont SMS Tech a perdu la trace en Room — message
+     * Conséquence assumée : une ligne dont Relay a perdu la trace en Room — message
      * supprimé localement, base réinitialisée — n'est plus purgée. C'est le bon sens de
      * l'échec : mieux vaut laisser une ligne orpheline qu'en détruire une qui ne nous
      * appartient pas.

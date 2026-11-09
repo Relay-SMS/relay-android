@@ -17,7 +17,7 @@ import javax.inject.Singleton
 /**
  * Mirrors the OS-wide [android.provider.BlockedNumberContract] blocklist into our Room cache
  * at boot. Without this, a user who had already blocked numbers via Téléphone / Samsung
- * Messages would have to re-block them inside SMS Tech, which is exactly the pain point the
+ * Messages would have to re-block them inside Relay, which is exactly the pain point the
  * v1.1.x roadmap calls out.
  *
  * Read access to the system table requires either:

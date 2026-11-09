@@ -329,7 +329,7 @@ interface ConversationDao {
      * meme pas de cle etrangere. Quelqu un qui laisse un brouillon dans un fil, puis supprime le
      * dernier SMS de ce fil depuis une autre application, perdait donc son texte non envoye et
      * laissait un envoi programme orphelin. Une suppression faite AILLEURS ne peut pas exprimer
-     * l intention d effacer ces donnees, qui n existent que dans SMS Tech.
+     * l intention d effacer ces donnees, qui n existent que dans Relay.
      *
      * Et `in_vault = 0` est exige ICI, dans le SQL : le fil a pu etre mis au Coffre entre la
      * photographie des URI et cette transaction.

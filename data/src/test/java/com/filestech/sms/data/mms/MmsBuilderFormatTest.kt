@@ -107,7 +107,7 @@ class MmsBuilderFormatTest {
         assertThat(hexa(checkNotNull(pdu))).isEqualTo(reference("expediteur"))
     }
 
-    /** Notre propre parseur lit aussi ce format : c'est lui qui recevra les messages d'un autre SMS Tech. */
+    /** Notre propre parseur lit aussi ce format : c'est lui qui recevra les messages d'un autre Relay. */
     @Test
     fun `notre parseur relit les parties et le charset de la legende`() {
         val pdu = checkNotNull(builder.buildMultipartSendReq(listOf(photo()), "Café", listOf(DESTINATAIRE)))

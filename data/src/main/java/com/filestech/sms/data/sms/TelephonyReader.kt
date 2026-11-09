@@ -273,8 +273,8 @@ class TelephonyReader @Inject constructor(
      * v1.8.0 (post-audit fix badges après désinstallation) — propage massivement
      * `READ=1` + `SEEN=1` côté système Android pour TOUS les SMS et MMS incoming
      * non lus. Sans cette propagation, un user qui désinstalle/réinstalle
-     * SMS Tech récupère ses messages avec `READ=0` côté `content://sms` (jamais
-     * mis à jour par SMS Tech à la lecture) → l'import les voit comme non-lus
+     * Relay récupère ses messages avec `READ=0` côté `content://sms` (jamais
+     * mis à jour par Relay à la lecture) → l'import les voit comme non-lus
      * → les badges réapparaissent.
      *
      * Le markRead côté Room ne propage volontairement PAS toujours côté système
@@ -289,11 +289,11 @@ class TelephonyReader @Inject constructor(
      * v1.8.0 (post-audit fix badges) — propage `READ=1` + `SEEN=1` côté système
      * pour TOUS les messages incoming non lus appartenant au `threadId` système.
      * Appelé en complément de `markConversationRead` côté Room quand l'user
-     * ouvre une conversation dans SMS Tech, pour aligner Android sur l'état lu.
+     * ouvre une conversation dans Relay, pour aligner Android sur l'état lu.
      *
-     * Sans cette propagation, désinstaller + réinstaller SMS Tech ramène les
+     * Sans cette propagation, désinstaller + réinstaller Relay ramène les
      * badges sur la conversation car le système SMS Provider conserve toujours
-     * `READ=0` (jamais notifié de la lecture côté SMS Tech).
+     * `READ=0` (jamais notifié de la lecture côté Relay).
      */
     fun markConversationReadInSystem(systemThreadId: Long): Int {
         val cv = ContentValues().apply {
@@ -502,7 +502,7 @@ class TelephonyReader @Inject constructor(
                     // utilise des types d'adresse non-standards (autres que les
                     // 137/151/129 AOSP). Sans ce log, le MMS disparaît
                     // silencieusement et l'user n'a aucun moyen de comprendre
-                    // pourquoi un message reçu n'apparaît pas dans SMS Tech.
+                    // pourquoi un message reçu n'apparaît pas dans Relay.
                     Timber.w(
                         "TelephonyReader: MMS %d skipped (empty address after FROM=137/151/129 fallback, direction=%d, threadId=%d)",
                         mmsId, direction, threadId,

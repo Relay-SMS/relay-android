@@ -570,7 +570,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
             else -> {
                 // Pas de biométrie configurée comme lock principal → entrée directe.
                 // L'user a déjà fait son authentification primaire (PIN, pattern,
-                // ou pas de lock du tout) pour ouvrir SMS Tech.
+                // ou pas de lock du tout) pour ouvrir Relay.
                 viewModel.markUnlocked()
                 unlocked = true
             }

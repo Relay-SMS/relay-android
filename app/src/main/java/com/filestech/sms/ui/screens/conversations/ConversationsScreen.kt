@@ -1142,7 +1142,7 @@ private fun BandeauJeVaisBien(visible: Boolean, onConfirmer: () -> Unit) {
  * family (`primaryContainer` + `primary`) instead of error red. The lighter container alpha
  * keeps the line visible without competing with the conversation list below.
  *
- * Feedback round 7 — the original SMS Tech card, restored: a tinted rounded card with
+ * Feedback round 7 — the original card, restored: a tinted rounded card with
  * the text on the left and a filled button on the right, in one row. It replaced the
  * flat text-button row (v1.27.12) that had replaced the card.
  *
@@ -1485,6 +1485,7 @@ private fun SwipeableConversationRow(
             },
             confirmButton = {
                 androidx.compose.material3.FilledTonalButton(
+                    shape = RoundedCornerShape(50),
                     onClick = {
                         pendingBlock = false
                         onBlock()

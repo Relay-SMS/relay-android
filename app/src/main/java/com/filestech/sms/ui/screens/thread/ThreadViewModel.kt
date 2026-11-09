@@ -2075,7 +2075,7 @@ class ThreadViewModel @Inject constructor(
     /**
      * v1.3.3 bug #4 — auto-attach d'un partage entrant. Pas de routing dédié pour
      * v1.3.3 ; l'user choisit lui-même la conversation cible parmi sa liste après
-     * tap sur SMS Tech dans le chooser système. Le 1ᵉʳ URI du partage est attaché ;
+     * tap sur Relay dans le chooser système. Le 1ᵉʳ URI du partage est attaché ;
      * les éventuels suivants (ACTION_SEND_MULTIPLE) sont ignorés cette release (v1.3.4
      * gérera le multi-attach). Le texte EXTRA_TEXT est préchargé dans le draft.
      *

@@ -19,7 +19,7 @@ import javax.inject.Singleton
 
 /**
  * Writes outgoing-MMS rows + addresses + parts into the **system content provider**
- * (`content://mms`), so an MMS sent through SMS Tech survives a re-install (system rows
+ * (`content://mms`), so an MMS sent through Relay survives a re-install (system rows
  * persist while our local SQLCipher mirror is wiped) and is also visible to other SMS apps
  * the user might switch to later.
  *
@@ -295,7 +295,7 @@ class MmsSystemWriteback @Inject constructor(
     }
 
     /**
-     * Watchdog: deletes MMS rows **written by SMS Tech** that are stuck in `msg_box = OUTBOX`
+     * Watchdog: deletes MMS rows **written by Relay** that are stuck in `msg_box = OUTBOX`
      * past [olderThanMs]. Used by [TelephonySyncWorker] to clean up after a [MmsSentReceiver]
      * that never fired (process killed mid-dispatch, force-stop, Doze + reboot). Returns the
      * number of rows deleted, or 0 if we are not default SMS app (provider returns 0 silently).
@@ -305,7 +305,7 @@ class MmsSystemWriteback @Inject constructor(
      * Le selecteur ne portait que sur `msg_box = OUTBOX` et sur l'age. Il ne demandait jamais
      * qui avait cree la ligne, et supprimait donc **toute** ligne du fournisseur systeme en
      * OUTBOX vieille de plus de quinze minutes — y compris celles d'une autre application :
-     * une application constructeur cohabitante, ou celle utilisee avant SMS Tech, dont un MMS
+     * une application constructeur cohabitante, ou celle utilisee avant Relay, dont un MMS
      * avait echoue. Le chien de garde tournait toutes les douze heures.
      *
      * C'est le seul defaut de la relecture externe qui detruise la donnee d'un TIERS, et
@@ -360,7 +360,7 @@ class MmsSystemWriteback @Inject constructor(
  *
  * Extrait de [MmsSystemWriteback.purgeStaleOutbox] pour être **testable sans appareil**. Le
  * défaut que la relecture externe a trouvé était entièrement dans ce sélecteur : il ne portait
- * que sur `msg_box` et sur la date, donc SMS Tech détruisait les MMS en échec laissés par
+ * que sur `msg_box` et sur la date, donc Relay détruisait les MMS en échec laissés par
  * d'autres applications. La classe, elle, dépend d'un `Context` et exigerait d'être application
  * SMS par défaut pour être exercée — ce qui aurait laissé le défaut sans garde-fou.
  *

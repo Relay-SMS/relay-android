@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.PersonAdd
@@ -32,7 +33,7 @@ import timber.log.Timber
 /**
  * v1.3.11 (F4) — actions sheet triggered when the user taps a phone number detected inside
  * a message body. Mirrors the Apple Messages / Google Messages pattern but rendered as an
- * [AlertDialog] for cohesion with SMS Tech's existing confirm flows.
+ * [AlertDialog] for cohesion with Relay's existing confirm flows.
  *
  * Three actions:
  *   - **Appeler** → `Intent.ACTION_DIAL` with a `tel:` URI. We intentionally use `ACTION_DIAL`
@@ -134,6 +135,7 @@ private fun PhoneActionRow(
     onClick: () -> Unit,
 ) {
     TextButton(
+        shape = RoundedCornerShape(50),
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
     ) {

@@ -382,7 +382,7 @@ class ConversationsViewModel @Inject constructor(
     /**
      * v1.6.1 (audit QUAL-03) — facade pour la screen, qui n'a plus à tenir une référence
      * directe à [DefaultSmsAppManager] (couche data). Retourne l'`Intent` à lancer pour
-     * que l'utilisateur choisisse SMS Tech comme app SMS par défaut, ou `null` si l'OS
+     * que l'utilisateur choisisse Relay comme app SMS par défaut, ou `null` si l'OS
      * n'expose pas cette demande (Android < 7 — hors target ici puisque minSdk=26).
      */
     fun buildChangeDefaultIntent(): android.content.Intent? =
@@ -463,8 +463,8 @@ class ConversationsViewModel @Inject constructor(
      * overflow de la liste. Marque tous les messages INCOMING `read=0`
      * comme lus EN MASSE puis recalcule les `conversations.unread_count`
      * pour repasser tous les badges à 0. Très utile quand l'utilisateur a
-     * lu ses messages dans une autre app SMS sans ouvrir SMS Tech : sans
-     * cette action, les badges restent indéfiniment car SMS Tech ne re-lit
+     * lu ses messages dans une autre app SMS sans ouvrir Relay : sans
+     * cette action, les badges restent indéfiniment car Relay ne re-lit
      * pas le flag `READ` système pour les messages déjà mirror-és.
      *
      * Le dialog de confirmation est géré côté UI ([ConversationsScreen]).

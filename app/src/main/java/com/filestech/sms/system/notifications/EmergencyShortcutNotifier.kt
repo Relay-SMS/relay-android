@@ -123,7 +123,7 @@ class EmergencyShortcutNotifier @Inject constructor(
         ).apply {
             action = EmergencyShortcutReceiver.ACTION_OPEN_EMERGENCY
             // SINGLE_TOP + CLEAR_TOP : si MainActivity est déjà en haut, on évite
-            // de l'empiler. Si une autre Activity SMS Tech est en haut, on la
+            // de l'empiler. Si une autre Activity Relay est en haut, on la
             // pop et on revient sur MainActivity (qui re-route Emergency).
             flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
                 android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or

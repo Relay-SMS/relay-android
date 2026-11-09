@@ -683,7 +683,7 @@ private fun TemplateOption(label: String, selected: Boolean, onClick: () -> Unit
  *
  * Rien dans l'application n'expliquait que le minuteur repart de zéro à chaque ouverture. Patrice
  * l'a découvert en testant : deux de ses essais du 2026-08-05 se sont arrêtés d'eux-mêmes parce qu'il
- * avait rouvert SMS Tech entre-temps, et il a d'abord cru à un défaut.
+ * avait rouvert Relay entre-temps, et il a d'abord cru à un défaut.
  *
  * # Le texte est exact, et sa précision n'est pas cosmétique
  *

@@ -31,7 +31,7 @@ import com.filestech.sms.ui.theme.RelayColors
  *
  * Feedback round 8 — the License link used to open the Apache license in the
  * browser. It now slides to this screen, which states Relay's own copyright
- * on its original work and the SMS Tech attribution (see
+ * on its original work and the upstream attribution (see
  * THIRD_PARTY_NOTICES.md). Same grouped-list page base as Settings and
  * About, same slide-in transition as the thread (300 ms, see AppRoot).
  *

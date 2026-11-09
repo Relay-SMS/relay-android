@@ -24,7 +24,7 @@ class IncomingReactionDecoderTest {
     }
 
     @Test fun `decodes Tapback with truncation marker (strips the ellipsis)`() {
-        // SMS Tech appends `…` when the original body was truncated to fit one
+        // Relay appends `…` when the original body was truncated to fit one
         // UCS-2 segment. The decoder must strip it so the caller can match
         // `body LIKE 'preview%'` against the stored outgoing message.
         val result = IncomingReactionDecoder.decode("Reacted 👍 to «Lorem ipsum dolor sit…»")
@@ -62,7 +62,7 @@ class IncomingReactionDecoderTest {
     // ──────────────── v1.4.1 — emoji-only candidate (Kind.EmojiOnly) ────────────────
 
     @Test fun `decodes single emoji body as EmojiOnly candidate`() {
-        // SMS Tech's `reactionEmojiOnly` mode sends just the emoji. The decoder now
+        // Relay's `reactionEmojiOnly` mode sends just the emoji. The decoder now
         // tags it [Kind.EmojiOnly] so the caller knows to apply the 5 min time
         // window check before folding it onto an outgoing message.
         val result = IncomingReactionDecoder.decode("❤️")
@@ -267,7 +267,7 @@ class IncomingReactionDecoderTest {
     }
 
     @Test fun `decode accepts a realistic Tapback close to the cap`() {
-        // A real Tapback with the longest preview SMS Tech ever emits stays under
+        // A real Tapback with the longest preview Relay ever emits stays under
         // 100 chars — confirm the cap doesn't reject legitimate inputs.
         val realistic = "Reacted ❤️ to «" + "x".repeat(50) + "»"
         val result = IncomingReactionDecoder.decode(realistic)
