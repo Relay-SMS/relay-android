@@ -2674,4 +2674,286 @@
     </issue>
 
 
+<issue
+            id="UnusedResources"
+            message="The resource `R.string.about_badge_no_ads` appears to be unused"
+            errorLine1="    &lt;string name=&quot;about_badge_no_ads&quot;>No ads&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="891"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.about_badge_no_tracker` appears to be unused"
+            errorLine1="    &lt;string name=&quot;about_badge_no_tracker&quot;>No tracker&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="892"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.about_legal_body` appears to be unused"
+            errorLine1="    &lt;string name=&quot;about_legal_body&quot;>© %1$s %2$s. Released under the Apache License 2.0.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="753"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.about_section_help` appears to be unused"
+            errorLine1="    &lt;string name=&quot;about_section_help&quot;>Quick help&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="731"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.about_ui_copyright` appears to be unused"
+            errorLine1="    &lt;string name=&quot;about_ui_copyright&quot;>Relay UI © 2026 Relay Messaging&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="752"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.action_message_actions` appears to be unused"
+            errorLine1="    &lt;string name=&quot;action_message_actions&quot;>Message actions&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="35"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.group_avatar_cd` appears to be unused"
+            errorLine1="    &lt;string name=&quot;group_avatar_cd&quot;>Group&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="118"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.lock_pin_hint` appears to be unused"
+            errorLine1="    &lt;string name=&quot;lock_pin_hint&quot;>Enter your PIN&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="381"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.pin_entry_label` appears to be unused"
+            errorLine1="    &lt;string name=&quot;pin_entry_label&quot;>PIN or password&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="247"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_app_subtitle` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_app_subtitle&quot;>Relay – SMS &amp;amp; MMS Messenger&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="386"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_auto_delete_explainer` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_auto_delete_explainer&quot;>Auto runs once a month. Starred messages are never deleted.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="436"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_language_desc` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_language_desc&quot;>Opens the Android per-app language screen. SMS Relay follows your system language unless you pick one here.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="409"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_my_number_not_set` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_my_number_not_set&quot;>Not set&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="429"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_notif_open_system_desc` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_notif_open_system_desc&quot;>Check or fix permissions, channels, and sound at the OS level.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="681"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_purge_blocked_desc` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_purge_blocked_desc&quot;>Permanently delete every conversation whose participants are all on the system blocklist.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="90"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_resync_desc` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_resync_desc&quot;>Re-imports all SMS from the Android system. Useful when messages present on the phone are missing from the app. It does not bring back what you deleted: deleting also removes the phone\'s copy. No duplicates.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="454"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_scheduled_messages_desc` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_scheduled_messages_desc&quot;>View and manage scheduled SMS&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="874"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_section_blocking` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_section_blocking&quot;>Blocking&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="695"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_section_conversations` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_section_conversations&quot;>Conversations&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="411"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_section_emergency` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_section_emergency&quot;>Emergency mode&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="572"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_section_safety_call` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_section_safety_call&quot;>Safety call&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="480"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_section_scheduled` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_section_scheduled&quot;>Scheduled messages&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="849"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_signature_none` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_signature_none&quot;>Not set&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="632"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_text_scale_desc` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_text_scale_desc&quot;>%1$s · messages, typing field and conversation list. Comes on top of Android\'s font size.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="398"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_theme_dark_tech` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_theme_dark_tech&quot;>Dark Tech&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="393"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.settings_theme_dark_tech_desc` appears to be unused"
+            errorLine1="    &lt;string name=&quot;settings_theme_dark_tech_desc&quot;>Developer-friendly dark palette. Overrides dynamic colors and AMOLED.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="394"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.thread_load_older` appears to be unused"
+            errorLine1="    &lt;string name=&quot;thread_load_older&quot;>Load older messages&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="991"
+                column="13"/>
+        </issue>
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.thread_load_older_remaining` appears to be unused"
+            errorLine1="    &lt;string name=&quot;thread_load_older_remaining&quot;>Load older messages (%1$d)&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="992"
+                column="13"/>
+        </issue>
+
+
 </issues>
