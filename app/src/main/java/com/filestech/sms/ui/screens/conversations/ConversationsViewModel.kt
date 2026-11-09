@@ -135,9 +135,6 @@ class ConversationsViewModel @Inject constructor(
         // Backfill contact names for conversations that existed before READ_CONTACTS was granted
         // or that imported with displayName=null. Cheap when there's nothing to do.
         viewModelScope.launch { runCatching { mirror.refreshContactNames() } }
-        // Feedback round 7 — fold old reaction texts into badges once the
-        // first post-grant sync has landed the history in Room (see below).
-        observeSyncForReactionReparse()
         // v1.13.0 audit SEC-4 — purge la sélection multiple à chaque entrée
         // en PanicDecoy (séparé du combine pour éviter une mutation depuis un
         // flow transform — anti-pattern fragile face à un futur changement de
@@ -298,6 +295,17 @@ class ConversationsViewModel @Inject constructor(
         // souscription côté Compose, comme attendu.
         .flowOn(io)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), UiState())
+
+    init {
+        // Feedback round 7 — fold old reaction texts into badges once the
+        // first post-grant sync has landed the history in Room (see below).
+        // NOTE: this lives in its own init block AFTER `state` on purpose —
+        // the reparse observer combines `syncManager.state` with `state`,
+        // and `viewModelScope` runs on Main.immediate, so calling it from
+        // the first init block read `state` before its initializer ran
+        // (null) and crashed the app on launch with an NPE in combine().
+        observeSyncForReactionReparse()
+    }
 
     /**
      * v1.28.8 (issue #17) — messages dont le TEXTE correspond à la recherche, sous les conversations.
