@@ -111,7 +111,7 @@ object OtpCodeDetector {
      * they stay on the whole group rather than forking the regex in two.
      */
     private val KEYWORD_REGEX = Regex(
-        """(?<!postal )(?<!zip )\b(?:${CODE_KEYWORDS.joinToString("|")})(?!\s+postal)\b?""",
+        """(?<!postal )(?<!zip )\b(?:${CODE_KEYWORDS.joinToString("|")})(?!\s+postal)\b""",
         RegexOption.IGNORE_CASE,
     )
 

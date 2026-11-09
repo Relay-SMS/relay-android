@@ -455,7 +455,7 @@
     <string name="settings_resync_desc">Importiert alle SMS erneut aus dem Android-System. Nützlich, wenn Nachrichten auf dem Telefon vorhanden sind, in der App aber fehlen. Gelöschtes kommt dadurch nicht zurück: Löschen entfernt auch die Kopie des Telefons. Keine Duplikate.</string>
     <string name="settings_resync_started">Neues Einlesen im Hintergrund gestartet.</string>
     <string name="settings_send_reactions_title">Meine Reaktionen an den Empfänger senden</string>
-    <string name="settings_send_reactions_desc">Wenn Sie eine Emoji-Reaktion setzen (Herz, Daumen hoch…), wird eine SMS gesendet, die nur das Emoji enthält. Sie zählt als normale SMS zum Tarif Ihres Vertrags. Eine Reaktion zu entfernen oder zu ändern sendet nichts erneut.</string>
+    <string name="settings_send_reactions_desc">Wenn Sie eine Emoji-Reaktion setzen (Herz, Daumen hoch…), wird eine SMS gesendet, die nur das Emoji enthält. Sie zählt als normale SMS zum Tarif Ihres Vertrags. Eine Reaktion zu ändern sendet eine neue SMS mit dem neuen Emoji; sie zu entfernen sendet eine SMS, die das Entfernen meldet.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options at a glance.
          Title kept (was already pointing to "reaction format"). Desc legacy kept for downgrade. -->
     <string name="settings_reaction_format_title">Format der Reaktionen</string>

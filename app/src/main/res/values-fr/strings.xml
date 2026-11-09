@@ -444,7 +444,7 @@
     <string name="settings_resync_desc">Réimporte tous les SMS depuis le système Android. Utile si des messages présents sur le téléphone manquent dans l\'app. Ne récupère pas ce que vous avez effacé : la suppression retire aussi la copie du téléphone. Sans doublons.</string>
     <string name="settings_resync_started">Resynchronisation lancée en arrière-plan.</string>
     <string name="settings_send_reactions_title">Envoyer mes réactions au correspondant</string>
-    <string name="settings_send_reactions_desc">Quand vous posez une réaction emoji (cœur, pouce…), un SMS contenant uniquement l\'emoji est envoyé au correspondant. Cela compte comme un SMS normal au tarif de votre forfait. Le retrait ou le changement d\'une réaction ne renvoie rien.</string>
+    <string name="settings_send_reactions_desc">Quand vous posez une réaction emoji (cœur, pouce…), un SMS contenant uniquement l\'emoji est envoyé au correspondant. Cela compte comme un SMS normal au tarif de votre forfait. Changer de réaction envoie un nouveau SMS avec le nouvel emoji ; retirer une réaction envoie un SMS de retrait.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options en un coup d\'œil. -->
     <string name="settings_reaction_format_title">Format des réactions</string>
     <string name="settings_reaction_format_fr">Français lisible</string>

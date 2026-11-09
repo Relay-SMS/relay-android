@@ -455,7 +455,7 @@
     <string name="settings_resync_desc">Vuelve a importar todos los SMS del sistema Android. Útil cuando faltan en la app mensajes que sí están en el teléfono. No devuelve lo que usted eliminó: eliminar quita también la copia del teléfono. Sin duplicados.</string>
     <string name="settings_resync_started">Sincronización iniciada en segundo plano.</string>
     <string name="settings_send_reactions_title">Enviar mis reacciones al destinatario</string>
-    <string name="settings_send_reactions_desc">Cuando publica una reacción con emoji (corazón, pulgar arriba…), se envía al destinatario un SMS que contiene solo el emoji. Cuenta como un SMS normal, a la tarifa de su plan. Quitar o cambiar una reacción no reenvía nada.</string>
+    <string name="settings_send_reactions_desc">Cuando publica una reacción con emoji (corazón, pulgar arriba…), se envía al destinatario un SMS que contiene solo el emoji. Cuenta como un SMS normal, a la tarifa de su plan. Cambiar una reacción envía un nuevo SMS con el nuevo emoji; quitarla envía un SMS que avisa de que se ha quitado.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options at a glance.
          Title kept (was already pointing to "reaction format"). Desc legacy kept for downgrade. -->
     <string name="settings_reaction_format_title">Formato de las reacciones</string>
