@@ -722,13 +722,11 @@
     <!-- v1.25.3 (audit C7) — titres de section codés en dur en français dans AboutScreen.kt. -->
     <string name="about_section_privacy">Confidentialité</string>
     <string name="about_section_features">Fonctionnalités</string>
-    <string name="about_section_author">Auteur</string>
     <string name="about_section_help">Aide rapide</string>
     <string name="help_title">Aide</string>
     <string name="about_section_links">Liens</string>
     <string name="about_check_updates">Voir les mises à jour</string>
     <string name="about_privacy_headline">100 % privé — zéro surveillance</string>
-    <string name="about_author_role">Auteur de SMS Tech</string>
     <!-- v1.25.3 (audit H20) — justificatifs de permissions codés en dur en anglais. Les noms de
          permissions restent non traduits : ce sont les identifiants Android, verbatim. -->
     <string name="about_perm_sms">Indispensable à toute application SMS.</string>

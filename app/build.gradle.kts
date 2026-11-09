@@ -104,6 +104,20 @@ android {
                 keyPassword = keystoreProps.getProperty("keyPassword")
             }
         }
+        // Debug builds used to be signed with the throwaway key Gradle
+        // generates in ~/.android/debug.keystore — a fresh one on every CI
+        // runner, so no two builds shared a signature and Android refused
+        // to install a new build over the old one (uninstall = lost
+        // settings). One committed debug keystore fixes that: every debug
+        // build carries the same signature and installs as an upgrade.
+        // DEBUG key only — the release keystore stays out of the repo,
+        // behind keystore.properties.
+        create("relayDebug") {
+            storeFile = rootProject.file("relay-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -116,6 +130,11 @@ android {
             isMinifyEnabled = false
             isDebuggable = true
             buildConfigField("boolean", "LOG_ENABLED", "true")
+            // Use the committed debug keystore when it is present; without
+            // it, keep Gradle's generated key so the build still works.
+            if (rootProject.file("relay-debug.keystore").exists()) {
+                signingConfig = signingConfigs.getByName("relayDebug")
+            }
         }
         release {
             isMinifyEnabled = true

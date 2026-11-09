@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Contactless
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Fingerprint
@@ -140,7 +138,7 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                         Icon(
                             imageVector = Icons.Outlined.Shield,
                             contentDescription = null,
-                            tint = RelayColors.Blue,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(22.dp),
                         )
                     },
@@ -157,27 +155,10 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                 }
             }
 
-            RelaySection(title = stringResource(R.string.about_section_author)) {
-                RelayRow(
-                    title = AUTHOR_NAME,
-                    subtitle = stringResource(R.string.about_author_role),
-                    leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Contactless,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    },
-                )
-            }
+            // Feedback round 5 — the Author section lived here (name + role
+            // in its own row); it duplicated the "Based on SMS Tech by
+            // Patrice Haltaya" credit already in the footer below, so it
+            // was removed. The footer credit is the one that matters.
 
             // Feedback round 5 — Quick Help moved out of About onto its own
             // Help screen, reached from Settings (see HelpScreen); this
@@ -401,7 +382,7 @@ private fun FeatureRow(icon: ImageVector, label: String, desc: String?) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = RelayColors.Blue,
+                tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(22.dp),
             )
         },
@@ -427,7 +408,7 @@ private fun LinkItem(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = RelayColors.Blue,
+                tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(22.dp),
             )
         },

@@ -733,13 +733,11 @@
     <!-- v1.25.3 (audit C7) — section titles were hardcoded in French in AboutScreen.kt. -->
     <string name="about_section_privacy">Privacidad</string>
     <string name="about_section_features">Funciones</string>
-    <string name="about_section_author">Autor</string>
     <string name="about_section_help">Ayuda rápida</string>
     <string name="help_title">Ayuda</string>
     <string name="about_section_links">Enlaces</string>
     <string name="about_check_updates">Ver las actualizaciones</string>
     <string name="about_privacy_headline">100% privada — cero rastreo</string>
-    <string name="about_author_role">Autor de SMS Tech</string>
     <!-- v1.25.3 (audit H20) — permission rationales were hardcoded in English. The permission
          names themselves stay untranslated: they are the Android identifiers, verbatim. -->
     <string name="about_perm_sms">Necesario para cualquier app de SMS.</string>
