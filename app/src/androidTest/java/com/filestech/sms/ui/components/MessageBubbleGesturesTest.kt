@@ -17,11 +17,10 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * v1.28.6 — l'appui long sur une bulle **n'est plus** « copier tout » (doublon de l'entrée
- * « Copier » du menu) mais « sélectionner le texte » ; et cette sélection est aussi une entrée
- * du menu de la bulle (ouvert par tap depuis 2026-11-06). Les deux chemins sont testés parce
- * que c'est exactement le motif d'asymétrie que ce dépôt a le plus souvent rencontré : un
- * geste changé sur une voie et pas sur l'autre.
+ * Feedback round 6 — l'appui long sur une bulle **ouvre le même menu que le tap**
+ * (épingler, réagir, copier, …). L'ancienne entrée « Sélectionner le texte » a été
+ * supprimée : ni le tap ni l'appui long ne l'ouvrent plus. Ces tests vérifient que les
+ * deux gestes ouvrent bien le menu, y compris sur un écran étroit de 320 dp.
  */
 class MessageBubbleGesturesTest {
 
@@ -55,23 +54,21 @@ class MessageBubbleGesturesTest {
     }
 
     @Test
-    fun lAppuiLongOuvreLaSelectionEtNeCopiePlus() {
-        var selections = 0
+    fun lAppuiLongOuvreLeMenuCommeLeTap() {
         var copies = 0
         compose.setContent {
             MessageBubble(
                 message = message(),
                 showTimestamp = false,
                 onCopy = { copies++ },
-                onSelectText = { selections++ },
             )
         }
 
         compose.onNodeWithText(BODY).performTouchInput { longClick(center) }
+        compose.onNodeWithText(context.getString(R.string.action_copy)).performClick()
         compose.waitForIdle()
 
-        assertThat(selections).isEqualTo(1)
-        assertThat(copies).isEqualTo(0)
+        assertThat(copies).isEqualTo(1)
     }
 
     /**
@@ -90,41 +87,39 @@ class MessageBubbleGesturesTest {
         tapSurEcranEtroit(Message.Direction.OUTGOING)
 
     private fun tapSurEcranEtroit(direction: Message.Direction) {
-        var selections = 0
+        var copies = 0
         compose.setContent {
             Box(Modifier.width(320.dp)) {
                 MessageBubble(
                     message = message(LONG_BODY, direction),
                     showTimestamp = false,
-                    onCopy = {},
-                    onSelectText = { selections++ },
+                    onCopy = { copies++ },
                 )
             }
         }
 
         compose.onNodeWithText(LONG_BODY).performClick()
-        compose.onNodeWithText(context.getString(R.string.action_select_text)).performClick()
+        compose.onNodeWithText(context.getString(R.string.action_copy)).performClick()
         compose.waitForIdle()
 
-        assertThat(selections).isEqualTo(1)
+        assertThat(copies).isEqualTo(1)
     }
 
     @Test
-    fun leMenuProposeSelectionnerLeTexte() {
-        var selections = 0
+    fun leMenuProposeCopierLeTexte() {
+        var copies = 0
         compose.setContent {
             MessageBubble(
                 message = message(),
                 showTimestamp = false,
-                onCopy = {},
-                onSelectText = { selections++ },
+                onCopy = { copies++ },
             )
         }
 
         compose.onNodeWithText(BODY).performClick()
-        compose.onNodeWithText(context.getString(R.string.action_select_text)).performClick()
+        compose.onNodeWithText(context.getString(R.string.action_copy)).performClick()
         compose.waitForIdle()
 
-        assertThat(selections).isEqualTo(1)
+        assertThat(copies).isEqualTo(1)
     }
 }
