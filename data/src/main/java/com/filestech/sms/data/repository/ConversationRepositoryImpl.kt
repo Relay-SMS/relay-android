@@ -335,9 +335,17 @@ class ConversationRepositoryImpl @Inject constructor(
         // annulant la moitié du gain visé. Ici on ne garde que le travail lourd.
         val mapped = combine(inVaultFlow, rowsFlow) { inVault, (rows, hasMoreOlder) ->
             val needAttachments = rows.any { it.attachmentsCount > 0 }
+            // Feedback round 6 — attachments are fetched for the WINDOW only,
+            // not the whole conversation: `findForConversation` re-ran a
+            // SQLCipher query over the entire history on every emission (new
+            // message, delivery report, read change), and its cost grew with
+            // the thread. Ids are chunked: a window grown by repeated "load
+            // older" pages can exceed SQLite's bound-variable cap.
             val attachmentsByMessage: Map<Long, List<Attachment>> =
                 if (needAttachments) {
-                    attachmentDao.findForConversation(conversationId)
+                    rows.map { it.id }
+                        .chunked(ATTACHMENT_FETCH_BATCH_SIZE)
+                        .flatMap { batch -> attachmentDao.findForMessages(batch) }
                         .groupBy { it.messageId }
                         .mapValues { (_, list) -> list.map { it.toDomain() } }
                 } else emptyMap()
@@ -520,6 +528,14 @@ class ConversationRepositoryImpl @Inject constructor(
         addresses.sortedBy { it.normalized }.toCsv()
 
     companion object {
+        /**
+         * Feedback round 6 — batch size for window-scoped attachment fetches
+         * (see [findForMessages]). SQLite caps the bound variables per
+         * statement (999 on older builds); a window grown by repeated "load
+         * older" pages can hold more ids than that, so the caller chunks.
+         * 500 stays safely under the cap with room for the rest of the query.
+         */
+        private const val ATTACHMENT_FETCH_BATCH_SIZE: Int = 500
         /**
          * Rapprochement d'une conversation 1-to-1 par la clé numérique canonique [blockKey]
          * (9 chiffres significatifs). Extrait ici en fonction pure (aucune dépendance Room)

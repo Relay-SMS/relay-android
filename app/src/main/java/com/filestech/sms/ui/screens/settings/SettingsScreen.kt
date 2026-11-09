@@ -1,7 +1,5 @@
 package com.filestech.sms.ui.screens.settings
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -30,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Bolt
@@ -38,7 +37,6 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.FormatSize
@@ -60,13 +58,10 @@ import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.Sms
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
@@ -79,6 +74,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -140,6 +136,9 @@ fun SettingsScreen(
     // Feedback round 5 — Help lives on its own screen now (was the
     // "Quick help" section of About).
     onOpenHelp: () -> Unit,
+    // Feedback round 6 — Advanced lives on its own screen now (was the
+    // "Advanced" section at the bottom of this list).
+    onOpenAdvanced: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenMigration: () -> Unit,
     onOpenBlocked: () -> Unit,
@@ -158,11 +157,6 @@ fun SettingsScreen(
     // v1.10.0 audit SEC-1 — en session PanicDecoy, masquer toutes les sections
     // qui révèlent que l'app dispose de fonctions de sécurité personnelle.
     val isPanicDecoy by viewModel.isPanicDecoy.collectAsStateWithLifecycle()
-    var showNuke by remember { mutableStateOf(false) }
-    // v1.28.6 — le compte rendu de la purge, lu avant de redemarrer l'application. `null` = pas de
-    // dialogue ; sinon il confirme, ou dit ce qui a resiste — cf. [SettingsViewModel.Event.DataWiped].
-    // v1.28.9 — le compte rendu entier, et non plus le seul nombre de copies système.
-    var nukeResultat by remember { mutableStateOf<SettingsViewModel.Event.DataWiped?>(null) }
     var lockModePickerOpen by remember { mutableStateOf(false) }
     // v1.26.1 (audit F4) — sélecteur du délai de verrouillage automatique.
     var autoLockDelayPickerOpen by remember { mutableStateOf(false) }
@@ -187,12 +181,10 @@ fun SettingsScreen(
     var reactionFormatPickerOpen by remember { mutableStateOf(false) }
     // v1.21.0 — picker indicatif pays par défaut (conversion E.164 à l'envoi).
     var defaultRegionPickerOpen by remember { mutableStateOf(false) }
-    // v1.8.0 — 3 nouveaux dialogs de confirmation pour les actions destructives :
-    //  - resync depuis le téléphone (réimporte tout)
-    //  - reset all settings (defaults)
-    //  - purge conversations bloquées
-    var showResyncConfirm by remember { mutableStateOf(false) }
-    var showResetAllConfirm by remember { mutableStateOf(false) }
+    // v1.8.0 — dialog de confirmation pour l'action destructive restante ici :
+    // purge des conversations bloquées. (Resync et reset-all vivaient ici
+    // aussi ; feedback round 6, ils ont déménagé sur l'écran Advanced avec
+    // leurs dialogs — voir [AdvancedScreen].)
     var showPurgeBlockedConfirm by remember { mutableStateOf(false) }
     // v1.13.0 — PIN/pass distinct coffre.
     var vaultPinSetupOpen by remember { mutableStateOf(false) }
@@ -208,8 +200,6 @@ fun SettingsScreen(
     // Retiré v1.14.1 : la page Mode urgence v1.14.1 utilise direct call avec
     // fallback automatique → picker Settings devenait orphelin (dead setting).
     // Clé DataStore préservée pour compat ascendante mais non lue par UI.
-
-    val defaultLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { /* no-op */ }
 
     val snackbarHost = remember { androidx.compose.material3.SnackbarHostState() }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -259,9 +249,6 @@ fun SettingsScreen(
                     snackbarHost.showSnackbar(
                         ctx.getString(R.string.settings_auto_delete_purge_done, e.count),
                     )
-                }
-                SettingsViewModel.Event.ResyncRequested -> {
-                    snackbarHost.showSnackbar(ctx.getString(R.string.settings_resync_started))
                 }
                 SettingsViewModel.Event.PanicCodeSet -> {
                     snackbarHost.showSnackbar(panicSavedMsg)
@@ -314,12 +301,6 @@ fun SettingsScreen(
                 is SettingsViewModel.Event.VaultPurgeStuck -> {
                     vaultPinForceConfirm = e.left
                 }
-                // v1.28.6 — la purge totale a laisse des messages dans le telephone. Un DIALOGUE
-                // et non un message glissant : le processus redemarre juste apres, un snackbar
-                // disparaitrait avec lui sans avoir ete lu.
-                is SettingsViewModel.Event.DataWiped -> {
-                    nukeResultat = e
-                }
                 // v1.28.3 (audit du 2026-09-09) — echec LOCAL : pas de sortie forcee, et on le
                 // dit au lieu de rouvrir un dialogue qui ne mene nulle part.
                 is SettingsViewModel.Event.VaultPurgeStuckLocal -> {
@@ -336,6 +317,10 @@ fun SettingsScreen(
                         ),
                     )
                 }
+                // Feedback round 6 — `ResyncRequested` and `DataWiped` are
+                // not handled here anymore: they are emitted by the Advanced
+                // screen's actions and collected there (see [AdvancedScreen]).
+                else -> Unit
             }
         }
     }
@@ -797,140 +782,13 @@ fun SettingsScreen(
                 }
             }
 
-            RelaySection(
-                title = stringResource(R.string.settings_section_advanced),
-                materialHeader = true,
-            ) {
-                // v1.27.12 — le bouton passe SOUS la description au lieu d'occuper le
-                // `trailingContent`. Meme defaut que le bandeau de [ConversationsScreen] et meme
-                // cause : le bouton y prenait sa largeur intrinseque et laissait au texte une
-                // colonne de quelques caracteres. Visible des qu'on cumule un ecran etroit et une
-                // police agrandie — mesure sur un Redmi 9C a 360 dp et `font_scale` 1,33.
-                val estParDefaut = viewModel.defaultAppManager.isDefault()
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    // Feedback round 5 — the glyph centres on the title line,
-                    // not on the whole row (same nesting as [ToggleRow] and
-                    // [RelayRow]): the icon and the title share an inner row,
-                    // and the description starts under the title text.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Sms,
-                            contentDescription = null,
-                            // Feedback round 4 — row icons follow the theme's on-surface
-                            // colour (white in dark mode, black in light) instead of the
-                            // brand blue, which was hard to see in dark mode.
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(22.dp),
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_default_sms_app),
-                            style = RelayText.MessageBody,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Text(
-                        text = if (estParDefaut) {
-                            stringResource(R.string.settings_is_default)
-                        } else {
-                            stringResource(R.string.error_not_default_app)
-                        },
-                        style = RelayText.Timestamp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        // Feedback round 4 — a little gap between the row title
-                        // and its description line (same 2dp as [RelayRow]).
-                        modifier = Modifier.padding(start = 34.dp, top = 2.dp),
-                    )
-                    if (!estParDefaut) {
-                        Spacer(Modifier.size(10.dp))
-                        RelayPrimaryButton(
-                            text = stringResource(R.string.settings_set_default),
-                            onClick = {
-                                viewModel.defaultAppManager.buildChangeDefaultIntent()
-                                    ?.let { defaultLauncher.launch(it) }
-                            },
-                        )
-                    }
-                }
-                // Audit U15: label said "Archived" but the row opened the Blocked screen. Removed —
-                // archived conversations are reached from the Conversations top bar (icon Inventory2),
-                // and the Blocked list has its own dedicated row right above.
-                // v1.3.0 — re-sync complète depuis le content provider Android. Utile pour
-                // récupérer un historique purgé par erreur (le system provider conserve les SMS
-                // indépendamment de l'app). Le re-import dedup via l'index UNIQUE telephony_uri.
-                NavigationRow(
-                    title = stringResource(R.string.settings_resync_title),
-                    leadingIcon = Icons.Outlined.Sync,
-                    description = stringResource(R.string.settings_resync_desc),
-                    // v1.8.0 — dialog de confirmation (peut faire ré-apparaître
-                    // des conversations précédemment supprimées si toujours
-                    // présentes dans le content provider système).
-                    onClick = { showResyncConfirm = true },
-                    dividerAbove = true,
-                )
-                // v1.3.10 + v1.4.1 — Mode résistant OPT-IN (KeepAliveService foreground
-                // permanent). Toggle exposé pour TOUS les téléphones car la détection ROM
-                // est conservatrice : certains utilisateurs sur ROM "propre" pourraient
-                // quand même vouloir activer ; certains sur ROM "agressive" pourraient avoir
-                // whitelisté SMS Tech à la main et ne pas vouloir la notif persistante. La
-                // description liste les ROMs concernées pour aider la décision.
-                // **v1.4.1** : retrait du dialog onboarding qui auto-proposait l'activation
-                // sur Xiaomi/Redmi — trop pushy, des users tapaient "Activer" sans
-                // comprendre la notif persistante.
-                ToggleRow(
-                    title = stringResource(R.string.settings_keep_alive_title),
-                    leadingIcon = Icons.Outlined.Bolt,
-                    description = stringResource(R.string.settings_keep_alive_desc),
-                    value = state.advanced.keepAliveService,
-                    dividerAbove = true,
-                    onChange = { v ->
-                        // v1.3.10 (C4) — single source of truth: only persist the flag here.
-                        // [MainApplication] observes the DataStore via `distinctUntilChanged`
-                        // and calls `KeepAliveService.start/stop` within ~50 ms — well under
-                        // the threshold of perceptibility. The previous inline `start/stop`
-                        // was redundant and caused a double `startForeground` on the same
-                        // notification id, which produced a brief notif-flash on MIUI.
-                        viewModel.update { it.copy(advanced = it.advanced.copy(keepAliveService = v)) }
-                    },
-                )
-                // v1.8.0 — dialog de confirmation (les préférences reviennent
-                // aux defaults, mais les conversations restent intactes).
-                //
-                // v1.27.11 (revue externe GitLab !38458, constat 1) — cette rangée reste
-                // volontairement VISIBLE en session leurre, contrairement aux sections
-                // Sauvegarde / Safety call / Mode urgence : une app SMS ordinaire sait
-                // réinitialiser ses réglages, et la masquer signalerait qu'il y a quelque chose
-                // à cacher. Ce qui la rendait dangereuse ici n'était pas sa visibilité mais son
-                // effet — elle remettait `lockMode` et `vaultPinEnabled` à leurs défauts. C'est
-                // [SettingsViewModel.resetAll] qui préserve désormais le bloc sécurité, et c'est
-                // le bon endroit : un garde d'écran ne dit rien du prochain point d'entrée.
-                NavigationRow(
-                    title = stringResource(R.string.settings_reset_all),
-                    leadingIcon = Icons.Outlined.RestartAlt,
-                    onClick = { showResetAllConfirm = true },
-                    dividerAbove = true,
-                )
-                NavigationRow(
-                    title = stringResource(R.string.settings_nuke_data),
-                    leadingIcon = Icons.Outlined.DeleteForever,
-                    onClick = { showNuke = true },
-                    destructive = true,
-                    dividerAbove = true,
-                )
-            }
-
             Spacer(Modifier.size(24.dp))
             // Feedback round 5 — the bottom card holds the meta rows, in
-            // order: App Language (Android 13+ only), Help, About. The
-            // language row moved here from its own section up the page, and
-            // Help moved here from the About screen.
+            // order: App Language (Android 13+ only), Advanced, Help, About.
+            // The language row moved here from its own section up the page,
+            // Help moved here from the About screen, and Advanced moved here
+            // from its own section (feedback round 6 — it lives on its own
+            // screen now).
             RelayCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                 // Réservé à Android 13+ : en dessous, la page de langue
                 // n'existe pas et l'intent n'ouvrirait rien.
@@ -944,10 +802,16 @@ fun SettingsScreen(
                     )
                 }
                 NavigationRow(
+                    title = stringResource(R.string.settings_section_advanced),
+                    leadingIcon = Icons.Outlined.Tune,
+                    onClick = onOpenAdvanced,
+                    dividerAbove = languageShown,
+                )
+                NavigationRow(
                     title = stringResource(R.string.help_title),
                     leadingIcon = Icons.Outlined.HelpOutline,
                     onClick = onOpenHelp,
-                    dividerAbove = languageShown,
+                    dividerAbove = true,
                 )
                 NavigationRow(
                     title = stringResource(R.string.about_title),
@@ -958,100 +822,6 @@ fun SettingsScreen(
             }
             Spacer(Modifier.size(24.dp))
         }
-    }
-
-    if (showNuke) {
-        // Audit U16: destructive dialog — Cancel really autofocused (FocusRequester wired below)
-        // + confirm action in the error red so accidental taps require visual intent.
-        // The "nuke" call is irreversible.
-        val cancelFocus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
-        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        RelayDialog(
-            onDismissRequest = { showNuke = false },
-            title = stringResource(R.string.settings_nuke_data),
-            // v1.28.6 — l'avertissement dit desormais que les messages du TELEPHONE partent aussi
-            // (c'est ce que la purge fait depuis cette version), et, quand SMS Tech n'est pas
-            // l'application SMS par defaut, que le systeme le lui refusera. Deux textes plutot
-            // qu'un seul conditionnel : celui qui s'ajoute est un AVERTISSEMENT, il porte la
-            // couleur d'erreur, et la promesse principale ne se reecrit pas selon l'etat.
-            content = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.settings_nuke_confirm))
-                    if (!viewModel.defaultAppManager.isDefault()) {
-                        Text(
-                            text = stringResource(R.string.settings_nuke_confirm_not_default),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                RelayDestructiveButton(
-                    text = stringResource(R.string.action_delete),
-                    onClick = { viewModel.nukeData(); showNuke = false },
-                )
-            },
-            dismissButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_cancel),
-                    onClick = { showNuke = false },
-                    modifier = Modifier
-                        .focusRequester(cancelFocus)
-                        .focusable(),
-                )
-            },
-        )
-    }
-
-    // v1.28.6 — L'EFFACEMENT N'A PAS TOUT EMPORTE, ET CELA SE DIT.
-    //
-    // Le dialogue de confirmation promet « irréversible ». Quand le système refuse la suppression
-    // des messages du téléphone — en pratique parce que SMS Tech n'est pas l'application SMS par
-    // défaut — la promesse est fausse, et une promesse fausse est pire que pas de promesse. Un
-    // seul bouton : il n'y a rien à décider, seulement à savoir. Sa fermeture déclenche le
-    // redémarrage que la purge avait mis en attente pour laisser ce message se lire.
-    // v1.28.9 (septième note d'Andrew, constat 2) — trois causes possibles, dites séparément par
-    // [EffacementIncompletTexte] : l'écran est au seuil de complexité de detekt.
-    nukeResultat?.let { resultat ->
-        val incomplet = resultat.incomplet
-        RelayDialog(
-            onDismissRequest = { /* lecture obligatoire : seul le bouton ferme */ },
-            title = stringResource(
-                if (incomplet) {
-                    R.string.settings_nuke_residue_title
-                } else {
-                    R.string.settings_nuke_done_title
-                },
-            ),
-            icon = {
-                Icon(
-                    imageVector = if (incomplet) Icons.Outlined.WarningAmber else Icons.Outlined.Check,
-                    contentDescription = null,
-                    tint = if (incomplet) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                )
-            },
-            titleColor = if (incomplet) MaterialTheme.colorScheme.error else null,
-            content = {
-                if (incomplet) {
-                    EffacementIncompletTexte(resultat)
-                } else {
-                    Text(stringResource(R.string.settings_nuke_done_body))
-                }
-            },
-            confirmButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_close),
-                    onClick = {
-                        nukeResultat = null
-                        viewModel.terminerEffacement()
-                    },
-                )
-            },
-        )
     }
 
     if (textScalePickerOpen) {
@@ -1242,74 +1012,6 @@ fun SettingsScreen(
                 notifStylePickerOpen = false
             },
             onDismiss = { notifStylePickerOpen = false },
-        )
-    }
-
-    // v1.8.0 — Dialog de confirmation : Resync depuis le téléphone.
-    // Pattern Files Tech : autofocus Cancel + bouton confirm primary action.
-    // Action non destructive (re-importe depuis content://sms, pas de perte).
-    if (showResyncConfirm) {
-        val cancelFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        RelayDialog(
-            onDismissRequest = { showResyncConfirm = false },
-            title = stringResource(R.string.settings_resync_confirm_title),
-            content = { Text(stringResource(R.string.settings_resync_confirm_body)) },
-            confirmButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_confirm),
-                    onClick = {
-                        viewModel.forceResyncFromTelephony()
-                        showResyncConfirm = false
-                    },
-                    confirm = true,
-                )
-            },
-            dismissButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_cancel),
-                    onClick = { showResyncConfirm = false },
-                    modifier = Modifier
-                        .focusRequester(cancelFocus)
-                        .focusable(),
-                )
-            },
-        )
-    }
-
-    // v1.8.0 — Dialog de confirmation : Réinitialiser tous les réglages.
-    // Pattern Files Tech : autofocus Cancel — l'user qui tape rapidement après
-    // un précédent dialog ne réinitialise pas par réflexe.
-    // Action remet les réglages aux défauts mais NE touche PAS aux messages
-    // (donc non-destructive au sens contenu utilisateur), ni — depuis v1.27.11 — aux
-    // réglages de sécurité. Le corps du dialogue le dit maintenant explicitement : il
-    // annonçait « toutes vos préférences » alors que la portée réelle s'arrête au confort.
-    if (showResetAllConfirm) {
-        val cancelFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        RelayDialog(
-            onDismissRequest = { showResetAllConfirm = false },
-            title = stringResource(R.string.settings_reset_all_confirm_title),
-            content = { Text(stringResource(R.string.settings_reset_all_confirm_body)) },
-            confirmButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_confirm),
-                    onClick = {
-                        viewModel.resetAll()
-                        showResetAllConfirm = false
-                    },
-                    confirm = true,
-                )
-            },
-            dismissButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_cancel),
-                    onClick = { showResetAllConfirm = false },
-                    modifier = Modifier
-                        .focusRequester(cancelFocus)
-                        .focusable(),
-                )
-            },
         )
     }
 
@@ -1930,8 +1632,11 @@ private fun PinSetupDialog(
  * The whole row is one TalkBack node (`Modifier.toggleable(role = Role.Switch)`); the
  * inner Switch has `onCheckedChange = null` and delegates to it.
  */
+// Feedback round 6 — package-visible (not private): the Advanced screen
+// reuses these two rows, so they live here for both screens. They stay
+// Settings-specific — other screens use [RelayRow] directly.
 @Composable
-private fun ToggleRow(
+fun ToggleRow(
     title: String,
     value: Boolean,
     onChange: (Boolean) -> Unit,
@@ -1942,6 +1647,10 @@ private fun ToggleRow(
     // v1.2.6 polish : Row compact à la place du `ListItem` (qui forçait min-height 56/72 dp et
     // un Switch pleine taille). On garde un touch target ≥ 48 dp via `heightIn` tout en
     // resserrant les paddings verticaux.
+    //
+    // Feedback round 6 — the row now follows the M3 list-item heights deliberately
+    // (56dp one-line, 72dp two-line, same as [RelayRow]): the two-line rows were
+    // too tight at 56dp, and the description used the 13sp timestamp style.
     //
     // v1.3.7 U1 audit — `Modifier.toggleable(role = Role.Switch)` remplace `.clickable {...}` +
     // `Switch.onCheckedChange`. Avant : TalkBack annonçait DEUX éléments interactifs (la Row
@@ -1962,21 +1671,23 @@ private fun ToggleRow(
                     role = Role.Switch,
                     onValueChange = onChange,
                 )
-                .heightIn(min = 56.dp)
+                .heightIn(min = if (description != null) 72.dp else 56.dp)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Feedback round 5 — the glyph centres on the title line, not
             // on the whole row: the icon and the title share an inner row,
             // so on a two-line row the icon sits next to the title (see
             // [RelayRow]); the switch stays centred on the row. The
-            // description starts under the title text, past the 22dp glyph
-            // + 12dp gap.
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            // description starts under the title text, past the 24dp glyph
+            // + 16dp gap. The 16dp arrangement gap below is the text-to-switch
+            // spacing — the old 12dp end padding on this column is dropped,
+            // it would have stacked to 28dp.
+            Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     if (leadingIcon != null) {
                         Icon(
@@ -1986,7 +1697,7 @@ private fun ToggleRow(
                             // (white in dark mode, black in light) instead of the brand blue,
                             // which was hard to see in dark mode.
                             tint = cs.onSurface,
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                     Text(
@@ -1999,12 +1710,14 @@ private fun ToggleRow(
                 if (description != null) {
                     Text(
                         description,
-                        style = RelayText.Timestamp,
+                        // Feedback round 6 — M3 supporting text is bodyMedium
+                        // (14sp/20), not the 13sp/16 timestamp style.
+                        style = MaterialTheme.typography.bodyMedium,
                         color = cs.onSurfaceVariant,
                         // Feedback round 4 — a little gap between the row title and its
                         // description line (same 2dp as [RelayRow]).
                         modifier = Modifier.padding(
-                            start = if (leadingIcon != null) 34.dp else 0.dp,
+                            start = if (leadingIcon != null) 40.dp else 0.dp,
                             top = 2.dp,
                         ),
                     )
@@ -2015,13 +1728,33 @@ private fun ToggleRow(
                 // v1.3.7 U1 audit — `null` délègue le clic au `Modifier.toggleable` parent
                 // (fusion sémantique, un seul élément interactif côté TalkBack/Switch Access).
                 onCheckedChange = null,
+                // Feedback round 6 — M3 Expressive switch: a check icon in the
+                // thumb when on (`SwitchDefaults.IconSize` = 16dp, the
+                // documented Expressive pattern). The bare thumb was the old
+                // pre-Expressive look.
+                thumbContent = if (value) {
+                    {
+                        Icon(
+                            // Both `Check` icons are imported (filled here,
+                            // outlined above): the two extension properties
+                            // share the simple name, so both call sites use
+                            // the qualified `Icons.Filled` / `Icons.Outlined`
+                            // receiver and never the bare name.
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(SwitchDefaults.IconSize),
+                        )
+                    }
+                } else {
+                    null
+                },
             )
         }
     }
 }
 
 @Composable
-private fun NavigationRow(
+fun NavigationRow(
     title: String,
     onClick: () -> Unit,
     destructive: Boolean = false,
@@ -2029,9 +1762,9 @@ private fun NavigationRow(
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     dividerAbove: Boolean = false,
 ) {
-    // One grouped-list row: 22dp leading glyph in the theme's on-surface colour
+    // One grouped-list row: 24dp leading glyph in the theme's on-surface colour
     // (feedback round 4 — the brand blue was hard to see in dark mode), 16sp/400
-    // title, optional 13sp secondary description, trailing chevron. The danger-zone
+    // title, optional 14sp secondary description, trailing chevron. The danger-zone
     // row renders its title in the error red instead. Pass [dividerAbove] for every
     // row but the first of a card (see [RelayRow]).
     RelayRow(
@@ -2051,7 +1784,7 @@ private fun NavigationRow(
                     imageVector = leadingIcon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         } else {
@@ -2062,7 +1795,7 @@ private fun NavigationRow(
                 Icons.Outlined.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(24.dp),
             )
         },
         titleColor = if (destructive) RelayColors.Error else null,

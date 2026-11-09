@@ -93,7 +93,15 @@ fun BubbleReactionOverlay(
         content()
         return
     }
-    Box {
+    // Feedback round 6 — the Box reserves 20dp below the bubble: the badge
+    // is offset 20dp down, so it hangs exactly that far past the bubble's
+    // bottom edge. Without the reserve it overflowed the item's bounds and
+    // the NEXT message (laid out right below, drawn on top) covered it —
+    // the badge looked cut off whenever another message followed.
+    // Alignment is inside the padding, so the badge still straddles the
+    // bubble's bottom edge exactly as before; the item just owns the space
+    // the badge hangs into now.
+    Box(modifier = Modifier.padding(bottom = 20.dp)) {
         content()
         EmojiReactionBadge(
             emoji = reactionEmoji,

@@ -50,16 +50,15 @@ fun RelaySheet(
 @Composable
 private fun RelayDragHandle() {
     val cs = MaterialTheme.colorScheme
-    // Feedback round 5 — restore the 22dp of space ABOVE the handle that the
-    // pre-refresh sheet had: it used ModalBottomSheet's DEFAULT drag handle,
-    // whose vertical padding is 22dp (material3 1.4.0, `DragHandleVerticalPadding`,
-    // same BOM then as now). The refresh's bare 4dp pill had no padding, so
-    // the handle touched the sheet's top edge. Bottom padding stays off: the
-    // 22dp the content carries above its title already covers the gap below
-    // the handle (restored in round 4 from the same source).
+    // Feedback round 6 — 10dp above the handle, matching the system sheet:
+    // the 22dp restored in round 5 (from the pre-refresh default handle's
+    // vertical padding) left too much empty space above the pill — the
+    // system sheet in Kristin's screenshot sits ~10dp below the top edge.
+    // Bottom padding stays off: the content carries its own gap above its
+    // title.
     Box(
         modifier = Modifier
-            .padding(top = 22.dp)
+            .padding(top = 10.dp)
             .width(32.dp)
             .height(4.dp)
             .background(cs.outline, RoundedCornerShape(2.dp)),

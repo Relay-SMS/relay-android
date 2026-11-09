@@ -375,24 +375,48 @@ fun ConversationsScreen(
                             }
                         },
                         actions = {
-                            // Round 4 — Kristin's magnifier opens the search pill.
-                            IconButton(onClick = { searchOpen = true }) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_search),
-                                    contentDescription = stringResource(
-                                        R.string.conversations_search_hint,
-                                    ),
-                                    // Round 5 — same tint as the overflow icon beside it
-                                    // (default TopAppBar action colour, onSurfaceVariant).
-                                    tint = cs.onSurfaceVariant,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                            IconButton(onClick = { overflowOpen = true }) {
-                                Icon(
-                                    Icons.Outlined.MoreVert,
-                                    contentDescription = stringResource(R.string.action_more),
-                                )
+                            // Feedback round 6 — the two header actions match the
+                            // Figma home screen: 36dp hit boxes (the thread
+                            // header's pattern) with a 9dp end inset, so the ⋮
+                            // sits 27dp from the edge and the magnifier ~63dp.
+                            // The 48dp IconButtons left too much air between
+                            // the two icons.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 9.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .clickable(onClick = { searchOpen = true })
+                                        .semantics { role = Role.Button },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_search),
+                                        contentDescription = stringResource(
+                                            R.string.conversations_search_hint,
+                                        ),
+                                        // Round 5 — same tint as the overflow icon beside it
+                                        // (default TopAppBar action colour, onSurfaceVariant).
+                                        tint = cs.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .clickable(onClick = { overflowOpen = true })
+                                        .semantics { role = Role.Button },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.MoreVert,
+                                        contentDescription = stringResource(R.string.action_more),
+                                    )
+                                }
                             }
                             // Round 4 — rounded menu like the rest of the refreshed UI:
                             // 18dp, the same radius as the bubble long-press menu
@@ -401,6 +425,10 @@ fun ConversationsScreen(
                                 expanded = overflowOpen,
                                 onDismissRequest = { overflowOpen = false },
                                 shape = RoundedCornerShape(18.dp),
+                                // Feedback round 6 — 10dp more breathing room on
+                                // each side than the Material default, like the
+                                // bubble menu and the thread overflow menu.
+                                modifier = Modifier.padding(horizontal = 10.dp),
                             ) {
                                 // v1.8.0 — action "Tout marquer comme lu". Utile quand l'user a
                                 // lu ses messages dans une autre app SMS et que les badges SMS

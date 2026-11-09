@@ -322,8 +322,6 @@ fun ThreadScreen(
     // v1.28.3 — nommer le groupe (menu du fil).
     var renameOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
-    // v1.28.6 — message dont un extrait est en cours de sélection (appui long ou menu ⋮).
-    var textSelectionTarget by remember { mutableStateOf<Message?>(null) }
     var askBlock by remember { mutableStateOf(false) }
     // v1.3.0 — état des dialogs/sheets de réaction emoji.
     //   `pickingReactionFor` non-null = bottom-sheet quick-pick affiché pour ce message.
@@ -960,7 +958,6 @@ fun ThreadScreen(
                 onForward = { msg -> forwardingMessage = msg },
                 onTranslate = { msg -> translateMessageExternal(msg) },
                 onCopy = { msg -> copyMessageBody(msg) },
-                onSelectText = { msg -> textSelectionTarget = msg },
                 // v1.26.1 (audit F2) — bascule sur l'état courant du message.
                 onToggleStar = { msg -> viewModel.toggleMessageStarred(msg.id, !msg.starred) },
                 // Feedback round 5 — épingler / désépingler (la VM compare à
@@ -987,19 +984,6 @@ fun ThreadScreen(
         }
         val pinnedAt = state.conversation?.pinnedMessageAt
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
-                PinnedMessageBanner(
-                    message = pinnedMessage,
-                    pinnedAt = pinnedAt,
-                    isGroup = state.conversation?.isGroup == true,
-                    title = title,
-                    memberNames = state.memberNames,
-                    formatters = formatters,
-                    canUnpin = !state.isPanicDecoy,
-                    onJump = { viewModel.jumpToPinnedMessage(pinnedMessage.id) },
-                    onUnpin = { viewModel.togglePin(pinnedMessage.id) },
-                )
-            }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().alpha(if (listSettled) 1f else 0f),
@@ -1078,6 +1062,26 @@ fun ThreadScreen(
         // the list. It is an overlay, not a list item, so it never shifts
         // the message indices or the scroll anchor. It only ever shows
         // during a top load — never when fully loaded.
+        // Feedback round 6 — the pinned banner floats over the top of the
+        // list (no background band around it), fixed under the header with
+        // a slight gap — like the Figma design, where the first message
+        // peeks out from behind it. It draws under the loading chip above,
+        // so the transient spinner stays visible while older messages load.
+        // Hidden while searching — the search pill replaces the header, and
+        // the banner belongs to it.
+        if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
+            PinnedMessageBanner(
+                message = pinnedMessage,
+                pinnedAt = pinnedAt,
+                isGroup = state.conversation?.isGroup == true,
+                title = title,
+                memberNames = state.memberNames,
+                formatters = formatters,
+                canUnpin = !state.isPanicDecoy,
+                onJump = { viewModel.jumpToPinnedMessage(pinnedMessage.id) },
+                onUnpin = { viewModel.togglePin(pinnedMessage.id) },
+            )
+        }
         if (state.isLoadingOlder) {
             Row(
                 modifier = Modifier
@@ -1259,14 +1263,6 @@ fun ThreadScreen(
             number = number,
             onDismiss = { pickingPhoneNumber = null },
             onSnack = { msg -> scope.launch { snackbarHost.showSnackbar(msg) } },
-        )
-    }
-
-    // v1.28.6 — sélection libre d'un extrait, hors de la liste (cf. MessageTextSelectionDialog).
-    textSelectionTarget?.let { msg ->
-        com.filestech.sms.ui.components.MessageTextSelectionDialog(
-            body = msg.body,
-            onDismiss = { textSelectionTarget = null },
         )
     }
 
@@ -1544,8 +1540,14 @@ fun ThreadScreen(
  * "Pinned · date at time" line (pin date, white at 70%) sharing the second
  * line, bottom-aligned. Tapping the card jumps to the message (loading the
  * window around it first when it is outside the loaded window); the X
- * removes the pin. The card is a fixed header under the thread header, not
- * a list item, so it never scrolls away.
+ * removes the pin.
+ *
+ * Feedback round 6 — the card FLOATS over the top of the message list
+ * (an overlay inside the list's Box, not a row above it), so there is no
+ * background band around it — the first message peeks out from behind it,
+ * like the design. The sender is 13sp (smaller than the 15sp preview,
+ * measured from the design), the date has no year ("11/8"), and the X's
+ * right edge aligns with the vertical plane where the "M" in "PM" ends.
  */
 @Composable
 private fun PinnedMessageBanner(
@@ -1580,8 +1582,10 @@ private fun PinnedMessageBanner(
                         memberNames = memberNames,
                         youLabel = stringResource(R.string.chat_you),
                     ),
+                    // Feedback round 6 — sender 15sp -> 13sp, smaller than
+                    // the 15sp preview (measured from the Figma design).
                     style = RelayText.MessageBody.copy(
-                        fontSize = 15.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                     ),
                     color = Color.White,
@@ -1596,7 +1600,10 @@ private fun PinnedMessageBanner(
                             .clip(CircleShape)
                             .clickable(onClick = onUnpin)
                             .semantics { role = Role.Button },
-                        contentAlignment = Alignment.Center,
+                        // Feedback round 6 — the glyph hugs the box's right
+                        // edge, so its right side aligns with the vertical
+                        // plane where the "M" in "PM" ends on the line below.
+                        contentAlignment = Alignment.CenterEnd,
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_close_circle_outline),
@@ -1627,7 +1634,9 @@ private fun PinnedMessageBanner(
                 Text(
                     text = stringResource(
                         R.string.thread_pinned_label,
-                        formatters.shortDate.format(Date(pinnedAt)),
+                        // Feedback round 6 — no year: "11/8" instead of
+                        // "11/8/26" (see ChatFormatters.shortDateNoYear).
+                        formatters.shortDateNoYear.format(Date(pinnedAt)),
                         formatters.time.format(Date(pinnedAt)),
                     ),
                     style = RelayText.BubbleMeta,
@@ -1673,8 +1682,10 @@ private fun ThreadHeader(
                 // Round 4 — 56dp -> 64dp: the header was still cramped after round 3
                 // (44dp -> 56dp). Same elements and order; the extra height is pure
                 // breathing room.
+                // Feedback round 6 — end padding 4dp -> 9dp, so the ⋮ sits 27dp
+                // from the edge like the home screen's (see ConversationsScreen).
                 .height(64.dp)
-                .padding(horizontal = 4.dp),
+                .padding(start = 4.dp, end = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -1702,7 +1713,11 @@ private fun ThreadHeader(
             ) {
                 RelayAvatar(
                     label = title,
-                    size = 32.dp,
+                    // Feedback round 6 — 32dp -> 37dp: 5px taller, as measured
+                    // in Figma. The initials keep their fixed size, so the
+                    // bigger circle gives them the same breathing room the
+                    // 48dp home avatars already have.
+                    size = 37.dp,
                     customUri = avatarUri,
                     isGroup = isGroup,
                 )
@@ -1755,6 +1770,9 @@ private fun ThreadHeader(
                 )
             }
             if (canCall) {
+                // Feedback round 6 — 5dp between the search and the call
+                // icon, so the magnifier sits a touch further left.
+                Spacer(Modifier.width(5.dp))
                 // Feedback round 5 — Kristin's call icon (`ic_call_outline`,
                 // handset outline, black stroke in the vector) replaces the
                 // Material phone glyph. Tinted on-surface at the call site,
@@ -1773,7 +1791,9 @@ private fun ThreadHeader(
                         painter = painterResource(R.drawable.ic_call_outline),
                         contentDescription = stringResource(R.string.action_call),
                         tint = cs.onSurface,
-                        modifier = Modifier.size(22.dp),
+                        // Feedback round 6 — 22dp -> 24dp: phone, search and
+                        // ⋮ are all the same height now.
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
@@ -1927,6 +1947,9 @@ private fun ThreadActionsMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
+        // Feedback round 6 — 10dp more breathing room on each side than the
+        // Material default, like the bubble menu and the home overflow menu.
+        modifier = Modifier.padding(horizontal = 10.dp),
     ) {
         if (!hasContact) {
             // Choix clair, sans passer par le sélecteur système + défilement :
@@ -2251,15 +2274,15 @@ private fun ComposerBar(
  * mic stays in the composition tree across the Idle↔Recording transition so the in-flight
  * pointer gesture is never interrupted.
  *
- * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 18dp radius, min
- * 36dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
- * inside trailing; the send affordance is a 36dp blue circle with a white up-arrow,
- * shown only when there is text (or staged attachments), and a mic glyph when the
- * composer is empty. The mic circle is the same 36dp height as the pill, so the row
+ * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 24dp radius, min
+ * 48dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
+ * inside trailing; the send affordance is a 48dp blue circle with a white paper-airplane
+ * send icon, shown only when there is text (or staged attachments), and a mic glyph when the
+ * composer is empty. The mic circle is the same 48dp height as the pill, so the row
  * reads as one aligned unit. Round 4: the camera opens the camera directly
  * ([onCameraClick]), only the + opens the attachment sheet ([onAttachClick]).
- * Feedback round 5 — the pill was 48dp; Kristin asked for ~34px shorter (at xxhdpi
- * ~3x that is ~11dp), so 48dp → 36dp, and the mic/send circle shrank to match.
+ * Feedback round 6 — reverted to the 48dp pill: the 36dp version read cramped
+ * and the mic did not match the pill height.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2323,19 +2346,15 @@ private fun ComposingRow(
                             onValueChange = onDraftChanged,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 36.dp),
+                                .heightIn(min = 48.dp),
                             placeholder = stringResource(R.string.thread_compose_placeholder),
                             maxLines = 5,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Sentences,
                                 imeAction = ImeAction.Default,
                             ),
-                            cornerRadius = 18.dp,
-                            // Feedback round 5 — 6dp vertical: the pill is 36dp and a
-                            // bodyLarge line is 24dp, so 6 + 24 + 6 = 36dp exactly —
-                            // the text keeps comfortable padding without forcing the
-                            // pill taller.
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            cornerRadius = 24.dp,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                             textStyle = MaterialTheme.typography.bodyLarge,
                             // Feedback round 5 — the requester belongs on the inner
                             // text field, not on the outer modifier: attached to the
@@ -2414,10 +2433,9 @@ private fun ComposingRow(
 }
 
 /**
- * Small round hit area (30dp) for a glyph living inside the composer pill — Kristin's
- * smiley leading, camera and + trailing. The glyph itself is 20dp in the secondary
- * colour (feedback round 5 — 24dp crowded the 36dp pill; 20dp keeps the same visual
- * weight the 24dp glyphs had against the old 48dp pill); the vector
+ * Small round hit area (36dp) for a glyph living inside the composer pill — Kristin's
+ * smiley leading, camera and + trailing. The glyph itself is 24dp in the secondary
+ * colour (round 4 — 22dp still read small next to the 48dp mic/send tile); the vector
  * drawables are Kristin's own icons, tinted here from the theme.
  */
 @Composable
@@ -2429,7 +2447,7 @@ private fun ComposerIconButton(
     val cs = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
-            .size(30.dp)
+            .size(36.dp)
             .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -2438,17 +2456,16 @@ private fun ComposerIconButton(
             painter = painter,
             contentDescription = contentDescription,
             tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
 
 /**
- * Relay UI refresh — send affordance: a 36dp blue circle with a white paper-airplane
+ * Relay UI refresh — send affordance: a 48dp blue circle with a white paper-airplane
  * send icon, the same height as the composer pill. It slides up with a spring each
  * time it appears and scales to 0.90 while pressed; the haptic tick is fired by the
- * caller's [onClick] (see [ComposerBar]). Feedback round 5 — the circle stays a
- * circle: it shrank 48dp → 36dp with the pill, width = height, not a pill or oval.
+ * caller's [onClick] (see [ComposerBar]).
  */
 @Composable
 private fun SendCircleButton(
@@ -2476,7 +2493,7 @@ private fun SendCircleButton(
     )
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(48.dp)
             .offset(y = slideOffset)
             .alpha(slideAlpha)
             .alpha(if (enabled) 1f else 0.38f)
@@ -2496,7 +2513,7 @@ private fun SendCircleButton(
             imageVector = Icons.AutoMirrored.Outlined.Send,
             contentDescription = stringResource(R.string.action_send),
             tint = Color.White,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -2535,13 +2552,11 @@ private fun RecordingStrip(
         label = "rec-cancel-bg",
     )
 
-    // Feedback round 5 — same height as the shortened composer pill (36dp),
-    // so the row keeps one height while recording.
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(36.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
             .background(cancelBg)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart,
@@ -2571,7 +2586,7 @@ private fun RecordingStrip(
                 WaveformLive(
                     history = history,
                     color = cs.primary,
-                    modifier = Modifier.weight(1f).height(24.dp),
+                    modifier = Modifier.weight(1f).height(28.dp),
                 )
             }
         }
@@ -2642,11 +2657,9 @@ private fun MicButton(
         }
     }
 
-    // Relay UI refresh: a 36dp blue circle with Kristin's white mic — the same height
-    // as the composer pill, matching the send circle. While recording it grows to 42dp
-    // and turns red, as before. Feedback round 5 — the button stays a circle in both
-    // states: it shrank 48dp → 36dp idle and 56dp → 42dp recording with the pill
-    // (proportional: 56 × 36 / 48 = 42), width = height, never a pill or oval.
+    // Relay UI refresh: a 48dp blue circle with Kristin's white mic — the same height
+    // as the composer pill, matching the send circle. While recording it grows to 56dp
+    // and turns red, as before.
     // Phase 8 — TalkBack : le geste press-and-hold (`pointerInput`) n'expose aucune
     // action d'accessibilité — un utilisateur TalkBack entendait « Enregistrer un
     // message vocal » sans pouvoir le déclencher. La sémantique ci-dessous donne au
@@ -2657,7 +2670,7 @@ private fun MicButton(
     )
     Box(
         modifier = Modifier
-            .size(if (isRecording) 42.dp else 36.dp)
+            .size(if (isRecording) 56.dp else 48.dp)
             .semantics(mergeDescendants = true) {
                 contentDescription = micDescription
                 role = Role.Button
@@ -2677,7 +2690,7 @@ private fun MicButton(
     ) {
         Box(
             modifier = Modifier
-                .size(if (isRecording) 42.dp else 36.dp)
+                .size(if (isRecording) 56.dp else 48.dp)
                 .clip(CircleShape)
                 .background(containerColor),
             contentAlignment = Alignment.Center,
@@ -2686,11 +2699,10 @@ private fun MicButton(
                 painter = painterResource(R.drawable.ic_mic_outline),
                 contentDescription = null,
                 tint = contentColor,
-                // Feedback round 5 — 20dp in both states (was 24dp): the mic
-                // glyph now matches the other composer icons and the send
-                // arrow at 20dp, so the whole row reads at one visual weight.
-                // The tile stays 36dp idle / 42dp recording.
-                modifier = Modifier.size(20.dp),
+                // Round 4 — 24dp in both states (was 20dp idle): the mic glyph now
+                // matches the other composer icons and the send arrow at 24dp, so
+                // the whole row reads at one visual weight. The tile stays 48dp.
+                modifier = Modifier.size(24.dp),
             )
         }
     }
@@ -3006,8 +3018,6 @@ private class ThreadMessageItemActions(
     val onForward: (Message) -> Unit,
     val onTranslate: (Message) -> Unit,
     val onCopy: (Message) -> Unit,
-    /** v1.28.6 — sélection libre d'un extrait (appui long sur la bulle, ou menu ⋮). */
-    val onSelectText: (Message) -> Unit,
     /** v1.26.1 (audit F2) — bascule « favori » ; le drapeau protège déjà de la purge auto. */
     val onToggleStar: (Message) -> Unit,
     /** Feedback round 5 — bascule « épingler » (un seul message épinglé par fil). */
@@ -3088,20 +3098,77 @@ private fun ThreadMessageItem(
         // a burst hid every "Delivered" except on the timestamped message.)
         val showStatus = isLastOutgoingOfRun(msg, next)
         val burstPosition = computeBurstPosition(prev, msg, next)
+        val audio = msg.audioAttachment
+        // Feedback round 6 — per-message callbacks, remembered so the bubbles
+        // can skip when the parent recomposes. Fresh inline lambdas are new
+        // instances on every recomposition, which defeats Compose skipping one
+        // level down (the round-5 stable-callbacks fix stopped at
+        // [itemActions]). Keyed on the whole `msg` (data-class equals): a new
+        // instance with identical content keeps the lambdas, a real content
+        // change rebuilds them — so a toggle reading `msg.starred` never
+        // closes over a stale message. The calls stay unconditional (above
+        // the `when`), so every branch reuses the same instances.
+        val onTogglePlay = remember(msg, actions) {
+            {
+                // `audio` is non-null wherever this callback is invoked (the
+                // audio branch), but it is nullable at this hoisted spot —
+                // the `when` smart-cast does not reach here.
+                if (audio != null) actions.onTogglePlayback(audio)
+            }
+        }
+        val onDelete = remember(msg, actions) {
+            {
+                actions.onDelete(msg)
+            }
+        }
+        val onReply = remember(msg, actions) {
+            {
+                actions.onReply(msg)
+            }
+        }
+        val onReact = remember(msg, actions) {
+            {
+                actions.onReact(msg.id)
+            }
+        }
+        val onForward = remember(msg, actions) {
+            {
+                actions.onForward(msg)
+            }
+        }
+        val onCopy = remember(msg, actions) {
+            {
+                actions.onCopy(msg)
+            }
+        }
+        val onTranslate = remember(msg, actions) {
+            {
+                actions.onTranslate(msg)
+            }
+        }
+        val onTapFailed = remember(msg, actions) {
+            {
+                if (msg.status == Message.Status.FAILED) actions.onTapFailed(msg)
+            }
+        }
         // Feedback round 5 — menu toggles for this message, built once for
         // the three bubble types below (one bundle parameter instead of
         // three — the text bubble is at the Detekt 20-parameter limit).
-        val menuToggles = BubbleMenuToggles(
-            onToggleStar = { actions.onToggleStar(msg) },
-            isPinned = isPinnedMessage,
-            onTogglePin = { actions.onTogglePin(msg) },
-        )
-        val audio = msg.audioAttachment
+        val menuToggles = remember(msg, actions, isPinnedMessage) {
+            BubbleMenuToggles(
+                onToggleStar = { actions.onToggleStar(msg) },
+                isPinned = isPinnedMessage,
+                onTogglePin = { actions.onTogglePin(msg) },
+            )
+        }
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à
         // MediaAttachmentBubble qui ajoute le tap-to-view (ACTION_VIEW via FileProvider).
         // v1.28.3 (audit global, X-04 — mesuré sur le S9) — TOUTES, pas la première : F16 gardait
         // toutes les parties d'un MMS, l'écran n'en montrait qu'une.
-        val mediaAttachments = msg.attachments.filter { !it.isAudio }
+        // Feedback round 6 — the media filter ran on every composition,
+        // allocating a new list per bubble; remembered on the attachments
+        // (structural list equals: a re-mapped identical list keeps it).
+        val mediaAttachments = remember(msg.attachments) { msg.attachments.filter { !it.isAudio } }
         val mediaAttachment = mediaAttachments.firstOrNull()
         // v1.3.3 #7 — étiquette d'expéditeur uniquement sur la 1ʳᵉ bulle d'un burst (Solo ou First)
         // pour ne pas surcharger visuellement les suites consécutives du même expéditeur.
@@ -3136,13 +3203,13 @@ private fun ThreadMessageItem(
                     message = msg,
                     audio = audio,
                     playbackProvider = playbackProvider,
-                    onTogglePlay = { actions.onTogglePlayback(audio) },
+                    onTogglePlay = onTogglePlay,
                     onSeekTo = actions.onSeekPlayback,
-                    onDelete = { actions.onDelete(msg) },
-                    onReply = { actions.onReply(msg) },
+                    onDelete = onDelete,
+                    onReply = onReply,
                     // v1.3.1 — "Réagir" exposé uniquement sur les messages reçus.
-                    onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
-                    onForward = { actions.onForward(msg) },
+                    onReact = if (msg.isIncoming) onReact else null,
+                    onForward = onForward,
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
                     // Feedback round 5 — bascules « favori » / « épingler » sur les
                     // trois types de bulle.
@@ -3162,13 +3229,12 @@ private fun ThreadMessageItem(
                     autres = mediaAttachments.drop(1),
                     showTimestamp = showTimestamp,
                     showStatus = showStatus,
-                    onDelete = { actions.onDelete(msg) },
-                    onReply = { actions.onReply(msg) },
-                    onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
+                    onDelete = onDelete,
+                    onReply = onReply,
+                    onReact = if (msg.isIncoming) onReact else null,
                     // v1.3.11 (F3) — copy exposed only when the bubble carries a user-typed caption.
-                    onCopy = if (msg.body.isNotBlank()) { { actions.onCopy(msg) } } else null,
-                    onSelectText = if (msg.body.isNotBlank()) { { actions.onSelectText(msg) } } else null,
-                    onForward = { actions.onForward(msg) },
+                    onCopy = if (msg.body.isNotBlank()) onCopy else null,
+                    onForward = onForward,
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
                     // Feedback round 5 — bascules « favori » / « épingler » sur les
                     // trois types de bulle.
@@ -3185,16 +3251,15 @@ private fun ThreadMessageItem(
                     showTimestamp = showTimestamp,
                     showStatus = showStatus,
                     burstPosition = burstPosition,
-                    onTap = { if (msg.status == Message.Status.FAILED) actions.onTapFailed(msg) },
-                    onDelete = { actions.onDelete(msg) },
-                    onReply = { actions.onReply(msg) },
+                    onTap = onTapFailed,
+                    onDelete = onDelete,
+                    onReply = onReply,
                     // v1.7.1 — Translate via ACTION_PROCESS_TEXT system intent. Only wired when
                     // the body is non-blank (nothing to translate on attachment-only messages).
-                    onTranslate = if (msg.body.isNotBlank()) { { actions.onTranslate(msg) } } else null,
-                    onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
-                    onCopy = if (msg.body.isNotBlank()) { { actions.onCopy(msg) } } else null,
-                    onSelectText = if (msg.body.isNotBlank()) { { actions.onSelectText(msg) } } else null,
-                    onForward = { actions.onForward(msg) },
+                    onTranslate = if (msg.body.isNotBlank()) onTranslate else null,
+                    onReact = if (msg.isIncoming) onReact else null,
+                    onCopy = if (msg.body.isNotBlank()) onCopy else null,
+                    onForward = onForward,
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
                     // Feedback round 5 — bascules « favori » / « épingler » sur les
                     // trois types de bulle.

@@ -1,10 +1,16 @@
 package com.filestech.sms.ui.components
 
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,15 +37,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Message
@@ -73,16 +80,9 @@ fun MessageBubble(
     onReact: (() -> Unit)? = null,
     /**
      * v1.3.11 (F3) — copy the bubble's text body to the clipboard, from the overflow menu.
-     * v1.28.6 — l'appui long ne copie PLUS le message entier (doublon de cette entrée) : il
-     * ouvre la sélection libre, cf. [onSelectText]. `null` for bubbles without a text payload.
+     * `null` for bubbles without a text payload.
      */
     onCopy: (() -> Unit)? = null,
-    /**
-     * v1.28.6 — sélection libre d'un extrait du corps ([MessageTextSelectionDialog]). Déclenchée
-     * par l'appui long sur la bulle ET par l'entrée « Sélectionner le texte » du menu ⋮. Même
-     * disponibilité que [onCopy].
-     */
-    onSelectText: (() -> Unit)? = null,
     /** v1.3.11 (F5) — forward the bubble's text body to another conversation. */
     onForward: (() -> Unit)? = null,
     /**
@@ -138,8 +138,12 @@ fun MessageBubble(
     // for the copy pill below. Pure regexes on the body, remembered per body
     // so a busy thread does not re-scan on every recomposition. Outgoing
     // messages never carry a pill — a code the user sent needs no copying.
+    // Feedback round 6 — the scan itself is cached per message id
+    // ([OtpCodeCache]): the `remember` only survives while the bubble is
+    // composed, so scrolling back re-ran the OTP regexes on every first
+    // composition.
     val otpCode: String? = remember(message.body, isOut) {
-        if (isOut) null else OtpCodeDetector.detect(message.body)
+        if (isOut) null else OtpCodeCache.detectFor(message.id, message.body)
     }
 
     // Outgoing bubbles use a subtle vertical gradient on top of the primary color — gives the
@@ -152,28 +156,47 @@ fun MessageBubble(
     // bleu foncé stable (cohérent avec la bulle entrante, elle aussi fixe).
     val outgoingBaseColor = customBubbleColorArgb?.let { androidx.compose.ui.graphics.Color(it) }
         ?: BrandBlue
-    val outgoingBrush = Brush.linearGradient(
-        colors = listOf(outgoingBaseColor, outgoingBaseColor.copy(alpha = 0.88f)),
-        start = Offset(0f, 0f),
-        end = Offset(0f, Float.POSITIVE_INFINITY),
-    )
+    // Feedback round 6 — remembered: building the gradient (and its colour
+    // list) on every composition allocated per bubble, per recomposition,
+    // for a value that only depends on the outgoing colour.
+    val outgoingBrush = remember(outgoingBaseColor) {
+        Brush.linearGradient(
+            colors = listOf(outgoingBaseColor, outgoingBaseColor.copy(alpha = 0.88f)),
+            start = Offset(0f, 0f),
+            end = Offset(0f, Float.POSITIVE_INFINITY),
+        )
+    }
     // Texte blanc forcé sur toute bulle sortante : BrandBlue et chaque couleur de
     // [BubbleColorPalette] sont calibrées WCAG AA ≥ 4.5:1 contre le blanc. On ne
     // dépend plus de `cs.onPrimary` (qui pouvait dériver avec le scheme dynamique).
     val textColor = if (isOut) androidx.compose.ui.graphics.Color.White else cs.onSurface
 
-    val shape = bubbleShape(isOut, burstPosition)
+    // Feedback round 6 — remembered like the gradient above: a new
+    // `RoundedCornerShape` per composition for a value that only depends on
+    // direction + burst position.
+    val shape = remember(isOut, burstPosition) { bubbleShape(isOut, burstPosition) }
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
-    // le menu ([BubbleMenu]), un appui long garde la sélection libre ([onSelectText]),
-    // et un tap sur un message FAILED garde le retry ([onTap]).
+    // le menu ([BubbleMenu]), un appui long ouvre le menu aussi (la sélection
+    // libre est supprimée, round 6), et un tap sur un message FAILED garde
+    // le retry ([onTap]).
     var menuExpanded by remember { mutableStateOf(false) }
 
+    // Feedback round 6 — press-down feedback: while the finger is down the
+    // bubble sinks 2dp, so a long-press feels like pressing the bubble itself.
+    // The ripple stays (LocalIndication); the translation rides on top of it.
+    val pressSource = remember { MutableInteractionSource() }
+    val pressed by pressSource.collectIsPressedAsState()
+    val density = LocalDensity.current
+    val pressOffsetY by animateFloatAsState(
+        targetValue = if (pressed) with(density) { 2.dp.toPx() } else 0f,
+        animationSpec = tween(durationMillis = 100),
+        label = "bubblePressOffsetY",
+    )
+
     Row(
-        modifier = Modifier.fillMaxWidth().padding(
-            horizontal = 12.dp,
-            vertical = bubbleVerticalSpacing(burstPosition),
-        ),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            .padding(bubbleVerticalPadding(burstPosition)),
         horizontalArrangement = if (isOut) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
@@ -214,41 +237,27 @@ fun MessageBubble(
                             else Modifier.background(com.filestech.sms.ui.theme.bubbleIncomingColor(cs)),
                         )
                         // Relay — tap opens the bubble menu ([BubbleMenu]) ; tap on a
-                        // FAILED message still retries ([onTap]). v1.28.6 — long-press no longer
-                        // copies the whole body (a duplicate of the « Copier » menu entry) but
-                        // opens the free text selection ([onSelectText]). Falls back to a plain
-                        // `clickable` when unavailable so tap-to-retry on FAILED rows stays
-                        // untouched.
-                        .then(
-                            if (onSelectText != null) {
-                                Modifier.combinedClickable(
-                                    onClick = {
-                                        if (
-                                            message.status ==
-                                            com.filestech.sms.domain.model.Message.Status.FAILED
-                                        ) {
-                                            onTap()
-                                        } else {
-                                            menuExpanded = true
-                                        }
-                                    },
-                                    onLongClick = onSelectText,
-                                )
-                            } else {
-                                Modifier.clickable(
-                                    onClick = {
-                                        if (
-                                            message.status ==
-                                            com.filestech.sms.domain.model.Message.Status.FAILED
-                                        ) {
-                                            onTap()
-                                        } else {
-                                            menuExpanded = true
-                                        }
-                                    },
-                                )
+                        // FAILED message still retries ([onTap]). Feedback round 6 —
+                        // long-press opens the menu too (the free text selection is
+                        // gone); FAILED keeps its tap-to-retry on tap only.
+                        .combinedClickable(
+                            interactionSource = pressSource,
+                            indication = LocalIndication.current,
+                            onClick = {
+                                if (
+                                    message.status ==
+                                    com.filestech.sms.domain.model.Message.Status.FAILED
+                                ) {
+                                    onTap()
+                                } else {
+                                    menuExpanded = true
+                                }
                             },
+                            onLongClick = { menuExpanded = true },
                         )
+                        // Feedback round 6 — the bubble sinks 2dp while pressed
+                        // (see pressOffsetY above).
+                        .graphicsLayer { translationY = pressOffsetY }
                         .padding(PaddingValues(horizontal = 14.dp, vertical = 10.dp)),
                 ) {
                     // v1.3.2 — URLs détectées et rendues cliquables (ouvre le navigateur
@@ -294,6 +303,7 @@ fun MessageBubble(
                         } else {
                             MessageTextWithLinks(
                                 text = message.body,
+                                messageId = message.id,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = textColor,
                                 onPhoneClick = onPhoneClick,
@@ -308,7 +318,7 @@ fun MessageBubble(
                         if (otpCode != null) {
                             OtpCodePill(
                                 code = otpCode,
-                                modifier = Modifier.padding(top = 6.dp).align(Alignment.Start),
+                                modifier = Modifier.padding(top = 8.dp).align(Alignment.Start),
                             )
                         }
                         // Relay — heure (+ statut sortant) en petit, en bas à droite,
@@ -316,6 +326,9 @@ fun MessageBubble(
                         // Feedback round 4 — la ligne ne s'étire plus sur toute la
                         // largeur : elle se cale à droite dans la bulle (`align(End)`),
                         // donc elle ne peut plus sortir du fond sur une bulle étroite.
+                        // Feedback round 6 — avec une pastille code, l'heure se cale à
+                        // GAUCHE sous la pastille, comme sur la maquette (02___Thread_
+                        // copy_code) : texte, pastille, heure — tout aligné à gauche.
                         BubbleTimestamp(
                             message = message,
                             showTimestamp = showTimestamp,
@@ -323,7 +336,9 @@ fun MessageBubble(
                             textColor = textColor,
                             // Feedback round 5 — 12dp above the timestamp (was 2dp):
                             // the time sat too close under the text.
-                            modifier = Modifier.padding(top = 12.dp).align(Alignment.End),
+                            modifier = Modifier.padding(top = 12.dp).align(
+                                if (otpCode != null) Alignment.Start else Alignment.End,
+                            ),
                         )
                     }
                 }
@@ -332,7 +347,6 @@ fun MessageBubble(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
                 onCopy = onCopy,
-                onSelectText = onSelectText,
                 onForward = onForward,
                 onReply = onReply,
                 onTranslate = onTranslate,
@@ -359,9 +373,13 @@ fun MessageBubble(
 /**
  * Feedback round 5 — one-tap copy for a detected login/authentication code:
  * the code as a rounded pill under the message text, with a copy glyph.
- * `primaryContainer` reads on the incoming bubble in both themes (light blue
- * on the light bubble, navy on the dark bubble), with `onPrimaryContainer`
- * text. The code is set in monospace so it reads as a code, not prose.
+ *
+ * Feedback round 6 — the pill matches the Figma design
+ * (02___Thread_copy_code) pixel for pixel: a SURFACE fill with a thin
+ * 1dp on-surface border (not the round-5 solid primaryContainer fill),
+ * on-surface code text in the regular font (not monospace), and the copy
+ * glyph in the same colour. The timestamp sits bottom-left under the pill
+ * (see the call site), so text, pill and time all align left.
  *
  * The pill copies by itself — no callback parameter, the bubble is already at
  * the parameter limit: the code goes to the clipboard marked sensitive (no
@@ -383,7 +401,8 @@ private fun OtpCodePill(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(cs.primaryContainer)
+            .background(cs.surface)
+            .border(1.dp, cs.onSurface.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
             .clickable(
                 onClick = {
                     context.copyToClipboardSensitive(
@@ -408,16 +427,42 @@ private fun OtpCodePill(
     ) {
         Text(
             text = code,
-            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-            color = cs.onPrimaryContainer,
+            style = MaterialTheme.typography.bodyMedium,
+            color = cs.onSurface,
             maxLines = 1,
         )
         Icon(
             imageVector = Icons.Outlined.ContentCopy,
             contentDescription = null,
-            tint = cs.onPrimaryContainer,
+            tint = cs.onSurface,
             modifier = Modifier.size(14.dp),
         )
+    }
+}
+
+/**
+ * Feedback round 6 — per-message cache for the OTP regex scan
+ * ([OtpCodeDetector.detect] runs the keyword + digit regexes over the body).
+ * Same shape as [LinkHitCache]: the `remember` in [MessageBubble] only
+ * survives while the bubble is composed, so scrolling back re-ran the scan
+ * on every first composition. Keyed by message id, validated against the
+ * body. Bounded (256 entries, eldest evicted).
+ */
+private object OtpCodeCache {
+    private const val MAX_ENTRIES: Int = 256
+    private val entries = object : LinkedHashMap<Long, Pair<String, String?>>(MAX_ENTRIES) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<Long, Pair<String, String?>>,
+        ): Boolean = size > MAX_ENTRIES
+    }
+
+    @Synchronized
+    fun detectFor(messageId: Long, body: String): String? {
+        val cached = entries[messageId]
+        if (cached != null && cached.first == body) return cached.second
+        val code = OtpCodeDetector.detect(body)
+        entries[messageId] = body to code
+        return code
     }
 }
 
@@ -458,15 +503,22 @@ private fun bubbleShape(isOut: Boolean, position: BurstPosition): RoundedCornerS
 }
 
 /**
- * v1.3.3 #7 — espacement vertical entre bulles.
- *  - 2 dp à l'intérieur d'un burst (`Middle`) pour serrer les messages consécutifs du
- *    même expéditeur (lecture rapide).
- *  - 8 dp aux frontières (`Solo`, `First`, `Last`) pour séparer visuellement les bursts.
- *  - Avant v1.3.3 : 3 dp partout (trop serré aux frontières) ; user-feedback du 2026-05-16.
+ * v1.3.3 #7 — espacement vertical entre bulles. Feedback round 6 — asymétrique :
+ * le haut et le bas se partagent selon la position, pour que deux bulles
+ * consécutives du même expéditeur se touchent presque (4dp au total) sans
+ * resserrer les frontières de rafale (16dp) :
+ *  - Solo : 8dp en haut et en bas (message isolé, de l'air des deux côtés).
+ *  - First : 8dp en haut (frontière), 2dp en bas (serré sur la suivante).
+ *  - Middle : 2dp des deux côtés.
+ *  - Last : 2dp en haut, 8dp en bas (frontière).
+ * Avant : une seule valeur symétrique (8dp aux frontières) — une rafale de deux
+ * messages avait 8+8 = 16dp entre ses bulles.
  */
-private fun bubbleVerticalSpacing(position: BurstPosition) = when (position) {
-    BurstPosition.Solo, BurstPosition.First, BurstPosition.Last -> 8.dp
-    BurstPosition.Middle -> 2.dp
+private fun bubbleVerticalPadding(position: BurstPosition): PaddingValues = when (position) {
+    BurstPosition.Solo -> PaddingValues(vertical = 8.dp)
+    BurstPosition.First -> PaddingValues(top = 8.dp, bottom = 2.dp)
+    BurstPosition.Middle -> PaddingValues(vertical = 2.dp)
+    BurstPosition.Last -> PaddingValues(top = 2.dp, bottom = 8.dp)
 }
 
 /** v1.28.4 — un MMS sans texte ni pièce jointe : le cas d'une restauration, jamais d'une réception. */

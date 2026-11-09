@@ -99,8 +99,8 @@ private fun relayCardColor(): Color {
 /**
  * 1px divider between two rows of a grouped card, inset 16dp on both sides so it runs
  * from the row text to just before the trailing chevron/switch instead of bleeding
- * edge to edge. Colour is the scheme `outlineVariant` (`#E5E5E5` light, `#3A3A3A`
- * dark).
+ * edge to edge. Colour is the scheme `outlineVariant` — the M3 baseline (`#CAC4D0`
+ * light, `#49454F` dark), visibly darker than the page background.
  */
 @Composable
 fun RelayDivider(modifier: Modifier = Modifier) {
@@ -112,9 +112,10 @@ fun RelayDivider(modifier: Modifier = Modifier) {
 }
 
 /**
- * One 56dp row of a grouped list: optional leading glyph (22dp, supplied by the
- * caller), a 16sp/400 title with an optional 13sp secondary subtitle, and an optional
- * trailing slot (chevron, switch, value). Pass [onClick] to make the whole row tappable;
+ * One row of a grouped list: optional leading glyph (24dp, supplied by the
+ * caller), a 16sp/400 title with an optional 14sp secondary subtitle, and an optional
+ * trailing slot (chevron, switch, value). Height follows the M3 list-item spec:
+ * 56dp for a one-line row, 72dp for a two-line row. Pass [onClick] to make the whole row tappable;
  * without it the row is static. Pass [titleColor] to tint the title — the danger-zone rows
  * use the error red for it. Pass [dividerAbove] for every row but the first of a card:
  * it draws a [RelayDivider] above the row so rows read as separate entries without a
@@ -122,14 +123,14 @@ fun RelayDivider(modifier: Modifier = Modifier) {
  * only first because the rows above it are hidden (e.g. in a decoy session), so call
  * sites with conditional rows above compute it instead of hardcoding it. Pass
  * [subtitleTopPadding] to open a gap between the title and the subtitle; it defaults
- * to 0 so the other screens using this row (About, Backup, Emergency Setup, Safety
- * Call Setup) are untouched — only the Settings rows ask for the gap. Pass
+ * to 0 so the other screens using this row (Backup, Emergency Setup, Safety Call
+ * Setup) are untouched — only the Settings and About rows ask for the gap. Pass
  * [leadingIconTopAligned] to centre the leading glyph on the title line instead of
  * on the whole row: the icon and the title share an inner row, so on a two-line row
  * the icon sits next to the title (as in the grouped-list reference, where the icon
  * is 9dp above the row centre on a two-line row) while on a one-line row it stays
- * exactly where the centred layout put it. Only the Settings rows ask for it — the
- * other screens keep the centred icon.
+ * exactly where the centred layout put it. Only the Settings and About rows ask for
+ * it — the other screens keep the centred icon.
  */
 @Composable
 fun RelayRow(
@@ -153,16 +154,21 @@ fun RelayRow(
         Row(
             modifier = rowModifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
+                // Feedback round 6 — M3 list-item heights: 56dp one-line, 72dp
+                // two-line (`ListTokens.OneLineContainerHeight` /
+                // `TwoLineContainerHeight`). The single 56dp minimum made two-line
+                // rows too tight — title + subtitle + 2dp gap filled the row with
+                // only the 8dp vertical padding to spare.
+                .heightIn(min = if (subtitle != null) 72.dp else 56.dp)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (leadingIconTopAligned) {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         leadingIcon?.invoke()
                         Text(
@@ -175,13 +181,16 @@ fun RelayRow(
                     if (subtitle != null) {
                         Text(
                             text = subtitle,
-                            style = RelayText.Timestamp,
+                            // Feedback round 6 — M3 supporting text is bodyMedium
+                            // (14sp/20), not the 13sp/16 timestamp style: the
+                            // subtitle was cramped under a 16sp title.
+                            style = MaterialTheme.typography.bodyMedium,
                             color = cs.onSurfaceVariant,
                             modifier = Modifier.padding(
                                 // The subtitle starts under the title text, past
-                                // the 22dp glyph + 12dp gap (no indent when there
+                                // the 24dp glyph + 16dp gap (no indent when there
                                 // is no glyph).
-                                start = if (leadingIcon != null) 34.dp else 0.dp,
+                                start = if (leadingIcon != null) 40.dp else 0.dp,
                                 top = subtitleTopPadding,
                             ),
                         )
@@ -198,7 +207,9 @@ fun RelayRow(
                     if (subtitle != null) {
                         Text(
                             text = subtitle,
-                            style = RelayText.Timestamp,
+                            // Feedback round 6 — M3 supporting text is bodyMedium
+                            // (14sp/20), not the 13sp/16 timestamp style.
+                            style = MaterialTheme.typography.bodyMedium,
                             color = cs.onSurfaceVariant,
                             modifier = Modifier.padding(top = subtitleTopPadding),
                         )

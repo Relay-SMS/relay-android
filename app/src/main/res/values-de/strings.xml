@@ -100,7 +100,6 @@
     <string name="action_back">Zurück</string>
     <string name="action_copy">Kopieren</string>
     <string name="action_forward">Weiterleiten</string>
-    <string name="action_select_text">Text auswählen</string>
     <string name="action_retry">Erneut versuchen</string>
     <string name="action_close">Schließen</string>
     <string name="action_continue">Weiter</string>

@@ -32,6 +32,15 @@ class ChatFormatters(val locale: Locale) {
     // ("11/3/26" in US English, day-first elsewhere): `DateFormat.SHORT`
     // follows the locale instead of a fixed M/d/yy pattern.
     val shortDate: DateFormat = DateFormat.getDateInstance(DateFormat.SHORT, locale)
+
+    // Feedback round 6 — same short date WITHOUT the year for the pinned
+    // banner ("11/8" in US English, day-first elsewhere): the "Md"
+    // skeleton asks the locale for its month+day pattern, so French
+    // still gets day-first ("8/11") instead of a fixed M/d.
+    val shortDateNoYear: SimpleDateFormat = SimpleDateFormat(
+        android.text.format.DateFormat.getBestDateTimePattern(locale, "Md"),
+        locale,
+    )
 }
 
 @Composable

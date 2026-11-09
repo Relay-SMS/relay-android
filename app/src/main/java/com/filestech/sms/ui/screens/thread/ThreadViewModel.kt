@@ -31,6 +31,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -88,6 +89,15 @@ class ThreadViewModel @Inject constructor(
     val playbackState: StateFlow<VoicePlaybackController.PlaybackState> get() = playbackController.state
 
     private val conversationId: Long = checkNotNull(savedStateHandle["conversationId"])
+
+    /**
+     * Feedback round 6 — one-shot mark-read state (see [scheduleDeferredMarkRead]
+     * / [markReadNow]). `readMarked` is set once the write has actually run;
+     * `deferredMarkReadJob` holds the pending delayed job so leaving the thread
+     * early can cancel it and mark read immediately instead.
+     */
+    private var readMarked = false
+    private var deferredMarkReadJob: Job? = null
 
     /**
      * v1.26.1 (audit H1, suite de revue) — `true` quand le Coffre s'est refermé alors que ce fil
@@ -655,11 +665,14 @@ class ThreadViewModel @Inject constructor(
             }
             .launchIn(viewModelScope)
 
-        var markedReadAtLeastOnce = false
         // v1.24.0 (finding A) — fenêtre bornée au lieu du fil entier. Les statistiques
         // (`messageCount`, `firstMessageAt`, `lastMessageAt`) viennent d'un agrégat SQL sur TOUT
         // le fil, jamais de la fenêtre : le panneau d'infos décrit la conversation, pas la tranche
         // chargée en mémoire.
+        // Feedback round 6 — the first window only SCHEDULES the mark-read
+        // (see [scheduleDeferredMarkRead]): marking read here wrote to Room
+        // mid-transition, re-emitting the window and recomposing the whole
+        // visible list a second time inside the open animation.
         repo.observeMessagesWindow(conversationId, windowSpec).onEach { window ->
             val msgs = window.messages
             resoudreNomsDesExpediteurs(msgs)
@@ -684,10 +697,7 @@ class ThreadViewModel @Inject constructor(
             if (_state.value.smishingDetectionEnabled) {
                 recomputeSmishingVerdicts(msgs)
             }
-            if (msgs.isNotEmpty() && !markedReadAtLeastOnce) {
-                markedReadAtLeastOnce = true
-                markRead.invoke(conversationId)
-            }
+            scheduleDeferredMarkRead()
         }.launchIn(viewModelScope)
 
         // Best-effort: drop yesterday's orphan recordings from the cache on screen open.
@@ -1914,16 +1924,56 @@ class ThreadViewModel @Inject constructor(
      * Or le ViewModel survit à l'écran éteint et à une autre application au premier plan : la
      * notification d'un message que personne ne voyait disparaissait en 1,5 s.
      */
+    /**
+     * Feedback round 6 — schedules the one-shot mark-read [MARK_READ_DELAY_MS]
+     * after the first window lands. Marking read immediately wrote to Room
+     * while the 300 ms open slide was still running, which re-emitted the
+     * window and recomposed the whole visible list a second time inside the
+     * animation — the glitchy slide-in. The delay lands past the slide and
+     * the first scroll-to-bottom, so the re-emission hits a settled list.
+     * No-op when already scheduled or done; the job is cancelled by
+     * [markReadNow] when the user leaves before the delay elapses.
+     */
+    private fun scheduleDeferredMarkRead() {
+        if (readMarked || deferredMarkReadJob != null) return
+        deferredMarkReadJob = viewModelScope.launch {
+            delay(MARK_READ_DELAY_MS)
+            markRead.invoke(conversationId)
+            readMarked = true
+        }
+    }
+
+    /**
+     * Feedback round 6 — marks the conversation read immediately. Called when
+     * the thread stops being visible (back navigation, another app in front):
+     * the unread badge must already be clear when the conversation list
+     * reappears, including when the user leaves before the deferred job in
+     * [scheduleDeferredMarkRead] fires. Cancels the pending job so the Room
+     * write happens exactly once per thread lifetime.
+     */
+    private fun markReadNow() {
+        if (readMarked) return
+        deferredMarkReadJob?.cancel()
+        deferredMarkReadJob = null
+        readMarked = true
+        viewModelScope.launch { markRead.invoke(conversationId) }
+    }
+
     fun onVisibilityChanged(visible: Boolean) {
         if (visible) {
             activeConversationTracker.setActive(conversationId)
         } else {
             activeConversationTracker.clearActive(conversationId)
+            // Feedback round 6 — leaving the thread marks it read at once
+            // (see [markReadNow]): the deferred job may not have fired yet.
+            markReadNow()
         }
     }
 
     fun onConversationOpened() {
-        viewModelScope.launch { markRead.invoke(conversationId) }
+        // Feedback round 6 — no mark-read here anymore: the first window
+        // emission schedules the deferred one ([scheduleDeferredMarkRead]),
+        // and leaving the thread marks read at once ([markReadNow]).
         // v1.3.3 bug #4 — auto-consume du partage entrant. Z3 audit fix : on ATTEND
         // que la conversation soit hydratée (state.conversation != null) avant
         // d'appeler onAttachmentPicked, qui sinon retourne early sans rien attacher
@@ -2105,11 +2155,22 @@ class ThreadViewModel @Inject constructor(
         const val INITIAL_WINDOW_SIZE: Int = 50
 
         /**
-         * Feedback round 5 — debounce on the thread search query, mirroring the
+         * Feedback round 6 — debounce on the thread search query, mirroring the
          * conversations-list search (`debounce(200ms)`): one Room query per
          * pause in typing instead of one per keystroke.
          */
         const val THREAD_SEARCH_DEBOUNCE_MS: Long = 200L
+
+        /**
+         * Feedback round 6 — delay before marking the conversation read after
+         * the first window lands. The thread opens under a 300 ms slide while
+         * the first paint composes and jumps to the bottom; marking read
+         * immediately writes to Room, which re-emits the window and recomposes
+         * the whole visible list a second time — still inside the animation.
+         * 600 ms lands safely past the slide and the first scroll, so the
+         * re-emission hits a settled list.
+         */
+        const val MARK_READ_DELAY_MS: Long = 600L
 
         // Audit C3 (v1.14.8) — Alias local pointant vers la SOURCE UNIQUE [MmsConstants].
         // Avant : `280L * 1024L` dupliqué ici ET dans `VoiceRecorder.MAX_SIZE_BYTES`.

@@ -378,12 +378,17 @@ private fun FeatureRow(icon: ImageVector, label: String, desc: String?) {
     RelayRow(
         title = label,
         subtitle = desc,
+        subtitleTopPadding = 2.dp,
+        // Feedback round 6 — the glyph centres on the title line, not on
+        // the whole row, like the main Settings screen (see [RelayRow]):
+        // the icons were still vertically centred.
+        leadingIconTopAligned = true,
         leadingIcon = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(24.dp),
             )
         },
     )
@@ -403,13 +408,17 @@ private fun LinkItem(
     RelayRow(
         title = label,
         subtitle = supporting,
+        subtitleTopPadding = 2.dp,
         onClick = onClick,
+        // Feedback round 6 — top-aligned like the main Settings screen
+        // (see [RelayRow]): the icons were still vertically centred.
+        leadingIconTopAligned = true,
         leadingIcon = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(24.dp),
             )
         },
         trailing = {
@@ -417,7 +426,7 @@ private fun LinkItem(
                 Icons.Outlined.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(24.dp),
             )
         },
     )

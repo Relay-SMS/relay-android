@@ -40,6 +40,12 @@ import androidx.compose.ui.text.withLink
 @Composable
 fun MessageTextWithLinks(
     text: String,
+    /**
+     * Feedback round 6 — the id of the message [text] belongs to, for the
+     * linkify cache ([LinkHitCache]). `-1` = unknown: the regexes run
+     * uncached (unit tests, previews). The bubble passes `message.id`.
+     */
+    messageId: Long = -1L,
     style: TextStyle,
     color: Color,
     /**
@@ -64,6 +70,7 @@ fun MessageTextWithLinks(
     val annotated = remember(text, searchHighlight) {
         buildLinkifiedText(
             text,
+            messageId = messageId,
             onPhoneClick = { number -> phoneClickState.value(number) },
             highlightRanges = searchHighlight.ranges,
             highlightCurrent = searchHighlight.current,
@@ -151,6 +158,13 @@ private data class LinkHit(val start: Int, val end: Int, val kind: HitKind)
  */
 internal fun buildLinkifiedText(
     text: String,
+    /**
+     * Feedback round 6 — id of the message [text] belongs to (`-1` =
+     * unknown). When known, the regex hits come from [LinkHitCache] instead
+     * of re-running `Patterns.WEB_URL` + `Patterns.PHONE` on every first
+     * composition of the bubble.
+     */
+    messageId: Long = -1L,
     onPhoneClick: (String) -> Unit = {},
     /**
      * Feedback round 5 — thread search highlight, applied on top of the
@@ -167,7 +181,7 @@ internal fun buildLinkifiedText(
         return@buildAnnotatedString
     }
 
-    val hits = collectLinkHits(text)
+    val hits = if (messageId >= 0L) LinkHitCache.hitsFor(messageId, text) else collectLinkHits(text)
     if (hits.isEmpty()) {
         append(text)
         addSearchHighlight(text.length, highlightRanges, highlightCurrent)
@@ -265,6 +279,36 @@ private val SEARCH_CURRENT_MATCH_STYLE = SpanStyle(
     background = Color(0xFFFF9800),
     color = Color.Black,
 )
+
+/**
+ * Feedback round 6 — per-message cache for the linkify regex hits
+ * ([collectLinkHits] runs `Patterns.WEB_URL` + `Patterns.PHONE` over the
+ * whole body). The composable `remember` only survives while the bubble is
+ * composed; scrolling a bubble off-screen disposes it, so scrolling back
+ * re-ran both regexes on every first composition. Hits are keyed by message
+ * id and validated against the body (bodies are immutable per id — the
+ * check is a safety net). Only the regex pass is cached: the final
+ * `AnnotatedString` is still built per composition, because the search
+ * highlights change with navigation and must not be cached. Bounded (256
+ * entries, eldest evicted) so a long thread cannot grow it without limit.
+ */
+private object LinkHitCache {
+    private const val MAX_ENTRIES: Int = 256
+    private val entries = object : LinkedHashMap<Long, Pair<String, List<LinkHit>>>(MAX_ENTRIES) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<Long, Pair<String, List<LinkHit>>>,
+        ): Boolean = size > MAX_ENTRIES
+    }
+
+    @Synchronized
+    fun hitsFor(messageId: Long, text: String): List<LinkHit> {
+        val cached = entries[messageId]
+        if (cached != null && cached.first == text) return cached.second
+        val hits = collectLinkHits(text)
+        entries[messageId] = text to hits
+        return hits
+    }
+}
 
 /**
  * v1.3.11 (F4) — runs the URL and PHONE regexes once each, then merges + dedupes

@@ -138,7 +138,9 @@ fun ConversationRow(
                     customUri = conversation.avatarUri ?: contactPhotoUri,
                     isGroup = conversation.isGroup,
                 )
-                Spacer(Modifier.width(12.dp))
+                // Feedback round 6 — 17dp between the avatar and the text
+                // (was 12dp): a touch more air on the home screen.
+                Spacer(Modifier.width(17.dp))
             }
             // Taille du texte des messages : la colonne de texte seulement — l'avatar écrit ses
             // initiales dans un cercle de taille fixe, qu'un texte agrandi déborderait.

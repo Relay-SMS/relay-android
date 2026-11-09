@@ -27,6 +27,7 @@ import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.system.notifications.SafetyCallAckHolder
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.navigation.About
+import com.filestech.sms.ui.navigation.Advanced
 import com.filestech.sms.ui.navigation.Backup
 import com.filestech.sms.ui.navigation.Blocked
 import com.filestech.sms.ui.navigation.Compose
@@ -51,6 +52,7 @@ import com.filestech.sms.ui.screens.conversations.ConversationsScreen
 import com.filestech.sms.ui.screens.lock.LockScreen
 import com.filestech.sms.ui.screens.media.MediaGalleryScreen
 import com.filestech.sms.ui.screens.migration.MigrationScreen
+import com.filestech.sms.ui.screens.settings.AdvancedScreen
 import com.filestech.sms.ui.screens.settings.SettingsScreen
 import com.filestech.sms.ui.screens.splash.SplashScreen
 import com.filestech.sms.ui.screens.thread.ThreadScreen
@@ -412,6 +414,9 @@ fun AppRoot() {
                 // Feedback round 5 — Help lives on its own screen now (was
                 // the "Quick help" section of About).
                 onOpenHelp = { nav.navigate(Help) },
+                // Feedback round 6 — Advanced lives on its own screen now
+                // (was the "Advanced" section of this list).
+                onOpenAdvanced = { nav.navigate(Advanced) },
                 onOpenBackup = { nav.navigate(Backup) },
                 onOpenMigration = { nav.navigate(Migration) },
                 onOpenBlocked = { nav.navigate(Blocked) },
@@ -476,6 +481,14 @@ fun AppRoot() {
             popExitTransition = { glissementSortant },
         ) {
             HelpScreen(onBack = { nav.popBackStack() }, isPanicDecoy = isPanicDecoy)
+        }
+        // Feedback round 6 — Advanced screen: same slide-in transition as
+        // Help, so opening Advanced from Settings feels the same.
+        composable<Advanced>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            AdvancedScreen(onBack = { nav.popBackStack() })
         }
         composable<Lock> {
             LockScreen(

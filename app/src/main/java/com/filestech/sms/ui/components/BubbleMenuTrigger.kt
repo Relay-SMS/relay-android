@@ -1,5 +1,6 @@
 package com.filestech.sms.ui.components
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
@@ -8,7 +9,6 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Translate
@@ -26,7 +26,7 @@ import com.filestech.sms.R
 import com.filestech.sms.ui.theme.starColor
 
 /**
- * Overflow menu attached to a chat bubble — surfaces Copy / Select text / Forward /
+ * Overflow menu attached to a chat bubble — surfaces Copy / Forward /
  * Reply / Translate / React / Star / **Delete** (in that order, with Delete rendered
  * in red at the bottom of the list as the destructive action).
  *
@@ -35,6 +35,10 @@ import com.filestech.sms.ui.theme.starColor
  * [AudioMessageBubble], [MediaAttachmentBubble]). The menu itself is unchanged apart
  * from the rounded corners (~18 dp, Relay). Reply and Translate are optional
  * (a row with neither still renders the menu just for the Delete action).
+ *
+ * Feedback round 6 — the "Select text" entry is gone with the free text
+ * selection (long-press now opens this menu instead); the menu is 10dp wider
+ * on each side than the Material default, like the overflow menus.
  *
  * The menu reuses the same delete pipeline as before (`onDelete()` →
  * `pendingDelete = msg` in `ThreadScreen`), so the destructive confirmation dialog
@@ -53,11 +57,6 @@ fun BubbleMenu(
      * `null` for bubbles where copy makes no sense (audio MMS, attachment without caption).
      */
     onCopy: (() -> Unit)? = null,
-    /**
-     * v1.28.6 — ouvre la sélection libre d'un extrait ([MessageTextSelectionDialog]). Même
-     * disponibilité que [onCopy] : `null` sans corps de texte.
-     */
-    onSelectText: (() -> Unit)? = null,
     /**
      * v1.3.11 (F5) — forward the message to another conversation or new recipient. Caller
      * passes `null` for bubbles where forwarding is not yet supported.
@@ -81,7 +80,9 @@ fun BubbleMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         shape = RoundedCornerShape(18.dp),
-        modifier = modifier,
+        // Feedback round 6 — 10dp more breathing room on each side than the
+        // Material default, like the overflow menus.
+        modifier = modifier.padding(horizontal = 10.dp),
     ) {
         // v1.3.11 (F3) — Copy ranked first because it's the most-requested action
         // (clipboard fed by long-press is the iMessage / Google Messages convention).
@@ -97,24 +98,6 @@ fun BubbleMenu(
                 onClick = {
                     onDismissRequest()
                     onCopy()
-                },
-            )
-        }
-        // v1.28.6 — « Sélectionner le texte » juste sous Copier : même intention, la
-        // partie au lieu du tout. Aussi joignable par appui long sur la bulle, qui ne copie
-        // plus le message entier (doublon de Copier).
-        if (onSelectText != null) {
-            DropdownMenuItem(
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.SelectAll,
-                        contentDescription = null,
-                    )
-                },
-                text = { Text(stringResource(R.string.action_select_text)) },
-                onClick = {
-                    onDismissRequest()
-                    onSelectText()
                 },
             )
         }

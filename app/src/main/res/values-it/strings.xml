@@ -101,7 +101,6 @@
     <string name="action_back">Indietro</string>
     <string name="action_copy">Copia</string>
     <string name="action_forward">Inoltra</string>
-    <string name="action_select_text">Seleziona il testo</string>
     <string name="action_retry">Riprova</string>
     <string name="action_close">Chiudi</string>
     <string name="action_continue">Continua</string>

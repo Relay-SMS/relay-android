@@ -198,8 +198,15 @@ private val LightPalette = lightColorScheme(
     onSurface = Color(0xFF000000),
     surfaceVariant = Color(0xFFF5F5F5),
     onSurfaceVariant = Color(0xFF6B6B6B),
-    outline = Color(0xFFE5E5E5),
-    outlineVariant = Color(0xFFE5E5E5),
+    // Feedback round 6 — `outline` / `outlineVariant` restored to the M3 baseline
+    // (`#79747E` / `#CAC4D0`, measured from the library's `lightColorScheme()`).
+    // They had been flattened to `#E5E5E5` — the same grey as the page background —
+    // so the `RelayDivider` between rows (and every other outline use: the badge
+    // border, the sheet drag handle, the compose divider) looked like the
+    // background colour instead of a divider line. The M3 baseline values are
+    // visibly darker than the surface while staying neutral.
+    outline = Color(0xFF79747E),
+    outlineVariant = Color(0xFFCAC4D0),
     scrim = Color.Black,
     inverseSurface = SnackbarBg,
     inverseOnSurface = SnackbarOn,
@@ -242,8 +249,11 @@ private val DarkPalette = darkColorScheme(
     onSurface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFF2A2A2A),
     onSurfaceVariant = Color(0xFF9A9A9A),
-    outline = Color(0xFF3A3A3A),
-    outlineVariant = Color(0xFF3A3A3A),
+    // Feedback round 6 — same M3-baseline restore as light (`#938F99` / `#49454F`,
+    // measured from the library's `darkColorScheme()`): the flattened `#3A3A3A`
+    // made the row dividers invisible against the dark page background.
+    outline = Color(0xFF938F99),
+    outlineVariant = Color(0xFF49454F),
     scrim = Color.Black,
     inverseSurface = SnackbarBg,
     inverseOnSurface = SnackbarOn,

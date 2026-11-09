@@ -322,24 +322,37 @@ class ConversationsViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     val contactPhotos: StateFlow<Map<Long, String>> =
         combine(state, contactPhotoTick) { ui, _ -> ui.conversations }
-            .mapLatest { conversations ->
+            // Feedback round 6 — project the list to its photo-relevant keys
+            // BEFORE the lookup: the full lookup used to re-run on every
+            // `state` emission (new message, read change, sync tick), even
+            // though its result only depends on (conversation id, first
+            // address, custom avatar) + the tick. `distinctUntilChanged` on
+            // the keys drops those emissions, so the lookup + map rebuild
+            // only run when a conversation appears, an address or custom
+            // avatar changes, or the tick bumps (permission granted). The
+            // lookups themselves are LRU-cached in `ContactsReader` and the
+            // cache is never invalidated in-process, so a dropped re-run
+            // would have returned the same photos — no behaviour change.
+            .map { conversations ->
+                conversations
+                    .filter { !it.isGroup && it.avatarUri == null }
+                    .map { it.id to it.firstAddress?.raw }
+            }
+            .distinctUntilChanged()
+            .mapLatest { keys ->
                 withContext(io) {
-                    conversations
-                        .filter { !it.isGroup && it.avatarUri == null }
-                        .mapNotNull { conv ->
-                            val phone = conv.firstAddress?.raw ?: return@mapNotNull null
-                            runCatching { contacts.lookupByPhone(phone)?.photoUri }
-                                .getOrNull()?.let { conv.id to it }
+                    keys
+                        .mapNotNull { (id, phone) ->
+                            val raw = phone ?: return@mapNotNull null
+                            runCatching { contacts.lookupByPhone(raw)?.photoUri }
+                                .getOrNull()?.let { id to it }
                         }
                         .toMap()
                 }
             }
-            // The lookup re-runs on every `state` emission (new message, read change, sync
-            // tick) and always builds a brand-new Map, even when no photo changed. Without
-            // this, every one of those emissions re-composed the whole list with new row
-            // parameters — visible as stutter while scrolling during a sync or a burst of
-            // incoming messages. Photos change only when contacts do, so identical maps
-            // are dropped here and the list stays still.
+            // Identical maps are dropped here so a key change that resolves
+            // to the same photos (new conversation with no photo, address
+            // change to an unknown number) does not re-compose the list.
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
 

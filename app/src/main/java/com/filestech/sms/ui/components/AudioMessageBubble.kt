@@ -254,7 +254,7 @@ fun AudioMessageBubble(
                         // bubble colour instead.
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .then(if (isPlaying) Modifier.background(controlColor) else Modifier)
                                 .clickable(onClick = onTogglePlay)
@@ -266,14 +266,14 @@ fun AudioMessageBubble(
                                     imageVector = Icons.Filled.Pause,
                                     contentDescription = stringResource(R.string.voice_action_pause),
                                     tint = bgColor,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(24.dp),
                                 )
                             } else {
                                 Icon(
                                     painter = painterResource(R.drawable.ic_play_circle),
                                     contentDescription = stringResource(R.string.voice_action_play),
                                     tint = controlColor,
-                                    modifier = Modifier.size(40.dp),
+                                    modifier = Modifier.size(48.dp),
                                 )
                             }
                         }
@@ -290,12 +290,17 @@ fun AudioMessageBubble(
                         // Phase 8 — la durée est du méta-texte de mise en page, comme
                         // l'heure : 12sp fixe (voir [FixedTypeSize]), pas `labelSmall`
                         // multiplié par le coefficient « Taille du texte des messages ».
+                        // Feedback round 6 — largeur FIXE (44dp, alignée à droite) :
+                        // la durée change en cours de lecture (« 0:34 » → « 0:05 »),
+                        // et sans largeur fixe la waveform (weight 1f) bougeait à
+                        // chaque changement de chiffre.
                         FixedTypeSize {
                             Text(
                                 text = formatBubbleDuration(if (isPlaying && positionMs > 0) positionMs.toLong() else totalMs.toLong()),
                                 style = RelayText.BubbleMeta,
                                 color = labelColor,
-                                modifier = Modifier.padding(end = 4.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                modifier = Modifier.width(44.dp).padding(end = 4.dp),
                             )
                         }
                     }
@@ -386,15 +391,15 @@ private fun VoiceWaveform(
     ) {
         val barHeights = androidx.compose.runtime.remember(audioId) {
             val rng = kotlin.random.Random(audioId.takeIf { it != 0L } ?: 1L)
-            IntArray(WAVE_BAR_COUNT) { rng.nextInt(4, 23) }
+            IntArray(WAVE_BAR_COUNT) { rng.nextInt(4, 31) }
         }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(24.dp),
+                .height(32.dp),
         ) {
             val n = barHeights.size
-            val barWidthPx = 2.dp.toPx()
+            val barWidthPx = 1.5.dp.toPx()
             val spacing = size.width / n
             val cy = size.height / 2f
             for (i in 0 until n) {
@@ -450,12 +455,14 @@ private fun formatBubbleDuration(ms: Long): String {
 private val voiceDark: Color = Color(0xFF353535)
 
 /**
- * v1.4.0 — number of waveform bars. 28 reads as a "voice clip" silhouette in the ~200-dp
- * waveform width without crowding (≈ 7 dp / bar including spacing) and stays cheap to draw
- * (single Canvas pass, no recomposition from the bars themselves — only the 5 Hz progress
- * tick re-reads `positionMs`).
+ * v1.4.0 — number of waveform bars. Feedback round 6 — 56 thin bars
+ * (1.5dp stroke, ~3dp pitch in the ~180-dp waveform): the Figma voice
+ * message shows a dense row of fine bars, not the 28 thick spaced-out
+ * bars of round 5. Still cheap to draw (single Canvas pass, no
+ * recomposition from the bars themselves — only the 5 Hz progress tick
+ * re-reads `positionMs`).
  */
-private const val WAVE_BAR_COUNT: Int = 28
+private const val WAVE_BAR_COUNT: Int = 56
 
 /**
  * Per-bubble projection of [VoicePlaybackController.PlaybackState]. The bubble derives its

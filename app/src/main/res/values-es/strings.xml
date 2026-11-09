@@ -102,7 +102,6 @@
     <string name="action_back">Atrás</string>
     <string name="action_copy">Copiar</string>
     <string name="action_forward">Reenviar</string>
-    <string name="action_select_text">Seleccionar texto</string>
     <string name="action_retry">Reintentar</string>
     <string name="action_close">Cerrar</string>
     <string name="action_continue">Continuar</string>

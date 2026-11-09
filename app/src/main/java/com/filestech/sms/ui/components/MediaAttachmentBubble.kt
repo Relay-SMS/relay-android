@@ -95,8 +95,6 @@ fun MediaAttachmentBubble(
      * `null` when the message has no caption to avoid an inert "Copier" menu entry.
      */
     onCopy: (() -> Unit)? = null,
-    /** v1.28.6 — sélection libre d'un extrait de la légende ; même disponibilité que [onCopy]. */
-    onSelectText: (() -> Unit)? = null,
     /** v1.3.11 (F5) — forward the attachment (+ caption if any) to another conversation. */
     onForward: (() -> Unit)? = null,
     /**
@@ -141,8 +139,8 @@ fun MediaAttachmentBubble(
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe (le
-    // `clickable` interne consomme le geste avant ce parent) ; l'appui long garde la
-    // sélection libre de la légende quand il y en a une.
+    // `clickable` interne consomme le geste avant ce parent) ; l'appui long
+    // ouvre le menu aussi (la sélection libre est supprimée, round 6).
     var menuExpanded by remember { mutableStateOf(false) }
 
     Row(
@@ -161,7 +159,7 @@ fun MediaAttachmentBubble(
             horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
             modifier = Modifier.combinedClickable(
                 onClick = { menuExpanded = true },
-                onLongClick = onSelectText,
+                onLongClick = { menuExpanded = true },
             ),
         ) {
             if (repliedToPreview != null) {
@@ -244,6 +242,7 @@ fun MediaAttachmentBubble(
                 ) {
                     MessageTextWithLinks(
                         text = message.body,
+                        messageId = message.id,
                         style = MaterialTheme.typography.bodyLarge,
                         // Phase 8 — blanc fixe sur le bleu de marque fixe sortant : `onPrimary`
                         // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
@@ -266,7 +265,6 @@ fun MediaAttachmentBubble(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
                 onCopy = onCopy,
-                onSelectText = onSelectText,
                 onForward = onForward,
                 onReply = onReply,
                 onReact = onReact,
