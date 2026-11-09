@@ -229,7 +229,10 @@ fun AudioMessageBubble(
                         .clip(shape)
                         .background(bgColor)
                         .clickable { menuExpanded = true }
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        // Feedback round 8 — extra breathing room on the
+                        // left and top (+10dp each): the play disc sat
+                        // scrunched against the bubble edges.
+                        .padding(start = 24.dp, top = 20.dp, end = 14.dp, bottom = 10.dp),
                 ) {
                   androidx.compose.foundation.layout.Column {
                     if (!senderLabel.isNullOrBlank()) {

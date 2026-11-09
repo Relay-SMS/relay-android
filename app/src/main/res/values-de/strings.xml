@@ -387,6 +387,7 @@
     <string name="settings_app_subtitle">Relay – SMS &amp; MMS Messenger</string>
 
     <string name="settings_section_appearance">Darstellung</string>
+    <string name="settings_section_general">Allgemein</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Hell</string>
     <string name="settings_theme_dark">Dunkel</string>
@@ -453,7 +454,8 @@
     <string name="settings_resync_title">Vom Telefon neu einlesen</string>
     <string name="settings_resync_desc">Importiert alle SMS erneut aus dem Android-System. Nützlich, wenn Nachrichten auf dem Telefon vorhanden sind, in der App aber fehlen. Gelöschtes kommt dadurch nicht zurück: Löschen entfernt auch die Kopie des Telefons. Keine Duplikate.</string>
     <string name="settings_resync_started">Neues Einlesen im Hintergrund gestartet.</string>
-    <string name="settings_send_reactions_title">Meine Reaktionen an den Empfänger senden</string>
+    <string name="settings_send_reactions_title">Meine Reaktionen senden</string>
+    <string name="settings_row_info">Mehr Infos</string>
     <string name="settings_send_reactions_desc">Wenn Sie eine Emoji-Reaktion setzen (Herz, Daumen hoch…), wird eine SMS gesendet, die nur das Emoji enthält. Sie zählt als normale SMS zum Tarif Ihres Vertrags. Eine Reaktion zu ändern sendet eine neue SMS mit dem neuen Emoji; sie zu entfernen sendet eine SMS, die das Entfernen meldet.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options at a glance.
          Title kept (was already pointing to "reaction format"). Desc legacy kept for downgrade. -->
@@ -756,6 +758,8 @@
     <string name="about_report_issue">Ein Problem melden</string>
     <string name="about_website">Webseite</string>
     <string name="about_license">Lizenz</string>
+    <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
+    <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
     <string name="about_privacy">Datenschutzerklärung</string>
     <string name="about_terms">Nutzungsbedingungen</string>
     <string name="about_support">Das Projekt unterstützen</string>

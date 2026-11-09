@@ -25,10 +25,10 @@ import com.filestech.sms.ui.theme.RelayText
 import java.util.Locale
 
 /**
- * Grouped-list section of the Relay design system: a 13sp/600 uppercase header in the
- * secondary colour, followed by the section's rows in a rounded card (16dp corners,
- * 16dp side margins) on the page canvas. The header sits 24dp below the previous card
- * and 8dp above its own, so two cards are 48dp apart including the label — the
+ * Grouped-list section of the Relay design system: a section header followed
+ * by the section's rows in a rounded card (16dp corners, 16dp side margins)
+ * on the page canvas. The header sits 24dp below the previous card and 8dp
+ * above its own, so two cards are 48dp apart including the label — the
  * comfortable rhythm of the grouped-list reference.
  *
  * The card lifts off the canvas in both schemes: white on the `#F5F5F5` light canvas,
@@ -43,10 +43,14 @@ fun RelaySection(
     /**
      * Feedback round 5 — current Material 3 section header: `titleSmall`
      * (14sp/500) in sentence case instead of the 13sp/600 all-caps header.
-     * Opt-in per section: the shared kit keeps the all-caps header by
-     * default, so the other screens using it (About, Backup, Emergency
-     * Setup, Safety Call Setup) are untouched — only Settings and the new
-     * Help screen ask for the Material header.
+     * Feedback round 8 — the system Settings header is `titleMedium`
+     * (16sp/500) in the plain on-surface colour (measured pure white on
+     * the reference screenshot, not the dimmer on-surface-variant), so
+     * the Material header now matches that. Opt-in per section: the shared
+     * kit keeps the all-caps header by default, so the other screens using
+     * it (About, Backup, Emergency Setup, Safety Call Setup) are
+     * untouched — only Settings and the new Help screen ask for the
+     * Material header.
      */
     materialHeader: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
@@ -56,11 +60,11 @@ fun RelaySection(
         Text(
             text = if (materialHeader) title else title.uppercase(Locale.ROOT),
             style = if (materialHeader) {
-                MaterialTheme.typography.titleSmall
+                MaterialTheme.typography.titleMedium
             } else {
                 RelayText.SectionHeader
             },
-            color = cs.onSurfaceVariant,
+            color = if (materialHeader) cs.onSurface else cs.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
         )
         RelayCard {
@@ -97,15 +101,17 @@ private fun relayCardColor(): Color {
 }
 
 /**
- * 1px divider between two rows of a grouped card, inset 16dp on both sides so it runs
- * from the row text to just before the trailing chevron/switch instead of bleeding
- * edge to edge. Colour is the scheme `outlineVariant` — the M3 baseline (`#CAC4D0`
- * light, `#49454F` dark), visibly darker than the page background.
+ * 1px divider between two rows of a grouped card. Feedback round 8 — the
+ * system Settings divider runs (nearly) edge to edge inside the card, not
+ * inset 16dp: measured on the reference screenshot the line spans the card
+ * minus ~2dp, so it reads as a full-bleed hairline between items. Colour
+ * is the scheme `outlineVariant` — the M3 baseline (`#CAC4D0` light,
+ * `#49454F` dark), visibly darker than the page background.
  */
 @Composable
 fun RelayDivider(modifier: Modifier = Modifier) {
     HorizontalDivider(
-        modifier = modifier.padding(horizontal = 16.dp),
+        modifier = modifier,
         thickness = 1.dp,
         color = MaterialTheme.colorScheme.outlineVariant,
     )

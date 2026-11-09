@@ -1,0 +1,1 @@
+Relay 1.0.0 — première version sous le nom de Relay. Nouveautés : épingler un message dans un fil et y revenir depuis la bannière, réactions emoji sur les bulles, copie en un geste des codes de connexion, et recherche dans un fil. Basé sur SMS Tech, avec l'interface propre de Relay.

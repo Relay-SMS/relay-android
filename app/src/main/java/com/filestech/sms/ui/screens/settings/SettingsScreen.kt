@@ -58,7 +58,6 @@ import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
@@ -104,7 +103,6 @@ import com.filestech.sms.system.notifications.CANAL_DU_RACCOURCI_D_URGENCE
 import com.filestech.sms.system.notifications.canalDesMessages
 import com.filestech.sms.system.settings.ouvrirLesNotificationsDeLApplication
 import com.filestech.sms.ui.components.BanniereNotificationsCoupees
-import com.filestech.sms.ui.components.RelayCard
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayDivider
@@ -145,9 +143,6 @@ fun SettingsScreen(
     onOpenSafetyCall: () -> Unit,
     onOpenEmergency: () -> Unit,
     onOpenEmergencySetup: () -> Unit,
-    // v1.15.1 — Accès à la nouvelle screen "Messages programmés" (infra existait
-    // déjà mais aucune UI ne l'exposait — feature dormante).
-    onOpenScheduledMessages: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -407,17 +402,15 @@ fun SettingsScreen(
                     onClick = { textScalePickerOpen = true },
                     dividerAbove = true,
                 )
-            }
-
-            RelaySection(
-                title = stringResource(R.string.settings_section_conversations),
-                materialHeader = true,
-            ) {
+                // Feedback round 8 — the Conversations section is gone: its
+                // two rows (Show avatars, Automatic signature) live here in
+                // Appearance now, so the page has one fewer card.
                 ToggleRow(
                     title = stringResource(R.string.settings_show_avatars),
                     leadingIcon = Icons.Outlined.PersonOutline,
                     value = state.conversations.showAvatars,
                     onChange = { v -> viewModel.update { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
+                    dividerAbove = true,
                 )
                 // v1.26.1 (audit F3) — la signature était consommée à chaque SMS sortant sans
                 // qu'aucun écran ne permette de la définir. Voir [SignatureRow].
@@ -448,12 +441,14 @@ fun SettingsScreen(
                     dividerAbove = true,
                 )
                 // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
+                // Feedback round 8 — the long hint lives in the info popup now
+                // (chevron before the switch); the row stays one-line.
                 ToggleRow(
                     title = stringResource(R.string.settings_group_mms),
                     leadingIcon = Icons.Outlined.Group,
                     value = state.sending.groupMms,
                     onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) } },
-                    description = stringResource(R.string.settings_group_mms_hint),
+                    infoText = stringResource(R.string.settings_group_mms_hint),
                     dividerAbove = true,
                 )
                 // v1.2.6 audit F4 — saisie facultative du MSISDN. Sans cette valeur, les MMS
@@ -479,10 +474,13 @@ fun SettingsScreen(
                 // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
                 // OFF, les réactions restent strictement locales (badge visible uniquement
                 // dans SMS Tech). La description prévient explicitement du coût SMS.
+                // Feedback round 8 — renamed to "Send my reactions"; the long
+                // cost warning lives in the info popup now (chevron before the
+                // switch); the row stays one-line.
                 ToggleRow(
                     title = stringResource(R.string.settings_send_reactions_title),
                     leadingIcon = Icons.Outlined.EmojiEmotions,
-                    description = stringResource(R.string.settings_send_reactions_desc),
+                    infoText = stringResource(R.string.settings_send_reactions_desc),
                     value = state.sending.sendReactionsToRecipient,
                     onChange = { v ->
                         viewModel.update { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
@@ -548,6 +546,55 @@ fun SettingsScreen(
                 onOpenStylePicker = { notifStylePickerOpen = true },
             )
 
+            // Feedback round 8 — the Safety call recap's "I'm OK" action,
+            // built here (it needs the ViewModel, the snackbar host and the
+            // two messages) and passed into SecuritySection, where the
+            // Safety call rows now live.
+            // Hissés au niveau de la composition : les appeler dans le lambda déclencherait
+            // `LocalContextGetResourceValueCall` (lint), et un `ctx.getString` dans un
+            // rappel ne suit pas les changements de langue.
+            val imOkResetMessage = stringResource(R.string.settings_safety_call_im_ok_snack)
+            val imOkStopsRelancesMessage =
+                stringResource(R.string.settings_safety_call_im_ok_stops_relances)
+            val onSafetyCallImOk: () -> Unit = {
+                // v1.27.2 — deux sens, selon qu'une séquence de relances est ouverte
+                // ou non. Décision de Patrice, 2026-08-05.
+                //
+                //  - AVANT déclenchement : « Je vais bien » remet le minuteur à zéro,
+                //    comportement d'origine.
+                //  - APRÈS déclenchement : il **désactive** le Safety Call et arrête
+                //    les relances. Le cycle est clos ; la personne a confirmé aller
+                //    bien, elle réarmera quand elle le voudra. Se contenter de
+                //    remettre le minuteur à zéro laisserait `triggeredAt` posé et les
+                //    relances continueraient de partir.
+                val safetyCallNow = state.security.safetyCall
+                val wasTriggered = safetyCallNow.isTriggered
+                viewModel.update { s ->
+                    val cfg = s.security.safetyCall
+                    s.copy(
+                        security = s.security.copy(
+                            // v1.27.2 (audit Codex, SC-03) — un seul appel, partagé avec
+                            // le tap sur la notification et l'ouverture de
+                            // l'application. La branche `isTriggered` oubliait de
+                            // remettre les horloges à zéro, et la branche normale
+                            // oubliait de fermer la séquence : chacune faisait la
+                            // moitié du travail de l'autre.
+                            safetyCall = cfg.withActivityReset(
+                                disarmIfTriggered = true,
+                            ),
+                        ),
+                    )
+                }
+                rootScope.launch {
+                    snackbarHost.showSnackbar(
+                        if (wasTriggered) {
+                            imOkStopsRelancesMessage
+                        } else {
+                            imOkResetMessage
+                        },
+                    )
+                }
+            }
             // v1.15.0 — Section extraite vers [SecuritySection] private @Composable.
             SecuritySection(
                 security = state.security,
@@ -563,188 +610,31 @@ fun SettingsScreen(
                 onOpenVaultPinForgetConfirm = { vaultPinForgetConfirmOpen = true },
                 onOpenPurgeBlockedConfirm = { showPurgeBlockedConfirm = true },
                 onOpenAutoDeletePicker = { autoDeletePickerOpen = true },
+                // Feedback round 8 — Safety call, Emergency mode and
+                // Blocking now live inside this card.
+                blocking = state.blocking,
+                onOpenBlocked = onOpenBlocked,
+                safetyCallRemainingMs = safetyCallRemainingMs,
+                onOpenSafetyCall = onOpenSafetyCall,
+                onSafetyCallImOk = onSafetyCallImOk,
+                onOpenEmergencySetup = onOpenEmergencySetup,
+                onOpenEmergency = onOpenEmergency,
+                positionAccordee = localisation.accordee,
+                onRequestLocationPermission = localisation.demander,
             )
 
-            // v1.9.0 — Safety call. Section dédiée pour clarté visuelle :
-            // c'est une feature de sécurité PERSONNELLE (envoyer SMS à mes
-            // proches si je ne donne plus signe de vie), distincte de la
-            // sécurité du DEVICE (verrouillage, panic mode).
-            // v1.10.0 audit SEC-1 (extension) — masquée en PanicDecoy par
-            // cohérence avec Mode urgence : ne pas révéler à l'agresseur
-            // l'existence des features de sécurité personnelle.
-            if (!isPanicDecoy) {
-                RelaySection(
-                    title = stringResource(R.string.settings_section_safety_call),
-                    materialHeader = true,
-                ) {
-                    val safetyCall = state.security.safetyCall
-                    // Hissés au niveau de la composition : les appeler dans le lambda déclencherait
-                    // `LocalContextGetResourceValueCall` (lint), et un `ctx.getString` dans un
-                    // rappel ne suit pas les changements de langue.
-                    val imOkResetMessage = stringResource(R.string.settings_safety_call_im_ok_snack)
-                    val imOkStopsRelancesMessage =
-                        stringResource(R.string.settings_safety_call_im_ok_stops_relances)
-                    // 🔴 v1.27.3 — CETTE CONDITION EST REVENUE À `enabled` SEUL, ET C'EST DÉLIBÉRÉ.
-                    //
-                    // Une première tentative de fermer SC-1273-05 avait écrit `enabled ||
-                    // isTriggered` ici. C'était faux : ce composant s'appelle `SafetyCallArmedRecap`
-                    // et sa puce dit « Activé » en couleur primaire. Avec une séquence terminale non
-                    // acquittée — `enabled = false`, `triggeredAt` encore posé — les Réglages
-                    // annonçaient donc **« Activé » sur une protection éteinte**. Constaté par
-                    // Patrice sur son S24 dans les minutes suivant l'installation.
-                    //
-                    // C'est exactement le défaut que tout ce lot combat, reproduit en voulant le
-                    // corriger : faire croire à une protection qui n'existe pas. L'état terminal
-                    // s'affiche donc dans la branche « désactivé », où il est vrai.
-                    if (safetyCall.enabled) {
-                        // Récap visible quand armé : durée, restant, contacts,
-                        // template + 2 actions (Modifier / Je vais bien).
-                        SafetyCallArmedRecap(
-                            config = safetyCall,
-                            remainingMs = safetyCallRemainingMs,
-                            onModify = onOpenSafetyCall,
-                            onImOk = {
-                                // v1.27.2 — deux sens, selon qu'une séquence de relances est ouverte
-                                // ou non. Décision de Patrice, 2026-08-05.
-                                //
-                                //  - AVANT déclenchement : « Je vais bien » remet le minuteur à zéro,
-                                //    comportement d'origine.
-                                //  - APRÈS déclenchement : il **désactive** le Safety Call et arrête
-                                //    les relances. Le cycle est clos ; la personne a confirmé aller
-                                //    bien, elle réarmera quand elle le voudra. Se contenter de
-                                //    remettre le minuteur à zéro laisserait `triggeredAt` posé et les
-                                //    relances continueraient de partir.
-                                val wasTriggered = safetyCall.isTriggered
-                                viewModel.update { s ->
-                                    val cfg = s.security.safetyCall
-                                    s.copy(
-                                        security = s.security.copy(
-                                            // v1.27.2 (audit Codex, SC-03) — un seul appel, partagé avec
-                                            // le tap sur la notification et l'ouverture de
-                                            // l'application. La branche `isTriggered` oubliait de
-                                            // remettre les horloges à zéro, et la branche normale
-                                            // oubliait de fermer la séquence : chacune faisait la
-                                            // moitié du travail de l'autre.
-                                            safetyCall = cfg.withActivityReset(
-                                                disarmIfTriggered = true,
-                                            ),
-                                        ),
-                                    )
-                                }
-                                rootScope.launch {
-                                    snackbarHost.showSnackbar(
-                                        if (wasTriggered) {
-                                            imOkStopsRelancesMessage
-                                        } else {
-                                            imOkResetMessage
-                                        },
-                                    )
-                                }
-                            },
-                        )
-                    } else {
-                        NavigationRow(
-                            title = stringResource(R.string.settings_safety_call_title),
-                            leadingIcon = Icons.Outlined.Shield,
-                            // v1.27.3 (relecture Codex, SC-1273-05) — L'ÉTAT TERMINAL SE DIT ICI.
-                            //
-                            // Le désarmement de fin de séquence écrit `enabled = false` dans la
-                            // transaction du dernier envoi : l'état terminal nominal passe donc
-                            // toujours par cette branche. Elle n'affichait qu'un « Désactivé » nu, et
-                            // il fallait ouvrir l'écran de configuration puis descendre jusqu'à
-                            // l'historique pour comprendre qu'une alerte venait de partir.
-                            //
-                            // Le dire ici est à la fois vrai et suffisant : la protection **est**
-                            // coupée, et on ajoute seulement ce qui manquait — qu'elle l'est parce
-                            // qu'une alerte est allée au bout.
-                            description = if (safetyCall.isTriggered) {
-                                stringResource(R.string.settings_safety_call_disabled_after_alert)
-                            } else {
-                                stringResource(R.string.settings_safety_call_disabled)
-                            } + "\n" + stringResource(R.string.settings_safety_call_desc),
-                            onClick = onOpenSafetyCall,
-                        )
-                    }
-                }
-            }
+            // Feedback round 8 — Safety call, Emergency mode and
+            // Blocking moved into [SecuritySection] above (one
+            // "Security & privacy" card now holds them all). Their
+            // decoy guards moved with them.
 
-            // v1.10.0 — Mode urgence. Section dédiée, distincte du Safety call :
-            // ici c'est l'user qui DÉCLENCHE activement (bouton hold 3s) ; le
-            // Safety call est passif (timer d'inactivité). Cohérence des
-            // contacts garantie par la réutilisation de la même liste.
-            // v1.10.0 audit SEC-1 — entièrement masquée en PanicDecoy
-            // (l'agresseur ne doit pas savoir que la feature existe).
-            // v1.15.0 — Section extraite vers [EmergencySection] private @Composable.
-            if (!isPanicDecoy) {
-                EmergencySection(
-                    security = state.security,
-                    onUpdate = viewModel::update,
-                    onOpenEmergencySetup = onOpenEmergencySetup,
-                    onOpenEmergency = onOpenEmergency,
-                    positionAccordee = localisation.accordee,
-                    onRequestLocationPermission = localisation.demander,
-                )
-            }
-
-            RelaySection(
-                title = stringResource(R.string.settings_section_blocking),
-                materialHeader = true,
-            ) {
-                // v1.28.13 (balayage des permissions refusées, MR F-Droid !38458) — sans accès aux
-                // contacts, `IncomingBlockPolicy` ne peut savoir qui est inconnu et laisse TOUT
-                // passer, à dessein (bloquer sur une ignorance couperait toute réception). Mais
-                // l'interrupteur restait sur « activé » sans rien dire : on le dit sous lui.
-                val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
-                ToggleRow(
-                    title = stringResource(R.string.settings_block_unknown),
-                    leadingIcon = Icons.Outlined.Block,
-                    value = state.blocking.blockUnknown,
-                    onChange = { v -> viewModel.update { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },
-                    // 2026-10-29 — l'effet est dit AVANT d'activer : `IncomingBlockPolicy` écarte le
-                    // message à la réception, sans notification ni copie (pas même le filet de
-                    // secours de `SmsDeliverReceiver`), et un expéditeur alphanumérique n'est
-                    // jamais un contact. Activé sans accès aux contacts, l'avertissement prime :
-                    // rien n'est alors bloqué.
-                    description = if (state.blocking.blockUnknown && !contactsAccordes) {
-                        stringResource(R.string.settings_block_unknown_no_contacts)
-                    } else {
-                        stringResource(R.string.settings_block_unknown_desc)
-                    },
-                )
-                NavigationRow(
-                    title = stringResource(R.string.settings_manage_blocked),
-                    leadingIcon = Icons.Outlined.PersonOff,
-                    onClick = onOpenBlocked,
-                    dividerAbove = true,
-                )
-            }
-
-            // v1.15.1 — Section dédiée Messages programmés. Avant : noyée dans "Blocage" →
-            // confusion conceptuelle (un message différé n'a rien à voir avec un blocage).
-            // Section autonome plus visible et cohérente avec la nature de la feature.
+            // Feedback round 8 — Scheduled messages moved out of Settings
+            // to the main screen's 3-dot menu (under "New group"); the
+            // section and its navigation are gone from here. The screen
+            // itself (ScheduledMessages) is unchanged, and neither is the
+            // visibility rule: `ScheduledMessageRepositoryImpl` still hides
+            // vault scheduled messages in a decoy session or a closed vault.
             //
-            // v1.28.3 (F02) — cette carte reste VISIBLE en session leurre, et c'est un choix,
-            // pas un oubli. Ses quatre voisines gardées (Coffre, Verrouillage, Appel de
-            // sécurité, Sauvegarde) le sont parce que leur existence même trahirait qu'il y a
-            // quelque chose à cacher. Un message programmé est une commodité ordinaire : la
-            // masquer appauvrirait le leurre sans rien protéger.
-            //
-            // Ce qui devait être corrigé, et l'a été, c'est le CONTENU : `observePending` et
-            // `observeFailed` rendaient le corps et les destinataires des messages programmés
-            // depuis une conversation du coffre, sans jamais demander le second facteur.
-            // `ScheduledMessageRepositoryImpl` applique désormais la même règle de visibilité
-            // que les conversations — en leurre comme coffre fermé, la liste est vide.
-            RelaySection(
-                title = stringResource(R.string.settings_section_scheduled),
-                materialHeader = true,
-            ) {
-                NavigationRow(
-                    title = stringResource(R.string.settings_scheduled_messages),
-                    leadingIcon = Icons.Outlined.Schedule,
-                    onClick = onOpenScheduledMessages,
-                )
-            }
-
             // v1.26.1 (audit C2) — masquée en leurre, comme les sections Safety call et Mode
             // urgence. La sauvegarde exporte les conversations du coffre.
             //
@@ -782,14 +672,18 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(Modifier.size(24.dp))
-            // Feedback round 5 — the bottom card holds the meta rows, in
+            // Feedback round 8 — the bottom card holds the meta rows, in
             // order: App Language (Android 13+ only), Advanced, Help, About.
             // The language row moved here from its own section up the page,
             // Help moved here from the About screen, and Advanced moved here
             // from its own section (feedback round 6 — it lives on its own
-            // screen now).
-            RelayCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+            // screen now). The card carries a "General" header like every
+            // other section, so the page ends on a titled card instead of a
+            // bare one.
+            RelaySection(
+                title = stringResource(R.string.settings_section_general),
+                materialHeader = true,
+            ) {
                 // Réservé à Android 13+ : en dessous, la page de langue
                 // n'existe pas et l'intent n'ouvrirait rien.
                 val languageShown =
@@ -1629,6 +1523,13 @@ private fun PinSetupDialog(
  * security/privacy toggles whose effect is not obvious from the title alone.
  * Pass [dividerAbove] for every row but the first of a card (see [RelayRow]).
  *
+ * Feedback round 8 — pass [infoText] instead of [description] for a long
+ * explanation: the row stays one-line and gains a chevron before the switch
+ * (the system Settings pattern: chevron, thin vertical divider, toggle).
+ * Tapping the chevron opens a dialog with the text; tapping the rest of
+ * the row still flips the switch. The chevron is its own clickable, so it
+ * does not toggle.
+ *
  * The whole row is one TalkBack node (`Modifier.toggleable(role = Role.Switch)`); the
  * inner Switch has `onCheckedChange = null` and delegates to it.
  */
@@ -1643,6 +1544,7 @@ fun ToggleRow(
     description: String? = null,
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     dividerAbove: Boolean = false,
+    infoText: String? = null,
 ) {
     // v1.2.6 polish : Row compact à la place du `ListItem` (qui forçait min-height 56/72 dp et
     // un Switch pleine taille). On garde un touch target ≥ 48 dp via `heightIn` tout en
@@ -1659,6 +1561,7 @@ fun ToggleRow(
     // a `onCheckedChange = null` (délègue au parent toggleable). Pattern Material 3 officiel
     // recommandé pour les "selectable list items" → toggle entier sans double-tap a11y.
     val cs = MaterialTheme.colorScheme
+    var infoOpen by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
         if (dividerAbove) {
             RelayDivider()
@@ -1723,6 +1626,29 @@ fun ToggleRow(
                     )
                 }
             }
+            // Feedback round 8 — info chevron (see the header comment): the
+            // chevron + divider sit tight against the switch, so they share
+            // a nested row instead of the outer 16dp spacing.
+            if (infoText != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    IconButton(onClick = { infoOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.ChevronRight,
+                            contentDescription = stringResource(R.string.settings_row_info),
+                            tint = cs.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(width = 1.dp, height = 24.dp)
+                            .background(cs.outlineVariant),
+                    )
+                }
+            }
             Switch(
                 checked = value,
                 // v1.3.7 U1 audit — `null` délègue le clic au `Modifier.toggleable` parent
@@ -1750,6 +1676,25 @@ fun ToggleRow(
                 },
             )
         }
+    }
+    if (infoOpen && infoText != null) {
+        RelayDialog(
+            onDismissRequest = { infoOpen = false },
+            title = title,
+            content = {
+                Text(
+                    text = infoText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = cs.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                RelayTextButton(
+                    text = stringResource(R.string.action_close),
+                    onClick = { infoOpen = false },
+                )
+            },
+        )
     }
 }
 
@@ -2962,6 +2907,13 @@ private fun VaultPinSetupDialog(
                     text = stringResource(R.string.settings_vault_pin_set_subtitle),
                     style = RelayText.Preview,
                 )
+                // Feedback round 8 — the row's long description moved here:
+                // the setup dialog is where the vault PIN is explained.
+                Text(
+                    text = stringResource(R.string.settings_vault_pin_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (appPinHint) {
                     Text(
                         text = stringResource(R.string.settings_vault_pin_same_as_app),
@@ -3191,6 +3143,18 @@ private fun SecuritySection(
     onOpenVaultPinForgetConfirm: () -> Unit,
     onOpenPurgeBlockedConfirm: () -> Unit,
     onOpenAutoDeletePicker: () -> Unit,
+    // Feedback round 8 — the Safety call, Emergency mode and Blocking
+    // rows moved into this section (they were their own cards). Their
+    // state and callbacks arrive here so this one card holds them all.
+    blocking: com.filestech.sms.domain.settings.BlockingSettings,
+    onOpenBlocked: () -> Unit,
+    safetyCallRemainingMs: Long,
+    onOpenSafetyCall: () -> Unit,
+    onSafetyCallImOk: () -> Unit,
+    onOpenEmergencySetup: () -> Unit,
+    onOpenEmergency: () -> Unit,
+    positionAccordee: Boolean,
+    onRequestLocationPermission: () -> Unit,
 ) {
     RelaySection(
         title = stringResource(R.string.settings_section_security),
@@ -3275,7 +3239,7 @@ private fun SecuritySection(
         ToggleRow(
             title = stringResource(R.string.settings_flag_secure),
             leadingIcon = Icons.Outlined.PrivacyTip,
-            description = stringResource(R.string.settings_flag_secure_desc),
+            infoText = stringResource(R.string.settings_flag_secure_desc),
             value = security.flagSecure,
             onChange = { v -> onUpdate { it.copy(security = it.security.copy(flagSecure = v)) } },
             // In a decoy session the rows above are all hidden, so this is the first
@@ -3291,17 +3255,18 @@ private fun SecuritySection(
             ToggleRow(
                 title = stringResource(R.string.settings_lock_vault_on_leave),
                 leadingIcon = Icons.Outlined.LockOpen,
-                description = stringResource(R.string.settings_lock_vault_on_leave_desc),
+                infoText = stringResource(R.string.settings_lock_vault_on_leave_desc),
                 value = security.lockVaultOnLeave,
                 onChange = { v -> onUpdate { it.copy(security = it.security.copy(lockVaultOnLeave = v)) } },
                 dividerAbove = true,
             )
         }
         // v1.11.0 — Sujet 3 anti-smishing.
+        // Feedback round 8 — the long explanation lives in the info popup now.
         ToggleRow(
             title = stringResource(R.string.settings_smishing_detection),
             leadingIcon = Icons.Outlined.Shield,
-            description = stringResource(R.string.settings_smishing_detection_desc),
+            infoText = stringResource(R.string.settings_smishing_detection_desc),
             value = security.smishingDetectionEnabled,
             onChange = { v ->
                 onUpdate {
@@ -3318,11 +3283,12 @@ private fun SecuritySection(
         // v1.13.0 audit UX-2 — masqué en PanicDecoy : l'existence du toggle révélerait
         // la présence d'un coffre dans Settings, alors que le cadenas TopAppBar et la
         // nav vers Vault sont déjà masqués en décoy. Cohérence cross-écran.
+        // Feedback round 8 — the long description moved into the PIN setup
+        // dialog itself (it already opens a popup); the row stays one-line.
         if (!isPanicDecoy) {
             ToggleRow(
                 title = stringResource(R.string.settings_vault_pin_title),
                 leadingIcon = Icons.Outlined.Key,
-                description = stringResource(R.string.settings_vault_pin_desc),
                 value = security.vaultPinEnabled,
                 onChange = { v ->
                     if (v) {
@@ -3352,158 +3318,223 @@ private fun SecuritySection(
                 )
             }
         }
+        // Feedback round 8 — the long description moved into the confirm
+        // dialog (it already explains the purge); the row stays one-line.
         NavigationRow(
             title = stringResource(R.string.settings_purge_blocked),
             leadingIcon = Icons.Outlined.Delete,
-            description = stringResource(R.string.settings_purge_blocked_desc),
             // v1.8.0 — dialog de confirmation (action irréversible).
             onClick = onOpenPurgeBlockedConfirm,
             dividerAbove = true,
         )
-        // v1.3.0 — auto-purge historique selon rétention choisie. Description sur
-        // 2 lignes : statut courant + rappel du filet de sécurité 5 j + favoris.
+        // v1.3.0 — auto-purge historique selon rétention choisie. Feedback
+        // round 8 — the row shows only the current retention; the long
+        // explainer lives in the picker dialog (it already shows it).
         val currentRetentionLabel = retentionLabel(security.autoDeleteOlderThanDays)
-        val explainer = stringResource(R.string.settings_auto_delete_explainer)
         NavigationRow(
             title = stringResource(R.string.settings_auto_delete_title),
             leadingIcon = Icons.Outlined.History,
-            description = "$currentRetentionLabel\n$explainer",
+            description = currentRetentionLabel,
             onClick = onOpenAutoDeletePicker,
             dividerAbove = true,
         )
-    }
-}
-
-/**
- * v1.15.0 — Section Mode urgence. Extraite de [SettingsScreen] (lignes 540-680 v1.14.9, la
- * section la plus volumineuse — recap + 4 toggles conditionnels).
- *
- * Le bouton "Inclure position GPS" déclenche [onRequestLocationPermission] lors d'un toggle
- * OFF→ON sans permission accordée. La logique de revert sur refus est gérée côté parent via
- * `rememberPermissionLocalisation`, qui appelle [onUpdate] en cas de denied.
- *
- * Toute la section est gated par `if (!isPanicDecoy)` au call-site parent (audit SEC-1 v1.10.0).
- *
- * @param positionAccordee v1.28.13 — position exacte OU approximative accordée.
- */
-@Composable
-private fun EmergencySection(
-    security: com.filestech.sms.domain.settings.SecuritySettings,
-    onUpdate: (transform: (com.filestech.sms.domain.settings.AppSettings) -> com.filestech.sms.domain.settings.AppSettings) -> Unit,
-    onOpenEmergencySetup: () -> Unit,
-    onOpenEmergency: () -> Unit,
-    positionAccordee: Boolean,
-    onRequestLocationPermission: () -> Unit,
-) {
-    RelaySection(
-        title = stringResource(R.string.settings_section_emergency),
-        materialHeader = true,
-    ) {
-        val emergency = security.emergency
-        if (emergency.enabled) {
-            // v1.10.0 polish — récap visuel quand armé (parallèle exact de SafetyCallArmedRecap
-            // pour cohérence UX).
-            EmergencyArmedRecap(
-                config = emergency,
-                contacts = security.safetyCall.contacts,
-                onModify = onOpenEmergencySetup,
-                onOpen = onOpenEmergency,
-            )
-        } else {
-            NavigationRow(
-                title = stringResource(R.string.settings_emergency_title),
-                leadingIcon = Icons.Outlined.WarningAmber,
-                description = stringResource(R.string.settings_emergency_disabled) +
-                    "\n" + stringResource(R.string.settings_emergency_desc),
-                onClick = onOpenEmergencySetup,
-            )
-        }
-        // v1.12.0 — Toggle raccourci urgence en notification persistante lock-screen.
-        // Disponible uniquement si emergency.enabled (un raccourci qui ouvre dans le vide
-        // n'a aucun sens).
-        if (emergency.enabled) {
-            ToggleRow(
-                title = stringResource(R.string.settings_emergency_shortcut_title),
-                leadingIcon = Icons.Outlined.Notifications,
-                description = stringResource(R.string.settings_emergency_shortcut_desc),
-                value = security.emergencyShortcutEnabled,
-                onChange = { v ->
-                    onUpdate {
-                        it.copy(security = it.security.copy(emergencyShortcutEnabled = v))
-                    }
-                },
-                dividerAbove = true,
-            )
-            // v1.28.13 — le raccourci EST une notification : sans elles, l'interrupteur reste sur
-            // « activé » alors que rien n'apparaît sur l'écran verrouillé.
-            if (security.emergencyShortcutEnabled) {
-                BanniereNotificationsCoupees(
-                    message = stringResource(R.string.notifications_off_emergency_shortcut),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    canaux = listOf(CANAL_DU_RACCOURCI_D_URGENCE),
+        // Feedback round 8 — Safety call, Emergency mode and Blocking
+        // moved into this card (they were their own sections above). The
+        // decoy guards travel with them: Safety call and Emergency stay
+        // hidden in a decoy session, Blocking stays visible (it is an
+        // ordinary feature). The recap blocks get a divider above them
+        // because they are no longer the first thing in their own card.
+        // v1.9.0 — Safety call. Feature de sécurité PERSONNELLE (envoyer SMS à mes
+        // proches si je ne donne plus signe de vie), distincte de la
+        // sécurité du DEVICE (verrouillage, panic mode).
+        // v1.10.0 audit SEC-1 (extension) — masquée en PanicDecoy par
+        // cohérence avec Mode urgence : ne pas révéler à l'agresseur
+        // l'existence des features de sécurité personnelle.
+        if (!isPanicDecoy) {
+            val safetyCall = security.safetyCall
+            // 🔴 v1.27.3 — CETTE CONDITION EST REVENUE À `enabled` SEUL, ET C'EST DÉLIBÉRÉ.
+            //
+            // Une première tentative de fermer SC-1273-05 avait écrit `enabled ||
+            // isTriggered` ici. C'était faux : ce composant s'appelle `SafetyCallArmedRecap`
+            // et sa puce dit « Activé » en couleur primaire. Avec une séquence terminale non
+            // acquittée — `enabled = false`, `triggeredAt` encore posé — les Réglages
+            // annonçaient donc **« Activé » sur une protection éteinte**. Constaté par
+            // Patrice sur son S24 dans les minutes suivant l'installation.
+            //
+            // C'est exactement le défaut que tout ce lot combat, reproduit en voulant le
+            // corriger : faire croire à une protection qui n'existe pas. L'état terminal
+            // s'affiche donc dans la branche « désactivé », où il est vrai.
+            if (safetyCall.enabled) {
+                // Récap visible quand armé : durée, restant, contacts,
+                // template + 2 actions (Modifier / Je vais bien).
+                RelayDivider()
+                SafetyCallArmedRecap(
+                    config = safetyCall,
+                    remainingMs = safetyCallRemainingMs,
+                    onModify = onOpenSafetyCall,
+                    onImOk = onSafetyCallImOk,
+                )
+            } else {
+                NavigationRow(
+                    title = stringResource(R.string.settings_safety_call_title),
+                    leadingIcon = Icons.Outlined.Shield,
+                    // Feedback round 8 — the row shows only the state
+                    // (Disabled / Disabled after an alert); the long
+                    // description moved to the Safety call setup screen.
+                    description = if (safetyCall.isTriggered) {
+                        stringResource(R.string.settings_safety_call_disabled_after_alert)
+                    } else {
+                        stringResource(R.string.settings_safety_call_disabled)
+                    },
+                    onClick = onOpenSafetyCall,
+                    dividerAbove = true,
                 )
             }
-            // v1.12.0 — Toggle de l'action police dans la notification d'urgence.
-            // Audit fix S2 : disponible uniquement si le raccourci urgence est lui-même ON.
-            // Sans raccourci, il resterait un orphelin qui dupliquerait juste 112.
-            // v1.28.12 — le numéro suit le pays du réseau, et la tuile police de l'écran
-            // Urgence ne dépend plus de ce réglage : elle s'affiche selon le pays.
-            if (security.emergencyShortcutEnabled) {
+        }
+        // v1.10.0 — Mode urgence. Ici c'est l'user qui DÉCLENCHE activement (bouton hold 3s) ;
+        // le Safety call est passif (timer d'inactivité). Cohérence des
+        // contacts garantie par la réutilisation de la même liste.
+        // v1.10.0 audit SEC-1 — entièrement masquée en PanicDecoy
+        // (l'agresseur ne doit pas savoir que la feature existe).
+        if (!isPanicDecoy) {
+            val emergency = security.emergency
+            if (emergency.enabled) {
+                // v1.10.0 polish — récap visuel quand armé (parallèle exact de SafetyCallArmedRecap
+                // pour cohérence UX).
+                RelayDivider()
+                EmergencyArmedRecap(
+                    config = emergency,
+                    contacts = security.safetyCall.contacts,
+                    onModify = onOpenEmergencySetup,
+                    onOpen = onOpenEmergency,
+                )
+            } else {
+                // Feedback round 8 — the row shows only the state (Disabled);
+                // the long description moved to the Emergency setup screen.
+                NavigationRow(
+                    title = stringResource(R.string.settings_emergency_title),
+                    leadingIcon = Icons.Outlined.WarningAmber,
+                    description = stringResource(R.string.settings_emergency_disabled),
+                    onClick = onOpenEmergencySetup,
+                    dividerAbove = true,
+                )
+            }
+            // v1.12.0 — Toggle raccourci urgence en notification persistante lock-screen.
+            // Disponible uniquement si emergency.enabled (un raccourci qui ouvre dans le vide
+            // n'a aucun sens).
+            if (emergency.enabled) {
                 ToggleRow(
-                    title = stringResource(R.string.settings_emergency_call_police_title),
-                    leadingIcon = Icons.Outlined.Phone,
-                    description = stringResource(R.string.settings_emergency_call_police_desc),
-                    value = security.emergencyCallPoliceEnabled,
+                    title = stringResource(R.string.settings_emergency_shortcut_title),
+                    leadingIcon = Icons.Outlined.Notifications,
+                    description = stringResource(R.string.settings_emergency_shortcut_desc),
+                    value = security.emergencyShortcutEnabled,
                     onChange = { v ->
                         onUpdate {
-                            it.copy(security = it.security.copy(emergencyCallPoliceEnabled = v))
+                            it.copy(security = it.security.copy(emergencyShortcutEnabled = v))
                         }
                     },
                     dividerAbove = true,
                 )
+                // v1.28.13 — le raccourci EST une notification : sans elles, l'interrupteur reste sur
+                // « activé » alors que rien n'apparaît sur l'écran verrouillé.
+                if (security.emergencyShortcutEnabled) {
+                    BanniereNotificationsCoupees(
+                        message = stringResource(R.string.notifications_off_emergency_shortcut),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        canaux = listOf(CANAL_DU_RACCOURCI_D_URGENCE),
+                    )
+                }
+                // v1.12.0 — Toggle de l'action police dans la notification d'urgence.
+                // Audit fix S2 : disponible uniquement si le raccourci urgence est lui-même ON.
+                // Sans raccourci, il resterait un orphelin qui dupliquerait juste 112.
+                // v1.28.12 — le numéro suit le pays du réseau, et la tuile police de l'écran
+                // Urgence ne dépend plus de ce réglage : elle s'affiche selon le pays.
+                if (security.emergencyShortcutEnabled) {
+                    ToggleRow(
+                        title = stringResource(R.string.settings_emergency_call_police_title),
+                        leadingIcon = Icons.Outlined.Phone,
+                        description = stringResource(R.string.settings_emergency_call_police_desc),
+                        value = security.emergencyCallPoliceEnabled,
+                        onChange = { v ->
+                            onUpdate {
+                                it.copy(security = it.security.copy(emergencyCallPoliceEnabled = v))
+                            }
+                        },
+                        dividerAbove = true,
+                    )
+                }
+                // v1.14.0 — opt-in SMS "Je vais bien" sur kill-switch.
+                ToggleRow(
+                    title = stringResource(R.string.settings_send_i_am_ok_sms_title),
+                    leadingIcon = Icons.Outlined.ChatBubbleOutline,
+                    description = stringResource(R.string.settings_send_i_am_ok_sms_desc),
+                    value = security.sendIAmOkSmsOnReset,
+                    onChange = { v ->
+                        onUpdate {
+                            it.copy(security = it.security.copy(sendIAmOkSmsOnReset = v))
+                        }
+                    },
+                    dividerAbove = true,
+                )
+                // v1.14.5 — Toggle "Inclure position GPS dans le SMS" accessible directement
+                // depuis Settings (avant : seul EmergencySetupScreen exposait ce toggle, l'user
+                // devait y naviguer pour activer la géoloc). Quand l'user passe OFF→ON, on
+                // demande la permission ACCESS_FINE_LOCATION runtime immédiatement (avec les
+                // mêmes considérations que dans EmergencySetupScreen).
+                ToggleRow(
+                    title = stringResource(R.string.settings_emergency_include_location_title),
+                    leadingIcon = Icons.Outlined.PushPin,
+                    description = stringResource(R.string.settings_emergency_include_location_desc),
+                    value = emergency.includeLocation,
+                    dividerAbove = true,
+                    onChange = { v ->
+                        onUpdate {
+                            it.copy(security = it.security.copy(
+                                emergency = it.security.emergency.copy(includeLocation = v),
+                            ))
+                        }
+                        // Au passage OFF→ON sans perm déjà accordée → demande runtime.
+                        if (v && !positionAccordee) {
+                            onRequestLocationPermission()
+                        }
+                    },
+                )
             }
-            // v1.14.0 — `emergencyCallBehavior` picker retiré v1.14.1 : l'écran Mode urgence
-            // v1.14.1 utilise toujours direct call (CALL_PHONE permission) avec fallback
-            // automatique au composeur si permission refusée. Le picker UI ici n'aurait
-            // plus d'effet → supprimé pour cohérence UX. La clé DataStore reste pour
-            // compat ascendante mais devient un dead field.
-            //
-            // v1.14.0 — opt-in SMS "Je vais bien" sur kill-switch.
-            ToggleRow(
-                title = stringResource(R.string.settings_send_i_am_ok_sms_title),
-                leadingIcon = Icons.Outlined.ChatBubbleOutline,
-                description = stringResource(R.string.settings_send_i_am_ok_sms_desc),
-                value = security.sendIAmOkSmsOnReset,
-                onChange = { v ->
-                    onUpdate {
-                        it.copy(security = it.security.copy(sendIAmOkSmsOnReset = v))
-                    }
-                },
-                dividerAbove = true,
-            )
-            // v1.14.5 — Toggle "Inclure position GPS dans le SMS" accessible directement
-            // depuis Settings (avant : seul EmergencySetupScreen exposait ce toggle, l'user
-            // devait y naviguer pour activer la géoloc). Quand l'user passe OFF→ON, on
-            // demande la permission ACCESS_FINE_LOCATION runtime immédiatement (avec les
-            // mêmes considérations que dans EmergencySetupScreen).
-            ToggleRow(
-                title = stringResource(R.string.settings_emergency_include_location_title),
-                leadingIcon = Icons.Outlined.PushPin,
-                description = stringResource(R.string.settings_emergency_include_location_desc),
-                value = emergency.includeLocation,
-                dividerAbove = true,
-                onChange = { v ->
-                    onUpdate {
-                        it.copy(security = it.security.copy(
-                            emergency = it.security.emergency.copy(includeLocation = v),
-                        ))
-                    }
-                    // Au passage OFF→ON sans perm déjà accordée → demande runtime.
-                    if (v && !positionAccordee) {
-                        onRequestLocationPermission()
-                    }
-                },
-            )
         }
+        // Blocking — an ordinary feature, visible in a decoy session like
+        // the rest of this card.
+        // v1.28.13 (balayage des permissions refusées, MR F-Droid !38458) — sans accès aux
+        // contacts, `IncomingBlockPolicy` ne peut savoir qui est inconnu et laisse TOUT
+        // passer, à dessein (bloquer sur une ignorance couperait toute réception). Mais
+        // l'interrupteur restait sur « activé » sans rien dire : on le dit sous lui.
+        val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
+        ToggleRow(
+            title = stringResource(R.string.settings_block_unknown),
+            leadingIcon = Icons.Outlined.Block,
+            value = blocking.blockUnknown,
+            onChange = { v -> onUpdate { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },
+            // 2026-10-29 — l'effet est dit AVANT d'activer : `IncomingBlockPolicy` écarte le
+            // message à la réception, sans notification ni copie (pas même le filet de
+            // secours de `SmsDeliverReceiver`), et un expéditeur alphanumérique n'est
+            // jamais un contact. Activé sans accès aux contacts, l'avertissement prime :
+            // rien n'est alors bloqué.
+            // Feedback round 8 — the long description lives in the info
+            // popup now; the no-contacts warning still shows under the
+            // title when it applies (it is a state warning, not a
+            // description).
+            description = if (blocking.blockUnknown && !contactsAccordes) {
+                stringResource(R.string.settings_block_unknown_no_contacts)
+            } else {
+                null
+            },
+            infoText = stringResource(R.string.settings_block_unknown_desc),
+            dividerAbove = true,
+        )
+        NavigationRow(
+            title = stringResource(R.string.settings_manage_blocked),
+            leadingIcon = Icons.Outlined.PersonOff,
+            onClick = onOpenBlocked,
+            dividerAbove = true,
+        )
     }
 }

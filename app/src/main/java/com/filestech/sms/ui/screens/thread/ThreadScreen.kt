@@ -20,7 +20,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -973,6 +975,23 @@ fun ThreadScreen(
                 if (boundaryItem != null && boundaryItem.offset >= 0) null else label
             }
         }
+        // Feedback round 8 — the sticky date pill floats only TEMPORARILY:
+        // it appears while the list is scrolling and slides up out of view
+        // shortly after scrolling stops, so it never sits on the thread
+        // while the user is reading. `isScrollInProgress` covers drag and
+        // fling in both directions; the hide is a 1 s idle delay, and the
+        // LaunchedEffect restarts (cancelling the delay) if scrolling
+        // resumes before it fires.
+        var showStickyDate by remember { mutableStateOf(false) }
+        val isScrolling = listState.isScrollInProgress
+        LaunchedEffect(isScrolling) {
+            if (isScrolling) {
+                showStickyDate = true
+            } else {
+                kotlinx.coroutines.delay(STICKY_DATE_HIDE_DELAY_MS)
+                showStickyDate = false
+            }
+        }
         // v1.18.0 — Bundle de callbacks stable réutilisé par chaque item. Capture les setters
         // `var by remember` (pendingDelete, pickingReactionFor, forwardingMessage,
         // pendingRetryWatchdog) + les références ViewModel + les lambdas locales. Recréé
@@ -1135,22 +1154,24 @@ fun ThreadScreen(
         // inline separator is on screen, or when the list is empty. Hidden
         // while older messages load: the "loading older" chip owns the same
         // top-centre spot, and the list is mid-shift then anyway.
+        // Feedback round 8 — the pill floats only temporarily (see
+        // [showStickyDate]): it slides in while scrolling and slides up out
+        // of view shortly after scrolling stops.
         if (!state.isLoadingOlder) {
-            stickyDateLabel?.let { label ->
-                val bannerHeightPx = if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
-                    pinnedBannerHeightPx
-                } else {
-                    0
-                }
-                DatePill(
-                    label = label,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(
-                            top = with(LocalDensity.current) { bannerHeightPx.toDp() } + 8.dp,
-                        ),
-                )
+            val bannerHeightPx = if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
+                pinnedBannerHeightPx
+            } else {
+                0
             }
+            StickyDatePill(
+                label = stickyDateLabel,
+                visible = stickyDateLabel != null && showStickyDate,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(
+                        top = with(LocalDensity.current) { bannerHeightPx.toDp() } + 8.dp,
+                    ),
+            )
         }
         if (state.isLoadingOlder) {
             Row(
@@ -1881,7 +1902,15 @@ private fun ThreadHeader(
                         // only the BOXES were: the MoreVert glyph itself drew
                         // at 16dp, so the ⋮ now uses `ic_more_vert_tall`
                         // (19.4dp drawn, matching search and call).
-                        modifier = Modifier.size(24.dp),
+                        // Feedback round 8 — 24dp -> 22dp: measured on
+                        // Kristin's screenshot (phone_icon), the handset
+                        // glyph still drew 55px tall against 50px for the
+                        // search and ⋮ glyphs — `ic_call_outline` fills its
+                        // 19x19 viewBox almost edge to edge, so at the same
+                        // icon size it renders taller. 22dp brings it to
+                        // ~50px, matching the other two. The 36dp touch box
+                        // is unchanged.
+                        modifier = Modifier.size(22.dp),
                     )
                 }
             }
@@ -2968,6 +2997,14 @@ private const val BURST_GAP_MS: Long = 60_000L
 private const val THREAD_SEARCH_FOCUS_RETRY_MS: Long = 100L
 
 /**
+ * Feedback round 8 — idle delay before the floating sticky date pill slides
+ * away after scrolling stops: the pill floats only while the list is
+ * scrolling, then hides a split second after the last scroll movement, so
+ * it never sits on the thread while the user is reading.
+ */
+private const val STICKY_DATE_HIDE_DELAY_MS: Long = 1_000L
+
+/**
  * Feedback round 5 — auto-load older messages when the first visible message
  * is within this many items of the top of the loaded window. 5 gives a
  * 200 ms Room load time to land before the user reaches the top, without
@@ -3067,6 +3104,30 @@ private fun DateSeparator(label: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DatePill(label = label)
+    }
+}
+
+/**
+ * Feedback round 8 — the floating sticky date pill, extracted so
+ * [AnimatedVisibility] resolves to its plain overload: called inline from
+ * the thread's `Column` it would resolve to the `ColumnScope` overload
+ * (which cannot run inside the overlay `Box`) and fail to compile. The
+ * pill slides in from the top while scrolling and slides back up out of
+ * view shortly after scrolling stops (see [showStickyDate]).
+ */
+@Composable
+private fun StickyDatePill(
+    label: String?,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+        modifier = modifier,
+    ) {
+        label?.let { DatePill(label = it) }
     }
 }
 

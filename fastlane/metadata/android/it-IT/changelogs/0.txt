@@ -1,0 +1,1 @@
+Relay 1.0.0 — la prima versione con il nome proprio di Relay. Novità: fissare un messaggio in una conversazione e tornarci dal banner, reazioni emoji sulle bolle, copiare i codici di accesso con un tocco e cercare dentro una conversazione. Basato su SMS Tech, con l'interfaccia propria di Relay.

@@ -1,3 +1,42 @@
+# Proprietary Components & Copyright Notice
+
+Copyright © 2026 Relay. All rights reserved.
+
+## 1. Original Work
+
+The following components are original works developed for Relay and are proprietary:
+
+- User interface (UI) design and implementation.
+- User experience (UX) design and interaction patterns as expressed in original creative implementations.
+- Original layouts, visual styling, and design systems.
+- Original icons, illustrations, graphics, and visual assets.
+- Branding, logos, product identity, and associated artwork.
+- Original documentation, where applicable.
+
+These components are not released under the Apache License 2.0 or any other open-source license unless explicitly stated otherwise.
+
+No permission is granted to copy, reproduce, distribute, modify, or incorporate these proprietary components into other products without prior written permission from the respective copyright holder, except where permitted by applicable law.
+
+## 2. Third-Party Software
+
+This project incorporates and modifies portions of SMS Tech, originally developed by Patrice Haltaya.
+
+The applicable upstream source code remains subject to the Apache License, Version 2.0.
+
+All applicable upstream copyright notices, license terms, and attribution requirements are retained.
+
+See `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+
+## 3. Separate Licensing
+
+The presence of the Apache License 2.0 in this repository does not grant permission to use separately identified proprietary components.
+
+Each component is governed by its applicable license or copyright notice.
+
+For licensing inquiries or commercial permissions concerning proprietary Relay components, contact the copyright holder.
+
+---
+
 # Third-party notices — SMS Relay
 
 SMS Relay (`com.filestech.sms`) is licensed under the Apache License 2.0 ([LICENSE](LICENSE)). It

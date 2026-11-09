@@ -1,11 +1,14 @@
 <!-- Relay — three-dot overflow glyph, drawn TALLER than Material's MoreVert.
      Material MoreVert (viewport 24x24) draws three r=2 dots at cy 6/12/18, so the
      drawn glyph is only 16dp tall at a 24dp icon size — visibly shorter than
-     ic_search (~19.4dp) and ic_call_outline (~20dp) at the same size, even
-     though the icon boxes all match (feedback round 7). These dots sit at
-     cy 4.5/12/19.5 with r=2.2, so the glyph spans 2.3–21.7 = 19.4dp, the same
-     drawn height as the search magnifier. Black fill like ic_search; the
-     Icon() call site tints it from the theme. -->
+     ic_search (~19.4dp) at the same size, even though the icon boxes all
+     match (feedback round 7). These dots sit at cy 4.5/12/19.5 with r=2.2,
+     so the glyph spans 2.3–21.7 = 19.4dp, the same drawn height as the
+     search magnifier. Feedback round 8 — the call glyph is the outlier the
+     other way: `ic_call_outline` fills its 19x19 viewBox edge to edge, so
+     at 24dp it drew ~22dp tall; the call icon is now 22dp, drawing ~20dp
+     to match. Black fill like ic_search; the Icon() call site tints it
+     from the theme. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"

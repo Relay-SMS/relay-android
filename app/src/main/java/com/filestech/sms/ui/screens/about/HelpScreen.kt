@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
+import com.filestech.sms.ui.components.RelaySection
 import com.filestech.sms.ui.theme.RelayColors
 
 /**
@@ -71,13 +72,17 @@ fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
             )
         },
     ) { padding ->
+        // Feedback round 8 — the recipes now use the Settings grouped-list
+        // style: each title is a section header and the steps sit in a
+        // rounded card (see [HelpRecipeSection]). The section owns its own
+        // side margins and the gap above its header, so the outer column
+        // only keeps a bottom breathing room.
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+                .padding(bottom = 24.dp),
         ) {
             helpRecipes(isPanicDecoy).forEach { recipe ->
                 HelpRecipeSection(title = recipe.title, steps = recipe.steps)
@@ -86,16 +91,18 @@ fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
     }
 }
 
-/** One recipe: a `titleMedium` heading, then its numbered steps. */
+/**
+ * One recipe: the title as a Settings-style section header (`titleMedium`,
+ * on-surface, same spacing as the Settings cards) and the numbered steps
+ * in the section's rounded card.
+ */
 @Composable
 private fun HelpRecipeSection(title: String, steps: List<String>) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    RelaySection(title = title, materialHeader = true) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             steps.forEachIndexed { i, step ->
                 Row(
                     verticalAlignment = Alignment.Top,

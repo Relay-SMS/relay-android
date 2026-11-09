@@ -1,14 +1,14 @@
-# SMS Relay
+# Relay
 
 English · 🇫🇷 [Version française](README.fr.md)
 
 A modern, private SMS & MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
 No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licensed.
 
-> **Fork note:** SMS Relay is a fork of [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine and adds device pairing and a synchronization service for desktop. Relay's UI and new features are © 2026 Relay Messaging.
+> **Fork note:** Relay is based on [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine; Relay's UI and new features are © 2026 Relay Messaging.
 
-Source: [github.com/realquink/relay](https://github.com/realquink/relay) ·
-Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
+Source: [github.com/relay-sms/relay-android](https://github.com/relay-sms/relay-android) ·
+Releases: [GitHub Releases](https://github.com/relay-sms/relay-android/releases/latest)
 
 ## ✨ Features
 
@@ -48,11 +48,11 @@ Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
 ## 🔐 Privacy
 
 We collect **nothing**. No analytics, no crash reporting, no remote logging.
-SMS Relay makes no network call: it does not hold the `INTERNET` permission, so its process cannot
+Relay makes no network call: it does not hold the `INTERNET` permission, so its process cannot
 open a connection. MMS are carried by Android's own MMS service, which talks to your carrier's MMSC.
 
 SMS is **not** end-to-end encrypted at the protocol level — this is a limitation of the carrier
-network, not a choice. SMS Relay protects what's stored on your device, with SQLCipher + the
+network, not a choice. Relay protects what's stored on your device, with SQLCipher + the
 AndroidKeyStore. For true end-to-end encryption, use Matrix.
 
 See the [privacy policy](PRIVACY.md), the [terms of use](TERMS.md) and
@@ -88,4 +88,4 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture and the end-to-end f
 
 Apache License 2.0 — see [LICENSE](LICENSE). Third-party libraries and their licences:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-© 2026 Patrice Haltaya.
+© 2026 Relay Messaging. Based on SMS Tech by Patrice Haltaya.

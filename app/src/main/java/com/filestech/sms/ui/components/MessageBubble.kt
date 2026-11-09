@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -326,7 +327,10 @@ fun MessageBubble(
                         if (otpCode != null) {
                             OtpCodePill(
                                 code = otpCode,
-                                modifier = Modifier.padding(top = 8.dp).align(Alignment.Start),
+                                // Feedback round 8 — 12dp above the pill
+                                // (was 8dp): breathing room between the text
+                                // and the pill, as in Kristin's screenshot.
+                                modifier = Modifier.padding(top = 12.dp).align(Alignment.Start),
                             )
                         }
                         // Relay — heure (+ statut sortant) en petit, en bas à droite,
@@ -394,6 +398,14 @@ fun MessageBubble(
  * right-aligned like every other text bubble. Padding grows to 15dp
  * horizontal / 9dp vertical.
  *
+ * Feedback round 8 — fully rounded: the pill is a true capsule
+ * ([CircleShape], radius = half the height) instead of a fixed 16dp
+ * corner. The fixed radius stopped reading as "max rounded" once the
+ * round-7 padding made the pill taller, so the corners looked squarer
+ * than the height. The gap above the pill grows to 12dp (see the call
+ * site) for breathing room between the text and the pill, as in
+ * Kristin's thread screenshot (02___Thread_authentication_code).
+ *
  * The pill copies by itself — no callback parameter, the bubble is already at
  * the parameter limit: the code goes to the clipboard marked sensitive (no
  * system preview of it, cf. [copyToClipboardSensitive]), with a haptic tick
@@ -413,8 +425,8 @@ private fun OtpCodePill(
     val copyCodeLabel = stringResource(R.string.otp_copy_code)
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, cs.onSurface.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+            .clip(CircleShape)
+            .border(1.dp, cs.onSurface.copy(alpha = 0.6f), CircleShape)
             .clickable(
                 onClick = {
                     context.copyToClipboardSensitive(

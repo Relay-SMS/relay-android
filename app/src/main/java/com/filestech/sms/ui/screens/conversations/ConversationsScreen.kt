@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -123,7 +124,9 @@ fun ConversationsScreen(
     onOpenVault: () -> Unit,
     onOpenArchived: () -> Unit,
     onOpenBlocked: () -> Unit,
-    onOpenAbout: () -> Unit = {},
+    // Feedback round 8 — Scheduled messages moved here from Settings: it
+    // lives in the 3-dot menu under "New group".
+    onOpenScheduledMessages: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     viewModel: ConversationsViewModel = hiltViewModel(),
 ) {
@@ -476,6 +479,13 @@ fun ConversationsScreen(
                                     text = { Text(stringResource(R.string.action_new_group)) },
                                     onClick = { overflowOpen = false; onComposeGroup() },
                                 )
+                                // Feedback round 8 — Scheduled messages moved here from
+                                // Settings: it lives in this menu, under "New group".
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+                                    text = { Text(stringResource(R.string.settings_scheduled_messages)) },
+                                    onClick = { overflowOpen = false; onOpenScheduledMessages() },
+                                )
                                 // Archived chats and the vault used to live as icons on the top bar;
                                 // they now live here, so the bar stays a title plus the overflow.
                                 // Same destinations, same behaviour — just reached from the menu.
@@ -505,11 +515,6 @@ fun ConversationsScreen(
                                     leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                                     text = { Text(stringResource(R.string.settings_title)) },
                                     onClick = { overflowOpen = false; onOpenSettings() },
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
-                                    text = { Text(stringResource(R.string.about_title)) },
-                                    onClick = { overflowOpen = false; onOpenAbout() },
                                 )
                                 // Sort section. Header is a non-interactive label rendered with
                                 // `enabled = false` so the user can read it without it looking like

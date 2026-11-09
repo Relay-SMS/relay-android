@@ -386,6 +386,7 @@
     <string name="settings_app_subtitle">Relay – SMS &amp; MMS Messenger</string>
 
     <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_general">General</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
@@ -452,7 +453,8 @@
     <string name="settings_resync_title">Resync from phone</string>
     <string name="settings_resync_desc">Re-imports all SMS from the Android system. Useful when messages present on the phone are missing from the app. It does not bring back what you deleted: deleting also removes the phone\'s copy. No duplicates.</string>
     <string name="settings_resync_started">Resync started in background.</string>
-    <string name="settings_send_reactions_title">Send my reactions to recipient</string>
+    <string name="settings_send_reactions_title">Send my reactions</string>
+    <string name="settings_row_info">More info</string>
     <string name="settings_send_reactions_desc">When you post an emoji reaction (heart, thumbs-up…), a SMS containing only the emoji is sent to the recipient. Counts as a normal SMS at your plan\'s rate. Changing a reaction sends a new SMS with the new emoji; removing one sends a removal SMS.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options at a glance.
          Title kept (was already pointing to "reaction format"). Desc legacy kept for downgrade. -->
@@ -753,6 +755,8 @@
     <string name="about_report_issue">Report an issue</string>
     <string name="about_website">Website</string>
     <string name="about_license">License</string>
+    <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
+    <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
     <string name="about_privacy">Privacy policy</string>
     <string name="about_terms">Terms of use</string>
     <string name="about_support">Support the project</string>

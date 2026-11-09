@@ -1,0 +1,1 @@
+Relay 1.0.0 — the first release under Relay's own name. New: pin a message in a thread and jump back to it from the banner, emoji reactions on message bubbles, one-tap copy for login codes, and search inside a thread. Based on SMS Tech, with Relay's own interface.

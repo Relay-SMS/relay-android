@@ -231,6 +231,14 @@ fun SafetyCallSetupScreen(
                 .padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // Feedback round 8 — the Settings row shows only the state now;
+            // the long description lives here, at the top of the setup screen.
+            Text(
+                text = stringResource(R.string.settings_safety_call_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
             // v1.28.12 — AVANT tout le reste : sans le rôle d'application SMS par défaut, rien
             // ne partira à l'échéance. L'écran l'ignorait entièrement, et l'utilisateur pouvait
             // armer une protection inerte en croyant être couvert.

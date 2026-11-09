@@ -205,6 +205,14 @@ fun EmergencySetupScreen(
                 .padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // Feedback round 8 — the Settings row shows only the state now;
+            // the long description lives here, at the top of the setup screen.
+            Text(
+                text = stringResource(R.string.settings_emergency_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
             // v1.28.12 — AVANT tout le reste : sans le role d'application SMS par defaut, le
             // bouton d'urgence n'enverra rien. Cet ecran l'ignorait entierement.
             BanniereRoleSmsManquant(

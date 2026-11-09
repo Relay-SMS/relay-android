@@ -216,10 +216,11 @@ fun AdvancedScreen(
                 // v1.3.0 — re-sync complète depuis le content provider Android. Utile pour
                 // récupérer un historique purgé par erreur (le system provider conserve les SMS
                 // indépendamment de l'app). Le re-import dedup via l'index UNIQUE telephony_uri.
+                // Feedback round 8 — the row lost its subtitle: the confirm
+                // dialog already explains the resync.
                 NavigationRow(
                     title = stringResource(R.string.settings_resync_title),
                     leadingIcon = Icons.Outlined.Sync,
-                    description = stringResource(R.string.settings_resync_desc),
                     // v1.8.0 — dialog de confirmation (peut faire ré-apparaître
                     // des conversations précédemment supprimées si toujours
                     // présentes dans le content provider système).
@@ -235,10 +236,12 @@ fun AdvancedScreen(
                 // **v1.4.1** : retrait du dialog onboarding qui auto-proposait l'activation
                 // sur Xiaomi/Redmi — trop pushy, des users tapaient "Activer" sans
                 // comprendre la notif persistante.
+                // Feedback round 8 — the long ROM list lives in the info popup
+                // now (chevron before the switch); the row stays one-line.
                 ToggleRow(
                     title = stringResource(R.string.settings_keep_alive_title),
                     leadingIcon = Icons.Outlined.Bolt,
-                    description = stringResource(R.string.settings_keep_alive_desc),
+                    infoText = stringResource(R.string.settings_keep_alive_desc),
                     value = state.advanced.keepAliveService,
                     dividerAbove = true,
                     onChange = { v ->

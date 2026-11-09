@@ -84,7 +84,13 @@ import com.filestech.sms.ui.theme.RelayText
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    isPanicDecoy: Boolean,
+    // Feedback round 8 — the License link opens the License screen (the
+    // copyright notice), instead of the Apache license in the browser.
+    onOpenLicense: () -> Unit,
+) {
     val context = LocalContext.current
     var tapCount by remember { mutableStateOf(0) }
 
@@ -150,8 +156,10 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
             }
 
             RelaySection(title = stringResource(R.string.about_section_features)) {
-                features(isPanicDecoy).forEach { f ->
-                    FeatureRow(icon = f.icon, label = f.label, desc = f.desc)
+                // Feedback round 8 — every row but the first draws the
+                // divider above it, like the Settings cards (see [RelayRow]).
+                features(isPanicDecoy).forEachIndexed { index, f ->
+                    FeatureRow(icon = f.icon, label = f.label, desc = f.desc, dividerAbove = index > 0)
                 }
             }
 
@@ -184,8 +192,10 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
             }
 
             RelaySection(title = stringResource(R.string.about_permissions_title)) {
-                permissions(isPanicDecoy).forEach { p ->
-                    RelayRow(title = p.name, subtitle = p.why)
+                // Feedback round 8 — every row but the first draws the
+                // divider above it, like the Settings cards (see [RelayRow]).
+                permissions(isPanicDecoy).forEachIndexed { index, p ->
+                    RelayRow(title = p.name, subtitle = p.why, dividerAbove = index > 0)
                 }
             }
 
@@ -195,6 +205,9 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                     label = stringResource(R.string.about_source_code),
                     onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) },
                 )
+                // Feedback round 8 — every row but the first draws the
+                // divider above it, like the Settings cards. Source code is
+                // always the first row of this card, so it stays without one.
                 LinkItem(
                     icon = Icons.Outlined.BugReport,
                     label = stringResource(R.string.about_report_issue),
@@ -208,18 +221,24 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                             )
                         )
                     },
+                    dividerAbove = true,
                 )
                 LinkItem(
                     icon = Icons.Outlined.Language,
                     label = stringResource(R.string.about_website),
                     supporting = WEBSITE_URL,
                     onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL))) },
+                    dividerAbove = true,
                 )
+                // Feedback round 8 — the License link opens the License
+                // screen (Relay's copyright notice + the SMS Tech
+                // attribution) instead of the Apache license in the browser,
+                // and it carries no subtext now.
                 LinkItem(
                     icon = Icons.Outlined.Gavel,
                     label = stringResource(R.string.about_license),
-                    supporting = "Apache License 2.0",
-                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(LICENSE_URL))) },
+                    onClick = onOpenLicense,
+                    dividerAbove = true,
                 )
                 // v1.28.13 — la politique et les conditions existent dans les cinq langues de
                 // l'application : le lien ouvre celle de la langue AFFICHÉE, l'anglais à défaut.
@@ -232,11 +251,13 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                         icon = Icons.Outlined.PrivacyTip,
                         label = stringResource(R.string.about_privacy),
                         onClick = { ouvrirTexteJuridique(context, "PRIVACY", langue) },
+                        dividerAbove = true,
                     )
                     LinkItem(
                         icon = Icons.Outlined.Description,
                         label = stringResource(R.string.about_terms),
                         onClick = { ouvrirTexteJuridique(context, "TERMS", langue) },
+                        dividerAbove = true,
                     )
                 }
                 // 2026-10-29 — soutenir le projet : la page de dons du site, ouverte dans le navigateur
@@ -247,6 +268,7 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                     label = stringResource(R.string.about_support),
                     supporting = stringResource(R.string.about_support_desc),
                     onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, urlPageDeDons(langue).toUri())) },
+                    dividerAbove = true,
                 )
             }
 
@@ -260,31 +282,12 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
             )
-            // Feedback round 5 — the Relay UI copyright notice: the UI revamp
-            // and all new code are Kristin's own work. It sits on its own
-            // line between the "based on" credit above and the Apache
-            // License line below, so both notices read clearly. It claims
-            // the Relay UI / modifications only — never the SMS Tech base.
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = stringResource(R.string.about_ui_copyright),
-                style = RelayText.Timestamp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            )
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = stringResource(R.string.about_legal_body, "2026", AUTHOR_NAME),
-                style = RelayText.Timestamp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            )
+            // Feedback round 8 — the copyright lines are gone from here:
+            // "Relay UI © 2026 Relay Messaging" and "© 2026 Patrice
+            // Haltaya. Released under the Apache License 2.0." now live in
+            // the License screen (reached from the License link above). The
+            // "Based on SMS Tech" credit stays: it is the visible in-app
+            // Apache attribution.
         }
     }
 }
@@ -374,7 +377,7 @@ private fun HeaderBlock(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun FeatureRow(icon: ImageVector, label: String, desc: String?) {
+private fun FeatureRow(icon: ImageVector, label: String, desc: String?, dividerAbove: Boolean = false) {
     RelayRow(
         title = label,
         subtitle = desc,
@@ -383,6 +386,9 @@ private fun FeatureRow(icon: ImageVector, label: String, desc: String?) {
         // the whole row, like the main Settings screen (see [RelayRow]):
         // the icons were still vertically centred.
         leadingIconTopAligned = true,
+        // Feedback round 8 — the divider above every row but the first of
+        // the card (see [RelayRow]).
+        dividerAbove = dividerAbove,
         leadingIcon = {
             Icon(
                 imageVector = icon,
@@ -404,6 +410,7 @@ private fun LinkItem(
     label: String,
     onClick: () -> Unit,
     supporting: String? = null,
+    dividerAbove: Boolean = false,
 ) {
     RelayRow(
         title = label,
@@ -413,6 +420,9 @@ private fun LinkItem(
         // Feedback round 6 — top-aligned like the main Settings screen
         // (see [RelayRow]): the icons were still vertically centred.
         leadingIconTopAligned = true,
+        // Feedback round 8 — the divider above every row but the first of
+        // the card (see [RelayRow]).
+        dividerAbove = dividerAbove,
         leadingIcon = {
             Icon(
                 imageVector = icon,
@@ -457,7 +467,6 @@ private const val RELEASES_URL = "https://github.com/realquink/relay/releases/la
 
 // SMS Relay has no standalone website yet; the repo is the project page for now.
 private const val WEBSITE_URL = "https://github.com/realquink/relay"
-private const val LICENSE_URL = "https://www.apache.org/licenses/LICENSE-2.0"
 private const val LEGAL_BASE_URL = "https://github.com/realquink/relay/blob/main/"
 
 /** Langues dans lesquelles PRIVACY et TERMS ont une traduction ; l'anglais est `PRIVACY.md`. */

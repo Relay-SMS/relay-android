@@ -35,6 +35,7 @@ import com.filestech.sms.ui.navigation.Conversations
 import com.filestech.sms.ui.navigation.Emergency
 import com.filestech.sms.ui.navigation.EmergencySetup
 import com.filestech.sms.ui.navigation.Help
+import com.filestech.sms.ui.navigation.License
 import com.filestech.sms.ui.navigation.Lock
 import com.filestech.sms.ui.navigation.MediaGallery
 import com.filestech.sms.ui.navigation.Migration
@@ -359,13 +360,17 @@ fun AppRoot() {
             // in from the left, mirroring the thread's slide out to the right
             // (same 300 ms easing). The `initialState` here is the entry being
             // popped, so the slide applies only to returns from a Thread;
-            // returns from Settings, the vault, Compose and the rest keep the
+            // returns from the vault, Compose and the rest keep the
             // NavHost-level 80 ms fade. Both the toolbar back arrow and the
             // system back gesture/button pop through the NavController, so both
             // take this same pop pair (no BackHandler in the thread screen
             // intercepts back first).
+            // Feedback round 8 — same mirror for Settings, which now slides
+            // in from the right like the thread: popping back from Settings
+            // slides the list back in from the left, so the return reads as
+            // the reverse of the open instead of a fade under a slide.
             popEnterTransition = {
-                if (initialState.destination.route?.contains("Thread") == true) {
+                if (isSlideReturnRoute(initialState.destination.route)) {
                     glissementRetourEntrant
                 } else {
                     fonduEntrant
@@ -390,7 +395,9 @@ fun AppRoot() {
                 onOpenVault = { nav.navigate(Vault) },
                 onOpenArchived = { nav.navigate(Conversations(archived = true)) },
                 onOpenBlocked = { nav.navigate(Blocked) },
-                onOpenAbout = { nav.navigate(About) },
+                // Feedback round 8 — Scheduled messages moved here from
+                // Settings: it lives in the main menu under "New group".
+                onOpenScheduledMessages = { nav.navigate(ScheduledMessages) },
                 onBack = if (args.archived) ({ nav.popBackStack() }) else null,
             )
         }
@@ -407,7 +414,13 @@ fun AppRoot() {
             )
         }
         composable<Blocked> { BlockedNumbersScreen(onBack = { nav.popBackStack() }) }
-        composable<Settings> {
+        // Feedback round 8 — Settings slides in from the right like the
+        // thread (300 ms horizontal slide, see `glissementEntrant` above),
+        // instead of the NavHost-level 80 ms fade that read as a snap.
+        composable<Settings>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
             SettingsScreen(
                 onBack = { nav.popBackStack() },
                 onOpenAbout = { nav.navigate(About) },
@@ -423,8 +436,6 @@ fun AppRoot() {
                 onOpenSafetyCall = { nav.navigate(SafetyCallSetup) },
                 onOpenEmergency = { nav.navigate(Emergency) },
                 onOpenEmergencySetup = { nav.navigate(EmergencySetup) },
-                // v1.15.1 — accès à la nouvelle screen Messages programmés.
-                onOpenScheduledMessages = { nav.navigate(ScheduledMessages) },
             )
         }
         // v1.15.1 — Liste + annulation des messages programmés.
@@ -470,8 +481,28 @@ fun AppRoot() {
         // un défaut `false` serait un repli permissif (l'écran nommerait le coffre et le mode
         // panique tant que l'état n'est pas transmis). Le compilateur exige donc que tout futur
         // point d'entrée tranche explicitement.
-        composable<About> {
-            AboutScreen(onBack = { nav.popBackStack() }, isPanicDecoy = isPanicDecoy)
+        // Feedback round 8 — About slides like the other screens (Help,
+        // Advanced, Settings, thread): it used to snap in/out on the
+        // NavHost default fade.
+        composable<About>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            AboutScreen(
+                onBack = { nav.popBackStack() },
+                isPanicDecoy = isPanicDecoy,
+                onOpenLicense = { nav.navigate(License) },
+            )
+        }
+        // Feedback round 8 — License / copyright notice screen, reached
+        // from the License link on About. Same slide as Help and About.
+        composable<License>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            com.filestech.sms.ui.screens.about.LicenseScreen(
+                onBack = { nav.popBackStack() },
+            )
         }
         // Feedback round 5 — Help screen: same slide-in transition as the
         // thread (300 ms horizontal slide, see `glissementEntrant` above),
@@ -703,3 +734,14 @@ private const val NAV_TRANSITION_MS = 80
  * ignored for up to ~300 ms. Re-check the immediate swipe after back on a real device.
  */
 private const val THREAD_TRANSITION_MS = 300
+
+/**
+ * Feedback round 8 — destinations whose return to the conversation list
+ * mirrors their slide-out (the list slides back in from the left): the
+ * thread and Settings, which both slide in from the right on open. Kept as
+ * a top-level helper (not inline in [AppRoot]) so the `||` does not push
+ * `AppRoot` over the Detekt cyclomatic-complexity threshold.
+ */
+private fun isSlideReturnRoute(route: String?): Boolean {
+    return route?.contains("Thread") == true || route?.contains("Settings") == true
+}
