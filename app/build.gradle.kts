@@ -137,6 +137,14 @@ android {
             }
         }
         release {
+            // Test-only (round 6 A/B): the release APK must install ALONGSIDE the
+            // debug build AND the upstream SMS Tech app (same base package
+            // com.filestech.sms, installed from F-Droid) — without a suffix the
+            // installer sees it as an "update" to that app and offers
+            // "Update anyway". The suffix makes it its own app
+            // (com.filestech.sms.relay) for the performance comparison.
+            // The real release package id is decided later, at distribution time.
+            applicationIdSuffix = ".relay"
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
