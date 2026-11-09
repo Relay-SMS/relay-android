@@ -145,7 +145,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            if (keystoreProps.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
+            if (keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (rootProject.file("relay-debug.keystore").exists()) {
+                // Test-only fallback (round 6): sign the release build with
+                // the committed debug key so CI can produce an installable
+                // release APK for a performance A/B against the debug build.
+                // The real release key still stays out of the repo
+                // (keystore.properties) — this is only for comparing
+                // scrolling smoothness, not for distribution.
+                signingConfig = signingConfigs.getByName("relayDebug")
+            }
 
             // AGP 8.3+ ecrit META-INF/version-control-info.textproto dans l'APK de release :
             // le SHA du commit construit. Deux defauts, tous deux mesures sur Agenda Tech :
