@@ -3,6 +3,7 @@ package com.filestech.sms.ui.components
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
@@ -89,6 +89,14 @@ fun AttachmentPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
+                // Round 4 — restore the breathing room above the title that the
+                // pre-refresh sheet had. Before the refresh this sheet was a bare
+                // ModalBottomSheet whose DEFAULT drag handle carries 22dp of
+                // vertical padding (material3 1.4.0, `DragHandleVerticalPadding`,
+                // verified in the library jar — same BOM then as now, 2026.09.00).
+                // The refresh switched to RelaySheet, whose handle is a bare 4dp
+                // pill with no padding, so the title ended up flush against it.
+                .padding(top = 22.dp)
                 .padding(bottom = 24.dp)
                 .navigationBarsPadding(),
         ) {

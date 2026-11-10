@@ -104,6 +104,20 @@ android {
                 keyPassword = keystoreProps.getProperty("keyPassword")
             }
         }
+        // Debug builds used to be signed with the throwaway key Gradle
+        // generates in ~/.android/debug.keystore — a fresh one on every CI
+        // runner, so no two builds shared a signature and Android refused
+        // to install a new build over the old one (uninstall = lost
+        // settings). One committed debug keystore fixes that: every debug
+        // build carries the same signature and installs as an upgrade.
+        // DEBUG key only — the release keystore stays out of the repo,
+        // behind keystore.properties.
+        create("relayDebug") {
+            storeFile = rootProject.file("relay-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -116,8 +130,21 @@ android {
             isMinifyEnabled = false
             isDebuggable = true
             buildConfigField("boolean", "LOG_ENABLED", "true")
+            // Use the committed debug keystore when it is present; without
+            // it, keep Gradle's generated key so the build still works.
+            if (rootProject.file("relay-debug.keystore").exists()) {
+                signingConfig = signingConfigs.getByName("relayDebug")
+            }
         }
         release {
+            // Test-only (round 6 A/B): the release APK must install ALONGSIDE the
+            // debug build AND the upstream SMS Tech app (same base package
+            // com.filestech.sms, installed from F-Droid) — without a suffix the
+            // installer sees it as an "update" to that app and offers
+            // "Update anyway". The suffix makes it its own app
+            // (com.filestech.sms.relay) for the performance comparison.
+            // The real release package id is decided later, at distribution time.
+            applicationIdSuffix = ".relay"
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
@@ -126,7 +153,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            if (keystoreProps.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
+            if (keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (rootProject.file("relay-debug.keystore").exists()) {
+                // Test-only fallback (round 6): sign the release build with
+                // the committed debug key so CI can produce an installable
+                // release APK for a performance A/B against the debug build.
+                // The real release key still stays out of the repo
+                // (keystore.properties) — this is only for comparing
+                // scrolling smoothness, not for distribution.
+                signingConfig = signingConfigs.getByName("relayDebug")
+            }
 
             // AGP 8.3+ ecrit META-INF/version-control-info.textproto dans l'APK de release :
             // le SHA du commit construit. Deux defauts, tous deux mesures sur Agenda Tech :

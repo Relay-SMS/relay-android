@@ -33,7 +33,7 @@ class NotificationChannelInitializer @Inject constructor(
         // Routage côté [IncomingMessageNotifier.notifyIncoming] selon
         // `settings.notifications.style`. Le canal reste séparé pour que
         // l'utilisateur puisse régler indépendamment ses préférences son /
-        // vibration depuis le système (Paramètres → Apps → SMS Tech →
+        // vibration depuis le système (Paramètres → Apps → Relay →
         // Notifications → "Messages entrants" vs "Messages entrants silencieux").
         val incomingSilent = NotificationChannel(
             CHANNEL_INCOMING_SILENT,

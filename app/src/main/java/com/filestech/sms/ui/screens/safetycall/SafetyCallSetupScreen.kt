@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -232,6 +231,14 @@ fun SafetyCallSetupScreen(
                 .padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // Feedback round 8 — the Settings row shows only the state now;
+            // the long description lives here, at the top of the setup screen.
+            Text(
+                text = stringResource(R.string.settings_safety_call_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
             // v1.28.12 — AVANT tout le reste : sans le rôle d'application SMS par défaut, rien
             // ne partira à l'échéance. L'écran l'ignorait entièrement, et l'utilisateur pouvait
             // armer une protection inerte en croyant être couvert.
@@ -489,17 +496,26 @@ private fun DurationSection(
                 RelayPickerOption(
                     label = stringResource(R.string.safety_call_setup_duration_24h),
                     selected = current == SafetyCallConfig.TIMEOUT_24H_MS,
-                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_24H_MS); pickerOpen = false },
+                    onClick = {
+                        onSelect(SafetyCallConfig.TIMEOUT_24H_MS)
+                        pickerOpen = false
+                    },
                 ),
                 RelayPickerOption(
                     label = stringResource(R.string.safety_call_setup_duration_48h),
                     selected = current == SafetyCallConfig.TIMEOUT_48H_MS,
-                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_48H_MS); pickerOpen = false },
+                    onClick = {
+                        onSelect(SafetyCallConfig.TIMEOUT_48H_MS)
+                        pickerOpen = false
+                    },
                 ),
                 RelayPickerOption(
                     label = stringResource(R.string.safety_call_setup_duration_72h),
                     selected = current == SafetyCallConfig.TIMEOUT_72H_MS,
-                    onClick = { onSelect(SafetyCallConfig.TIMEOUT_72H_MS); pickerOpen = false },
+                    onClick = {
+                        onSelect(SafetyCallConfig.TIMEOUT_72H_MS)
+                        pickerOpen = false
+                    },
                 ),
                 RelayPickerOption(
                     label = if (isStandard) {
@@ -508,7 +524,10 @@ private fun DurationSection(
                         durationLabelText(current)
                     },
                     selected = !isStandard,
-                    onClick = { pickerOpen = false; onOpenCustom() },
+                    onClick = {
+                        pickerOpen = false
+                        onOpenCustom()
+                    },
                 ),
             ),
             onDismiss = { pickerOpen = false },
@@ -664,7 +683,7 @@ private fun TemplateOption(label: String, selected: Boolean, onClick: () -> Unit
  *
  * Rien dans l'application n'expliquait que le minuteur repart de zéro à chaque ouverture. Patrice
  * l'a découvert en testant : deux de ses essais du 2026-08-05 se sont arrêtés d'eux-mêmes parce qu'il
- * avait rouvert SMS Tech entre-temps, et il a d'abord cru à un défaut.
+ * avait rouvert Relay entre-temps, et il a d'abord cru à un défaut.
  *
  * # Le texte est exact, et sa précision n'est pas cosmétique
  *

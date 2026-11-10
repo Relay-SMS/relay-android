@@ -14,7 +14,7 @@ package com.filestech.sms.data.sms
  *
  *  1. **la suppression systeme echouait.** Le fournisseur REFUSE la forme avec dossier —
  *     `IllegalArgumentException: Unknown URL` — et l'exception etait absorbee. Les messages que
- *     SMS Tech avait lui-meme ecrits ne quittaient jamais `content://sms` ;
+ *     Relay avait lui-meme ecrits ne quittaient jamais `content://sms` ;
  *  2. **la deduplication ne dedoublonnait pas.** L'import construit la forme canonique
  *     (`TelephonyReader`), l'application enregistrait la forme avec dossier, et l'index
  *     `UNIQUE(telephony_uri)` compare des CHAINES : deux ecritures designant la meme ligne du

@@ -6,6 +6,7 @@ import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.MessageSearchHit
 import com.filestech.sms.domain.model.MessageWindow
+import com.filestech.sms.domain.model.MessageWindowSpec
 import com.filestech.sms.domain.model.PhoneAddress
 import kotlinx.coroutines.flow.Flow
 
@@ -33,9 +34,25 @@ interface ConversationRepository {
      * A bounded, growable view of the thread: the most recent messages first paint, older ones on
      * demand.
      *
-     * @param limit emits the current window size; raising it widens the window in place.
+     * @param window emits the current window spec; a new spec re-runs the query in place.
      */
-    fun observeMessagesWindow(conversationId: Long, limit: Flow<Int>): Flow<MessageWindow>
+    fun observeMessagesWindow(
+        conversationId: Long,
+        window: Flow<MessageWindowSpec>,
+    ): Flow<MessageWindow>
+
+    /**
+     * Feedback round 5 — full-history thread search: ids of the messages in
+     * [conversationId] whose body contains [query] (literal, case-insensitive
+     * substring), oldest first, over the WHOLE thread — not just the loaded
+     * window. Empty when the query is blank; empty when the vault hides the
+     * conversation, under the same rule as [observeMessagesWindow]. The match
+     * count the thread shows is the size of this list.
+     *
+     * A `Flow`: Room re-emits on table invalidation, so the count stays fresh if
+     * a matching message arrives mid-search.
+     */
+    fun observeSearchInConversation(conversationId: Long, query: String): Flow<List<Long>>
 
     /**
      * Issue #59 — the photos and videos of a conversation, most recent first. Empty when the vault
@@ -49,6 +66,15 @@ interface ConversationRepository {
     suspend fun setPinned(id: Long, pinned: Boolean)
     suspend fun setArchived(id: Long, archived: Boolean)
     suspend fun setMuted(id: Long, muted: Boolean)
+
+    /**
+     * Feedback round 5 — épingle (ou retire) le message d'un fil. Un seul
+     * message épinglé par conversation : épingler un autre message remplace
+     * l'épingle courante. `messageId = null` (avec `pinnedAt = null`) retire
+     * l'épingle. `pinnedAt` est la date de l'épinglage (epoch ms), affichée
+     * par la bannière du fil.
+     */
+    suspend fun setPinnedMessage(id: Long, messageId: Long?, pinnedAt: Long?)
 
     /**
      * v1.28.3 (audit global, X-01) — lecture DIRECTE d'une conversation par son id, sans le

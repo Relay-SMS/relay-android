@@ -11,6 +11,19 @@ import kotlinx.serialization.Serializable
 @Serializable data object Backup : Route
 @Serializable data object Migration : Route
 @Serializable data object About : Route
+
+// Feedback round 5 — Help screen, reached from Settings (above About).
+@Serializable data object Help : Route
+
+// Feedback round 8 — License / copyright notice screen, reached from the
+// License link on About. Shows Relay's proprietary-components notice and
+// the upstream attribution (see THIRD_PARTY_NOTICES.md).
+@Serializable data object License : Route
+
+// Feedback round 6 — Advanced screen, reached from Settings (between App
+// Language and Help). Was the "Advanced" section of the Settings list.
+@Serializable data object Advanced : Route
+
 // v1.23.2 — route `Onboarding` retirée : injoignable depuis v1.2.0 (aucun
 // `navigate(Onboarding)`, pas de startDestination), l'accueil passe par Splash.
 // L'écran et ses 9 strings FR/EN sont récupérables via `git show 9b553d3`.

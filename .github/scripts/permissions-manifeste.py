@@ -96,6 +96,10 @@ AUTORISEES = {
     "android.permission.ACCESS_NETWORK_STATE",
     # Signature, generee par androidx.core pour ses recepteurs non exportes.
     "com.filestech.sms.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+    # Meme permission generee par androidx.core, sous l'identifiant du build
+    # release de test (applicationIdSuffix ".relay", round 6 A/B) : le nom de
+    # la permission derive de l'applicationId.
+    "com.filestech.sms.relay.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
 }
 
 NS_TOOLS = "http://schemas.android.com/tools"

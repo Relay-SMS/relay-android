@@ -46,7 +46,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * v1.3.7 — Splash de présentation joué **uniquement à la première ouverture** de
  * l'app après install (cf. [SplashViewModel.shouldShow]). 100% Compose natif, aucune
- * dépendance externe ajoutée — cohérent avec l'esprit léger / zéro-tracker de SMS Tech.
+ * dépendance externe ajoutée — cohérent avec l'esprit léger / zéro-tracker de Relay.
  *
  * **Animations** (durée totale ≈ [AUTO_DISMISS_MS] ms) :
  *   - **logo** : `scale 0.5 → 1.0` + `alpha 0 → 1` sur [LOGO_ANIM_MS] ms, ease-out cubic.
@@ -209,7 +209,7 @@ fun SplashScreen(
                 .fillMaxSize()
                 .padding(horizontal = 32.dp),
         ) {
-            // Relay logo: white radio-tower glyph (adaptive-icon foreground vector)
+            // Relay logo: white chat bubble (adaptive-icon foreground vector)
             // on a #1E4FD8 rounded tile. The old sms_tech_icon PNG is no longer used
             // here (Kristin, 2026-11-06 — the splash showed the old logo).
             androidx.compose.foundation.layout.Box(

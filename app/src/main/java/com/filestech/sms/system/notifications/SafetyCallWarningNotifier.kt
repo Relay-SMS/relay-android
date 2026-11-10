@@ -36,7 +36,7 @@ import javax.inject.Singleton
  * SMS) valide le token avant de reset le timer — protège contre une app
  * tierce qui forgerait un intent reset pour neutraliser le deadman.
  *
- * **Tap sur la notif** → ouvre SMS Tech (`MainActivity.ACTION_SAFETY_CALL_RESET`
+ * **Tap sur la notif** → ouvre Relay (`MainActivity.ACTION_SAFETY_CALL_RESET`
  * + extra token signé) qui reset le timer après validation.
  *
  * **Dismiss programmatique** : appelé par le worker quand l'user a reset le

@@ -294,7 +294,7 @@ class SettingsRepository(
             ),
             conversations = ConversationSettings(
                 sortMode = enumOr(p, K.sortMode, SortMode.DATE, SortMode::valueOf),
-                previewLines = p[K.previewLines] ?: 1,
+                previewLines = p[K.previewLines] ?: 2,
                 showAvatars = p[K.showAvatars] ?: true,
                 signature = p[K.signature],
             ),
@@ -307,7 +307,6 @@ class SettingsRepository(
                 userMsisdn = p[K.userMsisdn],
                 groupMms = p[K.groupMms] ?: true,
                 sendReactionsToRecipient = p[K.sendReactionsToRecipient] ?: true,
-                reactionConfirmDismissed = p[K.reactionConfirmDismissed] ?: false,
                 reactionEmojiOnly = p[K.reactionEmojiOnly] ?: false,
                 // v1.8.0 (bug 5 fix) — migration douce. Si la nouvelle clé existe,
                 // on l'utilise. Sinon (user qui upgrade depuis v1.7.x) :
@@ -350,7 +349,10 @@ class SettingsRepository(
             security = SecuritySettings(
                 lockMode = enumOr(p, K.lockMode, LockMode.OFF, LockMode::valueOf),
                 autoLockDelay = enumOr(p, K.autoLockDelay, AutoLockDelay.ONE_MINUTE, AutoLockDelay::valueOf),
-                flagSecure = p[K.flagSecure] ?: true,
+                // Feedback round 4 (2026-11-07) — FLAG_SECURE defaults to OFF at
+                // Kristin's request, so fresh installs can take screenshots out of
+                // the box. A stored value still wins over this fallback.
+                flagSecure = p[K.flagSecure] ?: false,
                 lockVaultOnLeave = p[K.lockVault] ?: true,
                 panicCodeEnabled = p[K.panicCode] ?: false,
                 autoDeleteOlderThanDays = p[K.autoDeleteDays],
@@ -431,6 +433,7 @@ class SettingsRepository(
                 unreadResetV180 = p[K.unreadResetV180] ?: false,
                 dedupSameNumberV1230 = p[K.dedupSameNumberV1230] ?: false,
                 attachmentsMovedToFilesDirV147 = p[K.attachmentsMovedToFilesDirV147] ?: false,
+                reactionReparseDone = p[K.reactionReparseDone] ?: false,
                 startupDbMigrationsDone = p[K.startupDbMigrationsDone] ?: false,
                 staleConversationPreviewsRepairedV1240 = p[K.staleConversationPreviewsRepairedV1240] ?: false,
                 reactionFormatMigreV12812 = p[K.reactionFormatMigreV12812] ?: false,
@@ -472,7 +475,6 @@ class SettingsRepository(
         s.sending.userMsisdn?.takeIf { it.isNotBlank() }?.let { this[K.userMsisdn] = it } ?: remove(K.userMsisdn)
         this[K.groupMms] = s.sending.groupMms
         this[K.sendReactionsToRecipient] = s.sending.sendReactionsToRecipient
-        this[K.reactionConfirmDismissed] = s.sending.reactionConfirmDismissed
         this[K.reactionEmojiOnly] = s.sending.reactionEmojiOnly
         // v1.8.0 (bug 5 fix) — persiste le nouveau format. La clé legacy
         // `reactionEmojiOnly` continue à être écrite au-dessus pour ne pas
@@ -555,6 +557,7 @@ class SettingsRepository(
         this[K.keepAliveService] = s.advanced.keepAliveService
         this[K.unreadResetV180] = s.advanced.unreadResetV180
         this[K.dedupSameNumberV1230] = s.advanced.dedupSameNumberV1230
+        this[K.reactionReparseDone] = s.advanced.reactionReparseDone
         this[K.attachmentsMovedToFilesDirV147] = s.advanced.attachmentsMovedToFilesDirV147
         this[K.startupDbMigrationsDone] = s.advanced.startupDbMigrationsDone
         this[K.staleConversationPreviewsRepairedV1240] = s.advanced.staleConversationPreviewsRepairedV1240
@@ -612,7 +615,6 @@ class SettingsRepository(
         val userMsisdn = stringPreferencesKey("send.userMsisdn")
         val groupMms = booleanPreferencesKey("send.groupMms")
         val sendReactionsToRecipient = booleanPreferencesKey("send.reactions.toRecipient")
-        val reactionConfirmDismissed = booleanPreferencesKey("send.reactions.confirmDismissed")
         val reactionEmojiOnly = booleanPreferencesKey("send.reactions.emojiOnly")
         // v1.8.0 (bug 5 fix) — nouveau format avec 3 valeurs (READABLE_FR / TAPBACK_EN
         // / EMOJI_ONLY). La clé `reactionEmojiOnly` ci-dessus reste écrite pour la
@@ -719,6 +721,12 @@ class SettingsRepository(
          * ecrite. Voir [com.filestech.sms.domain.settings.AdvancedSettings.mmsImportCompleted].
          */
         val mmsImportCompleted = booleanPreferencesKey("advanced.mmsImportCompleted")
+
+        /**
+         * Feedback round 7 — one-shot flag for the retroactive reaction reparse.
+         * See [com.filestech.sms.domain.settings.AdvancedSettings.reactionReparseDone].
+         */
+        val reactionReparseDone = booleanPreferencesKey("advanced.reactionReparseDone")
         val splashShown = booleanPreferencesKey("advanced.splashShown")
         val keepAliveService = booleanPreferencesKey("advanced.keepAliveService")
         // v1.8.0 — flag one-shot pour la migration de purge des badges hérités v1.7.1.

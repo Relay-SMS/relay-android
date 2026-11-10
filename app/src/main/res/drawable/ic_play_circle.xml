@@ -1,0 +1,21 @@
+<!-- Kristin's own icon (play-circle.svg): filled disc with a play-triangle hole.
+     The disc and the triangle wind in OPPOSITE directions (signed areas -1193.5 and
+     +111.3), so under the default non-zero fill rule the triangle renders as a hole
+     showing the bubble colour through — no split into two paths needed. The vector
+     keeps the source fill (#353535); the Icon() call site tints it white on outgoing
+     bubbles (white disc, blue triangle) and #353535 on incoming (dark disc, light
+     triangle).
+     Feedback round 7 — the disc now spans the full 48dp viewport (was 4.5–43.5,
+     a 39dp disc inside the 48dp box): the play state rendered visibly smaller
+     than the 48dp pause disc, so the button grew when playback started. The
+     path was rescaled about the centre (24,24) by 48/39; the triangle grew
+     with it (now ~18dp tall) and stays a hole. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FF353535"
+        android:pathData="M 24.0000 0.0000 C 10.7665 0.0000 0.0000 10.7665 0.0000 24.0000 C 0.0000 37.2335 10.7665 48.0000 24.0000 48.0000 C 37.2335 48.0000 48.0000 37.2335 48.0000 24.0000 C 48.0000 10.7665 37.2335 0.0000 24.0000 0.0000 Z M 32.6273 25.0731 L 19.4215 33.0508 C 19.2322 33.1642 19.0162 33.2252 18.7956 33.2276 C 18.5749 33.2299 18.3577 33.1735 18.1659 33.0641 C 17.9743 32.9548 17.8151 32.7964 17.7049 32.6053 C 17.5946 32.4142 17.5372 32.1972 17.5385 31.9765 V 16.0235 C 17.5372 15.8028 17.5946 15.5858 17.7049 15.3947 C 17.8151 15.2036 17.9743 15.0452 18.1659 14.9359 C 18.3577 14.8265 18.5749 14.7701 18.7956 14.7724 C 19.0162 14.7748 19.2322 14.8358 19.4215 14.9492 L 32.6273 22.9269 C 32.8113 23.0390 32.9636 23.1967 33.0690 23.3846 C 33.1746 23.5726 33.2302 23.7845 33.2302 24.0000 C 33.2302 24.2155 33.1746 24.4274 33.0690 24.6154 C 32.9636 24.8033 32.8113 24.9610 32.6273 25.0731 Z" />
+</vector>

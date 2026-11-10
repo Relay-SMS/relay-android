@@ -1,0 +1,1 @@
+Relay 1.0.0 — die erste Version unter Relays eigenem Namen. Neu: Eine Nachricht in einem Verlauf anheften und über das Banner dorthin springen, Emoji-Reaktionen auf Nachrichten, Codes zum Anmelden mit einem Tippen kopieren und Suche innerhalb eines Verlaufs. Basiert auf SMS Tech, mit Relays eigener Oberfläche.

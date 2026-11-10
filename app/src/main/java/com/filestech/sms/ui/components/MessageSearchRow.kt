@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +22,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filestech.sms.domain.model.MessageSearchHit
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.LocalMessageTextFactor
@@ -35,8 +36,8 @@ import com.filestech.sms.ui.util.rememberChatFormatters
  * v1.28.8 (issue #17) — un message trouvé par la recherche : sa conversation, sa date, et l'extrait
  * où les passages trouvés sont mis en évidence. Un appui ouvre la conversation.
  *
- * Même géométrie que [ConversationRow] : ligne 72 dp, avatar 48 dp, nom 17sp/500, date 13sp,
- * extrait 15sp/400 (deux lignes ici, pour laisser voir le contexte du passage trouvé).
+ * Même géométrie que [ConversationRow] : ligne 72 dp minimum, avatar 48 dp, nom 17sp/500,
+ * date 13sp, extrait 14sp/400 (deux lignes ici, pour laisser voir le contexte du passage trouvé).
  */
 @Composable
 fun MessageSearchRow(
@@ -48,6 +49,12 @@ fun MessageSearchRow(
      */
     onClick: (() -> Unit)?,
     showAvatars: Boolean = true,
+    /**
+     * Contact photo from the system contacts, resolved by the list ViewModel. The
+     * per-conversation custom avatar ([com.filestech.sms.domain.model.Conversation.avatarUri])
+     * still wins; when both are null the avatar falls back to initials.
+     */
+    contactPhotoUri: String? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val conversation = hit.conversation
@@ -67,12 +74,16 @@ fun MessageSearchRow(
                     Modifier.semantics(mergeDescendants = true) {}
                 },
             )
-            .height(72.dp)
+            .heightIn(min = 72.dp)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showAvatars) {
-            RelayAvatar(label = conversation.title, customUri = conversation.avatarUri, isGroup = conversation.isGroup)
+            RelayAvatar(
+                label = conversation.title,
+                customUri = conversation.avatarUri ?: contactPhotoUri,
+                isGroup = conversation.isGroup,
+            )
             Spacer(Modifier.width(12.dp))
         }
         // Taille du texte des messages : la colonne de texte seulement, comme ConversationRow.
@@ -101,7 +112,9 @@ fun MessageSearchRow(
                 Spacer(Modifier.size(3.dp))
                 Text(
                     text = extrait,
-                    style = RelayText.Preview.scaledBy(textFactor),
+                    // Same 14sp/18sp preview as [ConversationRow] — the two rows share a list.
+                    style = RelayText.Preview.copy(fontSize = 14.sp, lineHeight = 18.sp)
+                        .scaledBy(textFactor),
                     color = cs.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

@@ -102,6 +102,64 @@ interface MessageDao {
     )
     fun observeStatsForConversation(conversationId: Long): Flow<ThreadStats>
 
+    /**
+     * Feedback round 5 — full-history thread search: ids of the messages in
+     * [conversationId] whose body contains the (already escaped) LIKE [pattern],
+     * oldest first, over the WHOLE thread — not just the loaded window. `LIKE`
+     * keeps the literal-substring semantics of the thread search (an FTS `MATCH`
+     * would only match whole tokens, so "trad" would miss "trading"). The caller
+     * builds the pattern as `"%" + escapeLikePattern(query) + "%"`; SQLite `LIKE`
+     * is ASCII-only case-insensitive, so an accented query ("café") misses an
+     * all-caps accented body ("CAFÉ") — the UI-side range computation is
+     * Unicode-aware, so a match the SQL finds is always highlighted.
+     *
+     * A `Flow` (not a one-shot suspend): Room re-runs it on table invalidation,
+     * so the match count stays fresh if a matching message arrives mid-search.
+     */
+    @Query(
+        """
+        SELECT id FROM messages
+        WHERE conversation_id = :conversationId
+          AND hidden = 0
+          AND body LIKE :pattern ESCAPE '\'
+        ORDER BY date ASC, id ASC
+        """
+    )
+    fun observeSearchIdsInConversation(conversationId: Long, pattern: String): Flow<List<Long>>
+
+    /**
+     * Feedback round 5 — bounded window ENDING at a message: the [limit] most
+     * recent messages at or before ([anchorDate], [anchorId]), oldest first.
+     * The target message is the LAST row of the window, so the thread lands on it
+     * at the bottom with its preceding messages as context. The keyset predicate
+     * mirrors the tail window's ordering (`date DESC, id DESC`) — the `id`
+     * tie-breaker is not optional, multipart MMS parts share timestamps.
+     *
+     * The caller passes `limit + 1` and drops the oldest row when more arrive:
+     * that is how it knows whether older messages exist beyond the window
+     * (a stats-based `messages.size < total` check would lie near the thread
+     * start — the window can be smaller than the thread while no older message
+     * exists past the anchor).
+     */
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE conversation_id = :conversationId
+              AND hidden = 0
+              AND (date < :anchorDate OR (date = :anchorDate AND id <= :anchorId))
+            ORDER BY date DESC, id DESC
+            LIMIT :limit
+        ) ORDER BY date ASC, id ASC
+        """
+    )
+    fun observeWindowEndingAt(
+        conversationId: Long,
+        anchorDate: Long,
+        anchorId: Long,
+        limit: Int,
+    ): Flow<List<MessageEntity>>
+
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun findById(id: Long): MessageEntity?
 
@@ -130,7 +188,7 @@ interface MessageDao {
      * purge l'état legacy v1.7.1 (compteurs inflated + flags `read=0`
      * désynchronisés du système Android). Aligne le cache Room sur la réalité
      * usuelle de l'utilisateur (les messages anciens sont déjà lus, dans
-     * SMS Tech ou ailleurs).
+     * Relay ou ailleurs).
      *
      * Direction INCOMING = `0`. Idempotent — re-exécuter ne change rien.
      * Aussi exposé via Settings → Avancé "Tout marquer comme lu" pour permettre
@@ -331,13 +389,13 @@ interface MessageDao {
 
     /**
      * v1.28.3 (F18) — **journal de propriété** : tous les identifiants de lignes
-     * `content://mms` que SMS Tech a écrites lui-même.
+     * `content://mms` que Relay a écrites lui-même.
      *
      * Sert au chien de garde de l'OUTBOX système
      * ([com.filestech.sms.data.mms.MmsSystemWriteback.purgeStaleOutbox]), qui supprimait
      * jusqu'ici **toute** ligne du fournisseur en `msg_box = OUTBOX` plus vieille que quinze
      * minutes, sans se demander qui l'avait créée. Une application tierce ayant laissé un MMS
-     * en échec — une application constructeur cohabitante, ou celle utilisée avant SMS Tech —
+     * en échec — une application constructeur cohabitante, ou celle utilisée avant Relay —
      * voyait sa ligne détruite par un chien de garde qui n'avait rien à y faire.
      *
      * La colonne existait déjà et servait déjà de preuve de propriété ailleurs :
@@ -345,7 +403,7 @@ interface MessageDao {
      * la sienne. La purge était le seul chemin destructeur du dépôt à ne pas faire ce contrôle,
      * alors qu'elle est de loin le plus large.
      *
-     * Conséquence assumée : une ligne dont SMS Tech a perdu la trace en Room — message
+     * Conséquence assumée : une ligne dont Relay a perdu la trace en Room — message
      * supprimé localement, base réinitialisée — n'est plus purgée. C'est le bon sens de
      * l'échec : mieux vaut laisser une ligne orpheline qu'en détruire une qui ne nous
      * appartient pas.
@@ -434,6 +492,54 @@ interface MessageDao {
         """
     )
     suspend fun findMostRecent(conversationId: Long): MessageEntity?
+
+    /**
+     * Feedback round 7 — candidates for the one-time retroactive reaction
+     * reparse ([com.filestech.sms.data.repository.ConversationMirror
+     * .reparseStoredReactions]).
+     *
+     * The `LIKE` pre-filter is deliberately a SUPERSET of what
+     * [com.filestech.sms.domain.reaction.IncomingReactionDecoder.decode] can
+     * match: every wire prefix it knows (`Reacted …`, the six iOS tapback
+     * verbs, `Removed …`, the French `Réagi …` / `J'ai réagi …` forms, the
+     * named `<Nom> a réagi par …` form, and the `»` that closes an
+     * emoji+quote body). False positives are harmless — `decode()` re-validates
+     * each candidate strictly in Kotlin. False negatives would lose a reaction
+     * forever, so when in doubt a shape is included.
+     *
+     * Deliberately NOT paged: the leading-wildcard arms (`% a réagi par %`,
+     * `%»%`) would force a full-table scan per page. One scan returning the
+     * (rare) candidates is cheaper than N scans, and the list stays small —
+     * reaction texts are a tiny fraction of any history.
+     *
+     * Incoming only (`direction = 0`): a reaction text is always received,
+     * never sent. Sentinels (`hidden = 1`) are excluded — their empty body
+     * could never decode anyway.
+     */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE hidden = 0
+          AND direction = 0
+          AND (
+            body LIKE 'Reacted %' OR
+            body LIKE 'Loved %' OR
+            body LIKE 'Liked %' OR
+            body LIKE 'Disliked %' OR
+            body LIKE 'Laughed at %' OR
+            body LIKE 'Emphasized %' OR
+            body LIKE 'Questioned %' OR
+            body LIKE 'Removed %' OR
+            body LIKE 'Réagi %' OR
+            body LIKE 'J''ai réagi %' OR
+            body LIKE 'J’ai réagi %' OR
+            body LIKE '% a réagi par %' OR
+            body LIKE '%»%'
+          )
+        ORDER BY id ASC
+        """
+    )
+    suspend fun findReactionCandidates(): List<MessageEntity>
 
     @Query(
         """

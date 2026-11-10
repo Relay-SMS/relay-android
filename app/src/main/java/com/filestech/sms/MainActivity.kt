@@ -139,7 +139,7 @@ class MainActivity : FragmentActivity() {
      * doivent être grantées automatiquement via `GRANTED_BY_ROLE`. **BUG OEM observé**
      * sur Samsung Galaxy S9 Android 10 One UI : le grant automatique ne s'exécute pas,
      * les permissions restent `restricted=true`, et l'utilisateur ne reçoit aucun SMS /
-     * MMS sans intervention manuelle (Paramètres → Apps → SMS Tech → Autorisations).
+     * MMS sans intervention manuelle (Paramètres → Apps → Relay → Autorisations).
      * Pour rendre l'app robuste sans assumer ce contrat OEM, on demande nous-mêmes les
      * permissions runtime manquantes au premier launch (et à chaque cold-start si user
      * a refusé, jusqu'à grant explicite ou refus "Ne plus demander" du système).
@@ -163,7 +163,7 @@ class MainActivity : FragmentActivity() {
 
     /**
      * v1.3.10 — liste des permissions runtime "dangerous" indispensables au fonctionnement
-     * de SMS Tech en tant qu'app SMS par défaut. Calculée dynamiquement à chaque check
+     * de Relay en tant qu'app SMS par défaut. Calculée dynamiquement à chaque check
      * pour inclure `POST_NOTIFICATIONS` uniquement sur Android 13+ (API 33+) où elle a
      * été introduite.
      *
@@ -265,8 +265,8 @@ class MainActivity : FragmentActivity() {
 
         // v1.3.10 — fail-safe contre le bug Samsung One UI Android 10 où GRANTED_BY_ROLE
         // ne grant pas les permissions runtime critiques (RECEIVE_SMS, RECEIVE_MMS,
-        // RECEIVE_WAP_PUSH, etc.) malgré que SMS Tech soit role holder. Sans ce check,
-        // l'utilisateur croit que SMS Tech est correctement configurée (badge "app par
+        // RECEIVE_WAP_PUSH, etc.) malgré que Relay soit role holder. Sans ce check,
+        // l'utilisateur croit que Relay est correctement configurée (badge "app par
         // défaut" affiché dans Paramètres système) mais ne reçoit aucun SMS / MMS. On
         // demande explicitement les permissions manquantes au cold-start ; les ROMs où
         // le grant automatique a fonctionné voient toutes les perms déjà à
@@ -348,7 +348,7 @@ class MainActivity : FragmentActivity() {
 
     /**
      * v1.9.0 — Safety call : reset du timer à chaque resume de l'app.
-     * Le contract du Safety call est "si tu n'ouvres pas SMS Tech pendant
+     * Le contract du Safety call est "si tu n'ouvres pas Relay pendant
      * X heures, j'envoie un SMS à tes proches" — donc chaque ouverture
      * d'app est la preuve d'activité attendue. On délègue à un coroutine
      * lifecycleScope pour ne pas bloquer le main thread (DataStore async).
@@ -409,7 +409,7 @@ class MainActivity : FragmentActivity() {
      * donc lieu, et la remise à zéro, déjà abandonnée, ne se retentait jamais.
      *
      * Conséquence : pour quiconque protège l'application par un code — c'est-à-dire exactement le
-     * profil qui arme un deadman — ouvrir SMS Tech ne remettait pas le minuteur à zéro. La preuve
+     * profil qui arme un deadman — ouvrir Relay ne remettait pas le minuteur à zéro. La preuve
      * d'activité était fournie, ignorée, et l'alerte partait quand même vers les contacts
      * d'urgence. Une seconde course existait sans verrou : l'état reste `Locked` jusqu'à ce que la
      * résolution initiale publie `Disabled`.
@@ -535,7 +535,7 @@ class MainActivity : FragmentActivity() {
                 // de reset. MainActivity est `exported="true"` (rôle SMS)
                 // donc une app tierce pourrait forger ACTION_SAFETY_CALL_RESET ;
                 // sans le bon token (re-genéré à chaque pose de notif et
-                // connu uniquement du process SMS Tech), l'intent est ignoré.
+                // connu uniquement du process Relay), l'intent est ignoré.
                 val token = intent.getLongExtra(
                     SafetyCallWarningNotifier.EXTRA_RESET_TOKEN, 0L,
                 )
@@ -796,7 +796,7 @@ class MainActivity : FragmentActivity() {
             }
             Intent.ACTION_SENDTO, Intent.ACTION_VIEW -> {
                 // v1.14.8 bug fix — Avant : l'app Téléphone tapait "Message" sur un contact
-                // → ACTION_SENDTO + URI `smsto:+33xxx` → SMS Tech ouvrait sur la liste des
+                // → ACTION_SENDTO + URI `smsto:+33xxx` → Relay ouvrait sur la liste des
                 // conversations sans pré-sélection (intent qui retombait dans `else`, juste
                 // un wipe d'incomingShare). Maintenant : on parse le scheme + le numéro,
                 // on stage le body éventuel, et on pose un pendingNav.sendToAddress qu'AppRoot

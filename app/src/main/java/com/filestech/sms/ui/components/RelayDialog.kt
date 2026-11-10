@@ -133,7 +133,14 @@ private fun RelayPickerOptionRow(option: RelayPickerOption) {
             .fillMaxWidth()
             .clickable(onClick = option.onClick)
             .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.Top,
+        // Feedback round 8 — CenterVertically, not Top: the radio's drawn
+        // circle sits in the middle of its 48dp box, so top-aligning the
+        // row put the circle ~14dp below the label's centre (measured on
+        // the "Choose lock mode" screenshot: radio 27–35px under the text).
+        // Centring puts the circle on the label line (and on the middle of
+        // a two-line label + hint, the M3 list-item rule). Every picker
+        // dialog shares this row, so the one change fixes them all.
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(
             selected = option.selected,

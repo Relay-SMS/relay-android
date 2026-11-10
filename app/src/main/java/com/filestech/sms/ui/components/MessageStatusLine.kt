@@ -2,7 +2,6 @@ package com.filestech.sms.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -21,9 +20,26 @@ import java.util.Date
  * rendue en petit, en bas à droite, À L'INTÉRIEUR de la bulle, alignée sur la
  * dernière ligne de texte. Le libellé vient de [libelleDeStatut].
  *
- * Affichée si [showTimestamp] (début d'une rafale) ou si l'envoi a échoué — un échec
- * se dit toujours. [textColor] est la couleur du corps de la bulle appelante (blanc
- * sur bulle sortante texte, `onSurfaceVariant` sur bulle vocale sortante sans fond…).
+ * Feedback round 4 — l'heure et le statut ont des règles INDÉPENDANTES :
+ *
+ *  - l'heure suit [showTimestamp] (une par rafale, sur son dernier message) ;
+ *  - le statut suit [showStatus] (dernier message sortant d'une rafale).
+ *
+ * Avant, le statut ne s'affichait que là où l'heure s'affichait : une rafale
+ * cachait donc tous les « Delivered » sauf sur le message horodaté — et ce
+ * message est en général le plus récent, dont l'accusé de réception n'est pas
+ * encore arrivé, si bien que le fil n'affichait que « Sent », jamais
+ * « Delivered ». Un échec se dit toujours (heure + libellé), comme avant.
+ *
+ * Feedback round 4 — placement structurel : la ligne ne s'étire PLUS sur
+ * toute la largeur (`fillMaxWidth` supprimé) — elle se dimensionne à son
+ * contenu et l'appelant la cale à droite dans la bulle (`align(End)` dans la
+ * `Column` de la bulle, `align(BottomEnd)` en surimpression sur une vignette).
+ * C'est ce qui garantissait l'échappée hors bulle : la ligne pleine largeur
+ * forçait la bulle à 320dp quand elle s'affichait, et sortait du fond dès que
+ * la bulle restait étroite. [textColor] est la couleur du corps de la bulle
+ * appelante (blanc sur bulle sortante texte, `onSurfaceVariant` sur bulle
+ * vocale sortante sans fond…).
  *
  * Phase 8 — contraste et taille fixe :
  *
@@ -49,13 +65,18 @@ import java.util.Date
 internal fun BubbleTimestamp(
     message: Message,
     showTimestamp: Boolean,
+    showStatus: Boolean = false,
     textColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    if (!showTimestamp && message.status != Message.Status.FAILED) return
     val label = libelleDeStatut(message)?.let { statut ->
         statut.codeOperateur?.let { stringResource(statut.res, it) } ?: stringResource(statut.res)
     }
+    // Un échec se dit toujours, heure + libellé, comme avant.
+    val isFailed = message.status == Message.Status.FAILED
+    val showTime = showTimestamp || isFailed
+    val showLabel = label != null && (showStatus || isFailed)
+    if (!showTime && !showLabel) return
     val formatters = rememberChatFormatters()
     // Audit P-Q7 (v1.2.0) : l'heure formatée est mise en cache, pas recalculée à chaque recomposition.
     val time = remember(message.date) { formatters.time.format(Date(message.date)) }
@@ -65,12 +86,15 @@ internal fun BubbleTimestamp(
     val metaColor = if (textColor == Color.White) textColor.copy(alpha = 0.85f) else textColor
     FixedTypeSize {
         Row(
-            modifier = Modifier.fillMaxWidth().then(modifier),
+            modifier = Modifier.then(modifier),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (label != null) "$time • $label" else time,
+                text = listOfNotNull(
+                    if (showTime) time else null,
+                    if (showLabel) label else null,
+                ).joinToString(" • "),
                 color = metaColor,
                 style = RelayText.BubbleMeta,
             )

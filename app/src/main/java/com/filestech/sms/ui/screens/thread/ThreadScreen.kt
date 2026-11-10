@@ -4,14 +4,25 @@ import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,23 +56,19 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonSearch
-import androidx.compose.material.icons.outlined.Phone
-import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -75,7 +82,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -89,6 +95,7 @@ import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -96,24 +103,28 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -121,11 +132,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -136,8 +151,10 @@ import com.filestech.sms.core.result.AppError
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.SendErrorCode
+import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.components.AttachmentPickerSheet
 import com.filestech.sms.ui.components.AudioMessageBubble
+import com.filestech.sms.ui.components.BubbleMenuToggles
 import com.filestech.sms.ui.components.BurstPosition
 import com.filestech.sms.ui.components.ComposerReplyChip
 import com.filestech.sms.ui.components.ContactIntents
@@ -148,6 +165,7 @@ import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.ReplyQuotePreview
+import com.filestech.sms.ui.components.SearchHighlight
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.SmsTechSnackbarVisuals
 import com.filestech.sms.ui.components.showError
@@ -166,6 +184,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Date
 import kotlin.math.max
 
@@ -201,6 +220,15 @@ fun ThreadScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
+    // Playback progress ticks at 5 Hz while a voice clip plays, and every tick recomposes
+    // this screen. Passing `{ playbackState }` inline to each message item would create a
+    // fresh lambda on every one of those recompositions, so no item could ever skip — the
+    // whole visible list would re-compose 5 times a second (and on every draft keystroke,
+    // which also recomposes the screen). This provider is one stable instance that always
+    // reads the latest tick through `rememberUpdatedState`: items can skip, and the one
+    // playing audio bubble still re-reads it through its own `derivedStateOf`.
+    val latestPlaybackState = rememberUpdatedState(playbackState)
+    val playbackProvider = remember { { latestPlaybackState.value } }
 
     // v1.26.1 (audit H1, suite de revue) — le Coffre s'est refermé alors qu'on est dans un de
     // ses fils : on ressort, au lieu de laisser un fil VIDE dont le bouton « Envoyer » ne fait
@@ -225,6 +253,18 @@ fun ThreadScreen(
     LifecycleStartEffect(viewModel) {
         viewModel.onVisibilityChanged(true)
         onStopOrDispose { viewModel.onVisibilityChanged(false) }
+    }
+    // Feedback round 7 — re-resolve the header contact photo when the screen
+    // comes back to foreground: covers a READ_CONTACTS grant made outside
+    // the thread (same pattern as the main list's contactPhotoTick).
+    DisposableEffect(threadNavOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshContactPhoto()
+            }
+        }
+        threadNavOwner.lifecycle.addObserver(observer)
+        onDispose { threadNavOwner.lifecycle.removeObserver(observer) }
     }
     val snackbarHost = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -298,8 +338,6 @@ fun ThreadScreen(
     // v1.28.3 — nommer le groupe (menu du fil).
     var renameOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
-    // v1.28.6 — message dont un extrait est en cours de sélection (appui long ou menu ⋮).
-    var textSelectionTarget by remember { mutableStateOf<Message?>(null) }
     var askBlock by remember { mutableStateOf(false) }
     // v1.3.0 — état des dialogs/sheets de réaction emoji.
     //   `pickingReactionFor` non-null = bottom-sheet quick-pick affiché pour ce message.
@@ -310,9 +348,38 @@ fun ThreadScreen(
     // l'utilisateur n'a pas validé le dialog de confirmation. `null` = pas de dialog ouvert.
     // Le messageId est porté pour permettre au ViewModel de re-vérifier l'état au moment du
     // confirm (anti-race F4 : l'user a pu changer/retirer la réaction entre temps).
-    var reactionConfirmRequest by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var askDelete by remember { mutableStateOf(false) }
     var attachmentSheetOpen by remember { mutableStateOf(false) }
+    // Round 4 — the camera icon opens the camera DIRECTLY instead of the attachment
+    // sheet. The capture file lives in `cacheDir/mms_outgoing/`, one of the
+    // FileProvider cache-paths declared in `file_provider_paths.xml`, so the
+    // system camera app can write to it via the content URI. On success the
+    // photo reuses the picker's staging path: `onAttachmentPicked` copies it
+    // into `media_outgoing/` and stages it in the composer. No CAMERA permission
+    // is needed — the external camera app does the capture. If creating the file
+    // or the URI fails, fall back to the attachment sheet so the user can still
+    // attach a photo.
+    var pendingCameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { success ->
+        if (success) {
+            pendingCameraPhotoUri?.let { viewModel.onAttachmentPicked(it, AttachmentKind.PHOTO) }
+        }
+        pendingCameraPhotoUri = null
+    }
+    val onCameraClick: () -> Unit = {
+        runCatching {
+            val dir = File(context.cacheDir, "mms_outgoing").apply { mkdirs() }
+            val file = File(dir, "camera-${System.currentTimeMillis()}.jpg")
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.onSuccess { uri ->
+            pendingCameraPhotoUri = uri
+            takePictureLauncher.launch(uri)
+        }.onFailure {
+            attachmentSheetOpen = true
+        }
+    }
     // Audit R3 (v1.14.8) — Retry d'un message FAILED avec errorCode WATCHDOG_TIMEOUT
     // peut produire un doublon (le radio a peut-être livré, on n'a juste pas reçu le
     // broadcast de confirmation). On confirme via dialog avant retry. SYNCHRONOUS reste
@@ -324,17 +391,126 @@ fun ThreadScreen(
     var scheduleStep by remember { mutableStateOf<String?>(null) }
     var scheduledEpochMidnight by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
 
+    // Feedback round 5 — search inside this conversation. The query searches
+    // the FULL history (see [mapThreadSearchMatches]): the repository returns
+    // every matching message id in the thread, and a jump to a match outside
+    // the loaded window loads the window around it. Matches stay in place
+    // with highlighting — nothing is hidden — and the up/down controls jump
+    // between matching messages. `threadSearchIndex` is the position inside
+    // [threadSearchMatches] (-1 = no matches); the count ("2 of 5") counts
+    // matching messages in the whole thread.
+    var threadSearchOpen by remember { mutableStateOf(false) }
+    var threadSearchQuery by remember { mutableStateOf("") }
+    var threadSearchIndex by remember { mutableStateOf(0) }
+    // Feedback round 5 — set when a jump loaded a window away from the tail,
+    // so closing the search knows to come back to the bottom.
+    var searchJumpedOutOfWindow by remember { mutableStateOf(false) }
+    var pendingJumpToBottom by remember { mutableStateOf(false) }
+    val threadSearchFocusRequester = remember { FocusRequester() }
+    val searchResults by viewModel.threadSearchResults.collectAsStateWithLifecycle()
+    val threadSearchMatches = remember(state.messages, searchResults) {
+        mapThreadSearchMatches(searchResults.messageIds, state.messages, searchResults.query)
+    }
+    val threadSearchCurrentIndex = if (threadSearchMatches.isEmpty()) {
+        -1
+    } else {
+        threadSearchIndex.coerceIn(0, threadSearchMatches.lastIndex)
+    }
+    val threadSearchCurrentMatch = threadSearchMatches.getOrNull(threadSearchCurrentIndex)
+    // Per-message highlight, keyed by message id so each bubble only
+    // re-composes when its own highlight changes.
+    val threadSearchHighlightById = remember(threadSearchMatches, threadSearchCurrentMatch) {
+        threadSearchMatches.associate { match ->
+            match.messageId to SearchHighlight(
+                ranges = match.ranges,
+                current = match.messageId == threadSearchCurrentMatch?.messageId,
+            )
+        }
+    }
+    val closeThreadSearch: () -> Unit = {
+        threadSearchOpen = false
+        threadSearchQuery = ""
+        threadSearchIndex = 0
+        viewModel.setThreadSearchQuery("")
+        if (searchJumpedOutOfWindow) {
+            searchJumpedOutOfWindow = false
+            viewModel.clearWindowAnchor()
+            pendingJumpToBottom = true
+        }
+        focusManager.clearFocus()
+    }
+    // Back closes the search pill before it leaves the screen — same pattern
+    // as the conversations list search.
+    androidx.activity.compose.BackHandler(enabled = threadSearchOpen) { closeThreadSearch() }
+    LaunchedEffect(threadSearchOpen) {
+        if (threadSearchOpen) {
+            // Feedback round 5 — same retry as the conversations list search:
+            // a request landing before the field's focus node is attached is
+            // silently lost, leaving the field unfocused with no cursor and no
+            // keyboard. Retry once after the pill slides in.
+            val focused = runCatching { threadSearchFocusRequester.requestFocus() }
+                .getOrDefault(false)
+            if (!focused) {
+                kotlinx.coroutines.delay(THREAD_SEARCH_FOCUS_RETRY_MS)
+                runCatching { threadSearchFocusRequester.requestFocus() }
+            }
+        }
+    }
+
     // v1.2.4 audit U12: scroll-to-bottom on new messages only when the user is already at
     // the bottom — preserves their reading position higher up the thread. The first paint
     // is a special case: opening a conversation must land on the most recent message, not
     // the start. We track `initialScrollDone` to discriminate the two.
     var initialScrollDone by remember { mutableStateOf(false) }
-    // v1.24.0 — `LazyListItemInfo.index` et l'argument de `scrollToItem` vivent dans l'espace
-    // d'index GLOBAL du LazyColumn, où l'item « charger plus ancien » occupe la position 0 quand
-    // il est affiché. `state.messages[i]` est donc à l'index global `i + headOffset`. Confondre
-    // les deux ciblait l'avant-dernier message au lieu du dernier.
-    val headOffset = if (state.hasMoreMessages) 1 else 0
-    val bottomItemIndex = state.messages.lastIndex + headOffset
+    // Opening a conversation must land directly on the last message: the list starts at
+    // index 0 and only jumps to the bottom once the first page loads (see the
+    // LaunchedEffect below), which flashed the "load older" row and a fast scroll down.
+    // Keep the list invisible until that first scroll has landed; an empty conversation
+    // has nothing to scroll to, so it shows immediately. The header and composer sit
+    // outside the list, so they stay visible while the messages settle.
+    val listSettled = initialScrollDone || state.messages.isEmpty()
+    // The list holds messages only (the old "load older" row is gone since
+    // round 5 auto-load), so `state.messages[i]` is at global LazyColumn
+    // index `i` — no head offset to add when scrolling to a message.
+    val bottomItemIndex = state.messages.lastIndex
+    // Feedback round 5 — jump to the current search match. Plain scroll, not
+    // animated: a jump can span hundreds of messages, and animateScrollToItem
+    // over that distance is visibly choppy (same reason as the first-paint
+    // scroll below). A match outside the loaded window loads the window
+    // around it first; when that window lands the match gains an index and
+    // this effect re-runs to scroll to it.
+    LaunchedEffect(threadSearchCurrentMatch) {
+        val match = threadSearchCurrentMatch ?: return@LaunchedEffect
+        if (match.messageIndex >= 0) {
+            listState.scrollToItem(match.messageIndex)
+        } else {
+            searchJumpedOutOfWindow = true
+            viewModel.jumpToSearchMatch(match.messageId)
+        }
+    }
+    // Feedback round 5 — jump to the pinned message from the banner. Same
+    // shape as the search jump above: when the message is already in the
+    // loaded window, scroll to it right away; when the jump loaded a window
+    // around it, this re-runs once the window lands (state.messages is a
+    // key) and scrolls then. Plain scroll, not animated — same reason.
+    val pinJumpTarget by viewModel.pinJumpTarget.collectAsStateWithLifecycle()
+    LaunchedEffect(pinJumpTarget, state.messages) {
+        val target = pinJumpTarget ?: return@LaunchedEffect
+        val index = state.messages.indexOfFirst { it.id == target }
+        if (index >= 0) {
+            listState.scrollToItem(index)
+            viewModel.clearPinJumpTarget()
+        }
+    }
+    // Feedback round 5 — after closing a search that jumped away from the
+    // tail, come back to the bottom once the tail window is back (not before:
+    // scrolling while still anchored would land on the anchor).
+    val isWindowAnchored by viewModel.isWindowAnchored.collectAsStateWithLifecycle()
+    LaunchedEffect(isWindowAnchored, state.messages, pendingJumpToBottom) {
+        if (!pendingJumpToBottom || isWindowAnchored || state.messages.isEmpty()) return@LaunchedEffect
+        listState.scrollToItem(bottomItemIndex)
+        pendingJumpToBottom = false
+    }
     val isAtBottom by remember {
         androidx.compose.runtime.derivedStateOf {
             val li = listState.layoutInfo.visibleItemsInfo.lastOrNull()
@@ -378,7 +554,10 @@ fun ThreadScreen(
             listState.scrollToItem(bottomItemIndex)
             initialScrollDone = true
             lastSeenMessageId = newestMessageId
-        } else if (isAtBottom) {
+        } else if (isAtBottom && !threadSearchOpen) {
+            // Feedback round 5 — no auto-scroll while searching: a new message
+            // arriving mid-search must not drag the user away from the match
+            // they are looking at.
             listState.animateScrollToItem(bottomItemIndex)
             lastSeenMessageId = newestMessageId
         }
@@ -397,9 +576,45 @@ fun ThreadScreen(
         val (anchorId, anchorOffset) = pendingAnchor ?: return@LaunchedEffect
         val index = state.messages.indexOfFirst { it.id == anchorId }
         if (index >= 0) {
-            listState.scrollToItem(index + headOffset, -anchorOffset)
+            listState.scrollToItem(index, -anchorOffset)
             pendingAnchor = null
         }
+    }
+
+    // Feedback round 5 — auto-load older messages on scroll-up (replaces the
+    // "Load older messages" button). When the first visible message is within
+    // [AUTO_LOAD_TOP_THRESHOLD] items of the top of the loaded window and
+    // older history exists, the next page loads by itself. The anchor is
+    // captured here (the message the user is reading + its pixel offset) so
+    // the restore above keeps them looking at the same message when the
+    // older page lands above — prepending must not jump the view.
+    //
+    // Guards: [ThreadViewModel.loadOlder] is a no-op while a load is in flight
+    // or when fully loaded, so a fast fling cannot stack loads; and the
+    // trigger needs [listSettled], so the first paint (which briefly sits at
+    // index 0 before jumping to the bottom) never fires a spurious load that
+    // would defeat the 50-message first window. Once a load lands, the anchor
+    // restore leaves the user ~200 items from the top, so the trigger goes
+    // quiet until they scroll up again.
+    val nearTop by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            first != null && first.index <= AUTO_LOAD_TOP_THRESHOLD
+        }
+    }
+    LaunchedEffect(nearTop, state.hasMoreMessages, state.isLoadingOlder, listSettled) {
+        // The four-way guard lives in a plain `val`, not in the `if` condition,
+        // so the condition itself stays simple.
+        val canLoad = nearTop && state.hasMoreMessages && listSettled
+        if (!canLoad || state.isLoadingOlder) {
+            return@LaunchedEffect
+        }
+        val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            ?: return@LaunchedEffect
+        val anchorMsg = state.messages.getOrNull(firstVisible.index)
+            ?: return@LaunchedEffect
+        pendingAnchor = anchorMsg.id to firstVisible.offset
+        viewModel.loadOlder()
     }
 
     // v1.28.3 (F21) — gabarits resolus au niveau COMPOSABLE, et non via `LocalContext` dans le
@@ -471,18 +686,6 @@ fun ThreadScreen(
                     val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(e.rawNumber)}"))
                     runCatching { context.startActivity(intent) }
                 }
-                is ThreadViewModel.Event.RequestReactionConfirm -> {
-                    // X5 audit v1.3.1 — si un dialog est déjà ouvert (l'user n'a pas
-                    // encore validé/annulé), on ignore silencieusement le 2ᵉ event pour
-                    // ne pas écraser silencieusement l'intention en cours (le user verrait
-                    // un autre emoji/contact que celui qu'il vient de toucher). Le badge
-                    // local de la 2ᵉ réaction est déjà posé (côté repo), donc l'état UI
-                    // reste cohérent ; seule la dispatch SMS est ignorée pour cette pose,
-                    // ce qui est cohérent avec la sémantique "1 confirm = 1 envoi".
-                    if (reactionConfirmRequest == null) {
-                        reactionConfirmRequest = e.messageId to e.emoji
-                    }
-                }
             }
         }
     }
@@ -531,15 +734,29 @@ fun ThreadScreen(
 
     Scaffold(
         topBar = {
+            // Feedback round 5 — the top bar swaps between the thread header
+            // and the search pill, like the conversations list search (round 4):
+            // the pill slides in from the right over the header and slides back
+            // out when it closes; the header just fades.
+            Box {
+                AnimatedVisibility(
+                    visible = !threadSearchOpen,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
             ThreadHeader(
                 title = title,
                 subtitleNumber = headerSubtitleNumber,
                 isGroup = state.conversation?.isGroup == true,
-                avatarUri = state.conversation?.avatarUri,
+                // Feedback round 7 — contact photo fallback: the custom
+                // avatar still wins; the contact photo is resolved in
+                // [ThreadViewModel] like the main list does.
+                avatarUri = state.conversation?.avatarUri ?: state.contactPhotoUri,
                 canCall = canCall,
                 onBack = onBack,
                 onCall = { viewModel.requestCall() },
                 onDetails = { detailsOpen = true },
+                onSearchClick = { threadSearchOpen = true },
                 onMoreClick = { menuOpen = true },
                 menu = {
                     ThreadActionsMenu(
@@ -584,6 +801,47 @@ fun ThreadScreen(
                     )
                 },
             )
+                }
+                AnimatedVisibility(
+                    visible = threadSearchOpen,
+                    enter = slideInHorizontally { it } + fadeIn(),
+                    exit = slideOutHorizontally { it } + fadeOut(),
+                ) {
+                    ThreadSearchHeader(
+                        query = threadSearchQuery,
+                        onQueryChange = {
+                            threadSearchQuery = it
+                            threadSearchIndex = 0
+                            viewModel.setThreadSearchQuery(it)
+                        },
+                        matchLabel = when {
+                            threadSearchQuery.isBlank() -> null
+                            threadSearchMatches.isEmpty() ->
+                                stringResource(R.string.thread_search_no_results)
+                            else -> stringResource(
+                                R.string.thread_search_match_count,
+                                threadSearchCurrentIndex + 1,
+                                threadSearchMatches.size,
+                            )
+                        },
+                        canNavigate = threadSearchMatches.isNotEmpty(),
+                        onPrevious = {
+                            threadSearchIndex = previousThreadSearchIndex(
+                                threadSearchCurrentIndex,
+                                threadSearchMatches.size,
+                            )
+                        },
+                        onNext = {
+                            threadSearchIndex = nextThreadSearchIndex(
+                                threadSearchCurrentIndex,
+                                threadSearchMatches.size,
+                            )
+                        },
+                        onClose = closeThreadSearch,
+                        focusRequester = threadSearchFocusRequester,
+                    )
+                }
+            }
         },
         snackbarHost = {
             // v1.3.7 — branchement bi-couleur cohérent avec le système de marque :
@@ -654,6 +912,7 @@ fun ThreadScreen(
                         focusManager.clearFocus()
                     },
                     onAttachClick = { attachmentSheetOpen = true },
+                    onCameraClick = onCameraClick,
                     onMicPermissionDenied = {
                         // v1.3.7 — refus de permission = erreur utilisateur visible → rouge.
                         scope.launch {
@@ -693,6 +952,46 @@ fun ThreadScreen(
                 } else null
             }
         }
+        // Feedback round 7 — sticky date header: the date of
+        // the topmost visible message, floating at the top of the list while
+        // scrolling. The label changes the moment the visible messages cross
+        // into another day; while many messages share one day the pill stays
+        // up for the whole stretch, so the user always knows what date they
+        // are viewing. `derivedStateOf` only re-emits when the label changes,
+        // so the overlay re-composes once per day boundary, not per frame.
+        // The inline separator lives at the top of the boundary item: the
+        // floating pill hides only while that item's top is still on screen
+        // (offset >= 0) — once it scrolls above the viewport the floating
+        // pill takes over, so the two never stack.
+        val stickyDateLabel by remember(daySeparatorLabels) {
+            derivedStateOf {
+                val visible = listState.layoutInfo.visibleItemsInfo
+                val firstIndex = visible.firstOrNull()?.index ?: return@derivedStateOf null
+                val boundaryIndex = (firstIndex downTo 0)
+                    .firstOrNull { daySeparatorLabels.getOrNull(it) != null }
+                    ?: return@derivedStateOf null
+                val label = daySeparatorLabels[boundaryIndex] ?: return@derivedStateOf null
+                val boundaryItem = visible.firstOrNull { it.index == boundaryIndex }
+                if (boundaryItem != null && boundaryItem.offset >= 0) null else label
+            }
+        }
+        // Feedback round 8 — the sticky date pill floats only TEMPORARILY:
+        // it appears while the list is scrolling and slides up out of view
+        // shortly after scrolling stops, so it never sits on the thread
+        // while the user is reading. `isScrollInProgress` covers drag and
+        // fling in both directions; the hide is a 1 s idle delay, and the
+        // LaunchedEffect restarts (cancelling the delay) if scrolling
+        // resumes before it fires.
+        var showStickyDate by remember { mutableStateOf(false) }
+        val isScrolling = listState.isScrollInProgress
+        LaunchedEffect(isScrolling) {
+            if (isScrolling) {
+                showStickyDate = true
+            } else {
+                kotlinx.coroutines.delay(STICKY_DATE_HIDE_DELAY_MS)
+                showStickyDate = false
+            }
+        }
         // v1.18.0 — Bundle de callbacks stable réutilisé par chaque item. Capture les setters
         // `var by remember` (pendingDelete, pickingReactionFor, forwardingMessage,
         // pendingRetryWatchdog) + les références ViewModel + les lambdas locales. Recréé
@@ -715,17 +1014,14 @@ fun ThreadScreen(
                 onDelete = { msg -> pendingDelete = msg },
                 onReply = { msg -> viewModel.startReply(msg) },
                 onReact = { msgId -> pickingReactionFor = msgId },
-                // v1.4.1 — Tap-pour-retirer le badge autorisé uniquement sur incoming (la
-                // réaction a été posée localement par l'user). Pour outgoing (Tapback fold du
-                // destinataire), ignore (sinon désync : badge local disparaît mais reste chez
-                // l'autre — convention iMessage).
-                onRemoveReaction = { msg -> if (msg.isIncoming) viewModel.setReaction(msg.id, null) },
                 onForward = { msg -> forwardingMessage = msg },
                 onTranslate = { msg -> translateMessageExternal(msg) },
                 onCopy = { msg -> copyMessageBody(msg) },
-                onSelectText = { msg -> textSelectionTarget = msg },
                 // v1.26.1 (audit F2) — bascule sur l'état courant du message.
                 onToggleStar = { msg -> viewModel.toggleMessageStarred(msg.id, !msg.starred) },
+                // Feedback round 5 — épingler / désépingler (la VM compare à
+                // l'épingle courante du fil).
+                onTogglePin = { msg -> viewModel.togglePin(msg.id) },
                 onPhoneClick = onPhoneClick,
             )
         }
@@ -734,29 +1030,40 @@ fun ThreadScreen(
         // n'apparaît dans ces cas. Lambda stable (mémoïsée) : passable aux items sans casser le
         // scoping de recomposition de [ThreadMessageItem].
         val simLabeler = rememberSimLabeler()
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-        ) {
-            // v1.24.0 (finding A) — tête de fenêtre. `key` stable pour que l'insertion des
-            // messages plus anciens ne détruise pas la position de scroll.
-            if (state.hasMoreMessages) {
-                item(key = "load-older", contentType = "load-older") {
-                    LoadOlderRow(
-                        isLoading = state.isLoadingOlder,
-                        remaining = (state.messageCount - state.messages.size).coerceAtLeast(0),
-                        onClick = {
-                            // Le premier item visible portant une clé Long est un message : c'est
-                            // lui que l'utilisateur regarde, et sur lui qu'on se ré-ancrera.
-                            pendingAnchor = listState.layoutInfo.visibleItemsInfo
-                                .firstOrNull { it.key is Long }
-                                ?.let { (it.key as Long) to it.offset }
-                            viewModel.loadOlder()
-                        },
-                    )
-                }
+        // Feedback round 5 — pinned-message banner: the live copy from the
+        // loaded window wins when the message is loaded (so the banner
+        // follows text edits); the resolved outside-window copy is the
+        // fallback for an old pinned message. Hidden while searching — the
+        // search pill replaces the header, and the banner belongs to it.
+        val pinnedMessageId = state.conversation?.pinnedMessageId
+        val pinnedMessage = remember(state.messages, state.pinnedOutsideWindow, pinnedMessageId) {
+            pinnedMessageId?.let { id ->
+                state.messages.find { it.id == id } ?: state.pinnedOutsideWindow
             }
+        }
+        val pinnedAt = state.conversation?.pinnedMessageAt
+        // Feedback round 7 — measured height of the floating pinned banner
+        // (px): the sticky date pill sits just below it, and the banner's
+        // height varies (32dp X box present or not), so it is measured
+        // rather than guessed.
+        var pinnedBannerHeightPx by remember { mutableStateOf(0) }
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().alpha(if (listSettled) 1f else 0f),
+            state = listState,
+            // Feedback round 5 — room below the last message for a reaction
+            // badge hanging off its bottom edge (see [BubbleReactionOverlay]):
+            // without it the badge on the last message is clipped by the list
+            // viewport, where the composer starts.
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            // v1.24.0 (finding A) — `key` stable pour que l'insertion des
+            // messages plus anciens ne détruise pas la position de scroll.
+            // Feedback round 5 — the "Load older messages" button is gone:
+            // older messages load automatically on scroll-up (see the
+            // auto-load effect below); the list holds messages only, so the
+            // global LazyColumn index IS the message index.
             itemsIndexed(
                 state.messages,
                 key = { _, m -> m.id },
@@ -778,6 +1085,8 @@ fun ThreadScreen(
                 // l'item Composable, plus dans le scope LazyColumn. Recompositions
                 // mieux scopées : un item ne re-compose que sur changement de SON msg / prev /
                 // next, pas sur changement du state global du parent.
+                // Feedback round 5 — search highlight for this message, if any.
+                val searchHighlight = threadSearchHighlightById[msg.id] ?: SearchHighlight()
                 ThreadMessageItem(
                     msg = msg,
                     prev = state.messages.getOrNull(index - 1),
@@ -794,13 +1103,17 @@ fun ThreadScreen(
                     isGroup = state.conversation?.isGroup == true,
                     bubbleColorArgb = state.conversation?.bubbleColorArgb,
                     smishingReasons = state.smishingVerdicts[msg.id] ?: emptyList(),
-                    playbackProvider = { playbackState },
+                    playbackProvider = playbackProvider,
                     repliedToPreview = previewFor(msg),
                     // v1.22.0 (double SIM) — tag SIM sur les messages REÇUS uniquement (la bulle
                     // du contact, cf. demande). Les sortants portent aussi un `sub_id` (SIM
                     // d'envoi par défaut) mais afficher "Vous · SIM 2" sur chaque burst sortant
                     // serait du bruit non sollicité.
                     simLabel = if (msg.isIncoming) simLabeler(msg.subId) else null,
+                    searchHighlight = searchHighlight,
+                    // Feedback round 5 — ce message est-il l'épinglé du fil ?
+                    // Le menu bulle affiche alors « Désépingler » au lieu d'« Épingler ».
+                    isPinnedMessage = msg.id == state.conversation?.pinnedMessageId,
                     actions = itemActions,
                 )
             }
@@ -808,8 +1121,115 @@ fun ThreadScreen(
         // Audit R4 (v1.14.8) — Chip flottant "↓ N nouveau(x) message(s)" affiché en
         // bas-droite quand l'user est scrollé vers le haut ET que de nouveaux messages
         // sont arrivés. Tap → scroll animé + reset du compteur via le LaunchedEffect.
-        if (!isAtBottom && unseenCount > 0 && state.messages.isNotEmpty()) {
+        // Feedback round 5 — auto-load indicator: while older messages are
+        // loading above, a small chip (spinner + text) floats at the top of
+        // the list. It is an overlay, not a list item, so it never shifts
+        // the message indices or the scroll anchor. It only ever shows
+        // during a top load — never when fully loaded.
+        // Feedback round 6 — the pinned banner floats over the top of the
+        // list (no background band around it), fixed under the header with
+        // a slight gap — like the Figma design, where the first message
+        // peeks out from behind it. It draws under the loading chip above,
+        // so the transient spinner stays visible while older messages load.
+        // Hidden while searching — the search pill replaces the header, and
+        // the banner belongs to it.
+        if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
+            PinnedMessageBanner(
+                message = pinnedMessage,
+                pinnedAt = pinnedAt,
+                isGroup = state.conversation?.isGroup == true,
+                title = title,
+                memberNames = state.memberNames,
+                formatters = formatters,
+                canUnpin = !state.isPanicDecoy,
+                onJump = { viewModel.jumpToPinnedMessage(pinnedMessage.id) },
+                onUnpin = { viewModel.togglePin(pinnedMessage.id) },
+                // Feedback round 7 — measured so the sticky date pill can
+                // sit just below the banner (see [pinnedBannerHeightPx]).
+                modifier = Modifier.onSizeChanged { pinnedBannerHeightPx = it.height },
+            )
+        }
+        // Feedback round 7 — sticky date header, floating at the top of the
+        // list under the pinned banner (if any). `null` while the group's own
+        // inline separator is on screen, or when the list is empty. Hidden
+        // while older messages load: the "loading older" chip owns the same
+        // top-centre spot, and the list is mid-shift then anyway.
+        // Feedback round 8 — the pill floats only temporarily (see
+        // [showStickyDate]): it slides in while scrolling and slides up out
+        // of view shortly after scrolling stops.
+        if (!state.isLoadingOlder) {
+            val bannerHeightPx = if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
+                pinnedBannerHeightPx
+            } else {
+                0
+            }
+            StickyDatePill(
+                label = stickyDateLabel,
+                visible = stickyDateLabel != null && showStickyDate,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(
+                        top = with(LocalDensity.current) { bannerHeightPx.toDp() } + 8.dp,
+                    ),
+            )
+        }
+        if (state.isLoadingOlder) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = stringResource(R.string.thread_loading_older),
+                    style = RelayText.BubbleMeta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // Feedback round 5 — after a jump to the pinned message the window
+        // is anchored on it, so the newest messages are not loaded. This
+        // button (same spot and style as the unseen-messages chip) takes the
+        // user back to the latest window; the return-to-bottom effect above
+        // scrolls once the tail window lands. It takes precedence over the
+        // unseen chip while anchored — both would stack on the same corner.
+        val isPinAnchored by viewModel.isPinAnchored.collectAsStateWithLifecycle()
+        if (isPinAnchored && state.messages.isNotEmpty()) {
             FilledTonalButton(
+                shape = RoundedCornerShape(50),
+                onClick = {
+                    viewModel.clearWindowAnchor()
+                    pendingJumpToBottom = true
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(text = stringResource(R.string.thread_pinned_latest))
+            }
+        }
+        // Feedback round 5 — the four-way guard lives in a plain val, not
+        // in the `if` condition (Detekt ComplexCondition, same fix as the
+        // auto-load guard in batch 2).
+        val showUnseenChip = !isAtBottom && unseenCount > 0 &&
+            state.messages.isNotEmpty() && !isPinAnchored
+        if (showUnseenChip) {
+            FilledTonalButton(
+                shape = RoundedCornerShape(50),
                 onClick = {
                     scope.launch {
                         listState.animateScrollToItem(bottomItemIndex)
@@ -829,6 +1249,7 @@ fun ThreadScreen(
             }
         }
         }
+        }
     }
 
     // Audit R3 (v1.14.8) — Dialog confirmation retry WATCHDOG_TIMEOUT (risque doublon).
@@ -842,10 +1263,10 @@ fun ThreadScreen(
                     val id = msg.id
                     pendingRetryWatchdog = null
                     viewModel.retry(id)
-                }) { Text(stringResource(R.string.thread_retry_watchdog_confirm)) }
+                }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.thread_retry_watchdog_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRetryWatchdog = null }) {
+                TextButton(onClick = { pendingRetryWatchdog = null }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.thread_retry_watchdog_cancel))
                 }
             },
@@ -868,10 +1289,10 @@ fun ThreadScreen(
                     } else {
                         scheduleStep = null
                     }
-                }) { Text(stringResource(R.string.action_continue)) }
+                }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.action_continue)) }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleStep = null }) {
+                TextButton(onClick = { scheduleStep = null }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -917,10 +1338,10 @@ fun ThreadScreen(
                     // v1.25.3 (audit L10) — « Programmer » et non « Continuer » : c'est l'étape
                     // finale du sélecteur, elle valide l'envoi différé. `action_schedule`
                     // existait déjà en FR et EN, simplement jamais référencée.
-                }) { Text(stringResource(R.string.action_schedule)) }
+                }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.action_schedule)) }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleStep = null }) {
+                TextButton(onClick = { scheduleStep = null }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -935,14 +1356,6 @@ fun ThreadScreen(
             number = number,
             onDismiss = { pickingPhoneNumber = null },
             onSnack = { msg -> scope.launch { snackbarHost.showSnackbar(msg) } },
-        )
-    }
-
-    // v1.28.6 — sélection libre d'un extrait, hors de la liste (cf. MessageTextSelectionDialog).
-    textSelectionTarget?.let { msg ->
-        com.filestech.sms.ui.components.MessageTextSelectionDialog(
-            body = msg.body,
-            onDismiss = { textSelectionTarget = null },
         )
     }
 
@@ -1009,25 +1422,6 @@ fun ThreadScreen(
             onDismiss = { customReactionFor = null },
         )
     }
-    // v1.3.1 — dialog de confirmation du PREMIER envoi de réaction par SMS. Une fois la
-    // case "Ne plus demander" cochée et validée, l'envoi sera silencieux les fois suivantes.
-    // Le label destinataire pioche dans la conversation chargée ; en garde-fou (audit P5),
-    // si la conversation n'est pas (encore) résolue, on rend "ce contact" plutôt que vide
-    // pour ne jamais afficher un dialog sans destinataire visible.
-    reactionConfirmRequest?.let { (messageId, emoji) ->
-        val recipientLabel = state.conversation?.title?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.reaction_send_confirm_fallback_recipient)
-        com.filestech.sms.ui.components.ReactionSendConfirmDialog(
-            emoji = emoji,
-            recipientLabel = recipientLabel,
-            onConfirm = { neverAskAgain ->
-                viewModel.confirmReactionSend(messageId, emoji, neverAskAgain)
-                reactionConfirmRequest = null
-            },
-            onDismiss = { reactionConfirmRequest = null },
-        )
-    }
-
     pendingDelete?.let { msg ->
         DestructiveConfirmDialog(
             title = stringResource(R.string.action_delete),
@@ -1154,6 +1548,7 @@ fun ThreadScreen(
             text = { Text(body) },
             confirmButton = {
                 androidx.compose.material3.Button(
+                    shape = RoundedCornerShape(50),
                     onClick = { viewModel.confirmPendingSend() },
                     modifier = Modifier.focusRequester(sendFocus),
                 ) {
@@ -1161,7 +1556,7 @@ fun ThreadScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelPendingSend() }) {
+                TextButton(onClick = { viewModel.cancelPendingSend() }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1179,6 +1574,7 @@ fun ThreadScreen(
             text = { Text(stringResource(R.string.voice_confirm_body)) },
             confirmButton = {
                 androidx.compose.material3.Button(
+                    shape = RoundedCornerShape(50),
                     onClick = { viewModel.confirmPendingVoice() },
                     modifier = Modifier.focusRequester(sendFocus),
                 ) {
@@ -1186,7 +1582,7 @@ fun ThreadScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelPendingVoice() }) {
+                TextButton(onClick = { viewModel.cancelPendingVoice() }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1215,6 +1611,7 @@ fun ThreadScreen(
             },
             confirmButton = {
                 androidx.compose.material3.Button(
+                    shape = RoundedCornerShape(50),
                     onClick = { viewModel.confirmPendingAttachmentSend() },
                     modifier = Modifier.focusRequester(sendFocus),
                 ) {
@@ -1222,7 +1619,7 @@ fun ThreadScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.cancelPendingAttachmentSend() }) {
+                TextButton(onClick = { viewModel.cancelPendingAttachmentSend() }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1231,11 +1628,139 @@ fun ThreadScreen(
 }
 
 /**
- * Relay UI refresh — thread header: 44dp, canvas background with a hairline underneath.
- * Back chevron (22dp, brand blue) + 32dp avatar + name (17sp/600); the call glyph is
- * 22dp brand blue. The two 44dp hit areas side by side leave ~20dp of air between the
- * call glyph and the overflow glyph. Tapping the avatar or the name opens the
- * conversation details; the overflow menu is unchanged.
+ * Feedback round 5 — pinned-message banner, measured off
+ * `02___Thread_Pinned.png` (390x844, 1x): a solid brand-blue card
+ * (16dp radius, 12dp side margins, 4dp under the header, ~63dp tall)
+ * with the sender on the first line ("You" for your own messages) and an
+ * X at the top-right, then the message text (one line, truncated) and the
+ * "Pinned · date at time" line (pin date, white at 70%) sharing the second
+ * line, bottom-aligned. Tapping the card jumps to the message (loading the
+ * window around it first when it is outside the loaded window); the X
+ * removes the pin.
+ *
+ * Feedback round 6 — the card FLOATS over the top of the message list
+ * (an overlay inside the list's Box, not a row above it), so there is no
+ * background band around it — the first message peeks out from behind it,
+ * like the design. The sender is 13sp (smaller than the 15sp preview,
+ * measured from the design), the date has no year ("11/8"), and the X's
+ * right edge aligns with the vertical plane where the "M" in "PM" ends.
+ */
+@Composable
+private fun PinnedMessageBanner(
+    message: Message,
+    pinnedAt: Long,
+    isGroup: Boolean,
+    title: String,
+    memberNames: Map<String, String>,
+    formatters: com.filestech.sms.ui.util.ChatFormatters,
+    canUnpin: Boolean,
+    onJump: () -> Unit,
+    onUnpin: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(RelayColors.Blue)
+            .clickable(onClick = onJump)
+            .semantics { role = Role.Button }
+            // Feedback round 7 — more air below the message text and date:
+            // the sender row's 32dp X box made the top read roomier than
+            // the bottom (~16dp vs ~11.5dp of visible blue). 12dp below
+            // evens them out.
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = pinnedSenderLabel(
+                        message = message,
+                        isGroup = isGroup,
+                        title = title,
+                        memberNames = memberNames,
+                        youLabel = stringResource(R.string.chat_you),
+                    ),
+                    // Feedback round 6 — sender 15sp -> 13sp, smaller than
+                    // the 15sp preview (measured from the Figma design).
+                    style = RelayText.MessageBody.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (canUnpin) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onUnpin)
+                            .semantics { role = Role.Button },
+                        // Feedback round 6 — the glyph hugs the box's right
+                        // edge, so its right side aligns with the vertical
+                        // plane where the "M" in "PM" ends on the line below.
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close_circle_outline),
+                            contentDescription = stringResource(R.string.action_unpin),
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = pinnedPreviewText(
+                        message = message,
+                        photoLabel = stringResource(R.string.attach_photo),
+                        videoLabel = stringResource(R.string.attach_video),
+                        voiceLabel = stringResource(R.string.thread_pinned_voice),
+                        fileLabel = stringResource(R.string.thread_pinned_attachment),
+                    ),
+                    style = RelayText.MessageBody.copy(fontSize = 15.sp),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                // Feedback round 7 — FixedTypeSize, like the bubble
+                // timestamps: without it the date followed the system font
+                // scale and rendered larger than the 12sp bubble times.
+                FixedTypeSize {
+                    Text(
+                        text = stringResource(
+                            R.string.thread_pinned_label,
+                            // Feedback round 6 — no year: "11/8" instead of
+                            // "11/8/26" (see ChatFormatters.shortDateNoYear).
+                            formatters.shortDateNoYear.format(Date(pinnedAt)),
+                            formatters.time.format(Date(pinnedAt)),
+                        ),
+                        style = RelayText.BubbleMeta,
+                        color = Color.White.copy(alpha = 0.7f),
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Relay UI refresh — thread header: 64dp, canvas background. Back chevron (24dp,
+ * on-surface) + 37dp avatar + name; the search, call and ⋮ glyphs are 24dp
+ * on-surface-variant, and the ⋮ uses `ic_more_vert_tall` so its DRAWN height
+ * (19.4dp) matches the search and call glyphs. The 36dp hit areas leave the
+ * ⋮ centre 27dp from the edge, like the home screen. Tapping the avatar or
+ * the name opens the conversation details; the overflow menu is unchanged.
  */
 @Composable
 private fun ThreadHeader(
@@ -1247,6 +1772,8 @@ private fun ThreadHeader(
     onBack: () -> Unit,
     onCall: () -> Unit,
     onDetails: () -> Unit,
+    /** Feedback round 5 — opens the in-conversation search pill. */
+    onSearchClick: () -> Unit,
     onMoreClick: () -> Unit,
     menu: @Composable () -> Unit,
 ) {
@@ -1259,8 +1786,13 @@ private fun ThreadHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
-                .padding(horizontal = 4.dp),
+                // Round 4 — 56dp -> 64dp: the header was still cramped after round 3
+                // (44dp -> 56dp). Same elements and order; the extra height is pure
+                // breathing room.
+                // Feedback round 6 — end padding 4dp -> 9dp, so the ⋮ sits 27dp
+                // from the edge like the home screen's (see ConversationsScreen).
+                .height(64.dp)
+                .padding(start = 4.dp, end = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -1271,11 +1803,13 @@ private fun ThreadHeader(
                     .semantics { role = Role.Button },
                 contentAlignment = Alignment.Center,
             ) {
+                // Feedback round 7 — on-surface, 24dp, like the Settings
+                // back arrow (was brand blue, 22dp).
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = stringResource(R.string.action_back),
-                    tint = cs.primary,
-                    modifier = Modifier.size(22.dp),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
                 )
             }
             Row(
@@ -1288,11 +1822,18 @@ private fun ThreadHeader(
             ) {
                 RelayAvatar(
                     label = title,
-                    size = 32.dp,
+                    // Feedback round 6 — 32dp -> 37dp: 5px taller, as measured
+                    // in Figma. The initials keep their fixed size, so the
+                    // bigger circle gives them the same breathing room the
+                    // 48dp home avatars already have.
+                    size = 37.dp,
                     customUri = avatarUri,
                     isGroup = isGroup,
                 )
-                Spacer(Modifier.width(8.dp))
+                // Feedback round 5 — avatar-to-text gap 8dp -> 16dp, matching
+                // the pinned-thread screenshot (measured 17dp; 16dp is the
+                // standard step, within 1px).
+                Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
@@ -1304,7 +1845,9 @@ private fun ThreadHeader(
                     if (subtitleNumber != null) {
                         Text(
                             text = subtitleNumber,
-                            style = RelayText.Timestamp,
+                            // Feedback round 5 — 13sp -> 12sp, matching the
+                            // pinned-thread screenshot (number band ~7px tall).
+                            style = RelayText.Timestamp.copy(fontSize = 12.sp),
                             color = cs.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1312,41 +1855,193 @@ private fun ThreadHeader(
                     }
                 }
             }
+            // Feedback round 5 — header icon order matches the Figma thread:
+            // search (magnifier), call, ⋮. The magnifier opens the
+            // in-conversation search pill. Same icon and tint as the
+            // conversations list search (`ic_search`, on-surface-variant like
+            // the ⋮ next to it — feedback round 7: the thread used on-surface,
+            // darker than the home header).
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    // Feedback round 5 — 44dp -> 36dp, matching the
+                    // pinned-thread screenshot (icon centres ~33-36dp apart).
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onSearchClick)
+                    .semantics { role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_search),
+                    contentDescription = stringResource(R.string.thread_search_hint),
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
             if (canCall) {
-                Spacer(Modifier.width(8.dp))
+                // Feedback round 6 — 5dp between the search and the call
+                // icon, so the magnifier sits a touch further left.
+                Spacer(Modifier.width(5.dp))
+                // Feedback round 5 — Kristin's call icon (`ic_call_outline`,
+                // handset outline, black stroke in the vector) replaces the
+                // Material phone glyph. Tinted on-surface-variant at the call
+                // site, like the search magnifier and the ⋮ next to it
+                // (feedback round 7: was on-surface, darker than home).
+                // The call action itself is unchanged.
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        // Feedback round 5 — 44dp -> 36dp, as the search box.
+                        .size(36.dp)
                         .clip(CircleShape)
                         .clickable(onClick = onCall)
                         .semantics { role = Role.Button },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Outlined.Phone,
+                        painter = painterResource(R.drawable.ic_call_outline),
                         contentDescription = stringResource(R.string.action_call),
-                        tint = cs.primary,
+                        tint = cs.onSurfaceVariant,
+                        // Feedback round 6 — 22dp -> 24dp: phone, search and
+                        // ⋮ are all the same height now. Feedback round 7 —
+                        // only the BOXES were: the MoreVert glyph itself drew
+                        // at 16dp, so the ⋮ now uses `ic_more_vert_tall`
+                        // (19.4dp drawn, matching search and call).
+                        // Feedback round 8 — 24dp -> 22dp: measured on
+                        // Kristin's screenshot (phone_icon), the handset
+                        // glyph still drew 55px tall against 50px for the
+                        // search and ⋮ glyphs — `ic_call_outline` fills its
+                        // 19x19 viewBox almost edge to edge, so at the same
+                        // icon size it renders taller. 22dp brings it to
+                        // ~50px, matching the other two. The 36dp touch box
+                        // is unchanged.
                         modifier = Modifier.size(22.dp),
                     )
                 }
             }
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    // Feedback round 5 — 44dp -> 36dp, as the search box.
+                    .size(36.dp)
                     .clip(CircleShape)
                     .clickable(onClick = onMoreClick)
                     .semantics { role = Role.Button },
                 contentAlignment = Alignment.Center,
             ) {
+                // Feedback round 7 — `ic_more_vert_tall` instead of Material
+                // MoreVert: the drawn glyph is 19.4dp tall, matching the
+                // search and call glyphs (MoreVert drew at 16dp). Tinted
+                // on-surface-variant like the home header's ⋮.
                 Icon(
-                    Icons.Outlined.MoreVert,
+                    painter = painterResource(R.drawable.ic_more_vert_tall),
                     contentDescription = stringResource(R.string.action_more),
+                    tint = cs.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
                 )
                 menu()
             }
         }
-        HorizontalDivider(color = cs.outline)
+    }
+}
+
+/**
+ * Feedback round 5 — the in-conversation search pill that replaces the
+ * thread header while searching, matching the conversations list search
+ * pill (round 4): a full-width pill (48dp high, fully rounded), "Search in
+ * this conversation" placeholder, no magnifier inside, and Kristin's
+ * close-circle icon at the right end — tapping it closes the pill. The
+ * match count ("2 of 5", or "No results") and the up/down jump controls sit
+ * to the right of the pill; the keyboard's search key jumps to the next
+ * match. Matches stay in place in the thread with highlighting — nothing is
+ * hidden — so the user keeps the conversation context around a match.
+ */
+@Composable
+private fun ThreadSearchHeader(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    /** "2 of 5", "No results", or null while the query is still blank. */
+    matchLabel: String?,
+    canNavigate: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+    focusRequester: FocusRequester,
+) {
+    val cs = MaterialTheme.colorScheme
+    // Hoisted: stringResource is @Composable and cannot run inside .semantics {}.
+    val closeLabel = stringResource(R.string.action_close)
+    Column(
+        modifier = Modifier
+            .statusBarsPadding()
+            .background(cs.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RelayTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.weight(1f).height(48.dp),
+                placeholder = stringResource(R.string.thread_search_hint),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onSearch = { onNext() },
+                ),
+                cornerRadius = 24.dp,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                focusRequester = focusRequester,
+                trailingIcon = {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onClose)
+                            .semantics {
+                                contentDescription = closeLabel
+                                role = Role.Button
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close_circle_outline),
+                            contentDescription = null,
+                            tint = cs.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                },
+            )
+            matchLabel?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = cs.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
+            IconButton(onClick = onPrevious, enabled = canNavigate) {
+                Icon(
+                    Icons.Outlined.KeyboardArrowUp,
+                    contentDescription = stringResource(R.string.thread_search_previous),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            IconButton(onClick = onNext, enabled = canNavigate) {
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.thread_search_next),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
     }
 }
 
@@ -1379,6 +2074,9 @@ private fun ThreadActionsMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
+        // Feedback round 6 — 10dp more breathing room on each side than the
+        // Material default, like the bubble menu and the home overflow menu.
+        modifier = Modifier.padding(horizontal = 10.dp),
     ) {
         if (!hasContact) {
             // Choix clair, sans passer par le sélecteur système + défilement :
@@ -1590,8 +2288,8 @@ private fun DestructiveConfirmDialog(
                 //
                 // Ce bouton sert DEUX teintes : le rouge [BrandDanger] par défaut, et l'orange
                 // [com.filestech.sms.ui.theme.BrandBlocked] pour un blocage. Blanc convenait au
-                // rouge (**5,62:1**) et pas à l'orange (**3,79:1**, sous le seuil AA de 4,5:1) —
-                // mais forcer le noir aurait fait tomber le rouge à **3,74:1**. Un seul premier plan
+                // rouge (**4,96:1**) et pas à l'orange (**3,79:1**, sous le seuil AA de 4,5:1) —
+                // mais forcer le noir aurait fait tomber le rouge à **4,23:1**. Un seul premier plan
                 // écrit en dur ne pouvait pas être juste pour les deux : c'est le jumeau
                 // asymétrique, et il était ici invisible parce que les deux appelants partagent
                 // cette ligne. Voir [com.filestech.sms.ui.theme.onBrandContainer].
@@ -1599,7 +2297,7 @@ private fun DestructiveConfirmDialog(
                     containerColor = confirmColor,
                     contentColor = com.filestech.sms.ui.theme.onBrandContainer(confirmColor),
                 ),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(50),
             ) { Text(confirmLabel) }
         },
         dismissButton = {
@@ -1637,9 +2335,10 @@ private fun ComposerBar(
     onDiscardDraft: () -> Unit,
     onSendVoice: () -> Unit,
     onAttachClick: () -> Unit,
+    /** Round 4 — camera icon: direct capture (TakePicture), not the sheet. */
+    onCameraClick: () -> Unit,
     onMicPermissionDenied: () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
 
     val micPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO) { granted ->
@@ -1650,8 +2349,6 @@ private fun ComposerBar(
     val permissionGranted = micPermission.status == PermissionStatus.Granted
 
     Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
-        HorizontalDivider(color = cs.outline)
-
         when (voice) {
             // Idle and Recording share the same row layout — switching between them must NOT
             // remove the mic button from the composition tree, otherwise its pointer-input
@@ -1679,6 +2376,7 @@ private fun ComposerBar(
                 onReleaseCancel = onCancelRecording,
                 onCancelHintCrossed = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
                 onAttachClick = onAttachClick,
+                onCameraClick = onCameraClick,
             )
 
             is ThreadViewModel.VoiceState.Reviewing -> ReviewingMode(
@@ -1703,10 +2401,15 @@ private fun ComposerBar(
  * mic stays in the composition tree across the Idle↔Recording transition so the in-flight
  * pointer gesture is never interrupted.
  *
- * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 18dp radius, min
- * 36dp, grows to 5 lines) with the attach glyph leading and the camera inside trailing;
- * the send affordance is a 32dp blue circle with a white up-arrow, shown only when there
- * is text (or staged attachments), and a mic glyph when the composer is empty.
+ * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 24dp radius, min
+ * 48dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
+ * inside trailing; the send affordance is a 48dp blue circle with a white paper-airplane
+ * send icon, shown only when there is text (or staged attachments), and a mic glyph when the
+ * composer is empty. The mic circle is the same 48dp height as the pill, so the row
+ * reads as one aligned unit. Round 4: the camera opens the camera directly
+ * ([onCameraClick]), only the + opens the attachment sheet ([onAttachClick]).
+ * Feedback round 6 — reverted to the 48dp pill: the 36dp version read cramped
+ * and the mic did not match the pill height.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1729,10 +2432,20 @@ private fun ComposingRow(
     onReleaseCancel: () -> Unit,
     onCancelHintCrossed: () -> Unit,
     onAttachClick: () -> Unit,
+    /** Round 4 — camera icon: direct capture (TakePicture), not the sheet. */
+    onCameraClick: () -> Unit,
 ) {
     // v1.3.4 M1 — afficher le Mic seulement si pas de PJ stagées ; sinon l'utilisateur
     // doit pouvoir envoyer les PJ via le bouton Send même sans texte.
     val showMic = isRecording || (draft.isBlank() && !hasPendingAttachments)
+
+    // Smiley : pas d'API publique pour forcer le clavier en disposition emoji — le tap
+    // met donc le focus sur le champ et ouvre le clavier, d'où l'utilisateur atteint
+    // la touche emoji de son propre clavier. (La popup emoji + l'onglet GIF arrivent
+    // plus tard ; le bouton est en place dès maintenant.)
+    val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val keyboardController =
+        androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
 
     // Live cancel hint: true once the finger has dragged past the cancel threshold while pressing.
     var cancelHinted by remember { mutableStateOf(false) }
@@ -1760,32 +2473,73 @@ private fun ComposingRow(
                             onValueChange = onDraftChanged,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 36.dp),
+                                .heightIn(min = 48.dp),
                             placeholder = stringResource(R.string.thread_compose_placeholder),
                             maxLines = 5,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Sentences,
                                 imeAction = ImeAction.Default,
                             ),
-                            cornerRadius = 18.dp,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            cornerRadius = 24.dp,
+                            // Feedback round 7 — vertical padding 8dp -> 6dp:
+                            // the decoration row is 36dp tall (the in-field
+                            // icon boxes), so at 8dp the pill rendered 52dp
+                            // while the 48dp mic/send circles bottom-aligned
+                            // against it sat 2dp low. At 6dp the pill is
+                            // genuinely 48dp (6+36+6) and the circles centre
+                            // on it. The icon boxes stay 36dp — the icons
+                            // themselves must not get any smaller.
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             textStyle = MaterialTheme.typography.bodyLarge,
+                            // Feedback round 5 — the requester belongs on the inner
+                            // text field, not on the outer modifier: attached to the
+                            // outer Box it pointed at a non-focusable node, so
+                            // `composerFocus.requestFocus()` (smiley tap) was a silent
+                            // no-op — no focus, no keyboard, no cursor.
+                            focusRequester = composerFocus,
                             leadingIcon = {
+                                // Smiley de Kristin : ouvre le clavier (touche emoji du
+                                // clavier système) — pas de popup emoji pour l'instant.
                                 ComposerIconButton(
-                                    icon = Icons.Outlined.AttachFile,
-                                    contentDescription = stringResource(R.string.action_attach),
-                                    onClick = onAttachClick,
+                                    painter = painterResource(R.drawable.ic_emoji_happy_outline),
+                                    contentDescription = stringResource(R.string.thread_compose_emoji),
+                                    onClick = {
+                                        composerFocus.requestFocus()
+                                        keyboardController?.show()
+                                    },
                                 )
                             },
                             trailingIcon = {
-                                // Opens the same attachment sheet as the attach glyph: the
-                                // app has no direct camera capture, the sheet is where the
-                                // photo picker lives.
-                                ComposerIconButton(
-                                    icon = Icons.Outlined.PhotoCamera,
-                                    contentDescription = stringResource(R.string.action_attach),
-                                    onClick = onAttachClick,
-                                )
+                                // Dans l'ordre des captures de Kristin : caméra puis +.
+                                // La caméra ouvre l'appareil photo directement (capture
+                                // TakePicture) ; seul le + ouvre la feuille de pièces jointes.
+                                // Round 4 — la caméra s'efface dès qu'on tape : elle glisse
+                                // vers la droite en fondu, et le champ gagne la place libérée.
+                                // Piloté par `showMic`, le même état qui fait muter mic ->
+                                // envoyer, pour que les deux restent synchronisés. Le
+                                // `shrink/expandHorizontally` referme le créneau lui-même :
+                                // sans lui, le champ ne se ré-élargirait qu'une fois
+                                // l'animation terminée, en laissant un trou entre-temps.
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    AnimatedVisibility(
+                                        visible = showMic,
+                                        enter = slideInHorizontally { it } + fadeIn() +
+                                            expandHorizontally(expandFrom = Alignment.End),
+                                        exit = slideOutHorizontally { it } + fadeOut() +
+                                            shrinkHorizontally(shrinkTowards = Alignment.End),
+                                    ) {
+                                        ComposerIconButton(
+                                            painter = painterResource(R.drawable.ic_camera_outline),
+                                            contentDescription = stringResource(R.string.attach_photo),
+                                            onClick = onCameraClick,
+                                        )
+                                    }
+                                    ComposerIconButton(
+                                        painter = painterResource(R.drawable.ic_add_circle_outline),
+                                        contentDescription = stringResource(R.string.action_attach),
+                                        onClick = onAttachClick,
+                                    )
+                                }
                             },
                         )
                     }
@@ -1814,12 +2568,20 @@ private fun ComposingRow(
 }
 
 /**
- * Small round hit area (36dp) for a glyph living inside the composer pill — attach
- * leading, camera trailing. The glyph itself is 22dp in the secondary colour.
+ * Small round hit area (36dp) for a glyph living inside the composer pill — Kristin's
+ * smiley leading, camera and + trailing. The glyph itself is 24dp in the secondary
+ * colour (round 4 — 22dp still read small next to the 48dp mic/send tile); the vector
+ * drawables are Kristin's own icons, tinted here from the theme.
+ *
+ * Feedback round 7 — the boxes stay 36dp (the icons must not get any smaller): the
+ * pill is brought to 48dp by trimming the field's vertical content padding instead
+ * (8dp -> 6dp at the call site: 6+36+6 = 48), so the 48dp mic/send circles centre
+ * on it. The camera glyph itself was also re-centred in its vector (its artwork
+ * sat 1.5dp high — see `ic_camera_outline.xml`).
  */
 @Composable
 private fun ComposerIconButton(
-    icon: ImageVector,
+    painter: Painter,
     contentDescription: String?,
     onClick: () -> Unit,
 ) {
@@ -1832,19 +2594,19 @@ private fun ComposerIconButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = icon,
+            painter = painter,
             contentDescription = contentDescription,
             tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
 
 /**
- * Relay UI refresh — send affordance: a 32dp blue circle with a white up-arrow, on a
- * 48dp hit area. It slides up with a spring each time it appears (when text is typed)
- * and scales to 0.90 while pressed; the haptic tick is fired by the caller's
- * [onClick] (see [ComposerBar]).
+ * Relay UI refresh — send affordance: a 48dp blue circle with a white paper-airplane
+ * send icon, the same height as the composer pill. It slides up with a spring each
+ * time it appears and scales to 0.90 while pressed; the haptic tick is fired by the
+ * caller's [onClick] (see [ComposerBar]).
  */
 @Composable
 private fun SendCircleButton(
@@ -1889,10 +2651,10 @@ private fun SendCircleButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Filled.ArrowUpward,
+            imageVector = Icons.AutoMirrored.Outlined.Send,
             contentDescription = stringResource(R.string.action_send),
             tint = Color.White,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -1995,16 +2757,16 @@ private fun MicButton(
     val density = LocalDensity.current
     val cancelThresholdPx = with(density) { CANCEL_THRESHOLD_DP.toPx() }
     val danger = BrandDanger
-    val cs = MaterialTheme.colorScheme
 
+    // Filled surfaces keep the fixed brand blue in both themes: the dark scheme's
+    // lightened primary (#7AA0F5) is for text/icons, not for filled tiles. White on
+    // the brand blue is 6.63:1, white on the recording red 4.96:1.
     val containerColor = when {
         cancelHinted -> danger
         isRecording -> danger
-        else -> cs.primary
+        else -> RelayColors.Blue
     }
-    // Phase 8 — blanc sur le rouge d'enregistrement (4.96:1), `onPrimary` sur le bleu :
-    // blanc sur le bleu éclairci du thème sombre ne donnerait que 2.57:1.
-    val contentColor = if (cancelHinted || isRecording) Color.White else cs.onPrimary
+    val contentColor = Color.White
 
     val pushToTalk = Modifier.pointerInput(permissionGranted) {
         awaitEachGesture {
@@ -2036,8 +2798,9 @@ private fun MicButton(
         }
     }
 
-    // Relay UI refresh: a 32dp blue circle with a white mic on a 48dp hit area, matching
-    // the send circle. While recording it grows to 56dp and turns red, as before.
+    // Relay UI refresh: a 48dp blue circle with Kristin's white mic — the same height
+    // as the composer pill, matching the send circle. While recording it grows to 56dp
+    // and turns red, as before.
     // Phase 8 — TalkBack : le geste press-and-hold (`pointerInput`) n'expose aucune
     // action d'accessibilité — un utilisateur TalkBack entendait « Enregistrer un
     // message vocal » sans pouvoir le déclencher. La sémantique ci-dessous donne au
@@ -2068,16 +2831,19 @@ private fun MicButton(
     ) {
         Box(
             modifier = Modifier
-                .size(if (isRecording) 56.dp else 32.dp)
+                .size(if (isRecording) 56.dp else 48.dp)
                 .clip(CircleShape)
                 .background(containerColor),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Mic,
+                painter = painterResource(R.drawable.ic_mic_outline),
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(if (isRecording) 24.dp else 16.dp),
+                // Round 4 — 24dp in both states (was 20dp idle): the mic glyph now
+                // matches the other composer icons and the send arrow at 24dp, so
+                // the whole row reads at one visual weight. The tile stays 48dp.
+                modifier = Modifier.size(24.dp),
             )
         }
     }
@@ -2232,6 +2998,25 @@ private const val WAVE_BARS: Int = 28
 /** Max gap (ms) between two messages of the same sender to count as one burst. */
 private const val BURST_GAP_MS: Long = 60_000L
 
+/** Delay before retrying the thread search focus request (see `ThreadScreen`). */
+private const val THREAD_SEARCH_FOCUS_RETRY_MS: Long = 100L
+
+/**
+ * Feedback round 8 — idle delay before the floating sticky date pill slides
+ * away after scrolling stops: the pill floats only while the list is
+ * scrolling, then hides a split second after the last scroll movement, so
+ * it never sits on the thread while the user is reading.
+ */
+private const val STICKY_DATE_HIDE_DELAY_MS: Long = 1_000L
+
+/**
+ * Feedback round 5 — auto-load older messages when the first visible message
+ * is within this many items of the top of the loaded window. 5 gives a
+ * 200 ms Room load time to land before the user reaches the top, without
+ * firing loads the user never scrolls near.
+ */
+private const val AUTO_LOAD_TOP_THRESHOLD: Int = 5
+
 /** True when [a] and [b] fall on the same calendar day. */
 private fun sameDay(a: Long, b: Long): Boolean {
     val ca = java.util.Calendar.getInstance().apply { timeInMillis = a }
@@ -2239,6 +3024,42 @@ private fun sameDay(a: Long, b: Long): Boolean {
     return ca.get(java.util.Calendar.YEAR) == cb.get(java.util.Calendar.YEAR) &&
         ca.get(java.util.Calendar.DAY_OF_YEAR) == cb.get(java.util.Calendar.DAY_OF_YEAR)
 }
+
+/**
+ * Feedback round 4 — one timestamp per same-sender run, on its LAST message.
+ *
+ * The time shows on message M when M is the last message of its same-sender
+ * run: the next message in the thread is from a different sender, or M is the
+ * last message in the thread. A run of length 1 (senders alternating) shows the
+ * time on every message. Waits between messages do NOT split a run — only a
+ * reply from the other side does — so texting, waiting, texting again, waiting,
+ * texting again (all within a minute, same sender, no reply in between) shows
+ * exactly one timestamp, on the last message.
+ *
+ * Sender here is the direction ([Message.isOutgoing]), the same notion the
+ * burst-shape grouping ([computeBurstPosition]) uses: in a 1:1 thread direction
+ * IS the sender. (In a group thread, consecutive incoming messages from two
+ * different people therefore share one run, exactly as the shape grouping
+ * treats them as one burst.)
+ */
+internal fun isLastOfSenderRun(
+    msg: com.filestech.sms.domain.model.Message,
+    next: com.filestech.sms.domain.model.Message?,
+): Boolean = next == null || next.isOutgoing != msg.isOutgoing
+
+/**
+ * Feedback round 4 — the delivery status ("Sent" / "Delivered" / …) is shown
+ * independently of the timestamp rule: it belongs on the last outgoing message
+ * of a run, so a delivered message can say "Delivered" even when its timestamp
+ * is suppressed. (Before, the status label only rendered where the timestamp
+ * did, so a burst hid every "Delivered" except on the timestamped message —
+ * and the timestamped message is usually the newest, whose delivery report
+ * hasn't landed yet, so the thread showed "Sent" and never "Delivered".)
+ */
+internal fun isLastOutgoingOfRun(
+    msg: com.filestech.sms.domain.model.Message,
+    next: com.filestech.sms.domain.model.Message?,
+): Boolean = msg.isOutgoing && (next == null || !next.isOutgoing)
 
 /**
  * Decides where a message sits inside its burst (a run of consecutive messages from the same
@@ -2280,7 +3101,6 @@ private fun computeBurstPosition(
  */
 @Composable
 private fun DateSeparator(label: String) {
-    val cs = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2288,21 +3108,59 @@ private fun DateSeparator(label: String) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(cs.surfaceVariant)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            // Phase 8 — le libellé est du méta-texte de mise en page, fixe (voir
-            // [FixedTypeSize]), comme l'heure des bulles.
-            FixedTypeSize {
-                Text(
-                    text = label,
-                    style = RelayText.SystemNote,
-                    color = cs.onSurfaceVariant,
-                )
-            }
+        DatePill(label = label)
+    }
+}
+
+/**
+ * Feedback round 8 — the floating sticky date pill, extracted so
+ * [AnimatedVisibility] resolves to its plain overload: called inline from
+ * the thread's `Column` it would resolve to the `ColumnScope` overload
+ * (which cannot run inside the overlay `Box`) and fail to compile. The
+ * pill slides in from the top while scrolling and slides back up out of
+ * view shortly after scrolling stops (see [showStickyDate]).
+ */
+@Composable
+private fun StickyDatePill(
+    label: String?,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+        modifier = modifier,
+    ) {
+        label?.let { DatePill(label = it) }
+    }
+}
+
+/**
+ * Feedback round 7 — the day pill itself, shared by the inline [DateSeparator]
+ * and the floating sticky date header: one styling, so the two can never drift
+ * apart. Quiet pill on the surface fill, 13sp secondary text.
+ */
+@Composable
+private fun DatePill(
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(cs.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        // Phase 8 — le libellé est du méta-texte de mise en page, fixe (voir
+        // [FixedTypeSize]), comme l'heure des bulles.
+        FixedTypeSize {
+            Text(
+                text = label,
+                style = RelayText.SystemNote,
+                color = cs.onSurfaceVariant,
+            )
         }
     }
 }
@@ -2343,14 +3201,13 @@ private class ThreadMessageItemActions(
     val onDelete: (Message) -> Unit,
     val onReply: (Message) -> Unit,
     val onReact: (Long) -> Unit,
-    val onRemoveReaction: (Message) -> Unit,
     val onForward: (Message) -> Unit,
     val onTranslate: (Message) -> Unit,
     val onCopy: (Message) -> Unit,
-    /** v1.28.6 — sélection libre d'un extrait (appui long sur la bulle, ou menu ⋮). */
-    val onSelectText: (Message) -> Unit,
     /** v1.26.1 (audit F2) — bascule « favori » ; le drapeau protège déjà de la purge auto. */
     val onToggleStar: (Message) -> Unit,
+    /** Feedback round 5 — bascule « épingler » (un seul message épinglé par fil). */
+    val onTogglePin: (Message) -> Unit,
     val onPhoneClick: (String) -> Unit,
 )
 
@@ -2393,6 +3250,15 @@ private fun ThreadMessageItem(
      * `sub_id` : aucun tag n'est alors ajouté. Résolu par le parent via [rememberSimLabeler].
      */
     simLabel: String? = null,
+    /**
+     * Feedback round 5 — thread search highlight for this message's body /
+     * caption: every occurrence of the query, and whether the search is
+     * currently sitting on this message. Empty by default: no search, no
+     * highlight.
+     */
+    searchHighlight: SearchHighlight = SearchHighlight(),
+    /** Feedback round 5 — ce message est l'épinglé du fil (menu « Désépingler »). */
+    isPinnedMessage: Boolean = false,
     actions: ThreadMessageItemActions,
 ) {
     // Taille du texte des messages : tout l'élément (séparateur, bulle, citation, horodatage).
@@ -2402,16 +3268,93 @@ private fun ThreadMessageItem(
             DateSeparator(label = label)
         }
 
-        // Show the time when a message is more than 1 minute after the previous
-        // one — back-to-back messages in a quick burst stay clean.
-        val showTimestamp = prev?.date?.let { msg.date - it > 60_000L } ?: true
+        // Feedback round 4 — one timestamp per same-sender run, on its LAST
+        // message: the time shows when the next message is from a different
+        // sender, or this is the last message in the thread. Waits between
+        // messages do NOT split a run — only a reply from the other side does
+        // (texting, waiting, texting again, all within a minute = one run, one
+        // timestamp, on the last message). Replaces the old 1-minute gap rule
+        // (`msg.date - prev.date > 60_000L`), which hid the time on every
+        // message sent within a minute of the previous one.
+        val showTimestamp = isLastOfSenderRun(msg, next)
+        // Feedback round 4 — delivery status, decoupled from the timestamp:
+        // it belongs on the last outgoing message of a run, so a delivered
+        // message can say "Delivered" even when its timestamp is suppressed.
+        // (Before, the status label only rendered where the timestamp did, so
+        // a burst hid every "Delivered" except on the timestamped message.)
+        val showStatus = isLastOutgoingOfRun(msg, next)
         val burstPosition = computeBurstPosition(prev, msg, next)
         val audio = msg.audioAttachment
+        // Feedback round 6 — per-message callbacks, remembered so the bubbles
+        // can skip when the parent recomposes. Fresh inline lambdas are new
+        // instances on every recomposition, which defeats Compose skipping one
+        // level down (the round-5 stable-callbacks fix stopped at
+        // [itemActions]). Keyed on the whole `msg` (data-class equals): a new
+        // instance with identical content keeps the lambdas, a real content
+        // change rebuilds them — so a toggle reading `msg.starred` never
+        // closes over a stale message. The calls stay unconditional (above
+        // the `when`), so every branch reuses the same instances.
+        val onTogglePlay = remember(msg, actions) {
+            {
+                // `audio` is non-null wherever this callback is invoked (the
+                // audio branch), but it is nullable at this hoisted spot —
+                // the `when` smart-cast does not reach here.
+                if (audio != null) actions.onTogglePlayback(audio)
+            }
+        }
+        val onDelete = remember(msg, actions) {
+            {
+                actions.onDelete(msg)
+            }
+        }
+        val onReply = remember(msg, actions) {
+            {
+                actions.onReply(msg)
+            }
+        }
+        val onReact = remember(msg, actions) {
+            {
+                actions.onReact(msg.id)
+            }
+        }
+        val onForward = remember(msg, actions) {
+            {
+                actions.onForward(msg)
+            }
+        }
+        val onCopy = remember(msg, actions) {
+            {
+                actions.onCopy(msg)
+            }
+        }
+        val onTranslate = remember(msg, actions) {
+            {
+                actions.onTranslate(msg)
+            }
+        }
+        val onTapFailed = remember(msg, actions) {
+            {
+                if (msg.status == Message.Status.FAILED) actions.onTapFailed(msg)
+            }
+        }
+        // Feedback round 5 — menu toggles for this message, built once for
+        // the three bubble types below (one bundle parameter instead of
+        // three — the text bubble is at the Detekt 20-parameter limit).
+        val menuToggles = remember(msg, actions, isPinnedMessage) {
+            BubbleMenuToggles(
+                onToggleStar = { actions.onToggleStar(msg) },
+                isPinned = isPinnedMessage,
+                onTogglePin = { actions.onTogglePin(msg) },
+            )
+        }
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à
         // MediaAttachmentBubble qui ajoute le tap-to-view (ACTION_VIEW via FileProvider).
         // v1.28.3 (audit global, X-04 — mesuré sur le S9) — TOUTES, pas la première : F16 gardait
         // toutes les parties d'un MMS, l'écran n'en montrait qu'une.
-        val mediaAttachments = msg.attachments.filter { !it.isAudio }
+        // Feedback round 6 — the media filter ran on every composition,
+        // allocating a new list per bubble; remembered on the attachments
+        // (structural list equals: a re-mapped identical list keeps it).
+        val mediaAttachments = remember(msg.attachments) { msg.attachments.filter { !it.isAudio } }
         val mediaAttachment = mediaAttachments.firstOrNull()
         // v1.3.3 #7 — étiquette d'expéditeur uniquement sur la 1ʳᵉ bulle d'un burst (Solo ou First)
         // pour ne pas surcharger visuellement les suites consécutives du même expéditeur.
@@ -2446,19 +3389,23 @@ private fun ThreadMessageItem(
                     message = msg,
                     audio = audio,
                     playbackProvider = playbackProvider,
-                    onTogglePlay = { actions.onTogglePlayback(audio) },
+                    onTogglePlay = onTogglePlay,
                     onSeekTo = actions.onSeekPlayback,
-                    onDelete = { actions.onDelete(msg) },
-                    onReply = { actions.onReply(msg) },
+                    onDelete = onDelete,
+                    onReply = onReply,
                     // v1.3.1 — "Réagir" exposé uniquement sur les messages reçus.
-                    onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
-                    onForward = { actions.onForward(msg) },
+                    onReact = if (msg.isIncoming) onReact else null,
+                    onForward = onForward,
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    onToggleStar = { actions.onToggleStar(msg) },
-                    onRemoveReaction = { actions.onRemoveReaction(msg) },
+                    // Feedback round 5 — bascules « favori » / « épingler » sur les
+                    // trois types de bulle.
+                    toggles = menuToggles,
                     repliedToPreview = repliedToPreview,
                     showTimestamp = showTimestamp,
+                    showStatus = showStatus,
                     senderLabel = senderLabel,
+                    // Feedback round 5 — voice messages carry no searchable text
+                    // body, so there is nothing to highlight on an audio bubble.
                 )
             }
             mediaAttachment != null -> {
@@ -2467,81 +3414,48 @@ private fun ThreadMessageItem(
                     attachment = mediaAttachment,
                     autres = mediaAttachments.drop(1),
                     showTimestamp = showTimestamp,
-                    onDelete = { actions.onDelete(msg) },
-                    onReply = { actions.onReply(msg) },
-                    onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
+                    showStatus = showStatus,
+                    onDelete = onDelete,
+                    onReply = onReply,
+                    onReact = if (msg.isIncoming) onReact else null,
                     // v1.3.11 (F3) — copy exposed only when the bubble carries a user-typed caption.
-                    onCopy = if (msg.body.isNotBlank()) { { actions.onCopy(msg) } } else null,
-                    onSelectText = if (msg.body.isNotBlank()) { { actions.onSelectText(msg) } } else null,
-                    onForward = { actions.onForward(msg) },
+                    onCopy = if (msg.body.isNotBlank()) onCopy else null,
+                    onForward = onForward,
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    onToggleStar = { actions.onToggleStar(msg) },
+                    // Feedback round 5 — bascules « favori » / « épingler » sur les
+                    // trois types de bulle.
+                    toggles = menuToggles,
                     onPhoneClick = actions.onPhoneClick,
-                    onRemoveReaction = { actions.onRemoveReaction(msg) },
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,
+                    searchHighlight = searchHighlight,
                 )
             }
             else -> {
                 MessageBubble(
                     message = msg,
                     showTimestamp = showTimestamp,
+                    showStatus = showStatus,
                     burstPosition = burstPosition,
-                    onTap = { if (msg.status == Message.Status.FAILED) actions.onTapFailed(msg) },
-                    onDelete = { actions.onDelete(msg) },
-                    onReply = { actions.onReply(msg) },
+                    onTap = onTapFailed,
+                    onDelete = onDelete,
+                    onReply = onReply,
                     // v1.7.1 — Translate via ACTION_PROCESS_TEXT system intent. Only wired when
                     // the body is non-blank (nothing to translate on attachment-only messages).
-                    onTranslate = if (msg.body.isNotBlank()) { { actions.onTranslate(msg) } } else null,
-                    onReact = if (msg.isIncoming) { { actions.onReact(msg.id) } } else null,
-                    onCopy = if (msg.body.isNotBlank()) { { actions.onCopy(msg) } } else null,
-                    onSelectText = if (msg.body.isNotBlank()) { { actions.onSelectText(msg) } } else null,
-                    onForward = { actions.onForward(msg) },
+                    onTranslate = if (msg.body.isNotBlank()) onTranslate else null,
+                    onReact = if (msg.isIncoming) onReact else null,
+                    onCopy = if (msg.body.isNotBlank()) onCopy else null,
+                    onForward = onForward,
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    onToggleStar = { actions.onToggleStar(msg) },
+                    // Feedback round 5 — bascules « favori » / « épingler » sur les
+                    // trois types de bulle.
+                    toggles = menuToggles,
                     onPhoneClick = actions.onPhoneClick,
-                    onRemoveReaction = { actions.onRemoveReaction(msg) },
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,
                     customBubbleColorArgb = bubbleColorArgb,
                     smishingReasons = smishingReasons,
-                )
-            }
-        }
-    }
-}
-
-/**
- * Head-of-thread control that widens the loaded window (v1.24.0, finding A).
- *
- * Sits above the oldest loaded message and states how many older ones remain, so the boundary of
- * the window is explicit rather than looking like the start of the conversation.
- */
-@Composable
-private fun LoadOlderRow(
-    isLoading: Boolean,
-    remaining: Int,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-            )
-        } else {
-            TextButton(onClick = onClick) {
-                Text(
-                    text = if (remaining > 0) {
-                        stringResource(R.string.thread_load_older_remaining, remaining)
-                    } else {
-                        stringResource(R.string.thread_load_older)
-                    },
+                    searchHighlight = searchHighlight,
                 )
             }
         }

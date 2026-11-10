@@ -164,7 +164,7 @@ class AuditV180Test {
     }
 
     @Test fun `decoder STILL recognises v1_8_0 LEGACY French format (retro-compat)`() {
-        // Critical : un user qui reçoit une réaction d'un correspondant SMS Tech v1.8.0
+        // Critical : un user qui reçoit une réaction d'un correspondant Relay v1.8.0
         // (pas encore upgradé en v1.8.1) doit continuer à voir le badge réaction.
         val decoded = IncomingReactionDecoder.decode("J’ai réagi par ❤️ à : «Bonjour»")
         assertThat(decoded).isNotNull()
@@ -190,7 +190,7 @@ class AuditV180Test {
 
     @Test fun `decoder STILL recognises legacy English Tapback format (retro-compat)`() {
         // Critical : un user qui upgrade depuis v1.7.x doit continuer à voir les réactions
-        // entrantes envoyées au format "Reacted ❤️ to «...»" — soit par d'autres SMS Tech v1.7,
+        // entrantes envoyées au format "Reacted ❤️ to «...»" — soit par d'autres Relay v1.7,
         // soit par iMessage/Google Messages.
         val decoded = IncomingReactionDecoder.decode("Reacted ❤️ to «Hello»")
         assertThat(decoded).isNotNull()

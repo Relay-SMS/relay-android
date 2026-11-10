@@ -287,6 +287,14 @@ class ConversationMirror @Inject constructor(
         isRemoval: Boolean = false,
         /** Timestamp of the reaction SMS itself, for the date-tolerance check. */
         reactionDateMs: Long? = null,
+        /**
+         * Feedback round 7 — Room id of a message that must never be picked as
+         * the target. Only the retroactive reparse passes it (the reaction row
+         * itself, which already sits in Room — see [reparseStoredReactions]).
+         * The live receiver leaves it `null`: the reaction row does not exist
+         * yet when it folds.
+         */
+        excludeMessageId: Long? = null,
     ): ReactionApplied? = withContext(io) {
         val addr = PhoneAddress.of(address)
         if (addr.normalized.isEmpty()) return@withContext null
@@ -326,6 +334,7 @@ class ConversationMirror @Inject constructor(
                 kind = kind,
                 wasTruncated = wasTruncated,
                 maxDateMs = maxDateMs,
+                excludeMessageId = excludeMessageId,
             ) ?: continue
             if (isRemoval) {
                 // Single-emoji storage cannot tell whose reaction the badge
@@ -346,6 +355,113 @@ class ConversationMirror @Inject constructor(
     }
 
     /**
+     * Feedback round 7 — one-time retroactive fold of reaction texts that
+     * arrived BEFORE this build learned to fold them live (or before Relay
+     * became the default SMS app and started importing them at all). Old
+     * `Reacted ❤️ to «…»` / iOS tapback / French readable rows sitting in Room
+     * as plain text bubbles get their badge glued onto the original message,
+     * then the text row is replaced by the same sentinel the live path writes
+     * ([upsertReactionSentinel]) so the next sync sweep does not re-import the
+     * carrier text as a bubble.
+     *
+     * Runs once per install (gated by
+     * `AdvancedSettings.reactionReparseDone`, set by the caller), on IO, in
+     * the background — the user just sees old reaction texts turn into badges.
+     *
+     * Hard limits (by design, not bugs):
+     *   - [Kind.EmojiOnly] is SKIPPED: its 5-minute window is anchored at
+     *     `System.currentTimeMillis()` in [findReactionTarget], so a bare-emoji
+     *     row from last month would mis-attach to a message sent minutes ago.
+     *     A bare "❤️" stays a text bubble — the safe choice.
+     *   - Google Messages reactions are UNRECOVERABLE: the receiver strips
+     *     the U+200B framing before storing, so the stored body carries no
+     *     signal at all. Only Tapback / iOS / French / emoji+quote formats
+     *     survive in stored bodies.
+     *   - A row with no `telephonyUri` keeps its text (badge still set): with
+     *     no sentinel to write, deleting it would let the next sync sweep
+     *     re-import the carrier text as a bubble.
+     *
+     * Crash-safety: the sentinel is written BEFORE the delete, each in its
+     * own transaction. A crash between the two leaves sentinel + text row;
+     * the next run (flag not yet set) folds it again idempotently. Deleting
+     * first would risk the reverse — text gone, no sentinel, phantom bubble
+     * back on the next sync.
+     */
+    data class ReactionReparseResult(
+        val scanned: Int,
+        val folded: Int,
+        val skipped: Int,
+    )
+
+    suspend fun reparseStoredReactions(): ReactionReparseResult = withContext(io) {
+        var scanned = 0
+        var folded = 0
+        var skipped = 0
+        for (row in messageDao.findReactionCandidates()) {
+            scanned++
+            val decoded = IncomingReactionDecoder.decode(row.body)
+            if (decoded == null || decoded.kind == Kind.EmojiOnly) {
+                skipped++
+                continue
+            }
+            val applied = try {
+                applyIncomingReaction(
+                    address = row.address,
+                    emoji = decoded.emoji,
+                    bodyPrefix = decoded.previewPrefix,
+                    kind = decoded.kind,
+                    wasTruncated = decoded.wasTruncated,
+                    isRemoval = decoded.isRemoval,
+                    reactionDateMs = row.date,
+                    // The reaction row itself already sits in Room: without
+                    // this, a no-preview reaction ("Reacted ❤️" to a photo)
+                    // would match ITSELF as "most recent message", get a badge,
+                    // then be deleted — the reaction lost entirely.
+                    excludeMessageId = row.id,
+                )
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Timber.w(t, "reparseStoredReactions: fold failed for message #${row.id}")
+                null
+            }
+            if (applied == null) {
+                skipped++
+                continue
+            }
+            if (row.telephonyUri.isNullOrBlank()) {
+                Timber.w(
+                    "reparseStoredReactions: message #${row.id} has no telephonyUri — " +
+                        "badge set but text row kept (no sentinel possible)",
+                )
+                skipped++
+                continue
+            }
+            // Sentinel FIRST (own transaction), then delete + preview refresh:
+            // see the crash-safety note on this function.
+            upsertReactionSentinel(
+                address = row.address,
+                telephonyUri = row.telephonyUri,
+                date = row.date,
+            )
+            database.withTransaction {
+                messageDao.delete(row.id)
+                // The deleted row may have been the conversation's preview —
+                // recompute it from the remaining messages.
+                messageDao.refreshConversationPreview(applied.conversationId)
+            }
+            folded++
+        }
+        Timber.i(
+            "reparseStoredReactions: done — scanned=%d folded=%d skipped=%d",
+            scanned,
+            folded,
+            skipped,
+        )
+        ReactionReparseResult(scanned = scanned, folded = folded, skipped = skipped)
+    }
+
+    /**
      * Finds the message a reaction targets inside one conversation, most
      * recent first. Tapback kinds match ANY message in the thread (incoming
      * or outgoing); the emoji-only path keeps its outgoing-only, 5-minute
@@ -358,9 +474,17 @@ class ConversationMirror @Inject constructor(
         kind: Kind,
         wasTruncated: Boolean,
         maxDateMs: Long?,
+        excludeMessageId: Long? = null,
     ): MessageEntity? {
         fun withinTolerance(entity: MessageEntity): Boolean =
             maxDateMs == null || entity.date <= maxDateMs
+
+        // Feedback round 7 — the retroactive reparse passes the reaction row's
+        // own id so it can never be picked as its own target (it already sits
+        // in Room, unlike in the live path). `null` (live path) excludes
+        // nothing: `id != null` is always true.
+        fun notExcluded(entity: MessageEntity): Boolean =
+            entity.id != excludeMessageId
         return when (kind) {
             Kind.Tapback -> {
                 if (bodyPrefix != null) {
@@ -376,7 +500,8 @@ class ConversationMirror @Inject constructor(
                             conversationId = conversationId,
                             limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
                         ).firstOrNull { entity ->
-                            withinTolerance(entity) &&
+                            notExcluded(entity) &&
+                                withinTolerance(entity) &&
                                 entity.body.collapseWhitespace() == normalizedPrefix
                         }
                     } else {
@@ -386,19 +511,32 @@ class ConversationMirror @Inject constructor(
                         // whitespace mais pas le DAO).
                         val escaped = escapeForSqlLike(bodyPrefix)
                         messageDao.findMostRecentByBodyPrefix(conversationId, escaped)
-                            ?.takeIf { withinTolerance(it) }
+                            ?.takeIf { notExcluded(it) && withinTolerance(it) }
                             ?: messageDao.findRecentForConversation(
                                 conversationId = conversationId,
                                 limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
                             ).firstOrNull { entity ->
-                                withinTolerance(entity) &&
+                                notExcluded(entity) &&
+                                    withinTolerance(entity) &&
                                     entity.body.collapseWhitespace()
                                         .startsWith(normalizedPrefix)
                             }
                     }
                 } else {
-                    messageDao.findMostRecent(conversationId)
-                        ?.takeIf { withinTolerance(it) }
+                    if (excludeMessageId == null) {
+                        messageDao.findMostRecent(conversationId)
+                            ?.takeIf { withinTolerance(it) }
+                    } else {
+                        // Reparse only: `findMostRecent` would return the
+                        // reaction row itself when it is the latest message.
+                        // Scan the recent window instead and drop it.
+                        messageDao.findRecentForConversation(
+                            conversationId = conversationId,
+                            limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
+                        ).firstOrNull { entity ->
+                            notExcluded(entity) && withinTolerance(entity)
+                        }
+                    }
                 }
             }
             Kind.EmojiOnly -> {

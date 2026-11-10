@@ -205,7 +205,7 @@ fun PinEntryDialog(
         confirmButton = {
             RelayTextButton(
                 text = confirmLabel,
-                onClick = submit,
+                onClick = { submit() },
                 enabled = canSubmit,
                 confirm = true,
             )

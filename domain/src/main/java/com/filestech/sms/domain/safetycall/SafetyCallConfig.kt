@@ -4,7 +4,7 @@ import android.os.SystemClock
 
 /**
  * v1.9.0 — Safety call : envoie automatiquement un SMS prédéfini à 1-4
- * contacts d'urgence si l'utilisateur n'a pas ouvert SMS Tech (ni utilisé le
+ * contacts d'urgence si l'utilisateur n'a pas ouvert Relay (ni utilisé le
  * bouton "Je vais bien") pendant une durée configurée.
  *
  * Cas d'usage : personnes seules, voyageurs solo, personnes âgées vivant
@@ -14,10 +14,10 @@ import android.os.SystemClock
  * **Opt-in strict** : `enabled = false` par défaut. Tant que désactivé, le
  * `SafetyCallWorker` n'est pas schedulé et aucun timer ne court.
  *
- * **Reset du timer** : à chaque ouverture de SMS Tech (`MainActivity.onResume`)
+ * **Reset du timer** : à chaque ouverture de Relay (`MainActivity.onResume`)
  * ET via le bouton dédié "Je vais bien" dans Settings → Sécurité.
  *
- * **Notification de pré-trigger** : 6h avant l'expiration du timer, SMS Tech
+ * **Notification de pré-trigger** : 6h avant l'expiration du timer, Relay
  * pose une notification persistante (canal HIGH) : "Tu n'as pas ouvert SMS
  * Tech depuis [X]. Confirme que tu vas bien." Tap notif = reset timer.
  *
@@ -481,7 +481,7 @@ data class SafetyCallConfig(
 
     /**
      * Retourne `true` quand le timer entre dans la fenêtre de pré-trigger
-     * (6h avant expiration). Pendant cette fenêtre, SMS Tech pose une
+     * (6h avant expiration). Pendant cette fenêtre, Relay pose une
      * notification persistante "Confirme que tu vas bien". Comme pour
      * [isExpired], les deux horloges doivent matcher (cohérence) — un
      * attaquant ne peut donc pas non plus déclencher la notification

@@ -35,6 +35,8 @@
     <string name="action_translate">Traduire</string>
     <!-- v1.3.11 (F3) — `action_copy` / `action_forward` déjà définis plus bas (l.89-90). -->
     <string name="toast_copied">Message copié</string>
+    <string name="toast_code_copied">Code copié</string>
+    <string name="otp_copy_code">Copier le code de vérification</string>
     <!-- v1.3.11 (F4) — dialog d'actions sur numéro de téléphone -->
     <string name="phone_action_subtitle">Choisir une action pour ce numéro.</string>
     <string name="phone_action_call">Appeler</string>
@@ -97,7 +99,6 @@
     <string name="action_back">Retour</string>
     <string name="action_copy">Copier</string>
     <string name="action_forward">Transférer</string>
-    <string name="action_select_text">Sélectionner le texte</string>
     <string name="action_retry">Réessayer</string>
     <string name="action_close">Fermer</string>
     <string name="action_continue">Continuer</string>
@@ -115,6 +116,9 @@
     <string name="group_avatar_cd">Groupe</string>
     <string name="action_call">Appeler</string>
     <string name="conversations_search_hint">Rechercher un numéro, un contact, un message…</string>
+    <string name="conversations_section_pinned">Épinglés</string>
+    <string name="conversations_section_chats">Chats</string>
+    <string name="conversations_search_short">Rechercher</string>
     <string name="conversations_no_match">Aucune conversation correspondante.</string>
     <string name="thread_create_contact">Créer un contact</string>
     <string name="thread_update_contact">Mettre à jour un contact</string>
@@ -145,7 +149,8 @@
     <string name="conversations_draft_prefix">Brouillon : %1$s</string>
     <string name="conversations_preview_attachment">Pièce jointe</string>
 
-    <string name="thread_compose_placeholder">Écrire un message…</string>
+    <string name="thread_compose_placeholder">Relay message</string>
+    <string name="thread_compose_emoji">Emoji</string>
     <string name="thread_status_pending">Envoi…</string>
     <string name="thread_status_sent">Envoyé</string>
     <string name="thread_status_delivered">Remis</string>
@@ -368,14 +373,16 @@
     <string name="lock_lockout_message">Trop d\'essais. Nouvelle tentative dans %1$d s.</string>
 
     <string name="settings_title">Réglages</string>
+    <string name="settings_app_subtitle">Relay – SMS &amp; MMS Messenger</string>
 
     <string name="settings_section_appearance">Apparence</string>
+    <string name="settings_section_general">Général</string>
     <string name="settings_theme_system">Système</string>
     <string name="settings_theme_light">Clair</string>
     <string name="settings_theme_dark">Sombre</string>
     <string name="settings_theme_dark_tech">Dark Tech</string>
     <string name="settings_theme_dark_tech_desc">Palette sombre pour développeurs. Désactive les couleurs dynamiques et le mode AMOLED.</string>
-    <string name="settings_dynamic_colors">Couleurs dynamiques (Android 12+)</string>
+    <string name="settings_dynamic_colors">Couleurs dynamiques</string>
     <string name="settings_amoled">AMOLED noir pur</string>
     <string name="settings_text_scale">Taille du texte des messages</string>
     <string name="settings_text_scale_desc">%1$s · messages, saisie et liste des conversations. S\'ajoute à la taille de police d\'Android.</string>
@@ -436,8 +443,9 @@
     <string name="settings_resync_title">Resynchroniser depuis le téléphone</string>
     <string name="settings_resync_desc">Réimporte tous les SMS depuis le système Android. Utile si des messages présents sur le téléphone manquent dans l\'app. Ne récupère pas ce que vous avez effacé : la suppression retire aussi la copie du téléphone. Sans doublons.</string>
     <string name="settings_resync_started">Resynchronisation lancée en arrière-plan.</string>
-    <string name="settings_send_reactions_title">Envoyer mes réactions au correspondant</string>
-    <string name="settings_send_reactions_desc">Quand vous posez une réaction emoji (cœur, pouce…), un SMS contenant uniquement l\'emoji est envoyé au correspondant. Cela compte comme un SMS normal au tarif de votre forfait. Le retrait ou le changement d\'une réaction ne renvoie rien.</string>
+    <string name="settings_send_reactions_title">Envoyer mes réactions</string>
+    <string name="settings_row_info">Plus d\'infos</string>
+    <string name="settings_send_reactions_desc">Quand vous posez une réaction emoji (cœur, pouce…), un SMS contenant uniquement l\'emoji est envoyé au correspondant. Cela compte comme un SMS normal au tarif de votre forfait. Changer de réaction envoie un nouveau SMS avec le nouvel emoji ; retirer une réaction envoie un SMS de retrait.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options en un coup d\'œil. -->
     <string name="settings_reaction_format_title">Format des réactions</string>
     <string name="settings_reaction_format_fr">Français lisible</string>
@@ -599,10 +607,6 @@
     <string name="emergency_setup_contacts_cta">Gérer les contacts</string>
     <string name="action_edit">Modifier</string>
     <string name="snack_generic_error">Une erreur s\'est produite.</string>
-    <string name="reaction_send_confirm_title">Envoyer la réaction ?</string>
-    <string name="reaction_send_confirm_body">Un SMS contenant uniquement cet emoji sera envoyé à votre correspondant. Cela compte comme un SMS normal (tarif forfait). Vous pouvez désactiver cet envoi dans Réglages → Envoi.</string>
-    <string name="reaction_send_confirm_never_ask">Ne plus demander, envoyer directement</string>
-    <string name="reaction_send_confirm_fallback_recipient">ce contact</string>
     <string name="attachment_image_label">Image</string>
     <string name="attachment_video_label">Vidéo</string>
     <string name="media_gallery_title">Photos et vidéos</string>
@@ -634,7 +638,6 @@
     <string name="reaction_picker_validate_count">Envoyer la réaction %1$s</string>
     <!-- v1.6.0 — a11y badge réaction (TalkBack) -->
     <string name="reaction_badge_content_description">Réaction %1$s</string>
-    <string name="reaction_badge_remove_action">Retirer la réaction</string>
     <!-- v1.6.1 — corps de la notification système quand quelqu'un réagit à notre message -->
     <string name="reaction_notif_body_with_preview">A réagi %1$s à : %2$s</string>
     <string name="reaction_notif_body_no_preview">A réagi %1$s à votre message</string>
@@ -669,7 +672,7 @@
     <string name="settings_notif_style_banner_hint">Pas de pop-up, pas de son. Juste une icône dans le shade.</string>
     <string name="settings_notif_style_silent">Silencieux</string>
     <string name="settings_notif_style_silent_hint">Routé vers un canal d\'importance faible. Le système masque le son et la pop-up.</string>
-    <string name="settings_notif_open_system">Ouvrir les réglages système</string>
+    <string name="settings_notif_open_system">Réglages des notifications</string>
     <string name="settings_notif_open_system_desc">Vérifier ou corriger les permissions, canaux et son au niveau du système.</string>
     <string name="notifications_off_title">Notifications désactivées</string>
     <string name="notifications_off_fix">Autoriser dans les réglages Android</string>
@@ -720,12 +723,11 @@
     <!-- v1.25.3 (audit C7) — titres de section codés en dur en français dans AboutScreen.kt. -->
     <string name="about_section_privacy">Confidentialité</string>
     <string name="about_section_features">Fonctionnalités</string>
-    <string name="about_section_author">Auteur</string>
     <string name="about_section_help">Aide rapide</string>
+    <string name="help_title">Aide</string>
     <string name="about_section_links">Liens</string>
     <string name="about_check_updates">Voir les mises à jour</string>
     <string name="about_privacy_headline">100 % privé — zéro surveillance</string>
-    <string name="about_author_role">Développeur</string>
     <!-- v1.25.3 (audit H20) — justificatifs de permissions codés en dur en anglais. Les noms de
          permissions restent non traduits : ce sont les identifiants Android, verbatim. -->
     <string name="about_perm_sms">Indispensable à toute application SMS.</string>
@@ -741,12 +743,15 @@
     <string name="about_permissions_title">Permissions utilisées</string>
     <string name="about_security_title">Sécurité &amp; limites</string>
     <string name="about_security_body">SMS et MMS circulent en clair sur le réseau opérateur — c\'est une limite du protocole, pas un choix. SMS Relay ne protège que ce qui est stocké sur l\'appareil. Pour du chiffrement de bout en bout, utilisez Matrix.</string>
-    <string name="about_credits_body">Créée par %1$s. UI inspirée des principes de motion Material 3. Construite avec Kotlin, Compose, Hilt, Room et SQLCipher.</string>
+    <string name="about_credits_body">Basée sur SMS Tech par %1$s. Construite avec Kotlin, Compose, Hilt, Room et SQLCipher.</string>
+    <string name="about_ui_copyright">Relay UI © 2026 Relay Messaging</string>
     <string name="about_legal_body">© %1$s %2$s. Publiée sous licence Apache 2.0.</string>
     <string name="about_source_code">Code source</string>
     <string name="about_report_issue">Signaler un problème</string>
     <string name="about_website">Site web</string>
     <string name="about_license">Licence</string>
+    <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
+    <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
     <string name="about_privacy">Politique de confidentialité</string>
     <string name="about_terms">Conditions d\'utilisation</string>
     <string name="about_support">Soutenir le projet</string>
@@ -770,6 +775,8 @@
 
     <string name="notif_reply_label">Répondre</string>
     <string name="notif_mark_read_label">Marquer comme lu</string>
+    <string name="notif_copy_code_label">Copier le code</string>
+    <string name="notif_code_copied">Code copié</string>
     <string name="notif_preview_hidden_content">Nouveau message</string>
 
     <string name="pdf_header_subtitle">Exporté le %1$s • %2$d participant(s)</string>
@@ -863,6 +870,11 @@
     <string name="thread_schedule_empty_body">Saisissez un message avant de programmer</string>
     <string name="thread_schedule_success">Message programmé</string>
     <string name="thread_schedule_failed">Échec de la programmation</string>
+    <string name="thread_search_hint">Rechercher dans cette conversation</string>
+    <string name="thread_search_match_count">%1$d sur %2$d</string>
+    <string name="thread_search_no_results">Aucun résultat</string>
+    <string name="thread_search_previous">Résultat précédent</string>
+    <string name="thread_search_next">Résultat suivant</string>
 
     <!-- v1.14.9 audit I18N-M3 — strings AboutScreen extraites en R.string. Source unique. -->
 
@@ -973,6 +985,11 @@
     <!-- v1.24.0 fenêtre glissante : contrôle en tête de fil pour élargir la fenêtre -->
     <string name="thread_load_older">Charger les messages plus anciens</string>
     <string name="thread_load_older_remaining">Charger les messages plus anciens (%1$d)</string>
+    <string name="thread_loading_older">Chargement des messages</string>
+    <string name="thread_pinned_label">Épinglé · %1$s à %2$s</string>
+    <string name="thread_pinned_voice">Message vocal</string>
+    <string name="thread_pinned_attachment">Pièce jointe</string>
+    <string name="thread_pinned_latest">Derniers messages</string>
     <!-- v1.24.0 : ecran de recuperation quand la base ne peut pas etre ouverte -->
     <string name="db_recovery_title">SMS Relay ne parvient pas à ouvrir sa base de données</string>
     <string name="db_recovery_body">Vos messages sont toujours sur cet appareil — Android en conserve sa propre copie, et SMS Relay n’a rien supprimé. Seule la base chiffrée propre à SMS Relay est illisible pour le moment.</string>

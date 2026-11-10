@@ -153,7 +153,7 @@ object Migrations {
      * Selon la version d'Android, `ContentResolver.insert` rend `content://sms/sent/<id>`
      * (mesure : Galaxy S9 / Android 10) ou `content://sms/<id>` (Galaxy S24 / Android 16).
      * `TelephonyReader` enregistrait la forme rendue, telle quelle, pour tout message que
-     * SMS Tech ecrit lui-meme ; l'import depuis le systeme, lui, a toujours construit la forme
+     * Relay ecrit lui-meme ; l'import depuis le systeme, lui, a toujours construit la forme
      * canonique. L'index `UNIQUE(telephony_uri)` compare des CHAINES : les deux ecritures
      * designant la meme ligne systeme ne se rencontraient jamais. Une resynchronisation
      * complete — le bouton « Resynchroniser », qui remet le curseur a zero — reimportait donc
@@ -438,6 +438,13 @@ object Migrations {
         }
     }
 
+    val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `pinned_message_id` INTEGER")
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `pinned_message_at` INTEGER")
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -453,5 +460,6 @@ object Migrations {
         MIGRATION_11_12,
         MIGRATION_12_13,
         MIGRATION_13_14,
+        MIGRATION_14_15,
     )
 }

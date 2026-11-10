@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -20,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -86,8 +88,16 @@ fun BanniereNotificationsCoupees(
             )
             Text(text = message, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.size(8.dp))
-            Button(onClick = { ouvrirLesNotificationsDeLApplication(contexte) }) {
-                Text(stringResource(R.string.notifications_off_fix))
+            // Feedback round 7 — pill shape, non-bold label, like the other
+            // large buttons app-wide.
+            Button(
+                onClick = { ouvrirLesNotificationsDeLApplication(contexte) },
+                shape = RoundedCornerShape(50),
+            ) {
+                Text(
+                    stringResource(R.string.notifications_off_fix),
+                    fontWeight = FontWeight.Normal,
+                )
             }
         }
     }

@@ -75,4 +75,12 @@ data class ConversationEntity(
     @ColumnInfo(name = "avatar_uri") val avatarUri: String? = null,
     /** v1.28.3 (schéma 12) — nom choisi d'un groupe, local ; prime sur `display_name`. */
     @ColumnInfo(name = "custom_name") val customName: String? = null,
+    /**
+     * Feedback round 5 (schéma 15) — message épinglé du fil (un seul par
+     * conversation pour l'instant). `null` = rien d'épinglé. L'horodatage
+     * ([pinnedMessageAt]) est celui de l'épinglage, pas du message : c'est
+     * lui que la bannière affiche (« Pinned · 11/3/26 at 9:41 PM »).
+     */
+    @ColumnInfo(name = "pinned_message_id") val pinnedMessageId: Long? = null,
+    @ColumnInfo(name = "pinned_message_at") val pinnedMessageAt: Long? = null,
 )

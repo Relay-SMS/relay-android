@@ -14,6 +14,7 @@ import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.data.voice.VoiceRecorder
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.domain.model.MessageWindowSpec
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.repository.SetReactionResult
 import com.filestech.sms.domain.settings.AppSettings
@@ -27,15 +28,22 @@ import com.filestech.sms.domain.usecase.SendVoiceMmsUseCase
 import com.filestech.sms.system.notifications.ActiveConversationTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -83,6 +91,15 @@ class ThreadViewModel @Inject constructor(
     private val conversationId: Long = checkNotNull(savedStateHandle["conversationId"])
 
     /**
+     * Feedback round 6 — one-shot mark-read state (see [scheduleDeferredMarkRead]
+     * / [markReadNow]). `readMarked` is set once the write has actually run;
+     * `deferredMarkReadJob` holds the pending delayed job so leaving the thread
+     * early can cancel it and mark read immediately instead.
+     */
+    private var readMarked = false
+    private var deferredMarkReadJob: Job? = null
+
+    /**
      * v1.26.1 (audit H1, suite de revue) — `true` quand le Coffre s'est refermé alors que ce fil
      * lui appartient. L'écran ressort du fil plutôt que d'afficher un écran vide dont l'envoi
      * échoue en silence. Voir [ConversationRepository.observeVaultHidden].
@@ -96,20 +113,200 @@ class ThreadViewModel @Inject constructor(
 
     /**
      * Size of the loaded window. Raising it widens the query in place and the repository
-     * re-subscribes via `flatMapLatest`.
+     * re-subscribes via `flatMapLatest`. It starts at [INITIAL_WINDOW_SIZE], not [PAGE_SIZE]:
+     * the first paint composes and lays out the whole window before jumping to its bottom,
+     * so opening a long conversation with a 200-message window is what made it feel slow.
      *
      * The scroll position is **not** preserved by Compose alone: its key-based re-anchoring only
      * covers roughly 130 items around the first visible one, and [PAGE_SIZE] is 200. `ThreadScreen`
      * therefore captures the anchor message and its offset before growing the window, and restores
      * the position itself once the wider window lands.
+     *
+     * Feedback round 5 — this is the TAIL size only now: the loaded window is
+     * described by [windowSpec], which swaps the tail for a window ending at a
+     * search match when the user jumps to old history.
      */
-    private val windowLimit = MutableStateFlow(PAGE_SIZE)
+    private val tailLimit = MutableStateFlow(INITIAL_WINDOW_SIZE)
+
+    /**
+     * Feedback round 5 — the message a jump anchored the window on
+     * (`null` = the default tail window). Set by [jumpToMessage] (search
+     * matches and the pinned-message banner share it), cleared by
+     * [clearWindowAnchor] when the search closes or the user goes back to
+     * the latest messages.
+     */
+    private val windowAnchor = MutableStateFlow<WindowAnchor?>(null)
+
+    /** Feedback round 5 — whether the window is currently anchored on a jumped-to message. */
+    val isWindowAnchored: StateFlow<Boolean> = windowAnchor
+        .map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), false)
+
+    private val windowSpec: Flow<MessageWindowSpec> =
+        combine(tailLimit, windowAnchor) { limit, anchor ->
+            if (anchor == null) {
+                MessageWindowSpec.Tail(limit)
+            } else {
+                MessageWindowSpec.EndingAt(anchor.messageId, anchor.date, limit)
+            }
+        }
 
     /** Loads one more page of older messages. No-op when everything is already loaded. */
     fun loadOlder() {
         if (!_state.value.hasMoreMessages || _state.value.isLoadingOlder) return
         _state.update { it.copy(isLoadingOlder = true) }
-        windowLimit.update { it + PAGE_SIZE }
+        tailLimit.update { it + PAGE_SIZE }
+    }
+
+    /**
+     * Feedback round 5 — full-history thread search.
+     *
+     * The typed query is debounced like the conversations-list search (200 ms;
+     * blank clears immediately), then the repository re-runs the SQL `LIKE`
+     * over the WHOLE thread on IO; Room re-emits when the table changes, so the
+     * match count stays fresh if a matching message arrives mid-search. The
+     * screen maps the ids onto the loaded window ([mapThreadSearchMatches])
+     * for the count, the highlight ranges and the jump targets.
+     */
+    private val searchQueryInput = MutableStateFlow("")
+
+    @OptIn(FlowPreview::class)
+    val threadSearchResults: StateFlow<ThreadSearchResults> = searchQueryInput
+        .debounce { query -> if (query.isBlank()) 0L else THREAD_SEARCH_DEBOUNCE_MS }
+        .distinctUntilChanged()
+        .flatMapLatest { query ->
+            if (query.isBlank()) {
+                flowOf(ThreadSearchResults("", emptyList()))
+            } else {
+                repo.observeSearchInConversation(conversationId, query)
+                    .map { ids -> ThreadSearchResults(query, ids) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), ThreadSearchResults("", emptyList()))
+
+    /** Feedback round 5 — feeds the debounced search above; called on every keystroke. */
+    fun setThreadSearchQuery(query: String) {
+        searchQueryInput.value = query
+    }
+
+    /**
+     * Feedback round 5 — jumps the loaded window to [messageId], a search
+     * match in old history that is not in the current window. The message is
+     * resolved for its date (the keyset anchor), then the window reloads
+     * ending at it — the match lands at the bottom with its preceding
+     * messages as context. The screen scrolls to it once it is loaded.
+     */
+    fun jumpToSearchMatch(messageId: Long) = jumpToMessage(messageId)
+
+    /**
+     * Feedback round 5 — the shared jump-to-message loader: resolves the
+     * message for its date (the keyset anchor) and reloads the window ending
+     * at it. Used by search jumps and by the pinned-message banner.
+     */
+    fun jumpToMessage(messageId: Long) {
+        viewModelScope.launch {
+            val target = runCatching { repo.findMessageById(messageId) }.getOrNull()
+                ?: return@launch
+            windowAnchor.value = WindowAnchor(target.id, target.date)
+        }
+    }
+
+    /**
+     * Feedback round 5 — back to the newest window after a jump. The screen
+     * scrolls to the bottom once the tail window lands.
+     */
+    fun clearWindowAnchor() {
+        windowAnchor.value = null
+        _isPinAnchored.value = false
+    }
+
+    /**
+     * Feedback round 5 — the pinned message the banner wants the list to
+     * scroll to. Set by [jumpToPinnedMessage]; the screen scrolls to it once
+     * it is in the loaded window, then clears it with [clearPinJumpTarget].
+     */
+    private val _pinJumpTarget = MutableStateFlow<Long?>(null)
+    val pinJumpTarget: StateFlow<Long?> = _pinJumpTarget.asStateFlow()
+
+    fun clearPinJumpTarget() {
+        _pinJumpTarget.value = null
+    }
+
+    /**
+     * Feedback round 5 — whether the window is anchored because the user
+     * jumped to the pinned message (as opposed to a search match). Drives
+     * the "Latest" button that takes them back to the newest window.
+     */
+    private val _isPinAnchored = MutableStateFlow(false)
+    val isPinAnchored: StateFlow<Boolean> = _isPinAnchored.asStateFlow()
+
+    /**
+     * Feedback round 5 — pins [messageId] in this conversation, or unpins
+     * it when it is already the pinned message. One pin per conversation:
+     * pinning another message replaces the current pin. The pin date is
+     * "now" — it is what the banner shows ("Pinned · 11/3/26 at 9:41 PM").
+     */
+    fun togglePin(messageId: Long) {
+        viewModelScope.launch {
+            if (_state.value.conversation?.pinnedMessageId == messageId) {
+                repo.setPinnedMessage(conversationId, null, null)
+            } else {
+                repo.setPinnedMessage(conversationId, messageId, System.currentTimeMillis())
+            }
+        }
+    }
+
+    /**
+     * Feedback round 5 — jumps to the pinned message from the banner. When
+     * it is already in the loaded window, just scroll to it; otherwise load
+     * the window around it first (same [jumpToMessage] loader as search)
+     * and scroll once it lands. The window stays anchored afterwards, so
+     * the "Latest" button offers the way back to the newest messages.
+     */
+    fun jumpToPinnedMessage(messageId: Long) {
+        if (_state.value.messages.any { it.id == messageId }) {
+            _pinJumpTarget.value = messageId
+        } else {
+            viewModelScope.launch {
+                val target = runCatching { repo.findMessageById(messageId) }.getOrNull()
+                    ?: return@launch
+                windowAnchor.value = WindowAnchor(target.id, target.date)
+                _isPinAnchored.value = true
+                _pinJumpTarget.value = messageId
+            }
+        }
+    }
+
+    /**
+     * Feedback round 5 — id of the pinned message the [pinnedOutsideWindow]
+     * copy was resolved for (`null` = nothing pinned or not resolved yet).
+     * Guards [resolvePinnedMessage] so a conversation re-emission (draft
+     * keystroke, read receipt) does not re-run the lookup.
+     */
+    private var pinnedResolveId: Long? = null
+
+    /**
+     * Feedback round 5 — resolves the pinned message for the banner fallback
+     * copy. Runs only when the pinned id changes: a `null` id clears the
+     * copy, a new id looks the message up once. When the lookup comes back
+     * empty the message is gone (purge, resync) — the pin self-heals by
+     * clearing itself instead of leaving a banner that points nowhere.
+     */
+    private fun resolvePinnedMessage(pinnedMessageId: Long?) {
+        if (pinnedMessageId == null) {
+            pinnedResolveId = null
+            return
+        }
+        if (pinnedMessageId == pinnedResolveId) return
+        pinnedResolveId = pinnedMessageId
+        viewModelScope.launch {
+            val resolved = runCatching { repo.findMessageById(pinnedMessageId) }.getOrNull()
+            if (resolved == null) {
+                repo.setPinnedMessage(conversationId, null, null)
+            } else {
+                _state.update { it.copy(pinnedOutsideWindow = resolved) }
+            }
+        }
     }
 
     /**
@@ -177,6 +374,15 @@ class ThreadViewModel @Inject constructor(
         val memberNames: Map<String, String> = emptyMap(),
         val draftSeeded: Boolean = false,
         val hasContact: Boolean = false,
+        /**
+         * Feedback round 7 — contact photo (`PHOTO_THUMBNAIL_URI`) for the
+         * thread header avatar, resolved from the first address via
+         * [ContactRepository.lookupByPhone] — the same lookup the main list
+         * uses for its contact photos. The user-picked custom avatar
+         * ([Conversation.avatarUri]) still wins at the call site; groups
+         * stay `null` (no single contact to show — the group glyph stays).
+         */
+        val contactPhotoUri: String? = null,
         val messageCount: Int = 0,
         /** Older messages exist beyond the loaded window. */
         val hasMoreMessages: Boolean = false,
@@ -190,6 +396,14 @@ class ThreadViewModel @Inject constructor(
          * it is merely not loaded.
          */
         val quotedOutsideWindow: Map<Long, Message> = emptyMap(),
+        /**
+         * Feedback round 5 — the pinned message, resolved from the database
+         * when it is NOT in the loaded window. The banner prefers the live
+         * copy from [messages] when it is loaded (so it follows text edits);
+         * this is the fallback for an old pinned message. `null` when nothing
+         * is pinned, or while the resolution is still running.
+         */
+        val pinnedOutsideWindow: Message? = null,
         val firstMessageAt: Long? = null,
         val lastMessageAt: Long? = null,
         val voice: VoiceState = VoiceState.Idle,
@@ -310,15 +524,6 @@ class ThreadViewModel @Inject constructor(
 
         /** Launch the system dialer pre-filled with the conversation's phone number. */
         data class OpenDialer(val rawNumber: String) : Event
-
-        /**
-         * v1.3.1 — premier envoi de réaction par SMS : la préférence est activée mais
-         * l'utilisateur n'a pas encore validé le dialog de confirmation. [messageId] est
-         * porté pour qu'au moment du confirm le caller puisse re-vérifier que la réaction
-         * n'a pas été changée/retirée entre temps (anti-race F4 : sans messageId on
-         * pourrait envoyer un emoji obsolète).
-         */
-        data class RequestReactionConfirm(val messageId: Long, val emoji: String) : Event
     }
 
     private val _state = MutableStateFlow(UiState())
@@ -330,6 +535,19 @@ class ThreadViewModel @Inject constructor(
     private var recorderJob: Job? = null
 
     /**
+     * Feedback round 7 — re-resolution trigger for the header contact photo.
+     * The address flow below only re-runs when the address changes, so a
+     * READ_CONTACTS grant while the thread is open needs an explicit nudge —
+     * same pattern as `ConversationsViewModel.contactPhotoTick`.
+     */
+    private val contactPhotoTick = MutableStateFlow(0)
+
+    /** Re-resolves [UiState.contactPhotoUri] (call on resume / permission grant). */
+    fun refreshContactPhoto() {
+        contactPhotoTick.update { it + 1 }
+    }
+
+    /**
      * v1.6.1 PERF-01 / v1.6.2 BUGFIX — snapshot chaud des AppSettings.
      *
      * **Bug v1.6.1** : la version précédente utilisait `stateIn(viewModelScope,
@@ -337,7 +555,7 @@ class ThreadViewModel @Inject constructor(
      * StateFlow (lecture uniquement via `.value`). Sans collecteur actif, le flux
      * sous-jacent n'était jamais souscrit et `.value` retournait toujours la valeur
      * initiale `AppSettings()` — donc TOUS les réglages utilisateur étaient ignorés :
-     * `confirmBeforeBroadcast`, `reactionConfirmDismissed`, `reactionEmojiOnly`,
+     * `confirmBeforeBroadcast`, `reactionEmojiOnly`,
      * `sendReactionsToRecipient`, etc. resteraient figés sur leurs valeurs DEFAULT.
      *
      * **Fix v1.6.2** : on lit directement `settings.state` (StateFlow `Eagerly`
@@ -437,33 +655,60 @@ class ThreadViewModel @Inject constructor(
                     draft = draft,
                     segments = if (seededDraft) segCounter.count(draft) else st.segments,
                     draftSeeded = st.draftSeeded || conv != null,
+                    // Feedback round 5 — no pin, no fallback copy.
+                    pinnedOutsideWindow = if (conv?.pinnedMessageId == null) {
+                        null
+                    } else {
+                        st.pinnedOutsideWindow
+                    },
                 )
             }
+            // Feedback round 5 — resolve the pinned message when the pin
+            // changes. A missing message (deleted by a path the explicit
+            // delete hook did not cover — auto-purge, resync) self-heals:
+            // the pin is cleared so no banner points at a ghost.
+            resolvePinnedMessage(conv?.pinnedMessageId)
         }.launchIn(viewModelScope)
-        convFlow
-            .map { conv -> conv?.addresses?.firstOrNull()?.raw }
-            .distinctUntilChanged()
-            .onEach { firstNumber ->
+        combine(
+            convFlow.map { conv ->
+                conv?.let { it.addresses.firstOrNull()?.raw to it.isGroup }
+            }.distinctUntilChanged(),
+            contactPhotoTick,
+        ) { address, _ -> address }
+            .onEach { address ->
+                val firstNumber = address?.first
+                val isGroup = address?.second == true
                 // v1.28.13 (MR F-Droid !38458) — sans `READ_CONTACTS`, la recherche lève
                 // `SecurityException` ; non rattrapée dans `viewModelScope`, ouvrir n'importe quelle
                 // conversation faisait planter l'app (jumeau de `ComposeViewModel.chargerContacts`).
                 // « Contact introuvable » est le bon repli ICI : il ne fait que proposer « Ajouter
                 // aux contacts », que l'appli Contacts du système traite sans notre permission.
-                val has = firstNumber?.let { numero ->
+                val contact = firstNumber?.let { numero ->
                     com.filestech.sms.core.result
-                        .runCatchingCancellable { contactRepo.lookupByPhone(numero) != null }
-                        .getOrDefault(false)
-                } ?: false
-                _state.update { it.copy(hasContact = has) }
+                        .runCatchingCancellable { contactRepo.lookupByPhone(numero) }
+                        .getOrNull()
+                }
+                _state.update {
+                    it.copy(
+                        hasContact = contact != null,
+                        // Feedback round 7 — header avatar photo, same lookup
+                        // as the main list. Groups keep the group glyph, so
+                        // the photo is only resolved for 1:1 threads.
+                        contactPhotoUri = if (isGroup) null else contact?.photoUri,
+                    )
+                }
             }
             .launchIn(viewModelScope)
 
-        var markedReadAtLeastOnce = false
         // v1.24.0 (finding A) — fenêtre bornée au lieu du fil entier. Les statistiques
         // (`messageCount`, `firstMessageAt`, `lastMessageAt`) viennent d'un agrégat SQL sur TOUT
         // le fil, jamais de la fenêtre : le panneau d'infos décrit la conversation, pas la tranche
         // chargée en mémoire.
-        repo.observeMessagesWindow(conversationId, windowLimit).onEach { window ->
+        // Feedback round 6 — the first window only SCHEDULES the mark-read
+        // (see [scheduleDeferredMarkRead]): marking read here wrote to Room
+        // mid-transition, re-emitting the window and recomposing the whole
+        // visible list a second time inside the open animation.
+        repo.observeMessagesWindow(conversationId, windowSpec).onEach { window ->
             val msgs = window.messages
             resoudreNomsDesExpediteurs(msgs)
             _state.update {
@@ -474,7 +719,7 @@ class ThreadViewModel @Inject constructor(
                     // Seule l'émission qui porte la fenêtre élargie clôt le chargement : un SMS
                     // arrivant entre le tap et cette émission rouvrirait sinon la garde de
                     // `loadOlder`, et un second tap sauterait deux pages d'un coup.
-                    isLoadingOlder = window.hasMore && msgs.size < windowLimit.value,
+                    isLoadingOlder = window.hasMore && msgs.size < tailLimit.value,
                     messageCount = window.totalCount,
                     firstMessageAt = window.firstMessageAt,
                     lastMessageAt = window.lastMessageAt,
@@ -487,10 +732,7 @@ class ThreadViewModel @Inject constructor(
             if (_state.value.smishingDetectionEnabled) {
                 recomputeSmishingVerdicts(msgs)
             }
-            if (msgs.isNotEmpty() && !markedReadAtLeastOnce) {
-                markedReadAtLeastOnce = true
-                markRead.invoke(conversationId)
-            }
+            scheduleDeferredMarkRead()
         }.launchIn(viewModelScope)
 
         // Best-effort: drop yesterday's orphan recordings from the cache on screen open.
@@ -772,12 +1014,11 @@ class ThreadViewModel @Inject constructor(
      * change légitimement d'avis et le correspondant doit voir le nouvel emoji) et
      * **retrait** ([SetReactionResult.Removed] : emoji → null, dispatché comme
      * `Removed a like from "…"` — Apple et Google ont tous deux une forme de
-     * retrait sur le fil). Au tout premier envoi (jamais validé), un dialog de
-     * confirmation s'affiche via [Event.RequestReactionConfirm] ; l'envoi réel
-     * a lieu seulement après [confirmReactionSend]. Une fois la case "Ne plus demander"
-     * cochée, les envois suivants sont silencieux. Le retrait ne déclenche jamais
-     * le dialog (l'utilisateur a déjà validé l'envoi des réactions).
-     * Voir KDoc [ConversationRepository.setReaction] pour la sémantique complète.
+     * retrait sur le fil). Feedback round 5 — l'envoi est immédiat, sans
+     * dialog de confirmation : la réaction part en SMS dès qu'elle est
+     * posée, changée ou retirée (tant que [SendingSettings.sendReactionsToRecipient]
+     * est activée). Voir KDoc [ConversationRepository.setReaction] pour la
+     * sémantique complète.
      */
     fun setReaction(messageId: Long, emoji: String?) {
         viewModelScope.launch {
@@ -828,44 +1069,28 @@ class ThreadViewModel @Inject constructor(
             runCatching {
                 // v1.3.1 audit F1/F2 — defense-in-depth : le UseCase refuse déjà les
                 // messages outgoing et cible le sender unique, mais on garde un guard ici
-                // pour ne MÊME PAS afficher le dialog confirm sur un cas invalide. Le repo
-                // a déjà mis à jour la colonne reaction_emoji ; on ne touche pas au badge
-                // local (cohérent avec la sémantique "réaction locale toujours possible").
+                // pour ne pas envoyer sur un cas invalide. Le repo a déjà mis à jour la
+                // colonne reaction_emoji ; on ne touche pas au badge local (cohérent
+                // avec la sémantique "réaction locale toujours possible").
                 val targetMessage = repo.findMessageById(targetMessageId)
                 if (targetMessage == null || targetMessage.isOutgoing) return@runCatching
                 // Anti-race retrait : si une réaction est revenue entre-temps, le
                 // retrait n'a plus lieu d'être envoyé.
                 if (targetIsRemoval && targetMessage.reactionEmoji != null) return@runCatching
 
-                // v1.6.2 — lecture FRAÎCHE via `settings.flow.first()` au lieu de
-                // `cachedSettings.value`. Le hot StateFlow Eagerly de v1.6.1 (PERF-11)
-                // a un délai de propagation : si l'utilisateur réagit deux fois en
-                // < 100 ms, la seconde lecture du flag `reactionConfirmDismissed` peut
-                // encore retourner l'ancienne valeur `false` (le write async du
-                // settings.update dans confirmReactionSend n'a pas encore atteint
-                // le StateFlow), ce qui rouvre le dialog malgré la case "Ne plus
-                // demander" cochée. Coût : ~5-10 ms par tap réaction (action humaine
-                // lente, négligeable). Les 4 autres sites PERF-01 (envoi SMS/MMS hot
-                // path) restent en `cachedSettings.value` car ils n'ont pas de write
-                // précédent à attendre.
-                val sending = settings.flow.first().sending
+                // Feedback round 5 — envoi immédiat, sans dialog de confirmation :
+                // la réaction part dès qu'elle est posée, changée ou retirée. La
+                // lecture du snapshot se fait via `cachedSettings` comme les autres
+                // sites PERF-01 (plus de write précédent à attendre depuis la
+                // suppression du dialog).
+                val sending = cachedSettings.value.sending
                 if (!sending.sendReactionsToRecipient) return@runCatching
-
-                // v1.4.1 — the confirmation dialog is only triggered on First (so the
-                // user gets to opt-in to "send my reactions" the very first time). For
-                // Changed and Removed, we assume the user has already validated the wire
-                // pattern and dispatch silently.
-                val isFirstEver = result is SetReactionResult.First
-                if (sending.reactionConfirmDismissed || !isFirstEver) {
-                    dispatchReactionSms(
-                        targetMessageId,
-                        targetEmoji,
-                        sending.reactionFormat,
-                        isRemoval = targetIsRemoval,
-                    )
-                } else {
-                    _events.tryEmit(Event.RequestReactionConfirm(targetMessageId, targetEmoji))
-                }
+                dispatchReactionSms(
+                    targetMessageId,
+                    targetEmoji,
+                    sending.reactionFormat,
+                    isRemoval = targetIsRemoval,
+                )
             }.onFailure {
                 timber.log.Timber.w(it, "setReaction post-emit failed for %d", targetMessageId)
             }
@@ -873,59 +1098,11 @@ class ThreadViewModel @Inject constructor(
     }
 
     /**
-     * v1.3.1 — appelé par le dialog de confirmation du premier envoi. Re-vérifie que
-     * l'état du message correspond toujours à l'emoji proposé (anti-race F4 : entre
-     * l'ouverture du dialog et le confirm, l'utilisateur a pu changer/retirer la
-     * réaction) avant de déclencher l'envoi SMS.
-     *
-     * Sémantique :
-     *   - Si l'emoji actuel du message n'est plus [emoji] → abort silencieux (le badge
-     *     local reflète déjà la nouvelle valeur, l'envoi n'aurait plus de sens).
-     *   - Si [neverAskAgain] est `true` → on persiste la préférence AVANT l'envoi pour
-     *     qu'elle prenne effet même si l'envoi échoue (retry ultérieur silencieux).
-     *   - L'envoi est délégué à [dispatchReactionSms].
-     */
-    fun confirmReactionSend(messageId: Long, emoji: String, neverAskAgain: Boolean) {
-        viewModelScope.launch {
-            runCatching {
-                // Anti-race F4 : si le user a changé/retiré la réaction depuis l'ouverture
-                // du dialog, on n'envoie rien (et on ne persiste pas non plus la pref).
-                val current = repo.findMessageById(messageId)
-                if (current == null || current.reactionEmoji != emoji) {
-                    timber.log.Timber.d("confirmReactionSend: state drifted, abort send")
-                    return@runCatching
-                }
-                // X3 audit v1.3.1 — on persiste `reactionConfirmDismissed = true` UNIQUEMENT
-                // après une dispatch SENT effective. Persister avant l'envoi (comportement
-                // initial) avait un bug subtil : si `dispatchReactionSms` échouait toujours
-                // (par exemple : NotDefaultSmsApp, blocklist, sender alphanumérique), la
-                // préférence était persistée → tous les envois futurs étaient silencieusement
-                // skip sans que l'utilisateur ait jamais validé qu'un SMS partait. Idem si
-                // dédup-skippé : l'utilisateur n'a pas vu l'envoi réel, donc on garde le
-                // dialog pour la prochaine fois. Seul un Sent confirme le contrat user.
-                //
-                // v1.3.6 audit P1 — lit le snapshot sending une seule fois et passe
-                // au dispatcher (au lieu d'un second `cachedSettings.value` dans le
-                // dispatcher lui-même → 2 lectures DataStore par envoi).
-                // v1.6.1 audit PERF-01 — lecture synchrone zéro-I/O via cachedSettings.
-                // v1.8.0 (bug 5 fix) — passe désormais le `ReactionFormat` (3 options)
-                // au lieu du boolean `reactionEmojiOnly` (legacy 2 options).
-                val reactionFormat = cachedSettings.value.sending.reactionFormat
-                val outcome = dispatchReactionSms(messageId, emoji, reactionFormat)
-                if (outcome == DispatchOutcome.Sent && neverAskAgain) {
-                    settings.update {
-                        it.copy(sending = it.sending.copy(reactionConfirmDismissed = true))
-                    }
-                }
-            }.onFailure { timber.log.Timber.w(it, "confirmReactionSend failed for %d", messageId) }
-        }
-    }
-
-    /**
-     * v1.3.1 — chemin commun d'envoi SMS d'une réaction. Centralisé pour éviter la
-     * duplication entre le chemin "silencieux" (case cochée) et le chemin "post-confirm".
-     * Propage les erreurs via [Event.SendError] (snack utilisateur), comme tout autre
-     * envoi. La cible (sender unique du message) est résolue dans [SendReactionUseCase].
+     * v1.3.1 — chemin commun d'envoi SMS d'une réaction, appelé directement
+     * par [setReaction] (feedback round 5 : plus de dialog de confirmation,
+     * l'envoi est immédiat). Propage les erreurs via [Event.SendError]
+     * (snack utilisateur), comme tout autre envoi. La cible (sender unique
+     * du message) est résolue dans [SendReactionUseCase].
      *
      * **Dedup X2 (audit v1.3.1)** : un utilisateur qui hésite peut générer la séquence
      * `null → ❤️ → null → ❤️ → …`, chaque pose étant un `SetReactionResult.First` (donc
@@ -1782,16 +1959,56 @@ class ThreadViewModel @Inject constructor(
      * Or le ViewModel survit à l'écran éteint et à une autre application au premier plan : la
      * notification d'un message que personne ne voyait disparaissait en 1,5 s.
      */
+    /**
+     * Feedback round 6 — schedules the one-shot mark-read [MARK_READ_DELAY_MS]
+     * after the first window lands. Marking read immediately wrote to Room
+     * while the 300 ms open slide was still running, which re-emitted the
+     * window and recomposed the whole visible list a second time inside the
+     * animation — the glitchy slide-in. The delay lands past the slide and
+     * the first scroll-to-bottom, so the re-emission hits a settled list.
+     * No-op when already scheduled or done; the job is cancelled by
+     * [markReadNow] when the user leaves before the delay elapses.
+     */
+    private fun scheduleDeferredMarkRead() {
+        if (readMarked || deferredMarkReadJob != null) return
+        deferredMarkReadJob = viewModelScope.launch {
+            delay(MARK_READ_DELAY_MS)
+            markRead.invoke(conversationId)
+            readMarked = true
+        }
+    }
+
+    /**
+     * Feedback round 6 — marks the conversation read immediately. Called when
+     * the thread stops being visible (back navigation, another app in front):
+     * the unread badge must already be clear when the conversation list
+     * reappears, including when the user leaves before the deferred job in
+     * [scheduleDeferredMarkRead] fires. Cancels the pending job so the Room
+     * write happens exactly once per thread lifetime.
+     */
+    private fun markReadNow() {
+        if (readMarked) return
+        deferredMarkReadJob?.cancel()
+        deferredMarkReadJob = null
+        readMarked = true
+        viewModelScope.launch { markRead.invoke(conversationId) }
+    }
+
     fun onVisibilityChanged(visible: Boolean) {
         if (visible) {
             activeConversationTracker.setActive(conversationId)
         } else {
             activeConversationTracker.clearActive(conversationId)
+            // Feedback round 6 — leaving the thread marks it read at once
+            // (see [markReadNow]): the deferred job may not have fired yet.
+            markReadNow()
         }
     }
 
     fun onConversationOpened() {
-        viewModelScope.launch { markRead.invoke(conversationId) }
+        // Feedback round 6 — no mark-read here anymore: the first window
+        // emission schedules the deferred one ([scheduleDeferredMarkRead]),
+        // and leaving the thread marks read at once ([markReadNow]).
         // v1.3.3 bug #4 — auto-consume du partage entrant. Z3 audit fix : on ATTEND
         // que la conversation soit hydratée (state.conversation != null) avant
         // d'appeler onAttachmentPicked, qui sinon retourne early sans rien attacher
@@ -1858,7 +2075,7 @@ class ThreadViewModel @Inject constructor(
     /**
      * v1.3.3 bug #4 — auto-attach d'un partage entrant. Pas de routing dédié pour
      * v1.3.3 ; l'user choisit lui-même la conversation cible parmi sa liste après
-     * tap sur SMS Tech dans le chooser système. Le 1ᵉʳ URI du partage est attaché ;
+     * tap sur Relay dans le chooser système. Le 1ᵉʳ URI du partage est attaché ;
      * les éventuels suivants (ACTION_SEND_MULTIPLE) sont ignorés cette release (v1.3.4
      * gérera le multi-attach). Le texte EXTRA_TEXT est préchargé dans le draft.
      *
@@ -1963,6 +2180,33 @@ class ThreadViewModel @Inject constructor(
          */
         const val PAGE_SIZE: Int = 200
 
+        /**
+         * Messages loaded on first open. The first paint must compose and lay out the whole
+         * window, then jump to the bottom of it (`scrollToItem` from index 0), before the
+         * list is shown — so a 200-message first window is what makes opening a long
+         * conversation feel slow. 50 still fills several screens of history, and the
+         * "load older" row pages the rest in 200-message steps via [PAGE_SIZE].
+         */
+        const val INITIAL_WINDOW_SIZE: Int = 50
+
+        /**
+         * Feedback round 6 — debounce on the thread search query, mirroring the
+         * conversations-list search (`debounce(200ms)`): one Room query per
+         * pause in typing instead of one per keystroke.
+         */
+        const val THREAD_SEARCH_DEBOUNCE_MS: Long = 200L
+
+        /**
+         * Feedback round 6 — delay before marking the conversation read after
+         * the first window lands. The thread opens under a 300 ms slide while
+         * the first paint composes and jumps to the bottom; marking read
+         * immediately writes to Room, which re-emits the window and recomposes
+         * the whole visible list a second time — still inside the animation.
+         * 600 ms lands safely past the slide and the first scroll, so the
+         * re-emission hits a settled list.
+         */
+        const val MARK_READ_DELAY_MS: Long = 600L
+
         // Audit C3 (v1.14.8) — Alias local pointant vers la SOURCE UNIQUE [MmsConstants].
         // Avant : `280L * 1024L` dupliqué ici ET dans `VoiceRecorder.MAX_SIZE_BYTES`.
         const val CARRIER_PAYLOAD_CAP_BYTES: Long = com.filestech.sms.core.mms.MmsConstants.CARRIER_PAYLOAD_CAP_BYTES
@@ -1988,3 +2232,9 @@ class ThreadViewModel @Inject constructor(
         const val REACTION_DEDUP_WINDOW_MS: Long = 60_000L
     }
 }
+
+/**
+ * Feedback round 5 — the message a search jump anchored the window on: its id
+ * plus its date, the keyset anchor of the window query.
+ */
+private data class WindowAnchor(val messageId: Long, val date: Long)

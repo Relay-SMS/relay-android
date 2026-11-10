@@ -156,7 +156,7 @@ class PanicServiceDecoyTest {
 
     /**
      * v1.28.6 — UNE COPIE SYSTEME QUI RESISTE EST COMPTEE, pour que l'application le DISE au lieu
-     * de promettre « irréversible ». Cause habituelle : SMS Tech n'est pas l'application SMS par
+     * de promettre « irréversible ». Cause habituelle : Relay n'est pas l'application SMS par
      * défaut et le système lui refuse la suppression. Un échec dont on ne sait rien compte ici
      * aussi : le doute se résout du côté « nous n'avons pas tout effacé ».
      */

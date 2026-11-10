@@ -275,7 +275,7 @@ class ConversationEraser @Inject constructor(
      * l'utilisateur**, celle de la liste et du fil.
      *
      * Elle appelait [erase] en [Mode.ORDINAIRE] pour toute conversation, coffre compris. Une
-     * conversation du coffre dont la copie système résiste — SMS Tech n'est pas l'application SMS
+     * conversation du coffre dont la copie système résiste — Relay n'est pas l'application SMS
      * par défaut, ou l'identité de la ligne n'est pas prouvée — perdait alors sa ligne locale, et
      * avec elle `in_vault`, le seul drapeau qui la protège : la synchronisation suivante la
      * réimportait HORS du coffre, en clair. C'est le retour que F11 a fermé pour la rétention, et

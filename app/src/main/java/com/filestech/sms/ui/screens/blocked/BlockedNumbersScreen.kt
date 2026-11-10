@@ -92,11 +92,13 @@ fun BlockedNumbersScreen(onBack: () -> Unit, viewModel: BlockedNumbersViewModel 
             // The accessible name lives on the BUTTON, not on the decorative icon: without
             // it TalkBack would announce a nameless button on the only way to add a number.
             // The icon stays unnamed so its label is never announced twice.
+            // (Hoisted: stringResource is @Composable and cannot run inside .semantics {}.)
+            val blockedAddLabel = stringResource(R.string.blocked_add)
             FloatingActionButton(
                 onClick = { showDialog = true },
                 modifier = Modifier
                     .size(56.dp)
-                    .semantics { contentDescription = stringResource(R.string.blocked_add) },
+                    .semantics { contentDescription = blockedAddLabel },
                 shape = CircleShape,
                 containerColor = cs.primary,
                 contentColor = cs.onPrimary,

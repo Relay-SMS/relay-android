@@ -74,7 +74,7 @@ class TelephonySyncManager @Inject constructor(
      * mirror-ée vers Room **uniquement** au cold-start (`MainApplication.onCreate`).
      * Conséquence : sur fresh install d'un user qui était sur Samsung Messages avec
      * des numéros bloqués via le Téléphone Samsung (qui posent dans
-     * `BlockedNumberContract` AOSP standard), si SMS Tech n'avait pas encore le
+     * `BlockedNumberContract` AOSP standard), si Relay n'avait pas encore le
      * rôle SMS-default au cold-start, `listSystemBlocked()` retournait empty
      * (lecture refusée par l'OS). Une fois le rôle accordé, le mirror n'était
      * plus jamais re-tenté tant que l'app n'était pas redémarrée. Les

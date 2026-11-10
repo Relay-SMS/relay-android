@@ -24,9 +24,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.domain.settings.TextScale
-import com.filestech.sms.ui.components.RelayColors
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.factor
 import com.filestech.sms.ui.theme.scaledBy

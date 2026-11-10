@@ -25,7 +25,7 @@ import javax.inject.Singleton
  *     le format anonyme `"Réagi par ❤️ à votre message : «…»"`.
  *
  * **Lecture Profile** : depuis Android 4.0 (API 14), `ContactsContract.Profile.CONTENT_URI`
- * est lisible avec la permission `READ_CONTACTS` (que SMS Tech a déjà — utilisée pour
+ * est lisible avec la permission `READ_CONTACTS` (que Relay a déjà — utilisée pour
  * résoudre les noms de contacts dans la liste des conversations). Pas de permission
  * supplémentaire à demander.
  *

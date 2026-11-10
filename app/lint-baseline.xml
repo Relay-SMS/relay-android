@@ -2674,4 +2674,16 @@
     </issue>
 
 
+        <issue
+            id="UnusedResources"
+            message="The resource `R.string.about_credits_body` appears to be unused"
+            errorLine1="    &lt;string name=&quot;about_credits_body&quot;>Based on SMS Tech by %1$s. Built with Kotlin, Compose, Hilt, Room and SQLCipher.&lt;/string>"
+            errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+            <location
+                file="src/main/res/values/strings.xml"
+                line="751"
+                column="13"/>
+        </issue>
+
+
 </issues>

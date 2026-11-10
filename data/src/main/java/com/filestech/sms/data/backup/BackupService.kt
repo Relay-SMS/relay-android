@@ -311,7 +311,7 @@ class BackupService @Inject constructor(
      *
      * On stocke son **empreinte SHA-256**, jamais sa valeur : la comparaison d'egalite n'a pas
      * besoin de plus, et un `.smsbk` n'a aucune raison de transporter un identifiant d'appareil
-     * en clair. Rien n'en sort de l'appareil — SMS Tech ne parle a aucun serveur.
+     * en clair. Rien n'en sort de l'appareil — Relay ne parle a aucun serveur.
      */
     private fun currentDeviceId(): String? = runCatching {
         val raw = android.provider.Settings.Secure.getString(

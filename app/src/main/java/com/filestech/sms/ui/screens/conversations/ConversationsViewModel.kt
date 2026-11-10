@@ -17,6 +17,7 @@ import com.filestech.sms.data.sync.TelephonySyncManager
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.MessageSearchHit
+import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.SortMode
@@ -39,10 +40,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -68,6 +71,7 @@ class ConversationsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val toggle: ToggleConversationStateUseCase,
     private val mirror: ConversationMirror,
+    private val contacts: ContactRepository,
     private val syncManager: TelephonySyncManager,
     private val appLock: AppLockManager,
     private val blockNumber: BlockNumberUseCase,
@@ -112,6 +116,20 @@ class ConversationsViewModel @Inject constructor(
      * single bump is enough to refresh the banner.
      */
     private val defaultRefreshTick = MutableStateFlow(0L)
+
+    /**
+     * Bumped when contact-photo lookups may newly succeed — e.g. after `READ_CONTACTS` is
+     * granted ([requestSyncNow] runs right after the permission result). The photo flow
+     * also re-runs on every [state] emission, so this is only the explicit re-trigger.
+     */
+    private val contactPhotoTick = MutableStateFlow(0L)
+
+    /**
+     * Feedback round 7 — in-memory guard for the one-time reaction reparse:
+     * prevents two `Idle` emissions from starting it twice in the same
+     * process. The durable gate is `AdvancedSettings.reactionReparseDone`.
+     */
+    private var reactionReparseStarted = false
 
     init {
         // Backfill contact names for conversations that existed before READ_CONTACTS was granted
@@ -278,6 +296,17 @@ class ConversationsViewModel @Inject constructor(
         .flowOn(io)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), UiState())
 
+    init {
+        // Feedback round 7 — fold old reaction texts into badges once the
+        // first post-grant sync has landed the history in Room (see below).
+        // NOTE: this lives in its own init block AFTER `state` on purpose —
+        // the reparse observer combines `syncManager.state` with `state`,
+        // and `viewModelScope` runs on Main.immediate, so calling it from
+        // the first init block read `state` before its initializer ran
+        // (null) and crashed the app on launch with an NPE in combine().
+        observeSyncForReactionReparse()
+    }
+
     /**
      * v1.28.8 (issue #17) — messages dont le TEXTE correspond à la recherche, sous les conversations.
      *
@@ -296,6 +325,55 @@ class ConversationsViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
 
+    /**
+     * Contact photos for the list, keyed by conversation id.
+     *
+     * Root cause of the missing avatars: nothing ever resolved them. The list only ever
+     * carried `Conversation.avatarUri` — the custom avatar a user picks per conversation —
+     * whose KDoc promises a native-contact fallback that no code implemented: the mirror
+     * resolves only the display name from `ContactsReader.lookupByPhone` and drops the
+     * photo URI it already fetches (`PHOTO_THUMBNAIL_URI`). Every row therefore fell back
+     * to initials. Resolved here, on IO, through the cached `ContactRepository` lookup; a
+     * custom avatar still wins, groups are skipped (no single contact to show), and a
+     * denied `READ_CONTACTS` just yields no photos — initials stay the fallback.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val contactPhotos: StateFlow<Map<Long, String>> =
+        combine(state, contactPhotoTick) { ui, _ -> ui.conversations }
+            // Feedback round 6 — project the list to its photo-relevant keys
+            // BEFORE the lookup: the full lookup used to re-run on every
+            // `state` emission (new message, read change, sync tick), even
+            // though its result only depends on (conversation id, first
+            // address, custom avatar) + the tick. `distinctUntilChanged` on
+            // the keys drops those emissions, so the lookup + map rebuild
+            // only run when a conversation appears, an address or custom
+            // avatar changes, or the tick bumps (permission granted). The
+            // lookups themselves are LRU-cached in `ContactsReader` and the
+            // cache is never invalidated in-process, so a dropped re-run
+            // would have returned the same photos — no behaviour change.
+            .map { conversations ->
+                conversations
+                    .filter { !it.isGroup && it.avatarUri == null }
+                    .map { it.id to it.firstAddress?.raw }
+            }
+            .distinctUntilChanged()
+            .mapLatest { keys ->
+                withContext(io) {
+                    keys
+                        .mapNotNull { (id, phone) ->
+                            val raw = phone ?: return@mapNotNull null
+                            runCatching { contacts.lookupByPhone(raw)?.photoUri }
+                                .getOrNull()?.let { id to it }
+                        }
+                        .toMap()
+                }
+            }
+            // Identical maps are dropped here so a key change that resolves
+            // to the same photos (new conversation with no photo, address
+            // change to an unknown number) does not re-compose the list.
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
+
     /** Forces a re-evaluation of [DefaultSmsAppManager.isDefault]. Call from ON_RESUME / role result. */
     fun refreshDefaultStatus() {
         defaultRefreshTick.update { it + 1 }
@@ -304,7 +382,7 @@ class ConversationsViewModel @Inject constructor(
     /**
      * v1.6.1 (audit QUAL-03) — facade pour la screen, qui n'a plus à tenir une référence
      * directe à [DefaultSmsAppManager] (couche data). Retourne l'`Intent` à lancer pour
-     * que l'utilisateur choisisse SMS Tech comme app SMS par défaut, ou `null` si l'OS
+     * que l'utilisateur choisisse Relay comme app SMS par défaut, ou `null` si l'OS
      * n'expose pas cette demande (Android < 7 — hors target ici puisque minSdk=26).
      */
     fun buildChangeDefaultIntent(): android.content.Intent? =
@@ -316,6 +394,68 @@ class ConversationsViewModel @Inject constructor(
      */
     fun requestSyncNow() {
         syncManager.requestSync(reason = "permission granted")
+        // Re-resolve contact photos: the caller just got READ_CONTACTS (or came back from
+        // the role dialog), so lookups that previously failed may now succeed.
+        contactPhotoTick.update { it + 1 }
+    }
+
+    /**
+     * Feedback round 7 — one-time retroactive reaction reparse.
+     *
+     * Old reaction texts (`Reacted ❤️ to «…»`, iOS tapbacks, French readable
+     * forms) that arrived before this build — or before Relay became the
+     * default app — sit in Room as plain text bubbles. Once the history is in
+     * Room, [ConversationMirror.reparseStoredReactions] folds them onto their
+     * target messages; the DataStore flag
+     * `AdvancedSettings.reactionReparseDone` makes it run exactly once.
+     *
+     * Trigger — a sync completion observed while default:
+     *   - fresh install: the first sync after the role grant is the big
+     *     first-run import; its `Running → Idle` transition fires this (the
+     *     `sawRunning` arm). The cursor is > 0 by then, so the history is
+     *     actually in Room.
+     *   - existing install (already default, cursor > 0): no first-run sync
+     *     will ever come, so the cursor arm fires on the first `Idle`
+     *     emission — the history is already there, no sync to wait for.
+     *   - not default yet: nothing runs; the next `requestSyncNow()` after
+     *     the grant produces the `Running → Idle` transition.
+     *
+     * The `combine` with [state] re-evaluates on either side: a sync that
+     * completes before [UiState.isDefaultSmsApp] flips to `true` is still
+     * caught when the UiState emission lands.
+     *
+     * The flag is set only on success — a failed run (DB error) retries on
+     * the next sync completion instead of losing the reactions silently.
+     */
+    private fun observeSyncForReactionReparse() {
+        viewModelScope.launch {
+            var sawRunning = false
+            combine(syncManager.state, state) { syncState, ui ->
+                syncState to ui.isDefaultSmsApp
+            }.collect { (syncState, isDefault) ->
+                if (syncState is TelephonySyncManager.State.Running) {
+                    sawRunning = true
+                    return@collect
+                }
+                if (reactionReparseStarted || !isDefault) return@collect
+                val advanced = settings.state.value.advanced
+                if (advanced.reactionReparseDone) return@collect
+                if (!sawRunning && advanced.lastSyncedSmsId == 0L) return@collect
+                reactionReparseStarted = true
+                try {
+                    val result = mirror.reparseStoredReactions()
+                    Timber.i("ConversationsViewModel: reaction reparse done: %s", result)
+                    settings.update { s ->
+                        s.copy(advanced = s.advanced.copy(reactionReparseDone = true))
+                    }
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    throw ce
+                } catch (t: Throwable) {
+                    Timber.w(t, "ConversationsViewModel: reaction reparse failed — will retry")
+                    reactionReparseStarted = false
+                }
+            }
+        }
     }
 
     /**
@@ -323,8 +463,8 @@ class ConversationsViewModel @Inject constructor(
      * overflow de la liste. Marque tous les messages INCOMING `read=0`
      * comme lus EN MASSE puis recalcule les `conversations.unread_count`
      * pour repasser tous les badges à 0. Très utile quand l'utilisateur a
-     * lu ses messages dans une autre app SMS sans ouvrir SMS Tech : sans
-     * cette action, les badges restent indéfiniment car SMS Tech ne re-lit
+     * lu ses messages dans une autre app SMS sans ouvrir Relay : sans
+     * cette action, les badges restent indéfiniment car Relay ne re-lit
      * pas le flag `READ` système pour les messages déjà mirror-és.
      *
      * Le dialog de confirmation est géré côté UI ([ConversationsScreen]).

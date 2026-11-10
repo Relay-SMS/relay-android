@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -72,6 +73,7 @@ import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.textFieldCursorColor
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -310,14 +312,21 @@ private fun RecipientField(
     val pillInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            // Feedback round 9 — the "To" field matches the search and
+            // composer boxes: 48dp minimum height and a 24dp pill radius
+            // (was a 10dp corner with content-driven height), with the same
+            // 16dp horizontal padding. It still grows when recipient chips
+            // wrap above the input line.
+            .clip(RoundedCornerShape(24.dp))
             .background(cs.surfaceVariant)
             .clickable(
                 interactionSource = pillInteraction,
                 indication = null,
                 onClick = { focusRequester.requestFocus() },
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .heightIn(min = 48.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (recipients.isNotEmpty()) {
@@ -351,7 +360,10 @@ private fun RecipientField(
                             .focusRequester(focusRequester),
                         textStyle = RelayText.MessageBody.copy(color = cs.onSurface),
                         singleLine = true,
-                        cursorBrush = SolidColor(RelayColors.Blue),
+                        // Cursor in `textFieldCursorColor`, not the fixed brand blue: the
+                        // fixed blue is near-invisible on the dark field background
+                        // (2.16:1); dark mode uses white, light mode the brand blue.
+                        cursorBrush = SolidColor(textFieldCursorColor(cs)),
                         decorationBox = { innerTextField ->
                             Box {
                                 if (query.isEmpty()) {

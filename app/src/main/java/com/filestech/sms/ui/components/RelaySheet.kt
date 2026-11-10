@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
@@ -49,8 +50,15 @@ fun RelaySheet(
 @Composable
 private fun RelayDragHandle() {
     val cs = MaterialTheme.colorScheme
+    // Feedback round 6 — 10dp above the handle, matching the system sheet:
+    // the 22dp restored in round 5 (from the pre-refresh default handle's
+    // vertical padding) left too much empty space above the pill — the
+    // system sheet in Kristin's screenshot sits ~10dp below the top edge.
+    // Bottom padding stays off: the content carries its own gap above its
+    // title.
     Box(
         modifier = Modifier
+            .padding(top = 10.dp)
             .width(32.dp)
             .height(4.dp)
             .background(cs.outline, RoundedCornerShape(2.dp)),

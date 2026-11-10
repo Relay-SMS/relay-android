@@ -146,7 +146,7 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                     return@launch
                 }
                 // v1.4.1 — if the body looks like a Tapback reaction back from another
-                // SMS Tech / iMessage / Google Messages, try to fold it onto the
+                // Relay / iMessage / Google Messages, try to fold it onto the
                 // original message instead of inserting a noisy "Reacted ❤️
                 // to «…»" text bubble. The decoder is intentionally strict (a real
                 // one-emoji SMS like "❤️" is left alone). On miss, fall through to

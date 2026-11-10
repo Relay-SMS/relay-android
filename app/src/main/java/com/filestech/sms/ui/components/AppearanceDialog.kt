@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Image
@@ -47,6 +48,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.filestech.sms.R
@@ -185,6 +187,7 @@ fun AppearanceDialog(
                     Spacer(Modifier.size(16.dp))
                     Column(modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
+                            shape = RoundedCornerShape(50),
                             onClick = {
                                 avatarPicker.launch(
                                     PickVisualMediaRequest(
@@ -201,6 +204,7 @@ fun AppearanceDialog(
                         if (pickedAvatarUri != null) {
                             Spacer(Modifier.height(4.dp))
                             TextButton(
+                                shape = RoundedCornerShape(50),
                                 onClick = {
                                     // Release la persistable permission pour ne pas
                                     // accumuler les permissions inutiles côté provider.
@@ -223,6 +227,8 @@ fun AppearanceDialog(
             }
         },
         confirmButton = {
+            // Feedback round 7 — pill shape, non-bold label, like the other
+            // large buttons app-wide.
             Button(
                 onClick = {
                     // Sélection BRAND_BLUE = équivalent à reset couleur côté persistance.
@@ -233,16 +239,20 @@ fun AppearanceDialog(
                     }
                     onConfirm(argbToSave, pickedAvatarUri)
                 },
+                shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = BrandBlue,
                     contentColor = Color.White,
                 ),
             ) {
-                Text(stringResource(R.string.action_save))
+                Text(
+                    stringResource(R.string.action_save),
+                    fontWeight = FontWeight.Normal,
+                )
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, shape = RoundedCornerShape(50)) {
                 Text(stringResource(R.string.action_cancel))
             }
         },

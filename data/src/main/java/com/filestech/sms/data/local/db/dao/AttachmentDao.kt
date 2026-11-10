@@ -20,6 +20,18 @@ interface AttachmentDao {
     suspend fun findForMessage(messageId: Long): List<AttachmentEntity>
 
     /**
+     * Feedback round 6 — bulk-fetch attachments for exactly the given
+     * messages. Used by
+     * [com.filestech.sms.data.repository.ConversationRepositoryImpl.observeMessagesWindow],
+     * whose window is bounded: fetching the whole conversation there re-ran
+     * a SQLCipher query over the entire history on every emission. The
+     * caller chunks the ids — a window grown by repeated "load older" pages
+     * can exceed SQLite's bound-variable cap for a single `IN` list.
+     */
+    @Query("SELECT * FROM attachments WHERE message_id IN (:messageIds)")
+    suspend fun findForMessages(messageIds: List<Long>): List<AttachmentEntity>
+
+    /**
      * Audit P-P0-1: bulk-fetch every attachment for a whole conversation in a single query.
      * Used by [com.filestech.sms.data.repository.ConversationRepositoryImpl.observeMessages]
      * which previously fired one [findForMessage] per audio row — an N+1 that exploded during

@@ -18,7 +18,7 @@ import org.junit.jupiter.api.assertThrows
  *
  * Il ne demandait jamais QUI avait créé la ligne. Toute ligne du fournisseur système en OUTBOX
  * de plus de quinze minutes était donc supprimée — y compris celle d'une application
- * constructeur cohabitante, ou de l'application SMS utilisée avant SMS Tech, dont un MMS avait
+ * constructeur cohabitante, ou de l'application SMS utilisée avant Relay, dont un MMS avait
  * échoué. Le chien de garde tourne toutes les douze heures.
  *
  * L'identifiant qui manquait existait déjà : `messages.mms_system_id`, que `MmsSentReceiver`

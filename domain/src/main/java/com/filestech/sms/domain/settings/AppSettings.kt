@@ -35,7 +35,14 @@ data class Appearance(
     val amoledTrueBlack: Boolean = false,
 )
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK, DARK_TECH }
+/**
+ * Feedback round 4 (2026-11-07) — `DARK_TECH` is removed: Settings offers System,
+ * Light and Dark only. A stored `DARK_TECH` value falls back to [SYSTEM] at read
+ * time (`SettingsRepository.enumOr` returns the default for an unknown name), which
+ * is the same dark-or-light behaviour it produced — DarkTech always resolved onto
+ * the Dark scheme (see `SmsTechTheme`).
+ */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
  * Taille du texte des messages (Réglages → Apparence). Le coefficient de chaque cran vit côté
@@ -54,7 +61,8 @@ enum class ListDensity { COMFORT, STANDARD, COMPACT }
 
 data class ConversationSettings(
     val sortMode: SortMode = SortMode.DATE,
-    val previewLines: Int = 1,
+    // Two preview lines (was 1): the list shows more of each message.
+    val previewLines: Int = 2,
     val showAvatars: Boolean = true,
     val signature: String? = null,
 )
@@ -115,12 +123,6 @@ data class SendingSettings(
      */
     val sendReactionsToRecipient: Boolean = true,
     /**
-     * v1.3.1 — `false` tant que l'utilisateur n'a pas validé le dialog de confirmation
-     * du premier envoi (avec case "Ne plus demander"). Tant que `false`, chaque premier
-     * envoi de réaction ouvre le dialog ; quand `true`, l'envoi est silencieux et direct.
-     */
-    val reactionConfirmDismissed: Boolean = false,
-    /**
      * v1.3.6 (legacy) — flag boolean conservé pour rétro-compat DataStore. Supplanté
      * en v1.8.0 par [reactionFormat] qui propose 3 options. Migration côté
      * [com.filestech.sms.data.local.datastore.SettingsRepository] : pour un user
@@ -146,7 +148,7 @@ data class SendingSettings(
      *     de l'expérience Tapback mais plus court et indépendant de la langue.
      *   - [ReactionFormat.READABLE_FR] : `"J'ai réagi par ❤️ à : «aperçu»"`.
      *     Format français lisible que tout destinataire Android francophone
-     *     comprend immédiatement. Décodé par SMS Tech (regex FR) pour afficher
+     *     comprend immédiatement. Décodé par Relay (regex FR) pour afficher
      *     la bulle de réaction native. Default v1.8.0–v1.14.3.
      *   - [ReactionFormat.TAPBACK_EN] : `"Reacted ❤️ to «aperçu»"`. Format
      *     Apple/Google Tapback détecté nativement par iMessage (iPhone) et
@@ -225,7 +227,11 @@ enum class PreviewMode { ALWAYS, WHEN_UNLOCKED, NEVER }
 data class SecuritySettings(
     val lockMode: LockMode = LockMode.OFF,
     val autoLockDelay: AutoLockDelay = AutoLockDelay.ONE_MINUTE,
-    val flagSecure: Boolean = true,
+    val flagSecure: Boolean = false,
+    // Feedback round 4 (2026-11-07) — FLAG_SECURE ("Hide preview in Recents") is
+    // OFF by default at Kristin's request, so fresh installs can take screenshots
+    // out of the box. The toggle stays in Settings for anyone who wants it on.
+    // Existing installs keep their stored value; only the default changed.
     val lockVaultOnLeave: Boolean = true,
     val panicCodeEnabled: Boolean = false,
     /**
@@ -249,7 +255,7 @@ data class SecuritySettings(
         com.filestech.sms.domain.emergency.EmergencyConfig(),
     /**
      * v1.12.0 — Raccourci urgence en notification persistante. Quand `true`,
-     * SMS Tech pose une notif `IMPORTANCE_LOW` (silencieuse, persistante)
+     * Relay pose une notif `IMPORTANCE_LOW` (silencieuse, persistante)
      * visible sur l'écran verrouillé avec 2 actions :
      *  - "URGENCE" → déclenche [TriggerEmergencyUseCase] directement
      *  - "112" → ouvre le composeur téléphone pré-rempli (ACTION_DIAL)
@@ -487,6 +493,14 @@ data class AdvancedSettings(
      */
     val startupDbMigrationsDone: Boolean = false,
     /**
+     * Feedback round 7 — `true` once the one-time retroactive reaction reparse
+     * ([com.filestech.sms.data.repository.ConversationMirror
+     * .reparseStoredReactions]) has run after the first post-grant sync, so it
+     * never re-scans on later cold starts. Same one-shot pattern as
+     * [unreadResetV180] / [dedupSameNumberV1230].
+     */
+    val reactionReparseDone: Boolean = false,
+    /**
      * v1.24.0 — réparation one-shot des aperçus de conversation périmés par des suppressions de
      * message sous les versions ≤ 1.23.4 (qui ne recalculaient pas la ligne `conversations`).
      * `true` une fois la passe [com.filestech.sms.data.local.db.dao.MessageDao.repairStaleConversationPreviews]
@@ -546,9 +560,9 @@ data class AdvancedSettings(
     val emptyConversationsPurgedV1272: Boolean = false,
     /**
      * v1.3.10 — **opt-in** : démarre [com.filestech.sms.system.service.KeepAliveService]
-     * qui maintient le processus SMS Tech vivant via une notification persistante
+     * qui maintient le processus Relay vivant via une notification persistante
      * discrète (canal `IMPORTANCE_MIN`, ne fait ni son ni vibration). Indispensable pour
-     * que SMS Tech reçoive correctement les SMS / MMS / notifications sur :
+     * que Relay reçoive correctement les SMS / MMS / notifications sur :
      *
      *   - **Xiaomi MIUI / HyperOS 2024+** (Redmi 9A Android 10 Go, Poco F5 HyperOS,
      *     Redmi Note 14 Pro 5G `2410FPCC5G`…)
@@ -557,7 +571,7 @@ data class AdvancedSettings(
      *   - Certains **OnePlus** anciens (OxygenOS < 12) et **realme realmeUI**
      *
      * Ces ROMs whitelistent uniquement les apps SMS du constructeur ; toute app SMS
-     * tierce (SMS Tech, QKSMS, Silence, etc.) est silencieusement killée en
+     * tierce (Relay, QKSMS, Silence, etc.) est silencieusement killée en
      * background, ce qui empêche la réception MMS et l'affichage des notifications.
      *
      * Sur ROMs non-agressives (Pixel Android stock, Samsung One UI, Sony Xperia,

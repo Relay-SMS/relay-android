@@ -1,21 +1,21 @@
-# SMS Relay
+# Relay
 
 English · 🇫🇷 [Version française](README.fr.md)
 
 A modern, private SMS & MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
 No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licensed.
 
-> **Fork note:** SMS Relay is a fork of [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine and adds device pairing and a synchronization service for desktop.
+> **Fork note:** Relay is based on [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine; Relay's UI and new features are © 2026 Relay Messaging.
 
-Source: [github.com/realquink/relay](https://github.com/realquink/relay) ·
-Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
+Source: [github.com/relay-sms/relay-android](https://github.com/relay-sms/relay-android) ·
+Releases: [GitHub Releases](https://github.com/relay-sms/relay-android/releases/latest)
 
 ## ✨ Features
 
 - Default SMS / MMS app for Android 8.0 and later (tested up to Android 16), with a one-time import
   of your existing messages.
-- Single-Activity Compose UI, Material 3 with dynamic colors, AMOLED true-black and a "Dark Tech"
-  theme.
+- Single-Activity Compose UI, Material 3 with dynamic colors, AMOLED true-black and
+  System / Light / Dark themes.
 - Encrypted Room database (SQLCipher), master key wrapped by the AndroidKeyStore.
 - App lock: PIN with PBKDF2-HMAC-SHA512 and exponential backoff after failed attempts; optional
   biometric unlock with a mandatory fallback PIN.
@@ -31,11 +31,14 @@ Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
   services — see the [terms of use](TERMS.md).
 - **Voice messages** recorded on the device and sent as audio MMS.
 - Named groups and group MMS, contextual replies with quotes, inline reply from notifications.
+- **Pinned messages**: pin a message in a thread and jump back to it from the banner.
+- **Emoji reactions** on message bubbles, sent as tapbacks.
+- **OTP / login-code detection**: one-tap copy from the message and from the notification.
 - Offline **scam detection** (shortened links, urgency wording, premium numbers, spoofed domains), on
   rules: it can be wrong both ways.
 - Blocking synchronized with the Phone / Samsung Messages blocklist; optional blocking of unknown
   numbers.
-- Full-text search (FTS4), **PDF export** of a conversation, scheduled sending (WorkManager).
+- Full-text search (FTS4) across conversations and **inside a thread**, **PDF export** of a conversation, scheduled sending (WorkManager).
 - Manual backup &amp; restore in `.smsbk` (AES-256-GCM + PBKDF2). Attachments are not part of the
   backup.
 - Five languages: English, French, German, Italian and Spanish — including every SMS the app sends
@@ -45,11 +48,11 @@ Releases: [GitHub Releases](https://github.com/realquink/relay/releases/latest)
 ## 🔐 Privacy
 
 We collect **nothing**. No analytics, no crash reporting, no remote logging.
-SMS Relay makes no network call: it does not hold the `INTERNET` permission, so its process cannot
+Relay makes no network call: it does not hold the `INTERNET` permission, so its process cannot
 open a connection. MMS are carried by Android's own MMS service, which talks to your carrier's MMSC.
 
 SMS is **not** end-to-end encrypted at the protocol level — this is a limitation of the carrier
-network, not a choice. SMS Relay protects what's stored on your device, with SQLCipher + the
+network, not a choice. Relay protects what's stored on your device, with SQLCipher + the
 AndroidKeyStore. For true end-to-end encryption, use Matrix.
 
 See the [privacy policy](PRIVACY.md), the [terms of use](TERMS.md) and
@@ -85,4 +88,4 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture and the end-to-end f
 
 Apache License 2.0 — see [LICENSE](LICENSE). Third-party libraries and their licences:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-© 2026 Patrice Haltaya.
+© 2026 Relay Messaging. Based on SMS Tech by Patrice Haltaya.

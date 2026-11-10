@@ -21,3 +21,22 @@ data class MessageWindow(
     val firstMessageAt: Long? = null,
     val lastMessageAt: Long? = null,
 )
+
+/**
+ * Feedback round 5 — which slice of a thread
+ * [com.filestech.sms.domain.repository.ConversationRepository.observeMessagesWindow]
+ * loads. The tail is the default view; [EndingAt] is the detour a search jump
+ * takes to a match in old, unloaded history — the window ends at (and includes)
+ * that message, with its preceding messages as context, instead of loading the
+ * whole thread.
+ */
+sealed interface MessageWindowSpec {
+    /** The [limit] most recent messages — the default tail window. */
+    data class Tail(val limit: Int) : MessageWindowSpec
+
+    /**
+     * The [limit] most recent messages ending at (and including) the message
+     * [anchorId] (dated [anchorDate]).
+     */
+    data class EndingAt(val anchorId: Long, val anchorDate: Long, val limit: Int) : MessageWindowSpec
+}

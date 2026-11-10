@@ -19,6 +19,7 @@ import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.notification.ConversationNotificationCanceller
+import com.filestech.sms.domain.otp.OtpCodeDetector
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.settings.NotificationSettings
 import com.filestech.sms.domain.settings.NotificationStyle
@@ -224,6 +225,23 @@ class IncomingMessageNotifier @Inject constructor(
                 if (notifSettings.inlineReply) {
                     b.addAction(buildReplyAction(address, messageId, notificationId, conversationId))
                 }
+                // Feedback round 5 — one-tap copy for a detected login code.
+                // Only when the preview itself is visible: with a hidden preview
+                // the code must not leave the app through the clipboard either.
+                // The code is never logged — it travels only in the action's
+                // intent extra, like the reply text does.
+                val otpCode = OtpCodeDetector.detect(body)
+                if (otpCode != null && !hidePreview) {
+                    b.addAction(
+                        buildCopyCodeAction(
+                            otpCode,
+                            address,
+                            messageId,
+                            notificationId,
+                            conversationId,
+                        ),
+                    )
+                }
                 b.addAction(buildMarkReadAction(address, messageId, notificationId, conversationId))
                 if (isActiveConversation) {
                     b.setTimeoutAfter(ACTIVE_CONV_TIMEOUT_MS)
@@ -326,6 +344,45 @@ class IncomingMessageNotifier @Inject constructor(
             context.getString(R.string.notif_reply_label),
             pi,
         ).addRemoteInput(remoteInput).setAllowGeneratedReplies(true).build()
+    }
+
+    /**
+     * Feedback round 5 — "Copy code" action for a detected login code
+     * ([OtpCodeDetector]). Same shape as [buildMarkReadAction]: the code
+     * travels in the intent extra (never in a log), the `data` URI gives the
+     * PendingIntent its identity (cf. [identiteAction], audit F19), and the
+     * request code is salted so it cannot collide with the reply / mark-read
+     * actions of the same message.
+     */
+    private fun buildCopyCodeAction(
+        code: String,
+        address: String,
+        messageId: Long,
+        notificationId: Int,
+        conversationId: Long,
+    ): NotificationCompat.Action {
+        val intent = Intent(context, NotificationActionReceiver::class.java).apply {
+            component = ComponentName(context, NotificationActionReceiver::class.java)
+            action = NotificationActionReceiver.ACTION_COPY_CODE
+            `package` = context.packageName
+            data = identiteAction("copycode", messageId)
+            putExtra(NotificationActionReceiver.EXTRA_ADDRESS, address)
+            putExtra(NotificationActionReceiver.EXTRA_MESSAGE_ID, messageId)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(NotificationActionReceiver.EXTRA_CONVERSATION_ID, conversationId)
+            putExtra(NotificationActionReceiver.EXTRA_CODE, code)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            notificationId.xor(COPY_CODE_REQUEST_SALT),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_notification_copy,
+            context.getString(R.string.notif_copy_code_label),
+            pi,
+        ).build()
     }
 
     private fun buildMarkReadAction(
@@ -467,6 +524,7 @@ class IncomingMessageNotifier @Inject constructor(
 
         private const val REPLY_REQUEST_SALT = 0x52455050 // 'REPL'
         private const val MARK_READ_REQUEST_SALT = 0x4D524541 // 'MREA'
+        private const val COPY_CODE_REQUEST_SALT = 0x434F5059 // 'COPY'
 
         /**
          * v1.3.9 — durée après laquelle Android cancel automatiquement la notification

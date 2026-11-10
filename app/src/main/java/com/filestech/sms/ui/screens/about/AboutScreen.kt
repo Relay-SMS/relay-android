@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Contactless
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Fingerprint
@@ -42,7 +40,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Translate
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,6 +72,7 @@ import com.filestech.sms.R
 import com.filestech.sms.ui.components.RelayRow
 import com.filestech.sms.ui.components.RelaySection
 import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.theme.BrandBlue
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
 
@@ -86,7 +84,13 @@ import com.filestech.sms.ui.theme.RelayText
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    isPanicDecoy: Boolean,
+    // Feedback round 8 — the License link opens the License screen (the
+    // copyright notice), instead of the Apache license in the browser.
+    onOpenLicense: () -> Unit,
+) {
     val context = LocalContext.current
     var tapCount by remember { mutableStateOf(0) }
 
@@ -120,7 +124,12 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = 24.dp),
+                // Feedback round 9 — only a top gap here: the section
+                // headers already carry 24dp above each card, and the
+                // trailing spacer below is the 24dp bottom breathing room,
+                // same as Settings. The old vertical 24dp doubled the
+                // bottom gap (spacer + column padding).
+                .padding(top = 24.dp),
         ) {
             HeaderBlock(
                 onCheckUpdate = {
@@ -140,49 +149,33 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                         Icon(
                             imageVector = Icons.Outlined.Shield,
                             contentDescription = null,
-                            tint = RelayColors.Blue,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(22.dp),
                         )
                     },
                 )
-                BadgesFlow(
-                    badges = privacyBadges(),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                )
+                // Feedback round 5 — the four privacy badges ("No ads",
+                // "No tracker", "No data collected", "Zero sharing") lived
+                // here; they are removed, and the last two move down to the
+                // "Zero ads, zero trackers" feature below.
             }
 
             RelaySection(title = stringResource(R.string.about_section_features)) {
-                features(isPanicDecoy).forEach { f ->
-                    FeatureRow(icon = f.icon, label = f.label, desc = f.desc)
+                // Feedback round 8 — every row but the first draws the
+                // divider above it, like the Settings cards (see [RelayRow]).
+                features(isPanicDecoy).forEachIndexed { index, f ->
+                    FeatureRow(icon = f.icon, label = f.label, desc = f.desc, dividerAbove = index > 0)
                 }
             }
 
-            RelaySection(title = stringResource(R.string.about_section_author)) {
-                RelayRow(
-                    title = AUTHOR_NAME,
-                    subtitle = stringResource(R.string.about_author_role),
-                    leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Contactless,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    },
-                )
-            }
+            // Feedback round 5 — the Author section lived here (name + role
+            // in its own row); it duplicated the upstream credit already in
+            // the footer below, so it was removed. The footer credit is the
+            // one that matters.
 
-            RelaySection(title = stringResource(R.string.about_section_help)) {
-                helpRecipes(isPanicDecoy).forEach { h -> HelpCard(title = h.title, steps = h.steps) }
-            }
-
+            // Feedback round 5 — Quick Help moved out of About onto its own
+            // Help screen, reached from Settings (see HelpScreen); this
+            // section is gone from here.
             RelaySection(title = stringResource(R.string.about_security_title)) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -204,8 +197,10 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
             }
 
             RelaySection(title = stringResource(R.string.about_permissions_title)) {
-                permissions(isPanicDecoy).forEach { p ->
-                    RelayRow(title = p.name, subtitle = p.why)
+                // Feedback round 8 — every row but the first draws the
+                // divider above it, like the Settings cards (see [RelayRow]).
+                permissions(isPanicDecoy).forEachIndexed { index, p ->
+                    RelayRow(title = p.name, subtitle = p.why, dividerAbove = index > 0)
                 }
             }
 
@@ -215,6 +210,9 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                     label = stringResource(R.string.about_source_code),
                     onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) },
                 )
+                // Feedback round 8 — every row but the first draws the
+                // divider above it, like the Settings cards. Source code is
+                // always the first row of this card, so it stays without one.
                 LinkItem(
                     icon = Icons.Outlined.BugReport,
                     label = stringResource(R.string.about_report_issue),
@@ -228,18 +226,24 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                             )
                         )
                     },
+                    dividerAbove = true,
                 )
                 LinkItem(
                     icon = Icons.Outlined.Language,
                     label = stringResource(R.string.about_website),
                     supporting = WEBSITE_URL,
                     onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL))) },
+                    dividerAbove = true,
                 )
+                // Feedback round 8 — the License link opens the License
+                // screen (Relay's copyright notice + the upstream
+                // attribution) instead of the Apache license in the browser,
+                // and it carries no subtext now.
                 LinkItem(
                     icon = Icons.Outlined.Gavel,
                     label = stringResource(R.string.about_license),
-                    supporting = "Apache License 2.0",
-                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(LICENSE_URL))) },
+                    onClick = onOpenLicense,
+                    dividerAbove = true,
                 )
                 // v1.28.13 — la politique et les conditions existent dans les cinq langues de
                 // l'application : le lien ouvre celle de la langue AFFICHÉE, l'anglais à défaut.
@@ -252,11 +256,13 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                         icon = Icons.Outlined.PrivacyTip,
                         label = stringResource(R.string.about_privacy),
                         onClick = { ouvrirTexteJuridique(context, "PRIVACY", langue) },
+                        dividerAbove = true,
                     )
                     LinkItem(
                         icon = Icons.Outlined.Description,
                         label = stringResource(R.string.about_terms),
                         onClick = { ouvrirTexteJuridique(context, "TERMS", langue) },
+                        dividerAbove = true,
                     )
                 }
                 // 2026-10-29 — soutenir le projet : la page de dons du site, ouverte dans le navigateur
@@ -267,29 +273,15 @@ fun AboutScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
                     label = stringResource(R.string.about_support),
                     supporting = stringResource(R.string.about_support_desc),
                     onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, urlPageDeDons(langue).toUri())) },
+                    dividerAbove = true,
                 )
             }
 
+            // Feedback round 9 — the bottom credits line is gone too: the
+            // full attribution (including the upstream credit) lives in the
+            // License screen, reached from the License link above. The
+            // spacer is the bottom breathing room, same as Settings.
             Spacer(Modifier.size(24.dp))
-            Text(
-                text = stringResource(R.string.about_credits_body, AUTHOR_NAME),
-                style = RelayText.Timestamp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            )
-            Spacer(Modifier.size(8.dp))
-            Text(
-                text = stringResource(R.string.about_legal_body, "2026", AUTHOR_NAME),
-                style = RelayText.Timestamp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            )
         }
     }
 }
@@ -311,13 +303,24 @@ private fun HeaderBlock(
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Image(
-            painter = painterResource(id = R.drawable.sms_tech_icon),
-            contentDescription = null,
+        // Feedback round 5 — Relay interim logo: the white chat bubble
+        // (adaptive-icon foreground vector, tail bottom-right) on a
+        // brand-blue rounded tile, the same treatment as the splash. The
+        // old upstream PNG (`sms_tech_icon`) is no longer used here.
+        Box(
             modifier = Modifier
                 .size(80.dp)
-                .clip(RoundedCornerShape(20.dp)),
-        )
+                .clip(RoundedCornerShape(20.dp))
+                .background(BrandBlue)
+                .padding(11.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         Spacer(Modifier.size(14.dp))
         Text(
             text = stringResource(R.string.app_name),
@@ -364,99 +367,31 @@ private fun HeaderBlock(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Privacy badges as quiet chips
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun BadgesFlow(badges: List<PrivacyBadge>, modifier: Modifier = Modifier) {
-    // Compose's FlowRow is in foundation since 1.4 — use a manual two-row layout that splits
-    // the badges roughly evenly. Keeps the dependency surface flat (no new artifact).
-    val mid = (badges.size + 1) / 2
-    val rows = listOf(badges.take(mid), badges.drop(mid))
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { b -> Badge(icon = b.icon, label = b.label) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Badge(icon: ImageVector, label: String) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(cs.surfaceVariant)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = cs.onSurfaceVariant, modifier = Modifier.size(14.dp))
-        Spacer(Modifier.size(5.dp))
-        Text(
-            text = label,
-            style = RelayText.Timestamp,
-            color = cs.onSurfaceVariant,
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 //  Features
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun FeatureRow(icon: ImageVector, label: String, desc: String) {
+private fun FeatureRow(icon: ImageVector, label: String, desc: String?, dividerAbove: Boolean = false) {
     RelayRow(
         title = label,
         subtitle = desc,
+        subtitleTopPadding = 2.dp,
+        // Feedback round 6 — the glyph centres on the title line, not on
+        // the whole row, like the main Settings screen (see [RelayRow]):
+        // the icons were still vertically centred.
+        leadingIconTopAligned = true,
+        // Feedback round 8 — the divider above every row but the first of
+        // the card (see [RelayRow]).
+        dividerAbove = dividerAbove,
         leadingIcon = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = RelayColors.Blue,
-                modifier = Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(24.dp),
             )
         },
     )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Help recipes
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun HelpCard(title: String, steps: List<String>) {
-    val cs = MaterialTheme.colorScheme
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(
-            text = title,
-            style = RelayText.MessageBody.copy(fontWeight = FontWeight.SemiBold),
-            color = cs.onSurface,
-        )
-        Spacer(Modifier.size(6.dp))
-        steps.forEachIndexed { i, step ->
-            Row(
-                modifier = Modifier.padding(bottom = 3.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Text(
-                    text = "${i + 1}. ",
-                    style = RelayText.Timestamp.copy(fontWeight = FontWeight.SemiBold),
-                    color = RelayColors.Blue,
-                )
-                Text(
-                    text = step,
-                    style = RelayText.Timestamp,
-                    color = cs.onSurface,
-                )
-            }
-        }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -469,17 +404,25 @@ private fun LinkItem(
     label: String,
     onClick: () -> Unit,
     supporting: String? = null,
+    dividerAbove: Boolean = false,
 ) {
     RelayRow(
         title = label,
         subtitle = supporting,
+        subtitleTopPadding = 2.dp,
         onClick = onClick,
+        // Feedback round 6 — top-aligned like the main Settings screen
+        // (see [RelayRow]): the icons were still vertically centred.
+        leadingIconTopAligned = true,
+        // Feedback round 8 — the divider above every row but the first of
+        // the card (see [RelayRow]).
+        dividerAbove = dividerAbove,
         leadingIcon = {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = RelayColors.Blue,
-                modifier = Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(24.dp),
             )
         },
         trailing = {
@@ -487,7 +430,7 @@ private fun LinkItem(
                 Icons.Outlined.ChevronRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(24.dp),
             )
         },
     )
@@ -507,8 +450,6 @@ private fun safeStartActivity(context: android.content.Context, intent: android.
 //  Static data
 // ─────────────────────────────────────────────────────────────────────────────
 
-private const val AUTHOR_NAME = "Patrice Haltaya"
-
 // v1.27.10 (revue externe GitLab !38458) — le depot s'appelle `SMS-TECH`, pas `sms_tech` :
 // ces deux liens rendaient 404 depuis toujours. Ce n'est pas une affaire de casse (GitHub
 // l'ignore) mais de separateur, tiret contre soulignement. Seul RELEASES_URL etait juste, ce
@@ -518,7 +459,6 @@ private const val RELEASES_URL = "https://github.com/realquink/relay/releases/la
 
 // SMS Relay has no standalone website yet; the repo is the project page for now.
 private const val WEBSITE_URL = "https://github.com/realquink/relay"
-private const val LICENSE_URL = "https://www.apache.org/licenses/LICENSE-2.0"
 private const val LEGAL_BASE_URL = "https://github.com/realquink/relay/blob/main/"
 
 /** Langues dans lesquelles PRIVACY et TERMS ont une traduction ; l'anglais est `PRIVACY.md`. */
@@ -547,20 +487,6 @@ private fun ouvrirTexteJuridique(context: android.content.Context, document: Str
     safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(urlTexteJuridique(document, langue))))
 }
 
-private data class PrivacyBadge(val icon: ImageVector, val label: String)
-
-// v1.14.9 audit I18N-M3 — Conversion vers factory @Composable. Avant : `val PRIVACY_BADGES =
-// listOf(...)` top-level avec strings FR hardcodées → un user EN voyait du français dans
-// AboutScreen alors que tout le reste de l'app était en EN. Désormais : factory function
-// qui résout chaque label via [stringResource], parité FR↔EN complète.
-@androidx.compose.runtime.Composable
-private fun privacyBadges(): List<PrivacyBadge> = listOf(
-    PrivacyBadge(Icons.Outlined.Block, stringResource(R.string.about_badge_no_ads)),
-    PrivacyBadge(Icons.Outlined.VisibilityOff, stringResource(R.string.about_badge_no_tracker)),
-    PrivacyBadge(Icons.Outlined.Security, stringResource(R.string.about_badge_no_collection)),
-    PrivacyBadge(Icons.Outlined.PrivacyTip, stringResource(R.string.about_badge_no_sharing)),
-)
-
 /**
  * @param sensitive v1.26.1 (audit C4) — la fonctionnalité ne doit PAS être nommée en session
  *   leurre. Marquer plutôt que filtrer à la main : une fonctionnalité de sécurité ajoutée
@@ -570,7 +496,9 @@ private fun privacyBadges(): List<PrivacyBadge> = listOf(
 private data class Feature(
     val icon: ImageVector,
     val label: String,
-    val desc: String,
+    // Feedback round 5 — `null` = title-only row (the "No data
+    // collected" / "Zero sharing" rows below have no description).
+    val desc: String? = null,
     val sensitive: Boolean = false,
 )
 
@@ -618,18 +546,23 @@ private fun features(isPanicDecoy: Boolean): List<Feature> = listOf(
     Feature(Icons.Outlined.DarkMode, stringResource(R.string.about_feat_themes_label), stringResource(R.string.about_feat_themes_desc)),
     Feature(Icons.Outlined.GraphicEq, stringResource(R.string.about_feat_ui_label), stringResource(R.string.about_feat_ui_desc)),
     Feature(Icons.Outlined.QuestionAnswer, stringResource(R.string.about_feat_noads_label), stringResource(R.string.about_feat_noads_desc)),
+    // Feedback round 5 — the two privacy claims moved here from the badges
+    // at the top of this screen: title-only rows under "Zero ads, zero
+    // trackers", same style as the other features.
+    Feature(Icons.Outlined.Security, stringResource(R.string.about_badge_no_collection)),
+    Feature(Icons.Outlined.PrivacyTip, stringResource(R.string.about_badge_no_sharing)),
 ).filterNot { isPanicDecoy && it.sensitive }
 
 /**
  * @property sensitive v1.28.13 — la ligne nomme le mode urgence : masquée en session leurre, comme
- *   les fonctions et l'aide du même écran (cf. [features], [helpRecipes]).
+ *   les fonctions et l'aide du même écran (cf. [features], [HelpScreen]).
  */
 private data class Permission(val name: String, val why: String, val sensitive: Boolean = false)
 
 /**
  * v1.25.3 (audit H20) — les justificatifs de permissions étaient des littéraux **anglais** dans
  * le corps de l'écran : un utilisateur francophone lisait « Required for any SMS app. » au milieu
- * d'une page en français. Même patron de factory `@Composable` que [features] et [helpRecipes].
+ * d'une page en français. Même patron de factory `@Composable` que [features] et [HelpScreen].
  *
  * Les noms de permissions restent des littéraux : ce sont les identifiants Android exacts, et les
  * traduire les rendrait invérifiables face à l'écran système des autorisations.
@@ -655,86 +588,4 @@ private fun permissions(isPanicDecoy: Boolean): List<Permission> = listOf(
     ),
     Permission("CALL_PHONE", stringResource(R.string.about_perm_call_phone), sensitive = true),
     Permission("FOREGROUND_SERVICE", stringResource(R.string.about_perm_foreground_service)),
-).filterNot { isPanicDecoy && it.sensitive }
-
-private data class HelpRecipe(
-    val title: String,
-    val steps: List<String>,
-    val sensitive: Boolean = false,
-)
-
-/**
- * v1.27.13 (audit de coherence) — **meme filtre que [features]**, qui manquait ici.
- *
- * L'audit C4 de la v1.26.1 avait retire du bloc « Fonctionnalites » les entrees qui nomment le
- * coffre et le mode urgence, parce que cet ecran etait le dernier a decrire en clair ce que tout
- * le reste du mode leurre s'emploie a nier. Le bloc « Aide », vingt lignes plus bas dans le meme
- * fichier, n'avait pas ete traite : en session leurre, il affichait encore une fiche intitulee
- * « Mettre une conversation au coffre » avec son mode d'emploi complet, jusqu'a
- * « Reglages -> Securite pour configurer le coffre ».
- *
- * Une correction qui ne traite qu'une des deux listes d'un meme ecran laisse le defaut entier :
- * ce n'est pas la liste qui trahissait, c'est le sujet.
- */
-@androidx.compose.runtime.Composable
-private fun helpRecipes(isPanicDecoy: Boolean): List<HelpRecipe> = listOf(
-    HelpRecipe(
-        title = stringResource(R.string.about_help_default_title),
-        steps = listOf(
-            stringResource(R.string.about_help_default_step1),
-            stringResource(R.string.about_help_default_step2),
-        ),
-    ),
-    HelpRecipe(
-        title = stringResource(R.string.about_help_voice_title),
-        steps = listOf(
-            stringResource(R.string.about_help_voice_step1),
-            stringResource(R.string.about_help_voice_step2),
-            stringResource(R.string.about_help_voice_step3),
-        ),
-    ),
-    HelpRecipe(
-        title = stringResource(R.string.about_help_vault_title),
-        steps = listOf(
-            stringResource(R.string.about_help_vault_step1),
-            stringResource(R.string.about_help_vault_step2),
-            stringResource(R.string.about_help_vault_step3),
-        ),
-        sensitive = true,
-    ),
-    HelpRecipe(
-        title = stringResource(R.string.about_help_block_title),
-        steps = listOf(
-            stringResource(R.string.about_help_block_step1),
-            stringResource(R.string.about_help_block_step2),
-            stringResource(R.string.about_help_block_step3),
-        ),
-    ),
-    HelpRecipe(
-        title = stringResource(R.string.about_help_translate_title),
-        steps = listOf(
-            stringResource(R.string.about_help_translate_step1),
-            stringResource(R.string.about_help_translate_step2),
-            stringResource(R.string.about_help_translate_step3),
-            stringResource(R.string.about_help_translate_step4),
-        ),
-    ),
-    HelpRecipe(
-        title = stringResource(R.string.about_help_emergency_title),
-        steps = listOf(
-            stringResource(R.string.about_help_emergency_step1),
-            stringResource(R.string.about_help_emergency_step2),
-            stringResource(R.string.about_help_emergency_step3),
-            stringResource(R.string.about_help_emergency_step4),
-        ),
-        sensitive = true,
-    ),
-    HelpRecipe(
-        title = stringResource(R.string.about_help_update_title),
-        steps = listOf(
-            stringResource(R.string.about_help_update_step1),
-            stringResource(R.string.about_help_update_step2),
-            stringResource(R.string.about_help_update_step3),
-        ),
-    ),
 ).filterNot { isPanicDecoy && it.sensitive }

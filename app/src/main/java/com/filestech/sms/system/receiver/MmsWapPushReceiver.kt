@@ -36,7 +36,7 @@ import timber.log.Timber
  *   - Malformed / truncated PDUs simply log a warning and bail (no crash).
  *   - We DO NOT auto-download messages larger than [MAX_AUTO_DOWNLOAD_BYTES] (default 1 MB) to
  *     guard against runaway data usage — the user can re-trigger from the conversation later.
- *     For SMS Tech's voice-only flow we should never hit that ceiling (clips capped at 300 KB).
+ *     For Relay's voice-only flow we should never hit that ceiling (clips capped at 300 KB).
  */
 class MmsWapPushReceiver : BroadcastReceiver() {
 
@@ -168,7 +168,7 @@ class MmsWapPushReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        /** 1 MiB safety ceiling. SMS Tech voice clips are ≤ 300 KB, this is a defence in depth. */
+        /** 1 MiB safety ceiling. Relay voice clips are ≤ 300 KB, this is a defence in depth. */
         private const val MAX_AUTO_DOWNLOAD_BYTES: Long = 1024L * 1024L
     }
 }

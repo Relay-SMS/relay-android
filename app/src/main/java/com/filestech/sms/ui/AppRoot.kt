@@ -1,8 +1,11 @@
 package com.filestech.sms.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
@@ -24,12 +27,15 @@ import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.system.notifications.SafetyCallAckHolder
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.navigation.About
+import com.filestech.sms.ui.navigation.Advanced
 import com.filestech.sms.ui.navigation.Backup
 import com.filestech.sms.ui.navigation.Blocked
 import com.filestech.sms.ui.navigation.Compose
 import com.filestech.sms.ui.navigation.Conversations
 import com.filestech.sms.ui.navigation.Emergency
 import com.filestech.sms.ui.navigation.EmergencySetup
+import com.filestech.sms.ui.navigation.Help
+import com.filestech.sms.ui.navigation.License
 import com.filestech.sms.ui.navigation.Lock
 import com.filestech.sms.ui.navigation.MediaGallery
 import com.filestech.sms.ui.navigation.Migration
@@ -39,6 +45,7 @@ import com.filestech.sms.ui.navigation.Settings
 import com.filestech.sms.ui.navigation.Thread
 import com.filestech.sms.ui.navigation.Vault
 import com.filestech.sms.ui.screens.about.AboutScreen
+import com.filestech.sms.ui.screens.about.HelpScreen
 import com.filestech.sms.ui.screens.backup.BackupScreen
 import com.filestech.sms.ui.screens.blocked.BlockedNumbersScreen
 import com.filestech.sms.ui.screens.compose.ComposeScreen
@@ -46,6 +53,7 @@ import com.filestech.sms.ui.screens.conversations.ConversationsScreen
 import com.filestech.sms.ui.screens.lock.LockScreen
 import com.filestech.sms.ui.screens.media.MediaGalleryScreen
 import com.filestech.sms.ui.screens.migration.MigrationScreen
+import com.filestech.sms.ui.screens.settings.AdvancedScreen
 import com.filestech.sms.ui.screens.settings.SettingsScreen
 import com.filestech.sms.ui.screens.splash.SplashScreen
 import com.filestech.sms.ui.screens.thread.ThreadScreen
@@ -313,6 +321,32 @@ fun AppRoot() {
     // deux ecrans se perd completement sans animation, et 80 ms suffisent a la preserver.
     val fonduEntrant = fadeIn(animationSpec = tween(NAV_TRANSITION_MS))
     val fonduSortant = fadeOut(animationSpec = tween(NAV_TRANSITION_MS))
+    // Round 4 — the thread slides in from the right when a conversation opens
+    // and slides back out to the right on back, like other messaging apps.
+    // Scoped to the Thread destination only (see `composable<Thread>` below):
+    // every other destination keeps the 80 ms fade above. The round-3
+    // smooth-open gating (the list stays hidden until scrolled to the bottom)
+    // lives inside ThreadScreen and is untouched — the slide animates the whole
+    // destination around it. 300 ms FastOutSlowIn is the Material 3 standard
+    // for screen transitions.
+    val glissementEntrant = slideInHorizontally(
+        animationSpec = tween(THREAD_TRANSITION_MS, easing = FastOutSlowInEasing),
+    ) { it }
+    val glissementSortant = slideOutHorizontally(
+        animationSpec = tween(THREAD_TRANSITION_MS, easing = FastOutSlowInEasing),
+    ) { it }
+    // Feedback round 5 — the missing half of the round-4 slide. Round 4 set
+    // the thread's enter (slide in from the right) and popExit (slide back
+    // out to the right), but the screen coming BACK — the conversation list —
+    // kept the NavHost-level popEnter, an 80 ms fade. The pair was asymmetric:
+    // the thread slid away while the list just faded in underneath, so going
+    // back read as a snap instead of the mirrored slide. This is the list's
+    // slide back in from the left, same 300 ms easing; it is applied only
+    // when popping from a Thread (see `composable<Conversations>` below), so
+    // every other return to the list keeps its 80 ms fade.
+    val glissementRetourEntrant = slideInHorizontally(
+        animationSpec = tween(THREAD_TRANSITION_MS, easing = FastOutSlowInEasing),
+    ) { -it }
     NavHost(
         navController = nav,
         startDestination = Conversations(),
@@ -321,7 +355,28 @@ fun AppRoot() {
         popEnterTransition = { fonduEntrant },
         popExitTransition = { fonduSortant },
     ) {
-        composable<Conversations> { entry ->
+        composable<Conversations>(
+            // Feedback round 5 — pop back from a thread slides the list back
+            // in from the left, mirroring the thread's slide out to the right
+            // (same 300 ms easing). The `initialState` here is the entry being
+            // popped, so the slide applies only to returns from a Thread;
+            // returns from the vault, Compose and the rest keep the
+            // NavHost-level 80 ms fade. Both the toolbar back arrow and the
+            // system back gesture/button pop through the NavController, so both
+            // take this same pop pair (no BackHandler in the thread screen
+            // intercepts back first).
+            // Feedback round 8 — same mirror for Settings, which now slides
+            // in from the right like the thread: popping back from Settings
+            // slides the list back in from the left, so the return reads as
+            // the reverse of the open instead of a fade under a slide.
+            popEnterTransition = {
+                if (isSlideReturnRoute(initialState.destination.route)) {
+                    glissementRetourEntrant
+                } else {
+                    fonduEntrant
+                }
+            },
+        ) { entry ->
             val args = entry.toRoute<Conversations>()
             ConversationsScreen(
                 archived = args.archived,
@@ -340,7 +395,9 @@ fun AppRoot() {
                 onOpenVault = { nav.navigate(Vault) },
                 onOpenArchived = { nav.navigate(Conversations(archived = true)) },
                 onOpenBlocked = { nav.navigate(Blocked) },
-                onOpenAbout = { nav.navigate(About) },
+                // Feedback round 8 — Scheduled messages moved here from
+                // Settings: it lives in the main menu under "New group".
+                onOpenScheduledMessages = { nav.navigate(ScheduledMessages) },
                 onBack = if (args.archived) ({ nav.popBackStack() }) else null,
             )
         }
@@ -357,18 +414,28 @@ fun AppRoot() {
             )
         }
         composable<Blocked> { BlockedNumbersScreen(onBack = { nav.popBackStack() }) }
-        composable<Settings> {
+        // Feedback round 8 — Settings slides in from the right like the
+        // thread (300 ms horizontal slide, see `glissementEntrant` above),
+        // instead of the NavHost-level 80 ms fade that read as a snap.
+        composable<Settings>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
             SettingsScreen(
                 onBack = { nav.popBackStack() },
                 onOpenAbout = { nav.navigate(About) },
+                // Feedback round 5 — Help lives on its own screen now (was
+                // the "Quick help" section of About).
+                onOpenHelp = { nav.navigate(Help) },
+                // Feedback round 6 — Advanced lives on its own screen now
+                // (was the "Advanced" section of this list).
+                onOpenAdvanced = { nav.navigate(Advanced) },
                 onOpenBackup = { nav.navigate(Backup) },
                 onOpenMigration = { nav.navigate(Migration) },
                 onOpenBlocked = { nav.navigate(Blocked) },
                 onOpenSafetyCall = { nav.navigate(SafetyCallSetup) },
                 onOpenEmergency = { nav.navigate(Emergency) },
                 onOpenEmergencySetup = { nav.navigate(EmergencySetup) },
-                // v1.15.1 — accès à la nouvelle screen Messages programmés.
-                onOpenScheduledMessages = { nav.navigate(ScheduledMessages) },
             )
         }
         // v1.15.1 — Liste + annulation des messages programmés.
@@ -414,15 +481,62 @@ fun AppRoot() {
         // un défaut `false` serait un repli permissif (l'écran nommerait le coffre et le mode
         // panique tant que l'état n'est pas transmis). Le compilateur exige donc que tout futur
         // point d'entrée tranche explicitement.
-        composable<About> {
-            AboutScreen(onBack = { nav.popBackStack() }, isPanicDecoy = isPanicDecoy)
+        // Feedback round 8 — About slides like the other screens (Help,
+        // Advanced, Settings, thread): it used to snap in/out on the
+        // NavHost default fade.
+        composable<About>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            AboutScreen(
+                onBack = { nav.popBackStack() },
+                isPanicDecoy = isPanicDecoy,
+                onOpenLicense = { nav.navigate(License) },
+            )
+        }
+        // Feedback round 8 — License / copyright notice screen, reached
+        // from the License link on About. Same slide as Help and About.
+        composable<License>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            com.filestech.sms.ui.screens.about.LicenseScreen(
+                onBack = { nav.popBackStack() },
+            )
+        }
+        // Feedback round 5 — Help screen: same slide-in transition as the
+        // thread (300 ms horizontal slide, see `glissementEntrant` above),
+        // so opening Help from Settings feels like opening a thread.
+        composable<Help>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            HelpScreen(onBack = { nav.popBackStack() }, isPanicDecoy = isPanicDecoy)
+        }
+        // Feedback round 6 — Advanced screen: same slide-in transition as
+        // Help, so opening Advanced from Settings feels the same.
+        composable<Advanced>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            AdvancedScreen(onBack = { nav.popBackStack() })
         }
         composable<Lock> {
             LockScreen(
                 onUnlocked = { nav.popBackStack(route = Lock, inclusive = true) },
             )
         }
-        composable<Thread> { backStackEntry ->
+        composable<Thread>(
+            // Round 4 — slide over from the right on open, back out to the right
+            // on back. Only `enter` / `popExit` are overridden: leaving the thread
+            // forward (e.g. to the media gallery) and coming back to it keep the
+            // NavHost-level fade, so the change stays scoped to open/back. The
+            // list's half of the back slide — sliding back in from the left —
+            // lives on `composable<Conversations>` (feedback round 5): it is the
+            // returning destination's `popEnter`, not this destination's.
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) { backStackEntry ->
             val args = backStackEntry.toRoute<Thread>()
             ThreadScreen(
                 conversationId = args.conversationId,
@@ -448,7 +562,13 @@ fun AppRoot() {
             )
         }
         composable<MediaGallery> { MediaGalleryScreen(onBack = { nav.popBackStack() }) }
-        composable<Compose> { backStackEntry ->
+        // Feedback round 9 — Compose slides in from the right like the
+        // thread and Settings (300 ms horizontal slide), instead of the
+        // NavHost-level 80 ms fade that read as a snap.
+        composable<Compose>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) { backStackEntry ->
             val args = backStackEntry.toRoute<Compose>()
             ComposeScreen(
                 initialAddress = args.initialAddress,
@@ -607,3 +727,31 @@ private fun SafetyCallAckOverlay(
  * retour, sur un appareil reel.
  */
 private const val NAV_TRANSITION_MS = 80
+
+/**
+ * Round 4 — duration of the Thread destination's slide (open / back), in milliseconds.
+ * 300 ms with FastOutSlowIn is the Material 3 standard for screen transitions (it is
+ * also the duration of the bottom-sheet animation spec in material3 1.4.0). Deliberately
+ * NOT the 80 ms of [NAV_TRANSITION_MS]: a slide that fast would read as a glitch, not a
+ * transition.
+ *
+ * Trade-off, cf. the v1.27.12 note above: the screen that comes back ignores gestures
+ * while a transition runs, so the first swipe on the list right after going back may be
+ * ignored for up to ~300 ms. Re-check the immediate swipe after back on a real device.
+ */
+private const val THREAD_TRANSITION_MS = 300
+
+/**
+ * Feedback round 8 — destinations whose return to the conversation list
+ * mirrors their slide-out (the list slides back in from the left): the
+ * thread and Settings, which both slide in from the right on open. Kept as
+ * a top-level helper (not inline in [AppRoot]) so the `||` does not push
+ * `AppRoot` over the Detekt cyclomatic-complexity threshold.
+ */
+private fun isSlideReturnRoute(route: String?): Boolean {
+    // Feedback round 9 — Compose slides in from the right like the thread
+    // and Settings, so popping back from it slides the list back in from
+    // the left too.
+    return route?.contains("Thread") == true || route?.contains("Settings") == true ||
+        route?.contains("Compose") == true
+}

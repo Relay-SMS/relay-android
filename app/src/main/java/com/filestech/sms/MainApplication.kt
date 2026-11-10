@@ -121,8 +121,8 @@ class MainApplication : Application(), Configuration.Provider {
         //
         // Pourquoi le simple recompute SQL ne suffit pas : il s'appuie sur
         // `messages.read` qui est lui-même désynchronisé. Si l'user a lu un
-        // message dans Google Messages SANS ouvrir SMS Tech, le système pose
-        // `READ=1` mais SMS Tech ne re-lit jamais le `read` pour les messages
+        // message dans Google Messages SANS ouvrir Relay, le système pose
+        // `READ=1` mais Relay ne re-lit jamais le `read` pour les messages
         // déjà mirror-és → `messages.read` reste à 0 indéfiniment → recompute
         // calcule `unread_count > 0` à juste titre selon Room, mais incorrect
         // selon l'expérience utilisateur réelle.
@@ -504,7 +504,7 @@ class MainApplication : Application(), Configuration.Provider {
         // notif "URGENCE/112/17" depuis le lock screen et peut déclencher
         // l'envoi SMS aux contacts urgence (qui passerait quand même la garde
         // PanicDecoy du UseCase, mais leak la *présence* du raccourci ⇒ leak
-        // d'info que SMS Tech a un mode urgence configuré).
+        // d'info que Relay a un mode urgence configuré).
         // v1.28.13 (audit pré-release, M1) — combiner aussi le RETOUR AU PREMIER PLAN. Sans
         // notifications, `postShortcut` sort sans rien poster ; la bannière des Réglages envoie alors
         // vers la page Android qui les rallume, et disparaît au retour… mais rien ne repostait le
