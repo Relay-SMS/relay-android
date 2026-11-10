@@ -130,7 +130,9 @@ fun MediaAttachmentBubble(
     // sombre : les bulles sortantes gardent un seul bleu dans les deux thèmes, et le
     // texte sortant reste blanc (voir ci-dessous).
     val bgColor = if (isOut) BrandBlue else bubbleIncomingColor(cs)
-    val shape = RoundedCornerShape(18.dp)
+    // Feedback round 9 — same rounder bubble language as the text bubbles
+    // (24dp corners; was 18dp).
+    val shape = RoundedCornerShape(24.dp)
 
     // X-04 — une seule fonction d'ouverture, paramétrée par la pièce jointe touchée.
     val ouvrir: (Attachment) -> Unit = remember(message.id) {

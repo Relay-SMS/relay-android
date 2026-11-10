@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -375,7 +376,6 @@ fun SettingsScreen(
             // stays in strings.xml (unused now) — strings are never deleted.
             RelaySection(
                 title = stringResource(R.string.settings_section_appearance),
-                materialHeader = true,
             ) {
                 ThemeSwatchPicker(
                     current = state.appearance.themeMode,
@@ -425,7 +425,6 @@ fun SettingsScreen(
 
             RelaySection(
                 title = stringResource(R.string.settings_section_sending),
-                materialHeader = true,
             ) {
                 ToggleRow(
                     title = stringResource(R.string.settings_delivery_reports),
@@ -650,7 +649,6 @@ fun SettingsScreen(
             if (!isPanicDecoy) {
                 RelaySection(
                     title = stringResource(R.string.settings_section_backup),
-                    materialHeader = true,
                 ) {
                     NavigationRow(
                         title = stringResource(R.string.settings_backup_now),
@@ -682,7 +680,6 @@ fun SettingsScreen(
             // bare one.
             RelaySection(
                 title = stringResource(R.string.settings_section_general),
-                materialHeader = true,
             ) {
                 // Réservé à Android 13+ : en dessous, la page de langue
                 // n'existe pas et l'intent n'ouvrirait rien.
@@ -1526,12 +1523,16 @@ private fun PinSetupDialog(
  * Feedback round 8 — pass [infoText] instead of [description] for a long
  * explanation: the row stays one-line and gains a chevron before the switch
  * (the system Settings pattern: chevron, thin vertical divider, toggle).
- * Tapping the chevron opens a dialog with the text; tapping the rest of
- * the row still flips the switch. The chevron is its own clickable, so it
- * does not toggle.
+ *
+ * Feedback round 9 — with [infoText] the whole text-to-chevron area
+ * (title + chevron + the thin divider) opens the dialog; only the Switch
+ * itself flips the value. Without [infoText] the whole row is still the
+ * switch (one TalkBack node, `Modifier.toggleable(role = Role.Switch)`),
+ * and tapping anywhere on it flips the value.
  *
  * The whole row is one TalkBack node (`Modifier.toggleable(role = Role.Switch)`); the
- * inner Switch has `onCheckedChange = null` and delegates to it.
+ * inner Switch has `onCheckedChange = null` and delegates to it — when there
+ * is no info popup. With an info popup the Switch owns its own tap instead.
  */
 // Feedback round 6 — package-visible (not private): the Advanced screen
 // reuses these two rows, so they live here for both screens. They stay
@@ -1569,16 +1570,41 @@ fun ToggleRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .toggleable(
-                    value = value,
-                    role = Role.Switch,
-                    onValueChange = onChange,
+                // Feedback round 9 — when the row carries an info popup,
+                // the whole row is NOT a switch: the text-to-chevron area
+                // opens the popup and only the Switch itself toggles (the
+                // system Settings pattern). Without infoText the row keeps
+                // the single TalkBack switch node (see below).
+                .then(
+                    if (infoText == null) {
+                        Modifier.toggleable(
+                            value = value,
+                            role = Role.Switch,
+                            onValueChange = onChange,
+                        )
+                    } else {
+                        Modifier
+                    },
                 )
                 .heightIn(min = if (description != null) 72.dp else 56.dp)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // Feedback round 9 — the text + chevron area is one clickable
+            // that opens the info popup when infoText is present (title,
+            // chevron and the thin divider before the switch); it fills
+            // the row height so the whole area, not just the glyph, reacts.
+            // Without infoText it is plain layout and the outer toggleable
+            // above owns the tap.
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .then(if (infoText != null) Modifier.clickable { infoOpen = true } else Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
             // Feedback round 5 — the glyph centres on the title line, not
             // on the whole row: the icon and the title share an inner row,
             // so on a two-line row the icon sits next to the title (see
@@ -1649,11 +1675,15 @@ fun ToggleRow(
                     )
                 }
             }
+            } // end of the text + chevron area (opens the info popup)
             Switch(
                 checked = value,
-                // v1.3.7 U1 audit — `null` délègue le clic au `Modifier.toggleable` parent
-                // (fusion sémantique, un seul élément interactif côté TalkBack/Switch Access).
-                onCheckedChange = null,
+                // Feedback round 9 — with an info popup the Switch owns its
+                // own tap (the outer row is not toggleable then); without
+                // one, `null` delegates the tap to the `Modifier.toggleable`
+                // parent (fusion sémantique, un seul élément interactif
+                // côté TalkBack/Switch Access — v1.3.7 U1 audit).
+                onCheckedChange = if (infoText != null) onChange else null,
                 // Feedback round 6 — M3 Expressive switch: a check icon in the
                 // thumb when on (`SwitchDefaults.IconSize` = 16dp, the
                 // documented Expressive pattern). The bare thumb was the old
@@ -3062,7 +3092,6 @@ private fun NotificationsSection(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     RelaySection(
         title = stringResource(R.string.settings_section_notifications),
-        materialHeader = true,
     ) {
         ToggleRow(
             title = stringResource(R.string.settings_notifications_enabled),
@@ -3158,7 +3187,6 @@ private fun SecuritySection(
 ) {
     RelaySection(
         title = stringResource(R.string.settings_section_security),
-        materialHeader = true,
     ) {
         // App lock entry — opens the lock-mode picker (None / PIN / Biometric). Subtitle
         // reflects the current state so the user sees at a glance whether the lock is armed.

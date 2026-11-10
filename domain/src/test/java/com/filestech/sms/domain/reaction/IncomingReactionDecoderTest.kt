@@ -181,6 +181,36 @@ class IncomingReactionDecoderTest {
         ).isNull()
     }
 
+    @Test fun `decodes emoji-to-quote tapback with connector word and truncated preview`() {
+        // Feedback round 9 — Kristin's exact message: the carrier renders the
+        // iPhone tapback as `👍 to "…"` with the connector word, and the
+        // preview is cut off mid-sentence with no closing quote.
+        val result = IncomingReactionDecoder.decode(
+            "👍 to \"Hey Curt, this is the translation video I was talking about:",
+        )
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("👍")
+        assertThat(result.previewPrefix)
+            .isEqualTo("Hey Curt, this is the translation video I was talking about:")
+        assertThat(result.kind).isEqualTo(IncomingReactionDecoder.DecodedReaction.Kind.Tapback)
+        assertThat(result.wasTruncated).isTrue()
+    }
+
+    @Test fun `decodes emoji-to-quote tapback with closing quote`() {
+        val result = IncomingReactionDecoder.decode("👍 to \"Hello\"")
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("👍")
+        assertThat(result.previewPrefix).isEqualTo("Hello")
+        assertThat(result.wasTruncated).isFalse()
+    }
+
+    @Test fun `decodes emoji-to-quote tapback with curly quotes`() {
+        val result = IncomingReactionDecoder.decode("❤️ to «Hello»")
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("❤️")
+        assertThat(result.previewPrefix).isEqualTo("Hello")
+    }
+
     // ──────────────── Google Messages invisible-char format ────────────────
 
     private fun googleBody(

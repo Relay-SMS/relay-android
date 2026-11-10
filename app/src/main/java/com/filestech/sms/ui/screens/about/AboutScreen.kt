@@ -124,7 +124,12 @@ fun AboutScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = 24.dp),
+                // Feedback round 9 — only a top gap here: the section
+                // headers already carry 24dp above each card, and the
+                // trailing spacer below is the 24dp bottom breathing room,
+                // same as Settings. The old vertical 24dp doubled the
+                // bottom gap (spacer + column padding).
+                .padding(top = 24.dp),
         ) {
             HeaderBlock(
                 onCheckUpdate = {
@@ -272,22 +277,11 @@ fun AboutScreen(
                 )
             }
 
+            // Feedback round 9 — the bottom credits line is gone too: the
+            // full attribution (including the upstream credit) lives in the
+            // License screen, reached from the License link above. The
+            // spacer is the bottom breathing room, same as Settings.
             Spacer(Modifier.size(24.dp))
-            Text(
-                text = stringResource(R.string.about_credits_body, AUTHOR_NAME),
-                style = RelayText.Timestamp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            )
-            // Feedback round 8 — the copyright lines are gone from here:
-            // "Relay UI © 2026 Relay Messaging" and "© 2026 Patrice
-            // Haltaya. Released under the Apache License 2.0." now live in
-            // the License screen (reached from the License link above). The
-            // The upstream credit stays: it is the visible in-app
-            // Apache attribution.
         }
     }
 }
@@ -455,8 +449,6 @@ private fun safeStartActivity(context: android.content.Context, intent: android.
 // ─────────────────────────────────────────────────────────────────────────────
 //  Static data
 // ─────────────────────────────────────────────────────────────────────────────
-
-private const val AUTHOR_NAME = "Patrice Haltaya"
 
 // v1.27.10 (revue externe GitLab !38458) — le depot s'appelle `SMS-TECH`, pas `sms_tech` :
 // ces deux liens rendaient 404 depuis toujours. Ce n'est pas une affaire de casse (GitHub

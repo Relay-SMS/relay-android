@@ -164,11 +164,13 @@ fun AudioMessageBubble(
     ) ?: 0
     val progressFraction = if (totalMs <= 0) 0f else positionMs.toFloat() / totalMs
 
+    // Feedback round 9 — same rounder bubble language as the text bubbles
+    // (24dp corners, 6dp tail; was 18dp / 4dp).
     val shape = RoundedCornerShape(
-        topStart = 18.dp,
-        topEnd = 18.dp,
-        bottomStart = if (isOut) 18.dp else 4.dp,
-        bottomEnd = if (isOut) 4.dp else 18.dp,
+        topStart = 24.dp,
+        topEnd = 24.dp,
+        bottomStart = if (isOut) 24.dp else 6.dp,
+        bottomEnd = if (isOut) 6.dp else 24.dp,
     )
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle
@@ -231,8 +233,10 @@ fun AudioMessageBubble(
                         .clickable { menuExpanded = true }
                         // Feedback round 8 — extra breathing room on the
                         // left and top (+10dp each): the play disc sat
-                        // scrunched against the bubble edges.
-                        .padding(start = 24.dp, top = 20.dp, end = 14.dp, bottom = 10.dp),
+                        // scrunched against the bubble edges. Feedback round 9
+                        // — end/bottom match the roomier text bubbles (16dp /
+                        // 12dp, was 14dp / 10dp).
+                        .padding(start = 24.dp, top = 20.dp, end = 16.dp, bottom = 12.dp),
                 ) {
                   androidx.compose.foundation.layout.Column {
                     if (!senderLabel.isNullOrBlank()) {

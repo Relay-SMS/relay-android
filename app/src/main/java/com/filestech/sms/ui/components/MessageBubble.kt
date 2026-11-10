@@ -267,7 +267,10 @@ fun MessageBubble(
                         // graphicsLayer moved to the START of the chain (before
                         // the clip/background): it used to sit here, after the
                         // background, so only the text moved and the fill stayed.
-                        .padding(PaddingValues(horizontal = 14.dp, vertical = 10.dp)),
+                        // Feedback round 9 — roomier bubble: 16dp horizontal /
+                        // 12dp vertical inside the text (was 14dp / 10dp), to
+                        // match the rounder 24dp corners (see [bubbleShape]).
+                        .padding(PaddingValues(horizontal = 16.dp, vertical = 12.dp)),
                 ) {
                     // v1.3.2 — URLs détectées et rendues cliquables (ouvre le navigateur
                     // système via UriHandler). Fallback texte brut si pas d'URL.
@@ -345,7 +348,13 @@ fun MessageBubble(
                         // one bubble again.
                         BubbleTimestamp(
                             message = message,
-                            showTimestamp = showTimestamp,
+                            // Feedback round 9 — a detected login code always
+                            // shows its time: the arrival time is what tells
+                            // you whether the code is still fresh, and the
+                            // burst rule (time only on the last message of a
+                            // run) hid it as soon as a newer message from the
+                            // same sender arrived after it.
+                            showTimestamp = showTimestamp || otpCode != null,
                             showStatus = showStatus,
                             textColor = textColor,
                             // Feedback round 5 — 12dp above the timestamp (was 2dp):
@@ -496,8 +505,12 @@ private object OtpCodeCache {
  * joining edge so the burst reads as one connected stack.
  */
 private fun bubbleShape(isOut: Boolean, position: BurstPosition): RoundedCornerShape {
-    val tail = 4.dp
-    val full = 20.dp
+    // Feedback round 9 — Relay's own bubble language (Kristin's ask: more
+    // padding and rounder, not a Signal copy): the full corners go 20dp →
+    // 24dp and the speaker-side tail softens 4dp → 6dp, so the bubbles read
+    // rounder and more pill-like while the burst tail cue is kept.
+    val tail = 6.dp
+    val full = 24.dp
     return when (position) {
         BurstPosition.Solo -> RoundedCornerShape(
             topStart = full,

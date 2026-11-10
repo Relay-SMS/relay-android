@@ -306,6 +306,10 @@ object IncomingReactionDecoder {
             val emoji = m.groupValues[1]
             val rawPreview = m.groupValues[2]
             val preview = rawPreview.removeSuffix(TRUNCATION_MARKER).trim()
+            // Feedback round 9 — the closing quote may be absent when the
+            // carrier truncated the preview (e.g. `👍 to "Hey Curt, …` ends
+            // mid-sentence): that is a truncation, not a non-reaction.
+            val hasClosingQuote = trimmed.endsWith('»') || trimmed.endsWith('"')
             when {
                 emoji.isEmpty() || emoji.none { isLikelyEmojiChar(it) } ->
                     DecodeAttempt.NotMatched
@@ -315,7 +319,8 @@ object IncomingReactionDecoder {
                         emoji = emoji,
                         previewPrefix = preview,
                         kind = DecodedReaction.Kind.Tapback,
-                        wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER),
+                        wasTruncated = rawPreview.trimEnd().endsWith(TRUNCATION_MARKER) ||
+                            !hasClosingQuote,
                     ),
                 )
             }
@@ -609,6 +614,15 @@ object IncomingReactionDecoder {
      * Emoji = 1ʳᵉ token sans whitespace, preview entre guillemets typographiques
      * `«»` (ou `"..."` ASCII en fallback gateway).
      *
+     * Feedback round 9 — two real-world shapes the carrier sends that the
+     * strict form missed:
+     *   - an optional `to` between the emoji and the quote
+     *     (`👍 to "Hey Curt, …"` — the iPhone tapback rendered with the
+     *     connector word);
+     *   - a missing closing quote when the preview was truncated mid-sentence
+     *     (`👍 to "Hey Curt, … about:` ends with `:` and no `"`). The preview
+     *     then runs to end-of-string and the caller marks it truncated.
+     *
      * **Audit fix SEC-6** : la classe négative `[^»"]+` remplace `.+?` pour
      * éliminer tout risque de backtracking catastrophique sur input
      * pathologique (ex: `❤️ «aaaa...` sans guillemet fermant). L'engine
@@ -617,7 +631,7 @@ object IncomingReactionDecoder {
      * (les réactions sont mono-ligne).
      */
     private val EMOJI_WITH_QUOTE_REGEX = Regex(
-        """^(\S+)\s+[«"]([^»"]{1,200})[»"]$""",
+        """^(\S+)\s+(?:(?i:to)\s+)?[«"]([^»"]{1,200})(?:[»"]|$)""",
     )
 
     /**

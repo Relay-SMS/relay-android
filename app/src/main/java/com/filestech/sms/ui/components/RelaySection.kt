@@ -3,14 +3,15 @@ package com.filestech.sms.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,31 +41,14 @@ import java.util.Locale
 fun RelaySection(
     title: String,
     modifier: Modifier = Modifier,
-    /**
-     * Feedback round 5 — current Material 3 section header: `titleSmall`
-     * (14sp/500) in sentence case instead of the 13sp/600 all-caps header.
-     * Feedback round 8 — the system Settings header is `titleMedium`
-     * (16sp/500) in the plain on-surface colour (measured pure white on
-     * the reference screenshot, not the dimmer on-surface-variant), so
-     * the Material header now matches that. Opt-in per section: the shared
-     * kit keeps the all-caps header by default, so the other screens using
-     * it (About, Backup, Emergency Setup, Safety Call Setup) are
-     * untouched — only Settings and the new Help screen ask for the
-     * Material header.
-     */
-    materialHeader: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     Column(modifier = modifier.padding(horizontal = 16.dp)) {
         Text(
-            text = if (materialHeader) title else title.uppercase(Locale.ROOT),
-            style = if (materialHeader) {
-                MaterialTheme.typography.titleMedium
-            } else {
-                RelayText.SectionHeader
-            },
-            color = if (materialHeader) cs.onSurface else cs.onSurfaceVariant,
+            text = title.uppercase(Locale.ROOT),
+            style = RelayText.SectionHeader,
+            color = cs.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
         )
         RelayCard {
@@ -104,16 +88,24 @@ private fun relayCardColor(): Color {
  * 1px divider between two rows of a grouped card. Feedback round 8 — the
  * system Settings divider runs (nearly) edge to edge inside the card, not
  * inset 16dp: measured on the reference screenshot the line spans the card
- * minus ~2dp, so it reads as a full-bleed hairline between items. Colour
- * is the scheme `outlineVariant` — the M3 baseline (`#CAC4D0` light,
- * `#49454F` dark), visibly darker than the page background.
+ * minus ~2dp, so it reads as a full-bleed hairline between items.
+ *
+ * Feedback round 9 — the system dividers read softer than a solid line,
+ * with rounded ends (see the Lock-display screenshot): the line is the
+ * official M3 divider token — `outlineVariant`, 1dp, full-width
+ * (m3.material.io/components/divider/specs) — drawn at 50% alpha with
+ * fully rounded ends, so it sits quieter against the card. The rounded
+ * ends and reduced alpha are the system look, not the spec: the spec
+ * itself has no corner radius or alpha for dividers.
  */
 @Composable
 fun RelayDivider(modifier: Modifier = Modifier) {
-    HorizontalDivider(
-        modifier = modifier,
-        thickness = 1.dp,
-        color = MaterialTheme.colorScheme.outlineVariant,
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
     )
 }
 

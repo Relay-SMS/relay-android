@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
+import com.filestech.sms.ui.components.RelayDivider
 import com.filestech.sms.ui.components.RelaySection
 import com.filestech.sms.ui.theme.RelayColors
 
@@ -31,8 +32,8 @@ import com.filestech.sms.ui.theme.RelayColors
  * Help screen, reached from Settings ("Help", right above "About").
  *
  * Feedback round 5 — the "Quick help" section moved out of About onto its
- * own screen, reformatted: one section per recipe, a `titleMedium` heading
- * and numbered steps in `bodyLarge` with room to breathe (12dp under the
+ * own screen, reformatted: one section per recipe, an old-style section
+ * heading and numbered steps in `bodyLarge` with room to breathe (12dp under the
  * heading, 8dp between steps, 24dp between recipes), instead of the cramped
  * 13sp steps the About card used. Same grouped-list page base as Settings
  * and About, same slide-in transition as the thread (300 ms, see AppRoot).
@@ -92,13 +93,15 @@ fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
 }
 
 /**
- * One recipe: the title as a Settings-style section header (`titleMedium`,
- * on-surface, same spacing as the Settings cards) and the numbered steps
- * in the section's rounded card.
+ * One recipe: the title as a Settings-style section header (the old 13sp/600
+ * all-caps header, on-surface-variant, same spacing as the Settings cards)
+ * and the numbered steps in the section's rounded card. The step numbers
+ * use the same colour as the step text (on-surface); a divider separates
+ * each step from the next.
  */
 @Composable
 private fun HelpRecipeSection(title: String, steps: List<String>) {
-    RelaySection(title = title, materialHeader = true) {
+    RelaySection(title = title) {
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -113,7 +116,7 @@ private fun HelpRecipeSection(title: String, steps: List<String>) {
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontWeight = FontWeight.SemiBold,
                         ),
-                        color = RelayColors.Blue,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = step,
@@ -121,6 +124,9 @@ private fun HelpRecipeSection(title: String, steps: List<String>) {
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f),
                     )
+                }
+                if (i < steps.lastIndex) {
+                    RelayDivider()
                 }
             }
         }
