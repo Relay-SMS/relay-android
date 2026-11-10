@@ -95,10 +95,10 @@ class IntegrationMmsRecuTest {
 
     @Test
     fun unSecondExemplaireEstReconnuSansRienEcrire(): Unit = runBlocking {
-        val premier = integration().integrer(contenu(), 1, null, cle) { true } as Resultat.Ecrit
+        val premier = integration().integrer(contenu(), 1, null, cle = cle) { true } as Resultat.Ecrit
         val ecritsAvant = ecrits.size
 
-        val second = integration().integrer(contenu(), 1, null, cle) { true }
+        val second = integration().integrer(contenu(), 1, null, cle = cle) { true }
 
         assertThat(second).isEqualTo(Resultat.DejaComplet(premier.messageId))
         assertThat(ecrits.size).isEqualTo(ecritsAvant)
@@ -107,14 +107,14 @@ class IntegrationMmsRecuTest {
 
     @Test
     fun unePieceNonEcriteEstCompleteeALaReprise(): Unit = runBlocking {
-        val incomplet = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle) { true }
+        val incomplet = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle = cle) { true }
         assertThat(incomplet).isInstanceOf(Resultat.EcritIncomplet::class.java)
         val id = (incomplet as Resultat.EcritIncomplet).messageId
         val avant = db.attachmentDao().findForMessage(id).map { it.localUri }
         assertThat(avant).hasSize(1)
         assertThat(db.messageDao().findById(id)?.attachmentsCount).isEqualTo(1)
 
-        val repris = integration().integrer(contenu(), 1, null, cle) { true }
+        val repris = integration().integrer(contenu(), 1, null, cle = cle) { true }
 
         assertThat(repris).isEqualTo(Resultat.Complete(id))
         val apres = db.attachmentDao().findForMessage(id)
@@ -128,12 +128,12 @@ class IntegrationMmsRecuTest {
 
     @Test
     fun uneCompletionQuiEchoueEncoreNeChangeRienEtEffaceCeQuElleAEcrit(): Unit = runBlocking {
-        val premier = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle) { true }
+        val premier = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle = cle) { true }
         val id = (premier as Resultat.EcritIncomplet).messageId
         val avant = db.attachmentDao().findForMessage(id).map { it.localUri }
         val ecritsAvant = ecrits.size
 
-        val repris = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle) { true }
+        val repris = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle = cle) { true }
 
         assertThat(repris).isEqualTo(Resultat.ToujoursIncomplet(id))
         assertThat(db.attachmentDao().findForMessage(id).map { it.localUri }).isEqualTo(avant)
@@ -146,7 +146,7 @@ class IntegrationMmsRecuTest {
 
     @Test
     fun unMessageSupprimePendantLaCompletionNeReprendPasDePieces(): Unit = runBlocking {
-        val premier = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle) { true }
+        val premier = integration(ecrivainReel("image/png")).integrer(contenu(), 1, null, cle = cle) { true }
         val id = (premier as Resultat.EcritIncomplet).messageId
         val ecritsAvant = ecrits.size
         var supprime = false
@@ -162,7 +162,7 @@ class IntegrationMmsRecuTest {
             },
         )
 
-        val repris = integration(suppressionPendantLEcriture).integrer(contenu(), 1, null, cle) { true }
+        val repris = integration(suppressionPendantLEcriture).integrer(contenu(), 1, null, cle = cle) { true }
 
         assertThat(supprime).isTrue()
         assertThat(repris).isEqualTo(Resultat.Disparu)
@@ -179,7 +179,7 @@ class IntegrationMmsRecuTest {
      */
     @Test
     fun unPduEffacePendantLEcritureNInscritRienEtNeLaisseAucunFichier(): Unit = runBlocking {
-        val resultat = integration().integrer(contenu(), 1, null, cle) { false }
+        val resultat = integration().integrer(contenu(), 1, null, cle = cle) { false }
 
         assertThat(resultat).isEqualTo(Resultat.Disparu)
         assertThat(db.messageDao().findIdByTransactionKey(cle)).isNull()
