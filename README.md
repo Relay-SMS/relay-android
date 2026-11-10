@@ -1,7 +1,5 @@
 # Relay
 
-English · 🇫🇷 [Version française](README.fr.md)
-
 A modern, private SMS & MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
 No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licensed.
 
