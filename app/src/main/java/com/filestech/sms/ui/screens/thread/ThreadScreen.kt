@@ -1142,12 +1142,18 @@ fun ThreadScreen(
         // Hidden while searching — the search pill replaces the header, and
         // the banner belongs to it. Feedback round 9 — the banner animates:
         // it slides UP into its top spot when a message is pinned, and
-        // flies UP out through the top when it is closed/unpinned.
-        AnimatedVisibility(
-            visible = pinnedMessage != null && pinnedAt != null && !threadSearchOpen,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-        ) {
+        // flies UP out through the top when it is closed/unpinned. The
+        // Column wrapper is load-bearing: `AnimatedVisibility` has a
+        // `ColumnScope` overload, and this spot sits in a `Box` (whose
+        // scope cannot call it) inside a `Column` — the compiler picked
+        // the `ColumnScope` overload and failed. Wrapping in a `Column`
+        // gives it the scope it needs.
+        Column(modifier = Modifier.fillMaxWidth()) {
+            AnimatedVisibility(
+                visible = pinnedMessage != null && pinnedAt != null && !threadSearchOpen,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            ) {
             val pinned = lastPinned ?: return@AnimatedVisibility
             PinnedMessageBanner(
                 message = pinned.first,
@@ -1163,6 +1169,7 @@ fun ThreadScreen(
                 // sit just below the banner (see [pinnedBannerHeightPx]).
                 modifier = Modifier.onSizeChanged { pinnedBannerHeightPx = it.height },
             )
+            }
         }
         // Feedback round 7 — sticky date header, floating at the top of the
         // list under the pinned banner (if any). `null` while the group's own
