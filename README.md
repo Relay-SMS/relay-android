@@ -84,8 +84,37 @@ ui/        Theme (M3, dynamic, AMOLED), Navigation (type-safe), Screens (Compose
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture and the end-to-end flow of a received SMS.
 
-## License
+## Copyright & Licensing
 
-Apache License 2.0 — see [LICENSE](LICENSE). Third-party libraries and their licences:
+### Original Project
+
+This project is a modified and extended derivative of **SMS Tech**, originally developed by Patrice Haltaya.
+
+The original SMS Tech application, including its underlying source code and original contributions, remains attributable to its respective copyright holder and is distributed under the Apache License, Version 2.0.
+
+### Relay Original Contributions
+
+Since forking SMS Tech, this project has undergone substantial independent development, including a redesigned user interface, revised user experience, new features, and additional original functionality.
+
+Copyright © 2026 Relay. All rights reserved for original contributions made to this project.
+
+These original contributions include, where independently authored:
+
+- Original UI and UX implementations.
+- Original visual design systems, layouts, and styling.
+- Original graphics, icons, and artwork.
+- Original branding, logos, and product identity.
+- Independently developed features and functionality.
+- Original documentation and other creative works.
+
+These independently authored contributions are reserved works and are not separately offered under the Apache License 2.0 unless expressly stated otherwise.
+
+### Third-Party Licensing
+
+The underlying SMS Tech code and all other third-party components remain subject to their respective licenses.
+
+The Apache License, Version 2.0, is included in this repository. All applicable original copyright notices, attribution requirements, and license obligations are retained.
+
+See [LICENSE](LICENSE). Third-party libraries and their licences:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-© 2026 Relay Messaging. Based on SMS Tech by Patrice Haltaya.
+
