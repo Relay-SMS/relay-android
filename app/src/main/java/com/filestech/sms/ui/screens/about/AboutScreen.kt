@@ -375,7 +375,11 @@ private fun FeatureRow(icon: ImageVector, label: String, desc: String?, dividerA
     RelayRow(
         title = label,
         subtitle = desc,
-        subtitleTopPadding = 2.dp,
+        subtitleTopPadding = 4.dp,
+        // Feedback round 9 — the About descriptions run 3–5 lines, so
+        // the rows read as scrunched at the dense 8dp/2dp Settings
+        // spacing; 12dp vertical + 4dp title-to-subtitle gap opens them up.
+        verticalPadding = 12.dp,
         // Feedback round 6 — the glyph centres on the title line, not on
         // the whole row, like the main Settings screen (see [RelayRow]):
         // the icons were still vertically centred.
@@ -409,7 +413,10 @@ private fun LinkItem(
     RelayRow(
         title = label,
         subtitle = supporting,
-        subtitleTopPadding = 2.dp,
+        subtitleTopPadding = 4.dp,
+        // Feedback round 9 — same roomier spacing as FeatureRow so the
+        // whole About page breathes the same way.
+        verticalPadding = 12.dp,
         onClick = onClick,
         // Feedback round 6 — top-aligned like the main Settings screen
         // (see [RelayRow]): the icons were still vertically centred.

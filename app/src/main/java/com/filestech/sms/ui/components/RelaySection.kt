@@ -102,7 +102,9 @@ private fun relayCardColor(): Color {
  * with no inset), so the rounded ends sat flush against the card edge
  * and were invisible: it read as a plain straight line. It is now
  * inset 16dp on each side (matching the row content padding), so the
- * rounded caps are visible against the card.
+ * rounded caps are visible against the card. Feedback round 9 — the
+ * alpha drops 0.5 → 0.3 so the line blends with the card like the
+ * system dividers, which read as barely-there rather than a drawn line.
  */
 @Composable
 fun RelayDivider(modifier: Modifier = Modifier) {
@@ -112,7 +114,7 @@ fun RelayDivider(modifier: Modifier = Modifier) {
             .padding(horizontal = 16.dp)
             .height(1.dp)
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
     )
 }
 
@@ -143,6 +145,11 @@ fun RelayRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     subtitleTopPadding: Dp = 0.dp,
+    // Feedback round 9 — vertical breathing room inside the row. The
+    // default 8dp fits the dense Settings rows; the About page (long
+    // multi-line descriptions) passes 12dp so its rows don't read as
+    // scrunched.
+    verticalPadding: Dp = 8.dp,
     onClick: (() -> Unit)? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
@@ -165,7 +172,7 @@ fun RelayRow(
                 // rows too tight — title + subtitle + 2dp gap filled the row with
                 // only the 8dp vertical padding to spare.
                 .heightIn(min = if (subtitle != null) 72.dp else 56.dp)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = verticalPadding),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
