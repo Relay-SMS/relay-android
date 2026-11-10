@@ -562,7 +562,13 @@ fun AppRoot() {
             )
         }
         composable<MediaGallery> { MediaGalleryScreen(onBack = { nav.popBackStack() }) }
-        composable<Compose> { backStackEntry ->
+        // Feedback round 9 — Compose slides in from the right like the
+        // thread and Settings (300 ms horizontal slide), instead of the
+        // NavHost-level 80 ms fade that read as a snap.
+        composable<Compose>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) { backStackEntry ->
             val args = backStackEntry.toRoute<Compose>()
             ComposeScreen(
                 initialAddress = args.initialAddress,
@@ -743,5 +749,9 @@ private const val THREAD_TRANSITION_MS = 300
  * `AppRoot` over the Detekt cyclomatic-complexity threshold.
  */
 private fun isSlideReturnRoute(route: String?): Boolean {
-    return route?.contains("Thread") == true || route?.contains("Settings") == true
+    // Feedback round 9 — Compose slides in from the right like the thread
+    // and Settings, so popping back from it slides the list back in from
+    // the left too.
+    return route?.contains("Thread") == true || route?.contains("Settings") == true ||
+        route?.contains("Compose") == true
 }
