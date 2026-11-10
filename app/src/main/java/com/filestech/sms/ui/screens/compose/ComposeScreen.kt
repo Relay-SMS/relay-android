@@ -316,7 +316,10 @@ private fun RecipientField(
             // composer boxes: 48dp minimum height and a 24dp pill radius
             // (was a 10dp corner with content-driven height), with the same
             // 16dp horizontal padding. It still grows when recipient chips
-            // wrap above the input line.
+            // wrap above the input line. The height constraint sits BEFORE
+            // the padding: `heightIn` after `padding` measured the content
+            // alone, so the box rendered 48dp + 20dp of padding = 68dp tall
+            // and the 24dp radius read as semi-rounded instead of a pill.
             .clip(RoundedCornerShape(24.dp))
             .background(cs.surfaceVariant)
             .clickable(
@@ -324,8 +327,8 @@ private fun RecipientField(
                 indication = null,
                 onClick = { focusRequester.requestFocus() },
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-            .heightIn(min = 48.dp),
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

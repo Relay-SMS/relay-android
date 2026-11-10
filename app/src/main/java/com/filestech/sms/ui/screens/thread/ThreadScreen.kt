@@ -1042,6 +1042,14 @@ fun ThreadScreen(
             }
         }
         val pinnedAt = state.conversation?.pinnedMessageAt
+        // Feedback round 9 — the last pinned message is remembered so the
+        // banner can animate OUT when it is unpinned: unpinning clears
+        // `pinnedMessage` immediately, so without this the exit animation
+        // would have nothing to draw.
+        var lastPinned by remember { mutableStateOf<Pair<Message, Long>?>(null) }
+        if (pinnedMessage != null && pinnedAt != null) {
+            lastPinned = pinnedMessage to pinnedAt
+        }
         // Feedback round 7 — measured height of the floating pinned banner
         // (px): the sticky date pill sits just below it, and the banner's
         // height varies (32dp X box present or not), so it is measured
@@ -1132,18 +1140,25 @@ fun ThreadScreen(
         // peeks out from behind it. It draws under the loading chip above,
         // so the transient spinner stays visible while older messages load.
         // Hidden while searching — the search pill replaces the header, and
-        // the banner belongs to it.
-        if (pinnedMessage != null && pinnedAt != null && !threadSearchOpen) {
+        // the banner belongs to it. Feedback round 9 — the banner animates:
+        // it slides UP into its top spot when a message is pinned, and
+        // flies UP out through the top when it is closed/unpinned.
+        AnimatedVisibility(
+            visible = pinnedMessage != null && pinnedAt != null && !threadSearchOpen,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+        ) {
+            val pinned = lastPinned ?: return@AnimatedVisibility
             PinnedMessageBanner(
-                message = pinnedMessage,
-                pinnedAt = pinnedAt,
+                message = pinned.first,
+                pinnedAt = pinned.second,
                 isGroup = state.conversation?.isGroup == true,
                 title = title,
                 memberNames = state.memberNames,
                 formatters = formatters,
                 canUnpin = !state.isPanicDecoy,
-                onJump = { viewModel.jumpToPinnedMessage(pinnedMessage.id) },
-                onUnpin = { viewModel.togglePin(pinnedMessage.id) },
+                onJump = { viewModel.jumpToPinnedMessage(pinned.first.id) },
+                onUnpin = { viewModel.togglePin(pinned.first.id) },
                 // Feedback round 7 — measured so the sticky date pill can
                 // sit just below the banner (see [pinnedBannerHeightPx]).
                 modifier = Modifier.onSizeChanged { pinnedBannerHeightPx = it.height },

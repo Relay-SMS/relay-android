@@ -231,12 +231,12 @@ fun AudioMessageBubble(
                         .clip(shape)
                         .background(bgColor)
                         .clickable { menuExpanded = true }
-                        // Feedback round 8 — extra breathing room on the
-                        // left and top (+10dp each): the play disc sat
-                        // scrunched against the bubble edges. Feedback round 9
-                        // — end/bottom match the roomier text bubbles (16dp /
-                        // 12dp, was 14dp / 10dp).
-                        .padding(start = 24.dp, top = 20.dp, end = 16.dp, bottom = 12.dp),
+                        // Feedback round 9 — the extra left/top breathing
+                        // room is gone: it looked off on renditions without
+                        // a timestamp, and the bubble reads better with equal
+                        // padding on all sides. End/bottom match the roomier
+                        // text bubbles (16dp / 12dp) that helped overall.
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
                   androidx.compose.foundation.layout.Column {
                     if (!senderLabel.isNullOrBlank()) {
