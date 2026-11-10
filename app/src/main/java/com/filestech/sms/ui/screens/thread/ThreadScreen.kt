@@ -146,6 +146,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.withResumed
 import com.filestech.sms.R
+import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.core.ext.splitGraphemeClusters
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.data.voice.VoicePlaybackController
@@ -691,13 +692,17 @@ fun ThreadScreen(
     }
 
     // v1.28.3 — la règle de titre vit sur le modèle (nom choisi > nom résolu > numéros).
-    val title = state.conversation?.title.orEmpty()
+    // Feedback round 10 — the header title is the phone number itself for a
+    // 1-to-1 non-contact, so it is formatted for display (`(xxx) xxx-xxxx`).
+    // Names and group titles pass through unchanged; the stored number is
+    // never modified.
+    val title = state.conversation?.title.orEmpty().formatPhoneNumberForDisplay()
     // v1.23.x — numéro en sous-titre de l'en-tête pour une conversation 1-to-1 QUI A un nom de
     // contact (sinon le titre EST déjà le numéro, inutile de le répéter). Permet de voir tout de
     // suite quel numéro on a ouvert (ex. distinguer un numéro FR d'un numéro étranger).
     val headerSubtitleNumber = state.conversation
         ?.takeIf { it.displayName != null && it.addresses.size == 1 }
-        ?.addresses?.firstOrNull()?.raw
+        ?.addresses?.firstOrNull()?.raw?.formatPhoneNumberForDisplay()
     val canCall = state.conversation?.addresses?.size == 1
 
     // #8 contextual reply — index messages by id so each bubble can resolve its quoted target
@@ -752,6 +757,10 @@ fun ThreadScreen(
                 // avatar still wins; the contact photo is resolved in
                 // [ThreadViewModel] like the main list does.
                 avatarUri = state.conversation?.avatarUri ?: state.contactPhotoUri,
+                // Feedback round 10 — grey person avatar for a non-contact.
+                isUnknownContact = state.conversation?.let {
+                    !it.isGroup && it.displayName == null
+                } == true,
                 canCall = canCall,
                 onBack = onBack,
                 onCall = { viewModel.requestCall() },
@@ -1790,6 +1799,8 @@ private fun ThreadHeader(
     subtitleNumber: String?,
     isGroup: Boolean,
     avatarUri: String?,
+    /** Feedback round 10 — 1-to-1 thread with a non-contact: grey person avatar. */
+    isUnknownContact: Boolean = false,
     canCall: Boolean,
     onBack: () -> Unit,
     onCall: () -> Unit,
@@ -1851,6 +1862,7 @@ private fun ThreadHeader(
                     size = 37.dp,
                     customUri = avatarUri,
                     isGroup = isGroup,
+                    isUnknownContact = isUnknownContact,
                 )
                 // Feedback round 5 — avatar-to-text gap 8dp -> 16dp, matching
                 // the pinned-thread screenshot (measured 17dp; 16dp is the
@@ -1905,12 +1917,14 @@ private fun ThreadHeader(
                 // Feedback round 6 — 5dp between the search and the call
                 // icon, so the magnifier sits a touch further left.
                 Spacer(Modifier.width(5.dp))
-                // Feedback round 5 — Kristin's call icon (`ic_call_outline`,
-                // handset outline, black stroke in the vector) replaces the
-                // Material phone glyph. Tinted on-surface-variant at the call
-                // site, like the search magnifier and the ⋮ next to it
-                // (feedback round 7: was on-surface, darker than home).
-                // The call action itself is unchanged.
+                // Feedback round 10 — Kristin's solid call icon
+                // (`ic_call_solid`, solid handset) replaces the outline
+                // handset. Tinted on-surface-variant at the call site,
+                // like the search magnifier and the ⋮ next to it. The call
+                // action itself is unchanged. The 22dp size is kept:
+                // the solid glyph fills its 19x19 viewBox like the
+                // outline did, so it renders at the same ~50px as the
+                // search and ⋮ glyphs. The 36dp touch box is unchanged.
                 Box(
                     modifier = Modifier
                         // Feedback round 5 — 44dp -> 36dp, as the search box.
@@ -1921,22 +1935,9 @@ private fun ThreadHeader(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_call_outline),
+                        painter = painterResource(R.drawable.ic_call_solid),
                         contentDescription = stringResource(R.string.action_call),
                         tint = cs.onSurfaceVariant,
-                        // Feedback round 6 — 22dp -> 24dp: phone, search and
-                        // ⋮ are all the same height now. Feedback round 7 —
-                        // only the BOXES were: the MoreVert glyph itself drew
-                        // at 16dp, so the ⋮ now uses `ic_more_vert_tall`
-                        // (19.4dp drawn, matching search and call).
-                        // Feedback round 8 — 24dp -> 22dp: measured on
-                        // Kristin's screenshot (phone_icon), the handset
-                        // glyph still drew 55px tall against 50px for the
-                        // search and ⋮ glyphs — `ic_call_outline` fills its
-                        // 19x19 viewBox almost edge to edge, so at the same
-                        // icon size it renders taller. 22dp brings it to
-                        // ~50px, matching the other two. The 36dp touch box
-                        // is unchanged.
                         modifier = Modifier.size(22.dp),
                     )
                 }

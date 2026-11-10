@@ -580,6 +580,29 @@ class ConversationRepositoryImpl @Inject constructor(
             }
         }
 
+        /**
+         * v1.28.10 — le jumeau « moins un » de [matchGroupByIdentity] : la cible porte
+         * l'utilisateur lui-même (« Mon numéro » non renseigné), donc le groupe cherché a
+         * exactement un membre de moins que la cible, et chacun de ses membres se retrouve dans
+         * la cible. L'adresse en trop dans la cible, c'est nous. Même nombre de membres moins un
+         * et inclusion dans un seul sens suffisent : avec un membre d'écart, l'inclusion implique
+         * l'égalité à un membre près. Deux groupes ne différant que d'un membre restent ambigus
+         * (le premier trouvé gagne) — un cas rare, et la conversation individuelle, l'ancien
+         * repli, était strictement pire.
+         */
+        internal fun matchGroupByIdentityMinusOne(
+            groups: List<ConversationEntity>,
+            target: List<PhoneAddress>,
+            matches: (String, String) -> Boolean,
+        ): ConversationEntity? {
+            if (target.size < 3) return null
+            return groups.firstOrNull { existing ->
+                val membres = PhoneAddress.list(existing.addressesCsv)
+                membres.size == target.size - 1 &&
+                    membres.all { m -> target.any { t -> matches(m.raw, t.raw) } }
+            }
+        }
+
         internal fun matchOneToOneByBlockKey(
             oneToOne: List<ConversationEntity>,
             target: PhoneAddress,

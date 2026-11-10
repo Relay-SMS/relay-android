@@ -133,11 +133,7 @@ fun ConversationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showAvatars) {
-                RelayAvatar(
-                    label = title,
-                    customUri = conversation.avatarUri ?: contactPhotoUri,
-                    isGroup = conversation.isGroup,
-                )
+                ConversationAvatar(conversation, contactPhotoUri)
                 // Feedback round 6 — 17dp between the avatar and the text
                 // (was 12dp): a touch more air on the home screen.
                 Spacer(Modifier.width(17.dp))
@@ -188,7 +184,13 @@ fun ConversationRow(
                         FixedTypeSize {
                             Text(
                                 text = dateLabel,
-                                style = RelayText.Timestamp,
+                                // Feedback round 10 — the date reads one
+                                // weight step bolder than the meta text
+                                // (Medium, was Normal) so it stands apart
+                                // from the preview like the reference list.
+                                style = RelayText.Timestamp.copy(
+                                    fontWeight = FontWeight.Medium,
+                                ),
                                 color = cs.onSurfaceVariant,
                             )
                         }
@@ -295,6 +297,57 @@ fun ConversationRow(
                 }
             }
         }
+    }
+}
+
+/**
+ * The leading avatar of a list row: two overlapping member avatars for a
+ * group with no custom photo, the single avatar otherwise — a custom group
+ * photo still wins, and 1-to-1 rows are untouched.
+ */
+@Composable
+private fun ConversationAvatar(
+    conversation: Conversation,
+    contactPhotoUri: String?,
+) {
+    if (conversation.isGroup && conversation.avatarUri == null) {
+        RelayGroupAvatar(members = groupMemberAvatars(conversation))
+    } else {
+        RelayAvatar(
+            label = conversation.title,
+            customUri = conversation.avatarUri ?: contactPhotoUri,
+            isGroup = conversation.isGroup,
+            // Feedback round 10 — a 1-to-1 thread with someone who
+            // is not a contact (no display name) gets the grey
+            // person-glyph avatar instead of digit initials on blue.
+            isUnknownContact = !conversation.isGroup &&
+                conversation.displayName == null,
+        )
+    }
+}
+
+/**
+ * The first two members of a group, as the row's two overlapping avatars
+ * see them. Labels come from the group's resolved display name — the
+ * contact names joined in address order — and fall back to the raw numbers
+ * when the name is missing or its parts don't line up with the addresses
+ * (a name containing ", " would split wrong, and a stale name must never
+ * put the wrong initials on a member). A member whose label is just their
+ * number has no contact name, so they get the unknown-contact grey person
+ * glyph instead of digit initials, like a 1-to-1 row.
+ */
+private fun groupMemberAvatars(conversation: Conversation): List<GroupMemberAvatar> {
+    val addresses = conversation.addresses
+    val labels = conversation.displayName
+        ?.split(", ")
+        ?.takeIf { it.size == addresses.size }
+        ?: addresses.map { it.raw }
+    return addresses.take(2).mapIndexed { index, address ->
+        val label = labels.getOrNull(index) ?: address.raw
+        GroupMemberAvatar(
+            label = label,
+            isUnknownContact = label == address.raw,
+        )
     }
 }
 

@@ -287,6 +287,12 @@ fun AudioMessageBubble(
                                 )
                             }
                         }
+                        // Feedback round 10 — the gaps flanking the waveform
+                        // are equal (12dp each, like Kristin's design): a
+                        // spacer after the play disc and one before the
+                        // duration. The waveform's own horizontal padding is
+                        // gone, so the spacers are the only gaps.
+                        Spacer(Modifier.width(12.dp))
                         VoiceWaveform(
                             audioId = audio.id,
                             totalMs = totalMs,
@@ -297,20 +303,25 @@ fun AudioMessageBubble(
                             onSeekToFraction = { fraction -> seekToFraction(fraction) },
                             modifier = Modifier.weight(1f),
                         )
+                        Spacer(Modifier.width(12.dp))
                         // Phase 8 — la durée est du méta-texte de mise en page, comme
                         // l'heure : 12sp fixe (voir [FixedTypeSize]), pas `labelSmall`
                         // multiplié par le coefficient « Taille du texte des messages ».
-                        // Feedback round 6 — largeur FIXE (44dp, alignée à droite) :
-                        // la durée change en cours de lecture (« 0:34 » → « 0:05 »),
-                        // et sans largeur fixe la waveform (weight 1f) bougeait à
-                        // chaque changement de chiffre.
+                        // Feedback round 10 — the fixed 44dp width is gone: it
+                        // left a wide empty gap before the duration (the text
+                        // is right-aligned in the box), which is why the left
+                        // gap was bigger than the right one. Natural width
+                        // now, so the 12dp spacer is the whole gap. Digits
+                        // are tabular in the default font, so the width only
+                        // changes at a minute boundary — the waveform does
+                        // not jitter second to second.
                         FixedTypeSize {
                             Text(
                                 text = formatBubbleDuration(if (isPlaying && positionMs > 0) positionMs.toLong() else totalMs.toLong()),
                                 style = RelayText.BubbleMeta,
                                 color = labelColor,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                modifier = Modifier.width(44.dp).padding(end = 4.dp),
+                                modifier = Modifier.padding(end = 4.dp),
                             )
                         }
                     }
@@ -395,7 +406,10 @@ private fun VoiceWaveform(
     }
     Box(
         modifier = modifier
-            .padding(horizontal = 8.dp)
+            // Feedback round 10 — no horizontal padding here: the 12dp
+            // spacers flanking the waveform in the row are the gaps
+            // (was 8dp inside, which made the play-side gap smaller
+            // than the duration-side one).
             .then(seekGesture),
         contentAlignment = Alignment.Center,
     ) {

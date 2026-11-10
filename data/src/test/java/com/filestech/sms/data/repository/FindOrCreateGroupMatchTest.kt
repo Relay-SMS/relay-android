@@ -78,4 +78,46 @@ class FindOrCreateGroupMatchTest {
 
         assertThat(trouve).isNull()
     }
+
+    // v1.28.10 — « moins un » : la cible porte l'utilisateur (« Mon numéro » non renseigné),
+    // le groupe cherché a un membre de moins.
+    private fun chercheMoinsUn(groupes: List<ConversationEntity>, vararg raw: String) =
+        ConversationRepositoryImpl.matchGroupByIdentityMinusOne(groupes, cible(*raw), ::matchFr)
+
+    @Test
+    fun `moins un - le groupe est retrouve quand la cible porte un membre de plus`() {
+        val groupes = listOf(conv(7L, "0617332729;0698765432"))
+
+        // La cible, c'est le groupe plus nous (+33607231541) — notation internationale, ordre différent.
+        val trouve = chercheMoinsUn(groupes, "+33698765432", "+33607231541", "+33617332729")
+
+        assertThat(trouve?.id).isEqualTo(7L)
+    }
+
+    @Test
+    fun `moins un - un membre de plus dans le groupe stocke, ce n'est pas le groupe`() {
+        val groupes = listOf(conv(7L, "0617332729;0698765432;0611111111"))
+
+        val trouve = chercheMoinsUn(groupes, "+33698765432", "+33607231541", "+33617332729")
+
+        assertThat(trouve).isNull()
+    }
+
+    @Test
+    fun `moins un - un membre different, un autre groupe`() {
+        val groupes = listOf(conv(7L, "0617332729;0698765432"))
+
+        val trouve = chercheMoinsUn(groupes, "+33698765432", "+33607231541", "+33622222222")
+
+        assertThat(trouve).isNull()
+    }
+
+    @Test
+    fun `moins un - deux participants ne font pas un groupe`() {
+        val groupes = listOf(conv(7L, "0617332729;0698765432"))
+
+        val trouve = chercheMoinsUn(groupes, "+33617332729", "+33607231541")
+
+        assertThat(trouve).isNull()
+    }
 }

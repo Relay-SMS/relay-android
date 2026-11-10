@@ -1,10 +1,5 @@
 package com.filestech.sms.ui.screens.settings
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,27 +10,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -73,8 +63,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -90,10 +78,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -106,12 +92,13 @@ import com.filestech.sms.system.settings.ouvrirLesNotificationsDeLApplication
 import com.filestech.sms.ui.components.BanniereNotificationsCoupees
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
-import com.filestech.sms.ui.components.RelayDivider
 import com.filestech.sms.ui.components.RelayPickerDialog
 import com.filestech.sms.ui.components.RelayPickerOption
 import com.filestech.sms.ui.components.RelayPrimaryButton
-import com.filestech.sms.ui.components.RelayRow
-import com.filestech.sms.ui.components.RelaySection
+import com.filestech.sms.ui.components.RelaySectionLabel
+import com.filestech.sms.ui.components.RelaySettingRow
+import com.filestech.sms.ui.components.RelaySettingsGroup
+import com.filestech.sms.ui.components.RelaySwitchRow
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.rememberPermissionAccordee
@@ -341,17 +328,8 @@ fun SettingsScreen(
         }
     }
 
-    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section cards sit on
-    // it (see RelaySection). Picked from the surface luminance so it follows the
-    // active scheme, dark variants included.
-    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
-        RelayColors.CanvasDark
-    } else {
-        RelayColors.Surface
-    }
-
     Scaffold(
-        containerColor = pageBackground,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
@@ -374,118 +352,136 @@ fun SettingsScreen(
             // is removed: the page starts directly with the first section, whose
             // header already carries the normal 24dp top spacing. `settings_app_subtitle`
             // stays in strings.xml (unused now) — strings are never deleted.
-            RelaySection(
-                title = stringResource(R.string.settings_section_appearance),
-            ) {
-                ThemeSwatchPicker(
-                    current = state.appearance.themeMode,
-                    onSelect = { mode -> viewModel.update { it.copy(appearance = it.appearance.copy(themeMode = mode)) } },
-                )
-                ToggleRow(
-                    title = stringResource(R.string.settings_dynamic_colors),
-                    leadingIcon = Icons.Outlined.Palette,
-                    value = state.appearance.dynamicColors,
-                    onChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(dynamicColors = v)) } },
-                    dividerAbove = true,
-                )
-                ToggleRow(
-                    title = stringResource(R.string.settings_amoled),
-                    leadingIcon = Icons.Outlined.DarkMode,
-                    value = state.appearance.amoledTrueBlack,
-                    onChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(amoledTrueBlack = v)) } },
-                    dividerAbove = true,
-                )
+            RelaySectionLabel(stringResource(R.string.settings_section_appearance))
+            RelaySettingsGroup {
+                item {
+                    ThemeSwatchPicker(
+                        current = state.appearance.themeMode,
+                        onSelect = { mode -> viewModel.update { it.copy(appearance = it.appearance.copy(themeMode = mode)) } },
+                    )
+                }
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.Palette,
+                        title = stringResource(R.string.settings_dynamic_colors),
+                        checked = state.appearance.dynamicColors,
+                        onCheckedChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(dynamicColors = v)) } },
+                    )
+                }
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.DarkMode,
+                        title = stringResource(R.string.settings_amoled),
+                        checked = state.appearance.amoledTrueBlack,
+                        onCheckedChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(amoledTrueBlack = v)) } },
+                    )
+                }
                 // 2026-10-29 — taille du texte des messages, cf. [com.filestech.sms.ui.theme.MessageTextSize].
-                NavigationRow(
-                    title = stringResource(R.string.settings_text_scale),
-                    leadingIcon = Icons.Outlined.FormatSize,
-                    onClick = { textScalePickerOpen = true },
-                    dividerAbove = true,
-                )
+                item(onClick = { textScalePickerOpen = true }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.FormatSize,
+                        title = stringResource(R.string.settings_text_scale),
+                        chevron = true,
+                    )
+                }
                 // Feedback round 8 — the Conversations section is gone: its
                 // two rows (Show avatars, Automatic signature) live here in
                 // Appearance now, so the page has one fewer card.
-                ToggleRow(
-                    title = stringResource(R.string.settings_show_avatars),
-                    leadingIcon = Icons.Outlined.PersonOutline,
-                    value = state.conversations.showAvatars,
-                    onChange = { v -> viewModel.update { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
-                    dividerAbove = true,
-                )
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.PersonOutline,
+                        title = stringResource(R.string.settings_show_avatars),
+                        checked = state.conversations.showAvatars,
+                        onCheckedChange = { v -> viewModel.update { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
+                    )
+                }
                 // v1.26.1 (audit F3) — la signature était consommée à chaque SMS sortant sans
                 // qu'aucun écran ne permette de la définir. Voir [SignatureRow].
-                SignatureRow(
-                    current = state.conversations.signature,
-                    onChange = { v ->
-                        viewModel.update { it.copy(conversations = it.conversations.copy(signature = v)) }
-                    },
-                    dividerAbove = true,
-                )
+                item {
+                    SignatureRow(
+                        current = state.conversations.signature,
+                        onChange = { v ->
+                            viewModel.update { it.copy(conversations = it.conversations.copy(signature = v)) }
+                        },
+                    )
+                }
             }
 
-            RelaySection(
-                title = stringResource(R.string.settings_section_sending),
-            ) {
-                ToggleRow(
-                    title = stringResource(R.string.settings_delivery_reports),
-                    leadingIcon = Icons.Outlined.Check,
-                    value = state.sending.deliveryReports,
-                    onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(deliveryReports = v)) } },
-                )
-                ToggleRow(
-                    title = stringResource(R.string.settings_confirm_broadcast),
-                    leadingIcon = Icons.Outlined.WarningAmber,
-                    value = state.sending.confirmBeforeBroadcast,
-                    onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) } },
-                    dividerAbove = true,
-                )
+            RelaySectionLabel(stringResource(R.string.settings_section_sending))
+            RelaySettingsGroup {
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.Check,
+                        title = stringResource(R.string.settings_delivery_reports),
+                        checked = state.sending.deliveryReports,
+                        onCheckedChange = { v ->
+                            viewModel.update { it.copy(sending = it.sending.copy(deliveryReports = v)) }
+                        },
+                    )
+                }
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.WarningAmber,
+                        title = stringResource(R.string.settings_confirm_broadcast),
+                        checked = state.sending.confirmBeforeBroadcast,
+                        onCheckedChange = { v ->
+                            viewModel.update { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) }
+                        },
+                    )
+                }
                 // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
                 // Feedback round 8 — the long hint lives in the info popup now
                 // (chevron before the switch); the row stays one-line.
-                ToggleRow(
-                    title = stringResource(R.string.settings_group_mms),
-                    leadingIcon = Icons.Outlined.Group,
-                    value = state.sending.groupMms,
-                    onChange = { v -> viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) } },
-                    infoText = stringResource(R.string.settings_group_mms_hint),
-                    dividerAbove = true,
-                )
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.Group,
+                        title = stringResource(R.string.settings_group_mms),
+                        checked = state.sending.groupMms,
+                        onCheckedChange = { v ->
+                            viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) }
+                        },
+                        infoText = stringResource(R.string.settings_group_mms_hint),
+                    )
+                }
                 // v1.2.6 audit F4 — saisie facultative du MSISDN. Sans cette valeur, les MMS
                 // envoyés peuvent afficher "insert-address-token" comme expéditeur dans
                 // d'autres apps SMS sur certaines ROM Samsung One UI.
-                MyNumberRow(
-                    current = state.sending.userMsisdn,
-                    onChange = { v ->
-                        viewModel.update { it.copy(sending = it.sending.copy(userMsisdn = v?.takeIf { s -> s.isNotBlank() })) }
-                    },
-                    dividerAbove = true,
-                )
+                item {
+                    MyNumberRow(
+                        current = state.sending.userMsisdn,
+                        onChange = { v ->
+                            viewModel.update { it.copy(sending = it.sending.copy(userMsisdn = v?.takeIf { s -> s.isNotBlank() })) }
+                        },
+                    )
+                }
                 // v1.21.0 — indicatif pays par défaut pour convertir les numéros nationaux
                 // au format international (E.164) avant l'envoi. "Auto" = pays de la SIM.
                 // Indispensable pour envoyer des numéros nationaux d'un pays depuis une SIM
                 // étrangère (ex. 06… français depuis une SIM luxembourgeoise).
-                NavigationRow(
-                    title = stringResource(R.string.settings_default_region_title),
-                    leadingIcon = Icons.Outlined.Public,
-                    onClick = { defaultRegionPickerOpen = true },
-                    dividerAbove = true,
-                )
+                item(onClick = { defaultRegionPickerOpen = true }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Public,
+                        title = stringResource(R.string.settings_default_region_title),
+                        chevron = true,
+                    )
+                }
                 // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
                 // OFF, les réactions restent strictement locales (badge visible uniquement
                 // dans Relay). La description prévient explicitement du coût SMS.
                 // Feedback round 8 — renamed to "Send my reactions"; the long
                 // cost warning lives in the info popup now (chevron before the
                 // switch); the row stays one-line.
-                ToggleRow(
-                    title = stringResource(R.string.settings_send_reactions_title),
-                    leadingIcon = Icons.Outlined.EmojiEmotions,
-                    infoText = stringResource(R.string.settings_send_reactions_desc),
-                    value = state.sending.sendReactionsToRecipient,
-                    onChange = { v ->
-                        viewModel.update { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
-                    },
-                    dividerAbove = true,
-                )
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.EmojiEmotions,
+                        title = stringResource(R.string.settings_send_reactions_title),
+                        checked = state.sending.sendReactionsToRecipient,
+                        onCheckedChange = { v ->
+                            viewModel.update { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
+                        },
+                        infoText = stringResource(R.string.settings_send_reactions_desc),
+                    )
+                }
                 // v1.8.0 (bug 5 fix) — format du SMS de réaction. 3 options
                 // (anciennement boolean reactionEmojiOnly à 2 valeurs) :
                 //  - READABLE_FR (nouveau défaut) : "J'ai réagi par ❤️ à : «…»"
@@ -494,45 +490,41 @@ fun SettingsScreen(
                 //    — compat iMessage iPhone + Google Messages récent
                 //  - EMOJI_ONLY : "❤️" seul — minimal, perd le contexte côté destinataire
                 //
-                // Affiché uniquement si l'envoi des réactions est activé. La transition
-                // AnimatedVisibility v1.3.7 reste, on remplace juste le ToggleRow par
-                // un NavigationRow + picker (cohérent avec PreviewMode / NotificationStyle
-                // ajoutés en v1.8.0).
-                AnimatedVisibility(
-                    visible = state.sending.sendReactionsToRecipient,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically(),
-                ) {
-                    NavigationRow(
-                        title = stringResource(R.string.settings_reaction_format_title),
-                        leadingIcon = Icons.Outlined.ChatBubbleOutline,
-                        onClick = { reactionFormatPickerOpen = true },
-                        dividerAbove = true,
-                    )
+                // Affiché uniquement si l'envoi des réactions est activé. The
+                // old AnimatedVisibility is a plain `if` now: the group
+                // shapes are computed from the rows actually shown, and an
+                // animated segment would leave a square corner behind when
+                // it collapses.
+                if (state.sending.sendReactionsToRecipient) {
+                    item(onClick = { reactionFormatPickerOpen = true }) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.ChatBubbleOutline,
+                            title = stringResource(R.string.settings_reaction_format_title),
+                            chevron = true,
+                        )
+                    }
                 }
                 // v1.8.1 — nom inclus dans les SMS de réaction sortants au
                 // format READABLE_FR. Affiché uniquement si READABLE_FR est
                 // sélectionné ET envoi des réactions activé (cohérence UX).
-                AnimatedVisibility(
-                    visible = state.sending.sendReactionsToRecipient &&
-                        state.sending.reactionFormat ==
-                            com.filestech.sms.domain.model.ReactionFormat.READABLE_FR,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically(),
+                if (state.sending.sendReactionsToRecipient &&
+                    state.sending.reactionFormat ==
+                        com.filestech.sms.domain.model.ReactionFormat.READABLE_FR
                 ) {
-                    SenderNameRow(
-                        current = state.sending.senderDisplayName,
-                        onChange = { name ->
-                            viewModel.update {
-                                it.copy(
-                                    sending = it.sending.copy(
-                                        senderDisplayName = name?.takeIf { s -> s.isNotBlank() },
-                                    ),
-                                )
-                            }
-                        },
-                        dividerAbove = true,
-                    )
+                    item {
+                        SenderNameRow(
+                            current = state.sending.senderDisplayName,
+                            onChange = { name ->
+                                viewModel.update {
+                                    it.copy(
+                                        sending = it.sending.copy(
+                                            senderDisplayName = name?.takeIf { s -> s.isNotBlank() },
+                                        ),
+                                    )
+                                }
+                            },
+                        )
+                    }
                 }
             }
 
@@ -647,26 +639,29 @@ fun SettingsScreen(
             // (`BackupService.writeSmsbk` refuse en `PanicDecoy`) ; ceci évite en plus de
             // proposer une action vouée au refus.
             if (!isPanicDecoy) {
-                RelaySection(
-                    title = stringResource(R.string.settings_section_backup),
-                ) {
-                    NavigationRow(
-                        title = stringResource(R.string.settings_backup_now),
-                        leadingIcon = Icons.Outlined.Backup,
-                        onClick = onOpenBackup,
-                    )
-                    NavigationRow(
-                        title = stringResource(R.string.settings_restore),
-                        leadingIcon = Icons.Outlined.Refresh,
-                        onClick = onOpenBackup,
-                        dividerAbove = true,
-                    )
-                    NavigationRow(
-                        title = stringResource(R.string.migration_title),
-                        leadingIcon = Icons.Outlined.SystemUpdate,
-                        onClick = onOpenMigration,
-                        dividerAbove = true,
-                    )
+                RelaySectionLabel(stringResource(R.string.settings_section_backup))
+                RelaySettingsGroup {
+                    item(onClick = onOpenBackup) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Backup,
+                            title = stringResource(R.string.settings_backup_now),
+                            chevron = true,
+                        )
+                    }
+                    item(onClick = onOpenBackup) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Refresh,
+                            title = stringResource(R.string.settings_restore),
+                            chevron = true,
+                        )
+                    }
+                    item(onClick = onOpenMigration) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.SystemUpdate,
+                            title = stringResource(R.string.migration_title),
+                            chevron = true,
+                        )
+                    }
                 }
             }
 
@@ -678,40 +673,44 @@ fun SettingsScreen(
             // screen now). The card carries a "General" header like every
             // other section, so the page ends on a titled card instead of a
             // bare one.
-            RelaySection(
-                title = stringResource(R.string.settings_section_general),
-            ) {
+            RelaySectionLabel(stringResource(R.string.settings_section_general))
+            RelaySettingsGroup {
                 // Réservé à Android 13+ : en dessous, la page de langue
                 // n'existe pas et l'intent n'ouvrirait rien.
                 val languageShown =
                     android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
                 if (languageShown) {
-                    NavigationRow(
-                        title = stringResource(R.string.settings_language),
-                        leadingIcon = Icons.Outlined.Language,
-                        onClick = { ouvrirLaLangueDeLApplication(ctx) },
+                    item(onClick = { ouvrirLaLangueDeLApplication(ctx) }) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Language,
+                            title = stringResource(R.string.settings_language),
+                            chevron = true,
+                        )
+                    }
+                }
+                item(onClick = onOpenAdvanced) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Tune,
+                        title = stringResource(R.string.settings_section_advanced),
+                        chevron = true,
                     )
                 }
-                NavigationRow(
-                    title = stringResource(R.string.settings_section_advanced),
-                    leadingIcon = Icons.Outlined.Tune,
-                    onClick = onOpenAdvanced,
-                    dividerAbove = languageShown,
-                )
-                NavigationRow(
-                    title = stringResource(R.string.help_title),
-                    leadingIcon = Icons.Outlined.HelpOutline,
-                    onClick = onOpenHelp,
-                    dividerAbove = true,
-                )
-                NavigationRow(
-                    title = stringResource(R.string.about_title),
-                    leadingIcon = Icons.Outlined.Info,
-                    onClick = onOpenAbout,
-                    dividerAbove = true,
-                )
+                item(onClick = onOpenHelp) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.HelpOutline,
+                        title = stringResource(R.string.help_title),
+                        chevron = true,
+                    )
+                }
+                item(onClick = onOpenAbout) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Info,
+                        title = stringResource(R.string.about_title),
+                        chevron = true,
+                    )
+                }
             }
-            Spacer(Modifier.size(24.dp))
+            Spacer(Modifier.size(32.dp))
         }
     }
 
@@ -1514,270 +1513,6 @@ private fun PinSetupDialog(
 }
 
 /**
- * Single toggle line of the grouped list: a 56dp row with a 22dp blue leading glyph, a
- * 16sp/400 title and an optional 13sp secondary description, trailing switch. Pass
- * [description] to surface a small explanatory line under the title — useful for
- * security/privacy toggles whose effect is not obvious from the title alone.
- * Pass [dividerAbove] for every row but the first of a card (see [RelayRow]).
- *
- * Feedback round 8 — pass [infoText] instead of [description] for a long
- * explanation: the row stays one-line and gains a chevron before the switch
- * (the system Settings pattern: chevron, thin vertical divider, toggle).
- *
- * Feedback round 9 — with [infoText] the whole text-to-chevron area
- * (title + chevron + the thin divider) opens the dialog; only the Switch
- * itself flips the value. Without [infoText] the whole row is still the
- * switch (one TalkBack node, `Modifier.toggleable(role = Role.Switch)`),
- * and tapping anywhere on it flips the value.
- *
- * The whole row is one TalkBack node (`Modifier.toggleable(role = Role.Switch)`); the
- * inner Switch has `onCheckedChange = null` and delegates to it — when there
- * is no info popup. With an info popup the Switch owns its own tap instead.
- */
-// Feedback round 6 — package-visible (not private): the Advanced screen
-// reuses these two rows, so they live here for both screens. They stay
-// Settings-specific — other screens use [RelayRow] directly.
-@Composable
-fun ToggleRow(
-    title: String,
-    value: Boolean,
-    onChange: (Boolean) -> Unit,
-    description: String? = null,
-    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    dividerAbove: Boolean = false,
-    infoText: String? = null,
-) {
-    // v1.2.6 polish : Row compact à la place du `ListItem` (qui forçait min-height 56/72 dp et
-    // un Switch pleine taille). On garde un touch target ≥ 48 dp via `heightIn` tout en
-    // resserrant les paddings verticaux.
-    //
-    // Feedback round 6 — the row now follows the M3 list-item heights deliberately
-    // (56dp one-line, 72dp two-line, same as [RelayRow]): the two-line rows were
-    // too tight at 56dp, and the description used the 13sp timestamp style.
-    //
-    // v1.3.7 U1 audit — `Modifier.toggleable(role = Role.Switch)` remplace `.clickable {...}` +
-    // `Switch.onCheckedChange`. Avant : TalkBack annonçait DEUX éléments interactifs (la Row
-    // "double-tap pour activer" + le Switch "interrupteur, activé/désactivé") → confusion
-    // utilisateur. Maintenant : un seul nœud sémantique avec `Role.Switch`, le Switch interne
-    // a `onCheckedChange = null` (délègue au parent toggleable). Pattern Material 3 officiel
-    // recommandé pour les "selectable list items" → toggle entier sans double-tap a11y.
-    val cs = MaterialTheme.colorScheme
-    var infoOpen by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        if (dividerAbove) {
-            RelayDivider()
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // Feedback round 9 — when the row carries an info popup,
-                // the whole row is NOT a switch: the text-to-chevron area
-                // opens the popup and only the Switch itself toggles (the
-                // system Settings pattern). Without infoText the row keeps
-                // the single TalkBack switch node (see below).
-                .then(
-                    if (infoText == null) {
-                        Modifier.toggleable(
-                            value = value,
-                            role = Role.Switch,
-                            onValueChange = onChange,
-                        )
-                    } else {
-                        Modifier
-                    },
-                )
-                .heightIn(min = if (description != null) 72.dp else 56.dp)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // Feedback round 9 — the text + chevron area is one clickable
-            // that opens the info popup when infoText is present (title,
-            // chevron and the thin divider before the switch); it fills
-            // the row height so the whole area, not just the glyph, reacts.
-            // Without infoText it is plain layout and the outer toggleable
-            // above owns the tap.
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .then(if (infoText != null) Modifier.clickable { infoOpen = true } else Modifier),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-            // Feedback round 5 — the glyph centres on the title line, not
-            // on the whole row: the icon and the title share an inner row,
-            // so on a two-line row the icon sits next to the title (see
-            // [RelayRow]); the switch stays centred on the row. The
-            // description starts under the title text, past the 24dp glyph
-            // + 16dp gap. The 16dp arrangement gap below is the text-to-switch
-            // spacing — the old 12dp end padding on this column is dropped,
-            // it would have stacked to 28dp.
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    if (leadingIcon != null) {
-                        Icon(
-                            imageVector = leadingIcon,
-                            contentDescription = null,
-                            // Feedback round 4 — row icons follow the theme's on-surface colour
-                            // (white in dark mode, black in light) instead of the brand blue,
-                            // which was hard to see in dark mode.
-                            tint = cs.onSurface,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    Text(
-                        title,
-                        style = RelayText.MessageBody,
-                        color = cs.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (description != null) {
-                    Text(
-                        description,
-                        // Feedback round 6 — M3 supporting text is bodyMedium
-                        // (14sp/20), not the 13sp/16 timestamp style.
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = cs.onSurfaceVariant,
-                        // Feedback round 4 — a little gap between the row title and its
-                        // description line (same 2dp as [RelayRow]).
-                        modifier = Modifier.padding(
-                            start = if (leadingIcon != null) 40.dp else 0.dp,
-                            top = 2.dp,
-                        ),
-                    )
-                }
-            }
-            // Feedback round 8 — info chevron (see the header comment): the
-            // chevron + divider sit tight against the switch, so they share
-            // a nested row instead of the outer 16dp spacing.
-            if (infoText != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    IconButton(onClick = { infoOpen = true }) {
-                        Icon(
-                            imageVector = Icons.Outlined.ChevronRight,
-                            contentDescription = stringResource(R.string.settings_row_info),
-                            tint = cs.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(width = 1.dp, height = 24.dp)
-                            .background(cs.outlineVariant),
-                    )
-                }
-            }
-            } // end of the text + chevron area (opens the info popup)
-            Switch(
-                checked = value,
-                // Feedback round 9 — with an info popup the Switch owns its
-                // own tap (the outer row is not toggleable then); without
-                // one, `null` delegates the tap to the `Modifier.toggleable`
-                // parent (fusion sémantique, un seul élément interactif
-                // côté TalkBack/Switch Access — v1.3.7 U1 audit).
-                onCheckedChange = if (infoText != null) onChange else null,
-                // Feedback round 6 — M3 Expressive switch: a check icon in the
-                // thumb when on (`SwitchDefaults.IconSize` = 16dp, the
-                // documented Expressive pattern). The bare thumb was the old
-                // pre-Expressive look.
-                thumbContent = if (value) {
-                    {
-                        Icon(
-                            // Both `Check` icons are imported (filled here,
-                            // outlined above): the two extension properties
-                            // share the simple name, so both call sites use
-                            // the qualified `Icons.Filled` / `Icons.Outlined`
-                            // receiver and never the bare name.
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(SwitchDefaults.IconSize),
-                        )
-                    }
-                } else {
-                    null
-                },
-            )
-        }
-    }
-    if (infoOpen && infoText != null) {
-        RelayDialog(
-            onDismissRequest = { infoOpen = false },
-            title = title,
-            content = {
-                Text(
-                    text = infoText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = cs.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_close),
-                    onClick = { infoOpen = false },
-                )
-            },
-        )
-    }
-}
-
-@Composable
-fun NavigationRow(
-    title: String,
-    onClick: () -> Unit,
-    destructive: Boolean = false,
-    description: String? = null,
-    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    dividerAbove: Boolean = false,
-) {
-    // One grouped-list row: 24dp leading glyph in the theme's on-surface colour
-    // (feedback round 4 — the brand blue was hard to see in dark mode), 16sp/400
-    // title, optional 14sp secondary description, trailing chevron. The danger-zone
-    // row renders its title in the error red instead. Pass [dividerAbove] for every
-    // row but the first of a card (see [RelayRow]).
-    RelayRow(
-        title = title,
-        subtitle = description,
-        // Feedback round 4 — a little gap between the row title and its description
-        // line (same 2dp as [ToggleRow]).
-        subtitleTopPadding = 2.dp,
-        onClick = onClick,
-        dividerAbove = dividerAbove,
-        // Feedback round 5 — the glyph centres on the title line, not on
-        // the whole row (see [RelayRow]).
-        leadingIconTopAligned = true,
-        leadingIcon = if (leadingIcon != null) {
-            {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        } else {
-            null
-        },
-        trailing = {
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-        },
-        titleColor = if (destructive) RelayColors.Error else null,
-    )
-}
-
-/**
  * Visual theme picker: a horizontal row of three phone-shaped swatches, each rendering a tiny
  * mock of the conversation list under the corresponding theme (background, accent strip, two
  * message-bubble bars). The active swatch is wrapped in a primary-colored ring; tapping any
@@ -2037,15 +1772,14 @@ private val MSISDN_PATTERN = Regex("^\\+?[0-9 ()\\-]{4,20}$")
  * donc en facturation multiple. Le compteur le rappelle.
  */
 @Composable
-private fun SignatureRow(current: String?, onChange: (String?) -> Unit, dividerAbove: Boolean = false) {
+private fun SignatureRow(current: String?, onChange: (String?) -> Unit) {
     val cs = MaterialTheme.colorScheme
     var dialogOpen by remember { mutableStateOf(false) }
-    NavigationRow(
+    RelaySettingRow(
+        icon = Icons.Outlined.Edit,
         title = stringResource(R.string.settings_signature),
-        leadingIcon = Icons.Outlined.Edit,
-
         onClick = { dialogOpen = true },
-        dividerAbove = dividerAbove,
+        chevron = true,
     )
     if (dialogOpen) {
         var value by remember { mutableStateOf(current.orEmpty()) }
@@ -2097,14 +1831,13 @@ private fun SignatureRow(current: String?, onChange: (String?) -> Unit, dividerA
 private const val SIGNATURE_MAX_CHARS = 80
 
 @Composable
-private fun MyNumberRow(current: String?, onChange: (String?) -> Unit, dividerAbove: Boolean = false) {
+private fun MyNumberRow(current: String?, onChange: (String?) -> Unit) {
     var dialogOpen by remember { mutableStateOf(false) }
-    NavigationRow(
+    RelaySettingRow(
+        icon = Icons.Outlined.PhoneAndroid,
         title = stringResource(R.string.settings_my_number),
-
-        leadingIcon = Icons.Outlined.PhoneAndroid,
         onClick = { dialogOpen = true },
-        dividerAbove = dividerAbove,
+        chevron = true,
     )
     if (dialogOpen) {
         MyNumberDialog(
@@ -2255,15 +1988,15 @@ private fun MyNumberDialog(
  * détection via `ContactsContract.Profile` (le "moi" Android).
  */
 @Composable
-private fun SenderNameRow(current: String?, onChange: (String?) -> Unit, dividerAbove: Boolean = false) {
+private fun SenderNameRow(current: String?, onChange: (String?) -> Unit) {
     var dialogOpen by remember { mutableStateOf(false) }
-    NavigationRow(
+    RelaySettingRow(
+        icon = Icons.Outlined.PersonOutline,
         title = stringResource(R.string.settings_sender_name_title),
-        description = current?.takeIf { it.isNotBlank() }
+        subtitle = current?.takeIf { it.isNotBlank() }
             ?: stringResource(R.string.settings_sender_name_auto),
-        leadingIcon = Icons.Outlined.PersonOutline,
         onClick = { dialogOpen = true },
-        dividerAbove = dividerAbove,
+        chevron = true,
     )
     if (dialogOpen) {
         SenderNameDialog(
@@ -3090,57 +2823,65 @@ private fun NotificationsSection(
     onOpenStylePicker: () -> Unit,
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    RelaySection(
-        title = stringResource(R.string.settings_section_notifications),
-    ) {
-        ToggleRow(
-            title = stringResource(R.string.settings_notifications_enabled),
-            leadingIcon = Icons.Outlined.Notifications,
-            value = notifications.enabled,
-            onChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(enabled = v)) } },
-        )
-        // v1.28.13 — l'avertissement annoncé en v1.8.0 et jamais branché : notifications coupées
-        // par Android (permission, interrupteur de l'application ou canal des messages), alors que
-        // l'interrupteur ci-dessus dit « activées ».
-        if (notifications.enabled) {
-            BanniereNotificationsCoupees(
-                message = stringResource(R.string.notifications_off_messages),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                canaux = listOf(canalDesMessages(notifications.style)),
+    RelaySectionLabel(stringResource(R.string.settings_section_notifications))
+    RelaySettingsGroup {
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.Notifications,
+                title = stringResource(R.string.settings_notifications_enabled),
+                checked = notifications.enabled,
+                onCheckedChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(enabled = v)) } },
             )
         }
-        ToggleRow(
-            title = stringResource(R.string.settings_inline_reply),
-            leadingIcon = Icons.AutoMirrored.Outlined.Reply,
-            value = notifications.inlineReply,
-            onChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(inlineReply = v)) } },
-            dividerAbove = true,
-        )
+        // v1.28.13 — l'avertissement annoncé en v1.8.0 et jamais branché : notifications coupées
+        // par Android (permission, interrupteur de l'application ou canal des messages), alors que
+        // l'interrupteur ci-dessus dit « activées ». The banner is its own
+        // segment, so the group splits around it and the shapes stay right.
+        // It fills the segment (no inset) so the error card, not the
+        // segment surface, is what reads as the warning.
+        if (notifications.enabled) {
+            item {
+                BanniereNotificationsCoupees(
+                    message = stringResource(R.string.notifications_off_messages),
+                    canaux = listOf(canalDesMessages(notifications.style)),
+                )
+            }
+        }
+        item {
+            RelaySwitchRow(
+                icon = Icons.AutoMirrored.Outlined.Reply,
+                title = stringResource(R.string.settings_inline_reply),
+                checked = notifications.inlineReply,
+                onCheckedChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(inlineReply = v)) } },
+            )
+        }
         // v1.28.3 (audit global D-01) — le toggle « Vibrer » est retiré : aucun code ne le
         // lisait, la vibration appartient au canal et se règle dans les paramètres système.
-        NavigationRow(
-            title = stringResource(R.string.settings_notif_preview),
-            leadingIcon = Icons.Outlined.Visibility,
-            onClick = onOpenPreviewPicker,
-            dividerAbove = true,
-        )
-        NavigationRow(
-            title = stringResource(R.string.settings_notif_style),
-            leadingIcon = Icons.Outlined.Tune,
-            onClick = onOpenStylePicker,
-            dividerAbove = true,
-        )
+        item(onClick = onOpenPreviewPicker) {
+            RelaySettingRow(
+                icon = Icons.Outlined.Visibility,
+                title = stringResource(R.string.settings_notif_preview),
+                chevron = true,
+            )
+        }
+        item(onClick = onOpenStylePicker) {
+            RelaySettingRow(
+                icon = Icons.Outlined.Tune,
+                title = stringResource(R.string.settings_notif_style),
+                chevron = true,
+            )
+        }
         // v1.8.0 (bug 3 fix MEDIUM 3c) — deeplink réglages système app.
         // ACTION_APP_NOTIFICATION_SETTINGS (API 26+) ouvre directement la
         // page Paramètres → Apps → Relay → Notifications, où l'user
         // peut vérifier que ses canaux ne sont pas désactivés.
-        NavigationRow(
-            title = stringResource(R.string.settings_notif_open_system),
-            leadingIcon = Icons.Outlined.Settings,
-            // v1.28.13 — même ouverture que la bannière ci-dessus, avec repli sur la fiche.
-            onClick = { ouvrirLesNotificationsDeLApplication(ctx) },
-            dividerAbove = true,
-        )
+        item(onClick = { ouvrirLesNotificationsDeLApplication(ctx) }) {
+            RelaySettingRow(
+                icon = Icons.Outlined.Settings,
+                title = stringResource(R.string.settings_notif_open_system),
+                chevron = true,
+            )
+        }
     }
 }
 
@@ -3185,9 +2926,8 @@ private fun SecuritySection(
     positionAccordee: Boolean,
     onRequestLocationPermission: () -> Unit,
 ) {
-    RelaySection(
-        title = stringResource(R.string.settings_section_security),
-    ) {
+    RelaySectionLabel(stringResource(R.string.settings_section_security))
+    RelaySettingsGroup {
         // App lock entry — opens the lock-mode picker (None / PIN / Biometric). Subtitle
         // reflects the current state so the user sees at a glance whether the lock is armed.
         //
@@ -3220,23 +2960,26 @@ private fun SecuritySection(
         // censé protéger. Même garde que les deux lignes ci-dessous, pour la même raison.
         // Défense en profondeur : `AppLockManager.clearPin()` refuse aussi en `PanicDecoy`.
         if (!isPanicDecoy) {
-            NavigationRow(
-                title = stringResource(R.string.settings_app_lock),
-                leadingIcon = Icons.Outlined.Lock,
-                description = currentLockLabel,
-                onClick = onOpenLockModePicker,
-            )
+            item(onClick = onOpenLockModePicker) {
+                RelaySettingRow(
+                    icon = Icons.Outlined.Lock,
+                    title = stringResource(R.string.settings_app_lock),
+                    subtitle = currentLockLabel,
+                    chevron = true,
+                )
+            }
             // v1.26.1 (audit F4) — le délai était lu par [AutoLockObserver] mais figé sur son
             // défaut faute de sélecteur. Masqué en leurre comme la ligne au-dessus : c'est un
             // réglage de verrouillage, il en révélerait l'existence.
-            NavigationRow(
-                title = stringResource(R.string.settings_auto_lock_delay),
-                leadingIcon = Icons.Outlined.Timer,
-                description = autoLockDelayOptions()
-                    .firstOrNull { it.first == security.autoLockDelay }?.second.orEmpty(),
-                onClick = onOpenAutoLockDelayPicker,
-                dividerAbove = true,
-            )
+            item(onClick = onOpenAutoLockDelayPicker) {
+                RelaySettingRow(
+                    icon = Icons.Outlined.Timer,
+                    title = stringResource(R.string.settings_auto_lock_delay),
+                    subtitle = autoLockDelayOptions()
+                        .firstOrNull { it.first == security.autoLockDelay }?.second.orEmpty(),
+                    chevron = true,
+                )
+            }
         }
         // v1.26.0 — deux conditions, pour deux raisons sans rapport entre elles.
         //
@@ -3252,57 +2995,59 @@ private fun SecuritySection(
         //    (audit UX-2, v1.13.0), pour la meme raison — l'existence d'un reglage est deja une
         //    information.
         if (security.lockMode != com.filestech.sms.domain.settings.LockMode.OFF && !isPanicDecoy) {
-            NavigationRow(
-                title = stringResource(R.string.settings_panic_code),
-                leadingIcon = Icons.Outlined.Security,
-                description = if (panicCodeSet) {
-                    stringResource(R.string.settings_panic_code_set)
-                } else {
-                    stringResource(R.string.settings_panic_code_desc)
-                },
-                onClick = if (panicCodeSet) onOpenPanicCodeClearConfirm else onOpenPanicCodeSetup,
-                dividerAbove = true,
+            item(onClick = if (panicCodeSet) onOpenPanicCodeClearConfirm else onOpenPanicCodeSetup) {
+                RelaySettingRow(
+                    icon = Icons.Outlined.Security,
+                    title = stringResource(R.string.settings_panic_code),
+                    subtitle = if (panicCodeSet) {
+                        stringResource(R.string.settings_panic_code_set)
+                    } else {
+                        stringResource(R.string.settings_panic_code_desc)
+                    },
+                    chevron = true,
+                )
+            }
+        }
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.PrivacyTip,
+                title = stringResource(R.string.settings_flag_secure),
+                checked = security.flagSecure,
+                onCheckedChange = { v -> onUpdate { it.copy(security = it.security.copy(flagSecure = v)) } },
+                infoText = stringResource(R.string.settings_flag_secure_desc),
             )
         }
-        ToggleRow(
-            title = stringResource(R.string.settings_flag_secure),
-            leadingIcon = Icons.Outlined.PrivacyTip,
-            infoText = stringResource(R.string.settings_flag_secure_desc),
-            value = security.flagSecure,
-            onChange = { v -> onUpdate { it.copy(security = it.security.copy(flagSecure = v)) } },
-            // In a decoy session the rows above are all hidden, so this is the first
-            // visible row of the card and must not draw a divider at its top.
-            dividerAbove = !isPanicDecoy,
-        )
         // v1.26.1 (audit H3) — masqué en leurre comme ses deux voisines. Cette ligne était la
         // seule des trois à ne pas porter la garde, alors qu'elle nomme le coffre dans son
         // titre ET dans sa description (« Verrouille automatiquement le coffre-fort chiffré… ») :
         // elle révélait donc l'existence du coffre à l'agresseur, exactement ce que le toggle
         // du PIN coffre juste en dessous évite depuis la v1.13.0.
         if (!isPanicDecoy) {
-            ToggleRow(
-                title = stringResource(R.string.settings_lock_vault_on_leave),
-                leadingIcon = Icons.Outlined.LockOpen,
-                infoText = stringResource(R.string.settings_lock_vault_on_leave_desc),
-                value = security.lockVaultOnLeave,
-                onChange = { v -> onUpdate { it.copy(security = it.security.copy(lockVaultOnLeave = v)) } },
-                dividerAbove = true,
-            )
+            item {
+                RelaySwitchRow(
+                    icon = Icons.Outlined.LockOpen,
+                    title = stringResource(R.string.settings_lock_vault_on_leave),
+                    checked = security.lockVaultOnLeave,
+                    onCheckedChange = { v -> onUpdate { it.copy(security = it.security.copy(lockVaultOnLeave = v)) } },
+                    infoText = stringResource(R.string.settings_lock_vault_on_leave_desc),
+                )
+            }
         }
         // v1.11.0 — Sujet 3 anti-smishing.
         // Feedback round 8 — the long explanation lives in the info popup now.
-        ToggleRow(
-            title = stringResource(R.string.settings_smishing_detection),
-            leadingIcon = Icons.Outlined.Shield,
-            infoText = stringResource(R.string.settings_smishing_detection_desc),
-            value = security.smishingDetectionEnabled,
-            onChange = { v ->
-                onUpdate {
-                    it.copy(security = it.security.copy(smishingDetectionEnabled = v))
-                }
-            },
-            dividerAbove = true,
-        )
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.Shield,
+                title = stringResource(R.string.settings_smishing_detection),
+                checked = security.smishingDetectionEnabled,
+                onCheckedChange = { v ->
+                    onUpdate {
+                        it.copy(security = it.security.copy(smishingDetectionEnabled = v))
+                    }
+                },
+                infoText = stringResource(R.string.settings_smishing_detection_desc),
+            )
+        }
         // v1.13.0 — PIN/pass distinct pour le coffre (second-factor).
         // ToggleRow non-onChange (le toggle déclenche un setup dialog au lieu d'écrire
         // directement la valeur, sinon on activerait le gate sans avoir posé de hash,
@@ -3314,58 +3059,62 @@ private fun SecuritySection(
         // Feedback round 8 — the long description moved into the PIN setup
         // dialog itself (it already opens a popup); the row stays one-line.
         if (!isPanicDecoy) {
-            ToggleRow(
-                title = stringResource(R.string.settings_vault_pin_title),
-                leadingIcon = Icons.Outlined.Key,
-                value = security.vaultPinEnabled,
-                onChange = { v ->
-                    if (v) {
-                        onOpenVaultPinSetup()
-                    } else {
-                        onOpenVaultPinDisable()
-                    }
-                },
-                dividerAbove = true,
-            )
-            if (security.vaultPinEnabled) {
-                NavigationRow(
-                    title = stringResource(R.string.settings_vault_pin_change),
-                    leadingIcon = Icons.Outlined.Edit,
-                    onClick = onOpenVaultPinSetup,
-                    dividerAbove = true,
+            item {
+                RelaySwitchRow(
+                    icon = Icons.Outlined.Key,
+                    title = stringResource(R.string.settings_vault_pin_title),
+                    checked = security.vaultPinEnabled,
+                    onCheckedChange = { v ->
+                        if (v) {
+                            onOpenVaultPinSetup()
+                        } else {
+                            onOpenVaultPinDisable()
+                        }
+                    },
                 )
+            }
+            if (security.vaultPinEnabled) {
+                item(onClick = onOpenVaultPinSetup) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Edit,
+                        title = stringResource(R.string.settings_vault_pin_change),
+                        chevron = true,
+                    )
+                }
                 // v1.27.10 — la porte de sortie « PIN oublie » a sa propre entree, visible, au
                 // lieu d'etre le fonctionnement par defaut de la bascule OFF. Elle annonce ce
                 // qu'elle detruit ; la bascule, elle, demande maintenant le PIN.
-                NavigationRow(
-                    title = stringResource(R.string.settings_vault_pin_forgot_title),
-                    leadingIcon = Icons.Outlined.WarningAmber,
-                    description = stringResource(R.string.settings_vault_pin_forgot_desc),
-                    onClick = onOpenVaultPinForgetConfirm,
-                    dividerAbove = true,
-                )
+                item(onClick = onOpenVaultPinForgetConfirm) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.WarningAmber,
+                        title = stringResource(R.string.settings_vault_pin_forgot_title),
+                        subtitle = stringResource(R.string.settings_vault_pin_forgot_desc),
+                        chevron = true,
+                    )
+                }
             }
         }
         // Feedback round 8 — the long description moved into the confirm
         // dialog (it already explains the purge); the row stays one-line.
-        NavigationRow(
-            title = stringResource(R.string.settings_purge_blocked),
-            leadingIcon = Icons.Outlined.Delete,
-            // v1.8.0 — dialog de confirmation (action irréversible).
-            onClick = onOpenPurgeBlockedConfirm,
-            dividerAbove = true,
-        )
+        item(onClick = onOpenPurgeBlockedConfirm) {
+            RelaySettingRow(
+                icon = Icons.Outlined.Delete,
+                title = stringResource(R.string.settings_purge_blocked),
+                chevron = true,
+            )
+        }
         // v1.3.0 — auto-purge historique selon rétention choisie. Feedback
         // round 8 — the row shows only the current retention; the long
         // explainer lives in the picker dialog (it already shows it).
         val currentRetentionLabel = retentionLabel(security.autoDeleteOlderThanDays)
-        NavigationRow(
-            title = stringResource(R.string.settings_auto_delete_title),
-            leadingIcon = Icons.Outlined.History,
-            description = currentRetentionLabel,
-            onClick = onOpenAutoDeletePicker,
-            dividerAbove = true,
-        )
+        item(onClick = onOpenAutoDeletePicker) {
+            RelaySettingRow(
+                icon = Icons.Outlined.History,
+                title = stringResource(R.string.settings_auto_delete_title),
+                subtitle = currentRetentionLabel,
+                chevron = true,
+            )
+        }
         // Feedback round 8 — Safety call, Emergency mode and Blocking
         // moved into this card (they were their own sections above). The
         // decoy guards travel with them: Safety call and Emergency stay
@@ -3395,28 +3144,30 @@ private fun SecuritySection(
             if (safetyCall.enabled) {
                 // Récap visible quand armé : durée, restant, contacts,
                 // template + 2 actions (Modifier / Je vais bien).
-                RelayDivider()
-                SafetyCallArmedRecap(
-                    config = safetyCall,
-                    remainingMs = safetyCallRemainingMs,
-                    onModify = onOpenSafetyCall,
-                    onImOk = onSafetyCallImOk,
-                )
+                item {
+                    SafetyCallArmedRecap(
+                        config = safetyCall,
+                        remainingMs = safetyCallRemainingMs,
+                        onModify = onOpenSafetyCall,
+                        onImOk = onSafetyCallImOk,
+                    )
+                }
             } else {
-                NavigationRow(
-                    title = stringResource(R.string.settings_safety_call_title),
-                    leadingIcon = Icons.Outlined.Shield,
-                    // Feedback round 8 — the row shows only the state
-                    // (Disabled / Disabled after an alert); the long
-                    // description moved to the Safety call setup screen.
-                    description = if (safetyCall.isTriggered) {
-                        stringResource(R.string.settings_safety_call_disabled_after_alert)
-                    } else {
-                        stringResource(R.string.settings_safety_call_disabled)
-                    },
-                    onClick = onOpenSafetyCall,
-                    dividerAbove = true,
-                )
+                item(onClick = onOpenSafetyCall) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Shield,
+                        title = stringResource(R.string.settings_safety_call_title),
+                        // Feedback round 8 — the row shows only the state
+                        // (Disabled / Disabled after an alert); the long
+                        // description moved to the Safety call setup screen.
+                        subtitle = if (safetyCall.isTriggered) {
+                            stringResource(R.string.settings_safety_call_disabled_after_alert)
+                        } else {
+                            stringResource(R.string.settings_safety_call_disabled)
+                        },
+                        chevron = true,
+                    )
+                }
             }
         }
         // v1.10.0 — Mode urgence. Ici c'est l'user qui DÉCLENCHE activement (bouton hold 3s) ;
@@ -3429,48 +3180,53 @@ private fun SecuritySection(
             if (emergency.enabled) {
                 // v1.10.0 polish — récap visuel quand armé (parallèle exact de SafetyCallArmedRecap
                 // pour cohérence UX).
-                RelayDivider()
-                EmergencyArmedRecap(
-                    config = emergency,
-                    contacts = security.safetyCall.contacts,
-                    onModify = onOpenEmergencySetup,
-                    onOpen = onOpenEmergency,
-                )
+                item {
+                    EmergencyArmedRecap(
+                        config = emergency,
+                        contacts = security.safetyCall.contacts,
+                        onModify = onOpenEmergencySetup,
+                        onOpen = onOpenEmergency,
+                    )
+                }
             } else {
                 // Feedback round 8 — the row shows only the state (Disabled);
                 // the long description moved to the Emergency setup screen.
-                NavigationRow(
-                    title = stringResource(R.string.settings_emergency_title),
-                    leadingIcon = Icons.Outlined.WarningAmber,
-                    description = stringResource(R.string.settings_emergency_disabled),
-                    onClick = onOpenEmergencySetup,
-                    dividerAbove = true,
-                )
+                item(onClick = onOpenEmergencySetup) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.WarningAmber,
+                        title = stringResource(R.string.settings_emergency_title),
+                        subtitle = stringResource(R.string.settings_emergency_disabled),
+                        chevron = true,
+                    )
+                }
             }
             // v1.12.0 — Toggle raccourci urgence en notification persistante lock-screen.
             // Disponible uniquement si emergency.enabled (un raccourci qui ouvre dans le vide
             // n'a aucun sens).
             if (emergency.enabled) {
-                ToggleRow(
-                    title = stringResource(R.string.settings_emergency_shortcut_title),
-                    leadingIcon = Icons.Outlined.Notifications,
-                    description = stringResource(R.string.settings_emergency_shortcut_desc),
-                    value = security.emergencyShortcutEnabled,
-                    onChange = { v ->
-                        onUpdate {
-                            it.copy(security = it.security.copy(emergencyShortcutEnabled = v))
-                        }
-                    },
-                    dividerAbove = true,
-                )
-                // v1.28.13 — le raccourci EST une notification : sans elles, l'interrupteur reste sur
-                // « activé » alors que rien n'apparaît sur l'écran verrouillé.
-                if (security.emergencyShortcutEnabled) {
-                    BanniereNotificationsCoupees(
-                        message = stringResource(R.string.notifications_off_emergency_shortcut),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        canaux = listOf(CANAL_DU_RACCOURCI_D_URGENCE),
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.Notifications,
+                        title = stringResource(R.string.settings_emergency_shortcut_title),
+                        subtitle = stringResource(R.string.settings_emergency_shortcut_desc),
+                        checked = security.emergencyShortcutEnabled,
+                        onCheckedChange = { v ->
+                            onUpdate {
+                                it.copy(security = it.security.copy(emergencyShortcutEnabled = v))
+                            }
+                        },
                     )
+                }
+                // v1.28.13 — le raccourci EST une notification : sans elles, l'interrupteur reste sur
+                // « activé » alors que rien n'apparaît sur l'écran verrouillé. The
+                // banner fills its own segment (see the notifications one).
+                if (security.emergencyShortcutEnabled) {
+                    item {
+                        BanniereNotificationsCoupees(
+                            message = stringResource(R.string.notifications_off_emergency_shortcut),
+                            canaux = listOf(CANAL_DU_RACCOURCI_D_URGENCE),
+                        )
+                    }
                 }
                 // v1.12.0 — Toggle de l'action police dans la notification d'urgence.
                 // Audit fix S2 : disponible uniquement si le raccourci urgence est lui-même ON.
@@ -3478,55 +3234,58 @@ private fun SecuritySection(
                 // v1.28.12 — le numéro suit le pays du réseau, et la tuile police de l'écran
                 // Urgence ne dépend plus de ce réglage : elle s'affiche selon le pays.
                 if (security.emergencyShortcutEnabled) {
-                    ToggleRow(
-                        title = stringResource(R.string.settings_emergency_call_police_title),
-                        leadingIcon = Icons.Outlined.Phone,
-                        description = stringResource(R.string.settings_emergency_call_police_desc),
-                        value = security.emergencyCallPoliceEnabled,
-                        onChange = { v ->
-                            onUpdate {
-                                it.copy(security = it.security.copy(emergencyCallPoliceEnabled = v))
-                            }
-                        },
-                        dividerAbove = true,
-                    )
+                    item {
+                        RelaySwitchRow(
+                            icon = Icons.Outlined.Phone,
+                            title = stringResource(R.string.settings_emergency_call_police_title),
+                            subtitle = stringResource(R.string.settings_emergency_call_police_desc),
+                            checked = security.emergencyCallPoliceEnabled,
+                            onCheckedChange = { v ->
+                                onUpdate {
+                                    it.copy(security = it.security.copy(emergencyCallPoliceEnabled = v))
+                                }
+                            },
+                        )
+                    }
                 }
                 // v1.14.0 — opt-in SMS "Je vais bien" sur kill-switch.
-                ToggleRow(
-                    title = stringResource(R.string.settings_send_i_am_ok_sms_title),
-                    leadingIcon = Icons.Outlined.ChatBubbleOutline,
-                    description = stringResource(R.string.settings_send_i_am_ok_sms_desc),
-                    value = security.sendIAmOkSmsOnReset,
-                    onChange = { v ->
-                        onUpdate {
-                            it.copy(security = it.security.copy(sendIAmOkSmsOnReset = v))
-                        }
-                    },
-                    dividerAbove = true,
-                )
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.ChatBubbleOutline,
+                        title = stringResource(R.string.settings_send_i_am_ok_sms_title),
+                        subtitle = stringResource(R.string.settings_send_i_am_ok_sms_desc),
+                        checked = security.sendIAmOkSmsOnReset,
+                        onCheckedChange = { v ->
+                            onUpdate {
+                                it.copy(security = it.security.copy(sendIAmOkSmsOnReset = v))
+                            }
+                        },
+                    )
+                }
                 // v1.14.5 — Toggle "Inclure position GPS dans le SMS" accessible directement
                 // depuis Settings (avant : seul EmergencySetupScreen exposait ce toggle, l'user
                 // devait y naviguer pour activer la géoloc). Quand l'user passe OFF→ON, on
                 // demande la permission ACCESS_FINE_LOCATION runtime immédiatement (avec les
                 // mêmes considérations que dans EmergencySetupScreen).
-                ToggleRow(
-                    title = stringResource(R.string.settings_emergency_include_location_title),
-                    leadingIcon = Icons.Outlined.PushPin,
-                    description = stringResource(R.string.settings_emergency_include_location_desc),
-                    value = emergency.includeLocation,
-                    dividerAbove = true,
-                    onChange = { v ->
-                        onUpdate {
-                            it.copy(security = it.security.copy(
-                                emergency = it.security.emergency.copy(includeLocation = v),
-                            ))
-                        }
-                        // Au passage OFF→ON sans perm déjà accordée → demande runtime.
-                        if (v && !positionAccordee) {
-                            onRequestLocationPermission()
-                        }
-                    },
-                )
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.PushPin,
+                        title = stringResource(R.string.settings_emergency_include_location_title),
+                        subtitle = stringResource(R.string.settings_emergency_include_location_desc),
+                        checked = emergency.includeLocation,
+                        onCheckedChange = { v ->
+                            onUpdate {
+                                it.copy(security = it.security.copy(
+                                    emergency = it.security.emergency.copy(includeLocation = v),
+                                ))
+                            }
+                            // Au passage OFF→ON sans perm déjà accordée → demande runtime.
+                            if (v && !positionAccordee) {
+                                onRequestLocationPermission()
+                            }
+                        },
+                    )
+                }
             }
         }
         // Blocking — an ordinary feature, visible in a decoy session like
@@ -3536,33 +3295,35 @@ private fun SecuritySection(
         // passer, à dessein (bloquer sur une ignorance couperait toute réception). Mais
         // l'interrupteur restait sur « activé » sans rien dire : on le dit sous lui.
         val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
-        ToggleRow(
-            title = stringResource(R.string.settings_block_unknown),
-            leadingIcon = Icons.Outlined.Block,
-            value = blocking.blockUnknown,
-            onChange = { v -> onUpdate { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },
-            // 2026-10-29 — l'effet est dit AVANT d'activer : `IncomingBlockPolicy` écarte le
-            // message à la réception, sans notification ni copie (pas même le filet de
-            // secours de `SmsDeliverReceiver`), et un expéditeur alphanumérique n'est
-            // jamais un contact. Activé sans accès aux contacts, l'avertissement prime :
-            // rien n'est alors bloqué.
-            // Feedback round 8 — the long description lives in the info
-            // popup now; the no-contacts warning still shows under the
-            // title when it applies (it is a state warning, not a
-            // description).
-            description = if (blocking.blockUnknown && !contactsAccordes) {
-                stringResource(R.string.settings_block_unknown_no_contacts)
-            } else {
-                null
-            },
-            infoText = stringResource(R.string.settings_block_unknown_desc),
-            dividerAbove = true,
-        )
-        NavigationRow(
-            title = stringResource(R.string.settings_manage_blocked),
-            leadingIcon = Icons.Outlined.PersonOff,
-            onClick = onOpenBlocked,
-            dividerAbove = true,
-        )
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.Block,
+                title = stringResource(R.string.settings_block_unknown),
+                checked = blocking.blockUnknown,
+                onCheckedChange = { v -> onUpdate { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },
+                // 2026-10-29 — l'effet est dit AVANT d'activer : `IncomingBlockPolicy` écarte le
+                // message à la réception, sans notification ni copie (pas même le filet de
+                // secours de `SmsDeliverReceiver`), et un expéditeur alphanumérique n'est
+                // jamais un contact. Activé sans accès aux contacts, l'avertissement prime :
+                // rien n'est alors bloqué.
+                // Feedback round 8 — the long description lives in the info
+                // popup now; the no-contacts warning still shows under the
+                // title when it applies (it is a state warning, not a
+                // description).
+                subtitle = if (blocking.blockUnknown && !contactsAccordes) {
+                    stringResource(R.string.settings_block_unknown_no_contacts)
+                } else {
+                    null
+                },
+                infoText = stringResource(R.string.settings_block_unknown_desc),
+            )
+        }
+        item(onClick = onOpenBlocked) {
+            RelaySettingRow(
+                icon = Icons.Outlined.PersonOff,
+                title = stringResource(R.string.settings_manage_blocked),
+                chevron = true,
+            )
+        }
     }
 }

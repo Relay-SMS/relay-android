@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -90,9 +92,24 @@ fun BanniereNotificationsCoupees(
             Spacer(Modifier.size(8.dp))
             // Feedback round 7 — pill shape, non-bold label, like the other
             // large buttons app-wide.
+            // Feedback round 10 — in dark mode the button takes the same
+            // light `#E5EAFD` background with dark-navy text as the
+            // set-as-default button: the default darker button reads as
+            // muddy against the red banner. Light mode is left as it
+            // was (brand primary). The dark/light split comes from the
+            // surface luminance, like the bubble colours.
+            val cs = MaterialTheme.colorScheme
+            val surface = cs.surface
+            val surfaceLuma = 0.2126f * surface.red + 0.7152f * surface.green +
+                0.0722f * surface.blue
+            val isDark = surfaceLuma < 0.5f
             Button(
                 onClick = { ouvrirLesNotificationsDeLApplication(contexte) },
                 shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDark) Color(0xFFE5EAFD) else cs.primary,
+                    contentColor = if (isDark) Color(0xFF001A40) else cs.onPrimary,
+                ),
             ) {
                 Text(
                     stringResource(R.string.notifications_off_fix),

@@ -81,6 +81,9 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
     /**
      * @param membres les membres du groupe reconstitués depuis l'en-tête, ou `null` pour une conversation
      *   ordinaire — cf. `GroupMmsMembers`.
+     * @param inclutSoi v1.28.10 — `true` quand [membres] porte l'utilisateur lui-même (« Mon numéro » non
+     *   renseigné) : le miroir rapproche alors d'un groupe existant « moins un » au lieu de créer un
+     *   groupe qui compterait l'utilisateur comme membre.
      * @param cle la clé de transaction, lue dans le nom du PDU ; `null` : aucune reconnaissance possible.
      * @param pduPresent la porte de [ConversationMirror.inscrireMmsRecu] : le PDU existe-t-il encore ? Il
      *   part avec son message quand l'utilisateur supprime celui-ci.
@@ -89,6 +92,7 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
         contenu: ContenuMmsRecu,
         subId: Int?,
         membres: List<PhoneAddress>?,
+        inclutSoi: Boolean = false,
         cle: String?,
         pduPresent: () -> Boolean,
     ): Resultat {
@@ -107,6 +111,7 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
                 date = contenu.date,
                 subId = subId,
                 groupMembers = membres,
+                inclutSoi = inclutSoi,
                 transactionKey = cle,
                 encoreVoulu = pduPresent,
             )

@@ -164,6 +164,9 @@
     <string name="thread_status_refused_by_carrier">Refused by the carrier (code %1$s)</string>
     <string name="date_today">Today</string>
     <string name="date_yesterday">Yesterday</string>
+    <string name="date_this_week">This week</string>
+    <string name="date_this_month">This month</string>
+    <string name="date_older">Older</string>
     <string name="thread_confirm_delete_message">Delete this message? This cannot be undone.</string>
     <string name="thread_export_success">PDF saved (%1$d pages)</string>
 
@@ -791,7 +794,7 @@
     <string name="pdf_footer">Page %1$d — SMS Relay</string>
 
     <!-- Errors -->
-    <string name="error_not_default_app">SMS Relay is not the default SMS app yet.</string>
+    <string name="error_not_default_app">Relay is not the default SMS app yet.</string>
     <string name="error_send_failed">Failed to send the message.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
     <string name="send_failure_notification_title">Message not sent</string>

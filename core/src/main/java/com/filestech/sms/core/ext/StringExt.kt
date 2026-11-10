@@ -3,6 +3,35 @@ package com.filestech.sms.core.ext
 import java.text.Normalizer
 
 /**
+ * Feedback round 10 — display-only US phone formatting for the thread header.
+ *
+ * - Exactly 10 digits → `(xxx) xxx-xxxx`.
+ * - Exactly 11 digits starting with `1` → `1 (xxx) xxx-xxxx`.
+ * - A number beginning with `+` is returned untouched: it is explicitly
+ *   international, and forcing US formatting on it would be wrong.
+ * - Anything else (short code, partial number, alphanumeric sender) is
+ *   returned as-is, so a half-typed number in an input field is never
+ *   mangled — the formatter is safe to call on any string, including a
+ *   contact name (no digits → unchanged).
+ *
+ * Display only: the stored number is never modified. Formatting characters
+ * already present (`(555) 123-4567`, `555-123-4567`) are stripped and the
+ * number is re-formatted, so the function is idempotent.
+ */
+fun String.formatPhoneNumberForDisplay(): String {
+    val trimmed = trim()
+    if (trimmed.startsWith("+")) return trimmed
+    val digits = trimmed.filter { it.isDigit() }
+    return when {
+        digits.length == 10 ->
+            "(${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6)}"
+        digits.length == 11 && digits.startsWith("1") ->
+            "1 (${digits.substring(1, 4)}) ${digits.substring(4, 7)}-${digits.substring(7)}"
+        else -> trimmed
+    }
+}
+
+/**
  * Telephony-friendly normalization of a phone number: keeps leading '+', digits and '*#'.
  * Strips spaces, dashes, parentheses. Does not enforce country format (left to libphonenumber if needed).
  */

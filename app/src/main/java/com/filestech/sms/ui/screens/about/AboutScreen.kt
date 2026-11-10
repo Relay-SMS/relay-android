@@ -24,7 +24,6 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Description
@@ -57,7 +56,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -69,18 +67,17 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.filestech.sms.BuildConfig
 import com.filestech.sms.R
-import com.filestech.sms.ui.components.RelayRow
-import com.filestech.sms.ui.components.RelaySection
+import com.filestech.sms.ui.components.RelaySectionLabel
+import com.filestech.sms.ui.components.RelaySettingRow
+import com.filestech.sms.ui.components.RelaySettingsGroup
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.theme.BrandBlue
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
 
 /**
- * About screen in the grouped-list treatment of the Relay design system: same section/row
- * primitives as Settings (canvas rows, 50dp, chevron trailing, blue leading glyphs), privacy
- * badges as quiet chips, version and credit lines as 13sp secondary text. No copy changes —
- * only the presentation moved onto the shared kit.
+ * About screen in the Seca grouped-list format (M3 Expressive): section labels plus
+ * [RelaySettingsGroup] rows with round icon badges, same as Settings and Help. No copy
+ * changes — only the presentation moved onto the shared kit.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,17 +91,8 @@ fun AboutScreen(
     val context = LocalContext.current
     var tapCount by remember { mutableStateOf(0) }
 
-    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the section rows sit on
-    // the canvas (see RelaySection). Picked from the surface luminance so it follows the
-    // active scheme, dark variants included.
-    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
-        RelayColors.CanvasDark
-    } else {
-        RelayColors.Surface
-    }
-
     Scaffold(
-        containerColor = pageBackground,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.about_title)) },
@@ -125,9 +113,9 @@ fun AboutScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 // Feedback round 9 — only a top gap here: the section
-                // headers already carry 24dp above each card, and the
-                // trailing spacer below is the 24dp bottom breathing room,
-                // same as Settings. The old vertical 24dp doubled the
+                // labels already carry 24dp above each group, and the
+                // trailing spacer below is the 32dp bottom breathing room,
+                // same as Help. The old vertical 24dp doubled the
                 // bottom gap (spacer + column padding).
                 .padding(top = 24.dp),
         ) {
@@ -142,29 +130,26 @@ fun AboutScreen(
                 tapCount = tapCount,
             )
 
-            RelaySection(title = stringResource(R.string.about_section_privacy)) {
-                RelayRow(
-                    title = stringResource(R.string.about_privacy_headline),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.Shield,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    },
-                )
-                // Feedback round 5 — the four privacy badges ("No ads",
-                // "No tracker", "No data collected", "Zero sharing") lived
-                // here; they are removed, and the last two move down to the
-                // "Zero ads, zero trackers" feature below.
+            RelaySectionLabel(text = stringResource(R.string.about_section_privacy))
+            RelaySettingsGroup {
+                item {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Shield,
+                        title = stringResource(R.string.about_privacy_headline),
+                    )
+                }
             }
+            // Feedback round 5 — the four privacy badges ("No ads",
+            // "No tracker", "No data collected", "Zero sharing") lived
+            // here; they are removed, and the last two move down to the
+            // "Zero ads, zero trackers" feature below.
 
-            RelaySection(title = stringResource(R.string.about_section_features)) {
-                // Feedback round 8 — every row but the first draws the
-                // divider above it, like the Settings cards (see [RelayRow]).
-                features(isPanicDecoy).forEachIndexed { index, f ->
-                    FeatureRow(icon = f.icon, label = f.label, desc = f.desc, dividerAbove = index > 0)
+            RelaySectionLabel(text = stringResource(R.string.about_section_features))
+            RelaySettingsGroup {
+                features(isPanicDecoy).forEach { f ->
+                    item {
+                        RelaySettingRow(icon = f.icon, title = f.label, subtitle = f.desc)
+                    }
                 }
             }
 
@@ -176,112 +161,124 @@ fun AboutScreen(
             // Feedback round 5 — Quick Help moved out of About onto its own
             // Help screen, reached from Settings (see HelpScreen); this
             // section is gone from here.
-            RelaySection(title = stringResource(R.string.about_security_title)) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = stringResource(R.string.about_security_body),
-                        style = RelayText.Preview,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            RelaySection(title = stringResource(R.string.about_permissions_title)) {
-                // Feedback round 8 — every row but the first draws the
-                // divider above it, like the Settings cards (see [RelayRow]).
-                permissions(isPanicDecoy).forEachIndexed { index, p ->
-                    RelayRow(title = p.name, subtitle = p.why, dividerAbove = index > 0)
-                }
-            }
-
-            RelaySection(title = stringResource(R.string.about_section_links)) {
-                LinkItem(
-                    icon = Icons.Outlined.Code,
-                    label = stringResource(R.string.about_source_code),
-                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) },
-                )
-                // Feedback round 8 — every row but the first draws the
-                // divider above it, like the Settings cards. Source code is
-                // always the first row of this card, so it stays without one.
-                LinkItem(
-                    icon = Icons.Outlined.BugReport,
-                    label = stringResource(R.string.about_report_issue),
-                    onClick = {
-                        // Fork: issues go to the SMS Relay repo, not to the upstream author's inbox.
-                        safeStartActivity(
-                            context,
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("https://github.com/realquink/relay/issues/new")
-                            )
+            RelaySectionLabel(text = stringResource(R.string.about_security_title))
+            RelaySettingsGroup {
+                item {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
                         )
-                    },
-                    dividerAbove = true,
-                )
-                LinkItem(
-                    icon = Icons.Outlined.Language,
-                    label = stringResource(R.string.about_website),
-                    supporting = WEBSITE_URL,
-                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL))) },
-                    dividerAbove = true,
-                )
+                        Text(
+                            text = stringResource(R.string.about_security_body),
+                            style = RelayText.Preview,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            RelaySectionLabel(text = stringResource(R.string.about_permissions_title))
+            RelaySettingsGroup {
+                permissions(isPanicDecoy).forEach { p ->
+                    item {
+                        RelaySettingRow(icon = null, title = p.name, subtitle = p.why)
+                    }
+                }
+            }
+
+            // v1.28.13 — la politique et les conditions existent dans les cinq langues de
+            // l'application : le lien ouvre celle de la langue AFFICHÉE, l'anglais à défaut.
+            // Masqués en session leurre (revue de sécurité de la 1.28.13) : ces deux documents
+            // décrivent le mode urgence et le Safety call, que le reste de cet écran tait en leurre
+            // (fonctions, aide, permissions). Un agresseur ne peut pas savoir qu'ils manquent.
+            val langue = LocalConfiguration.current.locales[0].language
+            RelaySectionLabel(text = stringResource(R.string.about_section_links))
+            RelaySettingsGroup {
+                item(onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))) }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Code,
+                        title = stringResource(R.string.about_source_code),
+                        chevron = true,
+                    )
+                }
+                item(onClick = {
+                    // Fork: issues go to the SMS Relay repo, not to the upstream author's inbox.
+                    safeStartActivity(
+                        context,
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/realquink/relay/issues/new")
+                        )
+                    )
+                }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.BugReport,
+                        title = stringResource(R.string.about_report_issue),
+                        chevron = true,
+                    )
+                }
+                item(onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_URL))) }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Language,
+                        title = stringResource(R.string.about_website),
+                        subtitle = WEBSITE_URL,
+                        chevron = true,
+                    )
+                }
                 // Feedback round 8 — the License link opens the License
                 // screen (Relay's copyright notice + the upstream
                 // attribution) instead of the Apache license in the browser,
                 // and it carries no subtext now.
-                LinkItem(
-                    icon = Icons.Outlined.Gavel,
-                    label = stringResource(R.string.about_license),
-                    onClick = onOpenLicense,
-                    dividerAbove = true,
-                )
-                // v1.28.13 — la politique et les conditions existent dans les cinq langues de
-                // l'application : le lien ouvre celle de la langue AFFICHÉE, l'anglais à défaut.
-                // Masqués en session leurre (revue de sécurité de la 1.28.13) : ces deux documents
-                // décrivent le mode urgence et le Safety call, que le reste de cet écran tait en leurre
-                // (fonctions, aide, permissions). Un agresseur ne peut pas savoir qu'ils manquent.
-                val langue = LocalConfiguration.current.locales[0].language
+                item(onClick = onOpenLicense) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Gavel,
+                        title = stringResource(R.string.about_license),
+                        chevron = true,
+                    )
+                }
                 if (!isPanicDecoy) {
-                    LinkItem(
-                        icon = Icons.Outlined.PrivacyTip,
-                        label = stringResource(R.string.about_privacy),
-                        onClick = { ouvrirTexteJuridique(context, "PRIVACY", langue) },
-                        dividerAbove = true,
-                    )
-                    LinkItem(
-                        icon = Icons.Outlined.Description,
-                        label = stringResource(R.string.about_terms),
-                        onClick = { ouvrirTexteJuridique(context, "TERMS", langue) },
-                        dividerAbove = true,
-                    )
+                    item(onClick = { ouvrirTexteJuridique(context, "PRIVACY", langue) }) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.PrivacyTip,
+                            title = stringResource(R.string.about_privacy),
+                            chevron = true,
+                        )
+                    }
+                    item(onClick = { ouvrirTexteJuridique(context, "TERMS", langue) }) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Description,
+                            title = stringResource(R.string.about_terms),
+                            chevron = true,
+                        )
+                    }
                 }
                 // 2026-10-29 — soutenir le projet : la page de dons du site, ouverte dans le navigateur
                 // comme les autres liens (l'application n'a toujours pas la permission Internet).
                 // Visible aussi en session leurre : une page publique de dons ne révèle rien.
-                LinkItem(
-                    icon = Icons.Outlined.VolunteerActivism,
-                    label = stringResource(R.string.about_support),
-                    supporting = stringResource(R.string.about_support_desc),
-                    onClick = { safeStartActivity(context, Intent(Intent.ACTION_VIEW, urlPageDeDons(langue).toUri())) },
-                    dividerAbove = true,
-                )
+                item(onClick = {
+                    safeStartActivity(context, Intent(Intent.ACTION_VIEW, urlPageDeDons(langue).toUri()))
+                }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.VolunteerActivism,
+                        title = stringResource(R.string.about_support),
+                        subtitle = stringResource(R.string.about_support_desc),
+                        chevron = true,
+                    )
+                }
             }
 
             // Feedback round 9 — the bottom credits line is gone too: the
             // full attribution (including the upstream credit) lives in the
             // License screen, reached from the License link above. The
-            // spacer is the bottom breathing room, same as Settings.
-            Spacer(Modifier.size(24.dp))
+            // spacer is the bottom breathing room, same as Help.
+            Spacer(Modifier.size(32.dp))
         }
     }
 }
@@ -364,83 +361,6 @@ private fun HeaderBlock(
             onClick = onCheckUpdate,
         )
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Features
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun FeatureRow(icon: ImageVector, label: String, desc: String?, dividerAbove: Boolean = false) {
-    RelayRow(
-        title = label,
-        subtitle = desc,
-        subtitleTopPadding = 4.dp,
-        // Feedback round 9 — the About descriptions run 3–5 lines, so
-        // the rows read as scrunched at the dense 8dp/2dp Settings
-        // spacing; 12dp vertical + 4dp title-to-subtitle gap opens them up.
-        verticalPadding = 12.dp,
-        // Feedback round 6 — the glyph centres on the title line, not on
-        // the whole row, like the main Settings screen (see [RelayRow]):
-        // the icons were still vertically centred.
-        leadingIconTopAligned = true,
-        // Feedback round 8 — the divider above every row but the first of
-        // the card (see [RelayRow]).
-        dividerAbove = dividerAbove,
-        leadingIcon = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(24.dp),
-            )
-        },
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Links (Source / Issue / Website / License / Privacy)
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun LinkItem(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    supporting: String? = null,
-    dividerAbove: Boolean = false,
-) {
-    RelayRow(
-        title = label,
-        subtitle = supporting,
-        subtitleTopPadding = 4.dp,
-        // Feedback round 9 — same roomier spacing as FeatureRow so the
-        // whole About page breathes the same way.
-        verticalPadding = 12.dp,
-        onClick = onClick,
-        // Feedback round 6 — top-aligned like the main Settings screen
-        // (see [RelayRow]): the icons were still vertically centred.
-        leadingIconTopAligned = true,
-        // Feedback round 8 — the divider above every row but the first of
-        // the card (see [RelayRow]).
-        dividerAbove = dividerAbove,
-        leadingIcon = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(24.dp),
-            )
-        },
-        trailing = {
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-        },
-    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

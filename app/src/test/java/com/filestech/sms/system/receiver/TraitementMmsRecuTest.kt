@@ -51,7 +51,7 @@ class TraitementMmsRecuTest {
     }
 
     private suspend fun traiter(resultat: Resultat, conf: RetrieveConf = conf()): TraitementMmsRecu.Issue {
-        coEvery { integration.integrer(any(), any(), any(), any(), any()) } returns resultat
+        coEvery { integration.integrer(any(), any(), any(), any(), any(), any()) } returns resultat
         return traitement.traiter(conf, CLE, 1, null) { true }
     }
 
@@ -63,7 +63,7 @@ class TraitementMmsRecuTest {
         val issue = traitement.traiter(conf(), CLE, 1, null) { true }
 
         assertThat(issue).isEqualTo(TraitementMmsRecu.Issue(garderLePdu = false, consigner = false))
-        coVerify(exactly = 0) { integration.integrer(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { integration.integrer(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -76,14 +76,14 @@ class TraitementMmsRecuTest {
         val issue = traitement.traiter(sansFrom, CLE, 1, null) { true }
 
         assertThat(issue).isEqualTo(TraitementMmsRecu.Issue(garderLePdu = false, consigner = false))
-        coVerify(exactly = 0) { integration.integrer(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { integration.integrer(any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { notifier.notifyIncoming(any(), any(), any(), any()) }
     }
 
     /** Contrôle : sans `From:`, l'indice de la notification WAP-Push suffit — le garde ne doit pas l'écarter. */
     @Test
     fun `sans From, l'indice WAP-Push donne l'expediteur et le message est ecrit`() = runTest {
-        coEvery { integration.integrer(any(), any(), any(), any(), any()) } returns Resultat.Ecrit(ID)
+        coEvery { integration.integrer(any(), any(), any(), any(), any(), any()) } returns Resultat.Ecrit(ID)
         val sansFrom = RetrieveConf().apply {
             setDate(1_700_000_000L)
             setBody(PduBody())
@@ -144,8 +144,8 @@ class TraitementMmsRecuTest {
     @Test
     fun `la cle, la SIM et la porte du PDU vont jusqu'a l'ecriture`() = runTest {
         var porteLue = false
-        coEvery { integration.integrer(any(), 1, null, CLE, any()) } answers {
-            porteLue = arg<() -> Boolean>(4).invoke()
+        coEvery { integration.integrer(any(), 1, null, false, CLE, any()) } answers {
+            porteLue = arg<() -> Boolean>(5).invoke()
             Resultat.DejaComplet(ID)
         }
 
@@ -161,7 +161,7 @@ class TraitementMmsRecuTest {
             coEvery { reglages.hydratedOrNull() } returns
                 AppSettings(sending = SendingSettings(groupMms = true, userMsisdn = MOI))
             val vus = mutableListOf<List<PhoneAddress>?>()
-            coEvery { integration.integrer(any(), any(), captureNullable(vus), any(), any()) } returns
+            coEvery { integration.integrer(any(), any(), captureNullable(vus), any(), any(), any()) } returns
                 Resultat.DejaComplet(ID)
             val conf = conf().apply {
                 addTo(EncodedStringValue(MOI))
@@ -174,9 +174,32 @@ class TraitementMmsRecuTest {
         }
 
     @Test
-    fun `sans le reglage, le meme MMS reste une conversation ordinaire`() = runTest {
+    fun `sans mon numero, le meme MMS passe ses participants avec inclutSoi`() = runTest {
+        coEvery { reglages.hydratedOrNull() } returns
+            AppSettings(sending = SendingSettings(groupMms = true, userMsisdn = null))
         val vus = mutableListOf<List<PhoneAddress>?>()
-        coEvery { integration.integrer(any(), any(), captureNullable(vus), any(), any()) } returns
+        val drapeaux = mutableListOf<Boolean>()
+        coEvery {
+            integration.integrer(any(), any(), captureNullable(vus), capture(drapeaux), any(), any())
+        } returns Resultat.DejaComplet(ID)
+        val conf = conf().apply {
+            addTo(EncodedStringValue(MOI))
+            addTo(EncodedStringValue(BOB))
+        }
+
+        traitement.traiter(conf, CLE, 1, null) { true }
+
+        // Les participants bruts, nous compris (ALICE est l'expéditrice, MOI et BOB en To).
+        assertThat(vus.single()?.map { it.raw }).containsExactly(ALICE, MOI, BOB).inOrder()
+        assertThat(drapeaux.single()).isTrue()
+    }
+
+    @Test
+    fun `sans le reglage, le meme MMS reste une conversation ordinaire`() = runTest {
+        coEvery { reglages.hydratedOrNull() } returns
+            AppSettings(sending = SendingSettings(groupMms = false, userMsisdn = MOI))
+        val vus = mutableListOf<List<PhoneAddress>?>()
+        coEvery { integration.integrer(any(), any(), captureNullable(vus), any(), any(), any()) } returns
             Resultat.DejaComplet(ID)
         val conf = conf().apply {
             addTo(EncodedStringValue(MOI))

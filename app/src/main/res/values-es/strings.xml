@@ -165,6 +165,9 @@
     <string name="thread_status_refused_by_carrier">Rechazado por el operador (código %1$s)</string>
     <string name="date_today">Hoy</string>
     <string name="date_yesterday">Ayer</string>
+    <string name="date_this_week">Esta semana</string>
+    <string name="date_this_month">Este mes</string>
+    <string name="date_older">Anteriores</string>
     <string name="thread_confirm_delete_message">¿Eliminar este mensaje? Esta acción no se puede deshacer.</string>
     <string name="thread_export_success">PDF guardado (%1$d páginas)</string>
 
@@ -797,7 +800,7 @@
     <string name="pdf_footer">Página %1$d — SMS Relay</string>
 
     <!-- Errors -->
-    <string name="error_not_default_app">SMS Relay todavía no es la app de SMS predeterminada.</string>
+    <string name="error_not_default_app">Relay todavía no es la app de SMS predeterminada.</string>
     <string name="error_send_failed">No se ha podido enviar el mensaje.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
     <string name="send_failure_notification_title">Mensaje no enviado</string>

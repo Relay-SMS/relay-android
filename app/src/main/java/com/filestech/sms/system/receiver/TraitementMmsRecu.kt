@@ -82,7 +82,17 @@ class TraitementMmsRecu @Inject constructor(
             Timber.i("Dropping downloaded MMS from blocked sender")
             return Issue(garderLePdu = false, consigner = false)
         }
-        return when (val resultat = integration.integrer(contenu, subId, membresDuGroupe(contenu), cle, pduPresent)) {
+        val groupe = membresDuGroupe(contenu)
+        return when (
+            val resultat = integration.integrer(
+                contenu,
+                subId,
+                groupe.adresses,
+                groupe.inclutSoi,
+                cle,
+                pduPresent,
+            )
+        ) {
             is Resultat.Ecrit -> {
                 notifierArrivee(contenu, resultat.messageId)
                 Issue(garderLePdu = false, consigner = true)
@@ -102,34 +112,63 @@ class TraitementMmsRecu @Inject constructor(
     }
 
     /**
+     * v1.28.10 — le groupe reconstitué depuis l'en-tête du PDU. [inclutSoi] : la liste porte alors
+     * l'utilisateur lui-même — « Mon numéro » n'est pas renseigné — et le miroir doit la rapprocher
+     * d'un groupe existant « moins un » au lieu de créer un groupe qui compterait l'utilisateur
+     * comme membre.
+     */
+    private data class GroupeRecu(val adresses: List<PhoneAddress>?, val inclutSoi: Boolean)
+
+    /**
      * v1.28.4 — MMS de groupe : l'en-tête du PDU porte tous les destinataires, nous compris. Réglage actif et
      * « Mon numéro » connu, la conversation est celle du groupe (retrouvée ou créée) ; sinon, conversation
      * ordinaire, comme avant.
+     *
+     * v1.28.10 — « Mon numéro » absent : le PDU porte quand même le groupe. Trois participants ou plus,
+     * c'est un groupe même après nous en avoir retiré un — on passe alors la liste brute, avec
+     * [GroupeRecu.inclutSoi], et le miroir la rapproche d'un groupe existant « moins un ». Le groupe est
+     * donc retrouvé sans que le numéro soit saisi ; s'il n'existe pas encore, on retombe sur la
+     * conversation individuelle de l'expéditeur (on ne peut pas créer un groupe sans savoir qui retirer).
      */
-    private suspend fun membresDuGroupe(contenu: ContenuMmsRecu): List<PhoneAddress>? {
+    private suspend fun membresDuGroupe(contenu: ContenuMmsRecu): GroupeRecu {
         val envoi = runCatchingCancellable { settings.hydratedOrNull() }.getOrNull()?.sending
-        val membres = if (envoi?.groupMms == true) {
-            val identite = phoneIdentity.snapshot()
-            GroupMmsMembers.of(
+        if (envoi?.groupMms != true) return GroupeRecu(null, false)
+        val identite = phoneIdentity.snapshot()
+        val moi = envoi.userMsisdn?.takeIf { it.isNotBlank() }
+        val groupe = if (moi != null) {
+            GroupeRecu(
+                GroupMmsMembers.of(
+                    from = contenu.expediteur,
+                    to = contenu.destinataires,
+                    cc = contenu.copies,
+                    self = moi,
+                    identityKey = identite::key,
+                ),
+                inclutSoi = false,
+            )
+        } else {
+            val participants = GroupMmsMembers.participantsOf(
                 from = contenu.expediteur,
                 to = contenu.destinataires,
                 cc = contenu.copies,
-                self = envoi.userMsisdn,
                 identityKey = identite::key,
             )
-        } else {
-            null
+            // Moins de trois participants, ce n'est pas un groupe même après nous en
+            // avoir retiré un : conversation ordinaire, sans drapeau.
+            val liste = participants.takeIf { it.size >= 3 }
+            GroupeRecu(liste, inclutSoi = liste != null)
         }
         // Mesure sans numéro : ce que le PDU porte, et ce qu'on en a décidé.
         Timber.i(
-            "MMS groupe: reglage=%s monNumero=%s to=%d cc=%d -> membres=%s",
-            envoi?.groupMms,
-            !envoi?.userMsisdn.isNullOrBlank(),
+            "MMS groupe: reglage=%s monNumero=%s to=%d cc=%d -> membres=%s inclutSoi=%s",
+            envoi.groupMms,
+            moi != null,
             contenu.destinataires.size,
             contenu.copies.size,
-            membres?.size,
+            groupe.adresses?.size,
+            groupe.inclutSoi,
         )
-        return membres
+        return groupe
     }
 
     /**

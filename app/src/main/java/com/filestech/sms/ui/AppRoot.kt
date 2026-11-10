@@ -1,5 +1,6 @@
 package com.filestech.sms.ui
 
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -356,6 +358,12 @@ fun AppRoot() {
         popExitTransition = { fonduSortant },
     ) {
         composable<Conversations>(
+            // Feedback round 10 — Archived slides in from the right like
+            // the thread and Settings (Kristin). The main list is the start
+            // destination and keeps its fade; only the archived variant
+            // slides. The branch lives in [listEnterTransition] so it does
+            // not push AppRoot over the Detekt complexity threshold.
+            enterTransition = { listEnterTransition(targetState, glissementEntrant, fonduEntrant) },
             // Feedback round 5 — pop back from a thread slides the list back
             // in from the left, mirroring the thread's slide out to the right
             // (same 300 ms easing). The `initialState` here is the entry being
@@ -369,12 +377,12 @@ fun AppRoot() {
             // in from the right like the thread: popping back from Settings
             // slides the list back in from the left, so the return reads as
             // the reverse of the open instead of a fade under a slide.
+            // Feedback round 10 — same mirror for Archived and the Vault,
+            // which now slide in too. The branch lives in
+            // [slideBackInTransition] so it does not push AppRoot over the
+            // Detekt complexity threshold.
             popEnterTransition = {
-                if (isSlideReturnRoute(initialState.destination.route)) {
-                    glissementRetourEntrant
-                } else {
-                    fonduEntrant
-                }
+                slideBackInTransition(initialState, glissementRetourEntrant, fonduEntrant)
             },
         ) { entry ->
             val args = entry.toRoute<Conversations>()
@@ -401,7 +409,18 @@ fun AppRoot() {
                 onBack = if (args.archived) ({ nav.popBackStack() }) else null,
             )
         }
-        composable<Vault> {
+        // Feedback round 10 — the Vault slides in from the right like the
+        // thread and Settings (Kristin), 300 ms, and slides back out to the
+        // right on back. Returning to it from a thread opened inside it
+        // slides it back in from the left, mirroring the thread's slide
+        // out — the same mirror the conversation list uses.
+        composable<Vault>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+            popEnterTransition = {
+                slideBackInTransition(initialState, glissementRetourEntrant, fonduEntrant)
+            },
+        ) {
             VaultScreen(
                 onBack = { nav.popBackStack() },
                 // v1.23.2 — aligné sur la liste principale : le Coffre partage le même
@@ -752,6 +771,51 @@ private fun isSlideReturnRoute(route: String?): Boolean {
     // Feedback round 9 — Compose slides in from the right like the thread
     // and Settings, so popping back from it slides the list back in from
     // the left too.
+    // Feedback round 10 — the Vault slides in from the right too, so
+    // popping back from it slides the list back in from the left as well.
     return route?.contains("Thread") == true || route?.contains("Settings") == true ||
-        route?.contains("Compose") == true
+        route?.contains("Compose") == true || route?.contains("Vault") == true
+}
+
+/**
+ * Whether this back-stack entry is the Archived conversations list.
+ * Archived shares the Conversations route with the main list, so the route
+ * string alone cannot tell them apart — the `archived` argument does.
+ * Guarded by the route check, since `toRoute` only works on a
+ * Conversations entry.
+ */
+private fun isArchivedConversations(entry: NavBackStackEntry): Boolean {
+    return entry.destination.route?.contains("Conversations") == true &&
+        runCatching { entry.toRoute<Conversations>().archived }.getOrDefault(false)
+}
+
+/**
+ * The list's enter transition: Archived slides in from the right, the main
+ * list (the start destination) keeps its fade. Top-level helper so the
+ * branch does not push [AppRoot] over the Detekt complexity threshold.
+ */
+private fun listEnterTransition(
+    target: NavBackStackEntry,
+    slideIn: EnterTransition,
+    fadeIn: EnterTransition,
+): EnterTransition {
+    return if (isArchivedConversations(target)) slideIn else fadeIn
+}
+
+/**
+ * A pop-enter transition: slide back in from the left when returning from a
+ * screen that slid in (thread, Settings, Compose, Vault, Archived), else
+ * fade. Top-level helper so the branch does not push [AppRoot] over the
+ * Detekt complexity threshold. Shared by the list and the Vault.
+ */
+private fun slideBackInTransition(
+    popped: NavBackStackEntry,
+    slideIn: EnterTransition,
+    fadeIn: EnterTransition,
+): EnterTransition {
+    return if (isSlideReturnRoute(popped.destination.route) || isArchivedConversations(popped)) {
+        slideIn
+    } else {
+        fadeIn
+    }
 }

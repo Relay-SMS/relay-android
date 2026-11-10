@@ -19,12 +19,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
-import com.filestech.sms.ui.theme.RelayColors
 
 /**
  * License / copyright notice screen, reached from the License link on About.
@@ -32,8 +30,8 @@ import com.filestech.sms.ui.theme.RelayColors
  * Feedback round 8 — the License link used to open the Apache license in the
  * browser. It now slides to this screen, which states Relay's own copyright
  * on its original work and the upstream attribution (see
- * THIRD_PARTY_NOTICES.md). Same grouped-list page base as Settings and
- * About, same slide-in transition as the thread (300 ms, see AppRoot).
+ * THIRD_PARTY_NOTICES.md). Same slide-in transition as the thread (300 ms,
+ * see AppRoot).
  *
  * The notice is a legal text provided in English, so the heading and body
  * strings carry the same English text in every locale — they are not
@@ -42,18 +40,8 @@ import com.filestech.sms.ui.theme.RelayColors
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LicenseScreen(onBack: () -> Unit) {
-    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the same
-    // canvas Settings and About sit on (see RelaySection). Picked from the
-    // surface luminance so it follows the active scheme, dark variants
-    // included.
-    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
-        RelayColors.CanvasDark
-    } else {
-        RelayColors.Surface
-    }
-
     Scaffold(
-        containerColor = pageBackground,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.about_license)) },
@@ -73,7 +61,7 @@ fun LicenseScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 24.dp),
+                .padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 32.dp),
         ) {
             Text(
                 text = stringResource(R.string.license_notice_heading),

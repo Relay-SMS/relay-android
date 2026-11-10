@@ -75,6 +75,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -106,8 +107,10 @@ import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.util.rememberChatFormatters
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import java.util.Locale
 
 /** Delay before retrying the search focus request (see the `LaunchedEffect` below). */
@@ -138,6 +141,12 @@ fun ConversationsScreen(
     val messageHits by viewModel.messageHits.collectAsStateWithLifecycle()
     val contactPhotos by viewModel.contactPhotos.collectAsStateWithLifecycle()
     val cs = MaterialTheme.colorScheme
+    // Feedback round 10 — the app's locale (for the date-group week
+    // boundary, which follows the locale's first day of week, like
+    // `relativeRowLabel` does). Read from the shared formatters so the
+    // locale check lives there, not in this screen (Detekt complexity
+    // ceiling).
+    val appLocale = rememberChatFormatters().locale
 
     val defaultAppLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -351,66 +360,194 @@ fun ConversationsScreen(
                 )
                 return@topBar
             }
-            // Round 4 — the top bar swaps between the title bar and the search pill.
-            // The pill slides in from the right over the title bar and slides back out
-            // when the X closes it; the title bar just fades. Selection mode above
-            // still wins over both.
             val sortMode = state.settings.conversations.sortMode
-            Box {
-                AnimatedVisibility(
-                    visible = !searchOpen,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                ) {
-                    TopAppBar(
-                        title = {
-                            // Title only — no logo next to it (Kristin, 2026-11-06). The old
-                            // ic_app_logo image used to sit here in front of the name.
-                            Text(
-                                text = if (archived) stringResource(R.string.tab_archived)
-                                else stringResource(R.string.app_name),
-                            )
-                        },
-                        navigationIcon = {
-                            onBack?.let {
-                                IconButton(onClick = it) {
-                                    Icon(
-                                        Icons.AutoMirrored.Outlined.ArrowBack,
-                                        contentDescription = stringResource(R.string.action_back),
-                                    )
+            // Hoisted: the "create contact" action is shared by the main
+            // pill menu and the archived title-bar menu, so it is defined
+            // once (keeps the function complexity under the limit).
+            val createContactAction: () -> Unit = {
+                if (!ContactIntents.createContact(ctx)) {
+                    scope.launch {
+                        snackbarHost.showError(
+                            ctx.getString(R.string.phone_action_no_contacts),
+                        )
+                    }
+                }
+            }
+            if (archived) {
+                // Archived keeps its old header (Kristin: only the MAIN
+                // screen's header changes). Title bar with back arrow and
+                // the same search icon + 3-dot menu; the magnifier opens
+                // the search pill. Selection mode above still wins.
+                Box {
+                    AnimatedVisibility(
+                        visible = !searchOpen,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        TopAppBar(
+                            title = {
+                                Text(text = stringResource(R.string.tab_archived))
+                            },
+                            navigationIcon = {
+                                onBack?.let {
+                                    IconButton(onClick = it) {
+                                        Icon(
+                                            Icons.AutoMirrored.Outlined.ArrowBack,
+                                            contentDescription = stringResource(R.string.action_back),
+                                        )
+                                    }
                                 }
-                            }
-                        },
-                        actions = {
-                            // Feedback round 6 — the two header actions match the
-                            // Figma home screen: 36dp hit boxes (the thread
-                            // header's pattern) with a 9dp end inset, so the ⋮
-                            // sits 27dp from the edge and the magnifier ~63dp.
-                            // The 48dp IconButtons left too much air between
-                            // the two icons.
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(end = 9.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .clickable(onClick = { searchOpen = true })
-                                        .semantics { role = Role.Button },
-                                    contentAlignment = Alignment.Center,
+                            },
+                            actions = {
+                                // Round 6 — 36dp hit boxes with a 9dp end
+                                // inset, so the ⋮ sits 27dp from the edge
+                                // and the magnifier ~63dp.
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(end = 9.dp),
                                 ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_search),
-                                        contentDescription = stringResource(
-                                            R.string.conversations_search_hint,
-                                        ),
-                                        // Round 5 — same tint as the overflow icon beside it
-                                        // (default TopAppBar action colour, onSurfaceVariant).
-                                        tint = cs.onSurfaceVariant,
-                                        modifier = Modifier.size(24.dp),
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .clickable(onClick = { searchOpen = true })
+                                            .semantics { role = Role.Button },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_search),
+                                            contentDescription = stringResource(
+                                                R.string.conversations_search_hint,
+                                            ),
+                                            tint = cs.onSurfaceVariant,
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier.size(36.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .clickable(onClick = { overflowOpen = true })
+                                                .semantics { role = Role.Button },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_more_vert_tall),
+                                                contentDescription = stringResource(R.string.action_more),
+                                                tint = cs.onSurfaceVariant,
+                                                modifier = Modifier.size(24.dp),
+                                            )
+                                        }
+                                        ConversationsOverflowMenu(
+                                            expanded = overflowOpen,
+                                            onDismiss = { overflowOpen = false },
+                                            archived = archived,
+                                            isPanicDecoy = isPanicDecoy,
+                                            sortMode = sortMode,
+                                            onMarkAllRead = { showMarkAllReadConfirm = true },
+                                            onCreateContact = createContactAction,
+                                            onNewGroup = onComposeGroup,
+                                            onOpenScheduledMessages = onOpenScheduledMessages,
+                                            onOpenVault = onOpenVault,
+                                            onOpenArchived = onOpenArchived,
+                                            onOpenSettings = onOpenSettings,
+                                            onSortModeChange = viewModel::setSortMode,
+                                        )
+                                    }
                                 }
+                            },
+                        )
+                    }
+                    AnimatedVisibility(
+                        visible = searchOpen,
+                        enter = slideInHorizontally { it } + fadeIn(),
+                        exit = slideOutHorizontally { it } + fadeOut(),
+                    ) {
+                        SearchTopBar(
+                            query = viewModel.searchInput,
+                            onQueryChange = viewModel::setQuery,
+                            onClose = closeSearch,
+                            focusRequester = searchFocusRequester,
+                        )
+                    }
+                }
+                return@topBar
+            }
+            // Feedback round 10 — the MAIN screen's top bar IS the search
+            // pill now (the title bar is gone there only). The pill is a
+            // full-width search field (like the reference list), with the
+            // 3-dot menu inside it at the right end. Tapping the field opens
+            // search (focus sets `searchOpen`); the 3-dot swaps to the close
+            // X while searching. Selection mode above still wins over this.
+            // Hoisted: stringResource is @Composable and cannot run inside
+            // .semantics {} (used by the close X below).
+            val closeLabel = stringResource(R.string.action_close)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RelayTextField(
+                    value = viewModel.searchInput,
+                    onValueChange = viewModel::setQuery,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .onFocusChanged { if (it.isFocused) searchOpen = true },
+                    placeholder = stringResource(R.string.conversations_search_short),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    cornerRadius = 24.dp,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                    focusRequester = searchFocusRequester,
+                    leadingIcon = {
+                        // The search icon we had at the top before (Kristin's
+                        // own ic_search), moved into the pill. Archived does
+                        // not use this pill — it keeps its title bar.
+                        Icon(
+                            painter = painterResource(R.drawable.ic_search),
+                            contentDescription = stringResource(
+                                R.string.conversations_search_hint,
+                            ),
+                            tint = cs.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchOpen) {
+                            // Close X while searching.
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .clickable(onClick = closeSearch)
+                                    .semantics {
+                                        contentDescription = closeLabel
+                                        role = Role.Button
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_close_circle_outline),
+                                    contentDescription = null,
+                                    tint = cs.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        } else {
+                            // 3-dot menu inside the pill. The DropdownMenu
+                            // anchors to this Box so it opens below-right,
+                            // under the ⋮, like the old top-bar menu did.
+                            Box(
+                                modifier = Modifier.size(36.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
                                 Box(
                                     modifier = Modifier
                                         .size(36.dp)
@@ -419,12 +556,6 @@ fun ConversationsScreen(
                                         .semantics { role = Role.Button },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    // Feedback round 7 — `ic_more_vert_tall`
-                                    // instead of Material MoreVert: the drawn
-                                    // glyph is 19.4dp tall, matching the search
-                                    // magnifier beside it (MoreVert drew at
-                                    // 16dp). Same 24dp size and
-                                    // on-surface-variant tint as before.
                                     Icon(
                                         painter = painterResource(R.drawable.ic_more_vert_tall),
                                         contentDescription = stringResource(R.string.action_more),
@@ -432,144 +563,25 @@ fun ConversationsScreen(
                                         modifier = Modifier.size(24.dp),
                                     )
                                 }
-                            }
-                            // Round 4 — rounded menu like the rest of the refreshed UI:
-                            // 18dp, the same radius as the bubble long-press menu
-                            // (BubbleMenuTrigger) and the theme's large shape.
-                            DropdownMenu(
-                                expanded = overflowOpen,
-                                onDismissRequest = { overflowOpen = false },
-                                shape = RoundedCornerShape(18.dp),
-                                // Feedback round 6 — 10dp more breathing room on
-                                // each side than the Material default, like the
-                                // bubble menu and the thread overflow menu.
-                                modifier = Modifier.padding(horizontal = 10.dp),
-                            ) {
-                                // v1.8.0 — action "Tout marquer comme lu". Utile quand l'user a
-                                // lu ses messages dans une autre app SMS et que les badges SMS
-                                // Tech persistent (cache `messages.read` désynchronisé du système).
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Outlined.Check, contentDescription = null) },
-                                    text = { Text(stringResource(R.string.action_mark_all_read)) },
-                                    onClick = {
-                                        overflowOpen = false
-                                        showMarkAllReadConfirm = true
-                                    },
-                                )
-                                // Ouvre l'éditeur de contacts du système sur un formulaire vierge
-                                // (aucun numéro de contexte à ce niveau). Feedback snackbar si aucune
-                                // app Contacts n'est installée. Partage le helper ContactIntents avec
-                                // l'écran de composition.
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
-                                    text = { Text(stringResource(R.string.action_create_contact)) },
-                                    onClick = {
-                                        overflowOpen = false
-                                        if (!ContactIntents.createContact(ctx)) {
-                                            scope.launch {
-                                                snackbarHost.showError(ctx.getString(R.string.phone_action_no_contacts))
-                                            }
-                                        }
-                                    },
-                                )
-                                // v1.28.3 — créer un groupe ouvre le composeur en mode groupe : toucher
-                                // un contact y ajoute une puce au lieu d'ouvrir le fil.
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Outlined.Group, contentDescription = null) },
-                                    text = { Text(stringResource(R.string.action_new_group)) },
-                                    onClick = { overflowOpen = false; onComposeGroup() },
-                                )
-                                // Feedback round 8 — Scheduled messages moved here from
-                                // Settings: it lives in this menu, under "New group".
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
-                                    text = { Text(stringResource(R.string.settings_scheduled_messages)) },
-                                    onClick = { overflowOpen = false; onOpenScheduledMessages() },
-                                )
-                                // Archived chats and the vault used to live as icons on the top bar;
-                                // they now live here, so the bar stays a title plus the overflow.
-                                // Same destinations, same behaviour — just reached from the menu.
-                                // The vault stays hidden in a panic-decoy session (audit S-P0-1):
-                                // hiding it entirely keeps the feature looking non-existent to a
-                                // coerced observer, backed by the navigation guard and the
-                                // repository-level filter.
-                                if (!archived) {
-                                    if (!isPanicDecoy) {
-                                        DropdownMenuItem(
-                                            leadingIcon = {
-                                                Icon(Icons.Outlined.Lock, contentDescription = null)
-                                            },
-                                            text = { Text(stringResource(R.string.tab_vault)) },
-                                            onClick = { overflowOpen = false; onOpenVault() },
-                                        )
-                                    }
-                                    DropdownMenuItem(
-                                        leadingIcon = {
-                                            Icon(Icons.Outlined.Inventory2, contentDescription = null)
-                                        },
-                                        text = { Text(stringResource(R.string.tab_archived)) },
-                                        onClick = { overflowOpen = false; onOpenArchived() },
-                                    )
-                                }
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-                                    text = { Text(stringResource(R.string.settings_title)) },
-                                    onClick = { overflowOpen = false; onOpenSettings() },
-                                )
-                                // Sort section. Header is a non-interactive label rendered with
-                                // `enabled = false` so the user can read it without it looking like
-                                // an action item. The 3 sort options follow with a trailing check on
-                                // the active mode.
-                                androidx.compose.material3.HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 4.dp),
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            stringResource(R.string.sort_section),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    },
-                                    onClick = { },
-                                    enabled = false,
-                                )
-                                SortMenuItem(
-                                    label = stringResource(R.string.sort_date),
-                                    selected = sortMode == com.filestech.sms.domain.settings.SortMode.DATE,
-                                    onClick = {
-                                        overflowOpen = false
-                                        viewModel.setSortMode(com.filestech.sms.domain.settings.SortMode.DATE)
-                                    },
-                                )
-                                SortMenuItem(
-                                    label = stringResource(R.string.sort_unread),
-                                    selected = sortMode == com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST,
-                                    onClick = {
-                                        overflowOpen = false
-                                        viewModel.setSortMode(com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST)
-                                    },
+                                ConversationsOverflowMenu(
+                                    expanded = overflowOpen,
+                                    onDismiss = { overflowOpen = false },
+                                    archived = archived,
+                                    isPanicDecoy = isPanicDecoy,
+                                    sortMode = sortMode,
+                                    onMarkAllRead = { showMarkAllReadConfirm = true },
+                                    onCreateContact = createContactAction,
+                                    onNewGroup = onComposeGroup,
+                                    onOpenScheduledMessages = onOpenScheduledMessages,
+                                    onOpenVault = onOpenVault,
+                                    onOpenArchived = onOpenArchived,
+                                    onOpenSettings = onOpenSettings,
+                                    onSortModeChange = viewModel::setSortMode,
                                 )
                             }
-                        },
-                    )
-                }
-                AnimatedVisibility(
-                    visible = searchOpen,
-                    enter = slideInHorizontally { it } + fadeIn(),
-                    exit = slideOutHorizontally { it } + fadeOut(),
-                ) {
-                    SearchTopBar(
-                        // v1.27.9 — état Compose lu directement : la frappe doit revenir
-                        // au champ dans la MÊME recomposition (cf.
-                        // [ConversationsViewModel.searchInput]). `state.query` arrivait
-                        // après le debounce de 200 ms et réécrivait le champ avec du périmé.
-                        query = viewModel.searchInput,
-                        onQueryChange = viewModel::setQuery,
-                        onClose = closeSearch,
-                        focusRequester = searchFocusRequester,
-                    )
-                }
+                        }
+                    },
+                )
             }
         },
         floatingActionButton = {
@@ -598,9 +610,9 @@ fun ConversationsScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            // Round 4 — no search field here any more: it lives in the top bar as the
-            // pill ([SearchTopBar]), opened from the magnifier. The filtering itself
-            // is unchanged — the ViewModel still filters on the same query.
+            // Feedback round 10 — no search field here: the top bar IS the
+            // search pill now, always visible. The filtering itself is
+            // unchanged — the ViewModel still filters on the same query.
             if (!state.isDefaultSmsApp && !archived) {
                 DefaultAppBanner(onSetDefault = {
                     viewModel.buildChangeDefaultIntent()?.let { intent ->
@@ -781,10 +793,19 @@ fun ConversationsScreen(
                         )
                     }
 
+                    // Feedback round 10 — date-grouped under Today /
+                    // Yesterday / This week / This month / Older when the
+                    // list is date-sorted and not searching. Unread-first
+                    // sort and search keep the flat Pinned/Chats list.
                     conversationSections(
                         pinned = pinnedConversations,
                         other = otherConversations,
                         itemContent = conversationItem,
+                        groupByDate = shouldGroupByDate(
+                            searchOpen,
+                            state.settings.conversations.sortMode,
+                        ),
+                        locale = appLocale,
                     )
 
                     if (blockedConversations.isNotEmpty()) {
@@ -906,14 +927,80 @@ private fun splitPinnedSections(
 }
 
 /**
+ * Feedback round 10 — the date bucket a conversation falls in, from its last
+ * message. Today / Yesterday / This week / This month / Older, in that order.
+ * "This week" is the locale's calendar week (same `WEEK_OF_YEAR` and year, so
+ * it follows the locale's first day of week, like `relativeRowLabel`); "This
+ * month" is the same calendar month and year, outside this week.
+ */
+private enum class ConversationDateBucket(@androidx.annotation.StringRes val labelRes: Int) {
+    TODAY(R.string.date_today),
+    YESTERDAY(R.string.date_yesterday),
+    THIS_WEEK(R.string.date_this_week),
+    THIS_MONTH(R.string.date_this_month),
+    OLDER(R.string.date_older),
+}
+
+/**
+ * Feedback round 10 — buckets a last-message timestamp. The day and week
+ * comparisons use the same locale as the row dates, so the week boundary
+ * matches what the list already shows.
+ */
+private fun dateBucketFor(
+    timestampMillis: Long,
+    now: Calendar,
+    locale: Locale,
+): ConversationDateBucket {
+    val then = Calendar.getInstance(locale).apply { timeInMillis = timestampMillis }
+    val yesterday = Calendar.getInstance(locale).apply {
+        timeInMillis = now.timeInMillis
+        add(Calendar.DATE, -1)
+    }
+    // One `when`, one return (Detekt ReturnCount): the buckets are checked
+    // in order, so an earlier match wins.
+    return when {
+        now.get(Calendar.DATE) == then.get(Calendar.DATE) &&
+            now.get(Calendar.MONTH) == then.get(Calendar.MONTH) &&
+            now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> ConversationDateBucket.TODAY
+        yesterday.get(Calendar.DATE) == then.get(Calendar.DATE) &&
+            yesterday.get(Calendar.MONTH) == then.get(Calendar.MONTH) &&
+            yesterday.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> ConversationDateBucket.YESTERDAY
+        now.get(Calendar.WEEK_OF_YEAR) == then.get(Calendar.WEEK_OF_YEAR) &&
+            now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> ConversationDateBucket.THIS_WEEK
+        now.get(Calendar.MONTH) == then.get(Calendar.MONTH) &&
+            now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> ConversationDateBucket.THIS_MONTH
+        else -> ConversationDateBucket.OLDER
+    }
+}
+
+/**
+ * Feedback round 10 — date grouping only applies when the list is
+ * date-sorted and not searching. Extracted so the `&&` does not add a
+ * decision point to [ConversationsScreen] (Detekt complexity ceiling).
+ */
+private fun shouldGroupByDate(
+    searching: Boolean,
+    sortMode: com.filestech.sms.domain.settings.SortMode,
+): Boolean {
+    return !searching && sortMode == com.filestech.sms.domain.settings.SortMode.DATE
+}
+
+/**
  * Round 4 — emits the Pinned/Chats sections for the conversations list: the
  * pinned chats under a "Pinned" header, everything else under "Chats". No pinned
  * chats means no sections at all — just the plain list.
+ *
+ * Feedback round 10 — when [groupByDate] is true (date sort, not searching),
+ * the unpinned chats are grouped under date headers instead: Today, Yesterday,
+ * This week, This month, Older. The "Chats" header is dropped then — the date
+ * headers take its place. Unread-first sort and search keep the flat list.
  */
 private fun LazyListScope.conversationSections(
     pinned: List<Conversation>,
     other: List<Conversation>,
     itemContent: @Composable LazyItemScope.(Conversation) -> Unit,
+    groupByDate: Boolean = false,
+    locale: Locale = Locale.getDefault(),
 ) {
     if (pinned.isNotEmpty()) {
         item(key = "header-pinned", contentType = "header") {
@@ -929,6 +1016,34 @@ private fun LazyListScope.conversationSections(
         contentType = { "row" },
         itemContent = itemContent,
     )
+    if (groupByDate) {
+        // Date-grouped: one header + rows per non-empty bucket, in bucket
+        // order. The list is already date-sorted, so grouping preserves
+        // the order inside each bucket. The first header takes the 12dp
+        // top padding the "Chats" header used to have when pinned chats
+        // sit above it, 16dp when it opens the list.
+        val now = Calendar.getInstance(locale)
+        val grouped = other.groupBy { dateBucketFor(it.lastMessageAt, now, locale) }
+        var firstHeader = true
+        for (bucket in ConversationDateBucket.entries) {
+            val rows = grouped[bucket].orEmpty()
+            if (rows.isEmpty()) continue
+            item(key = "header-date-${bucket.name.lowercase()}", contentType = "header") {
+                ConversationSectionHeader(
+                    text = stringResource(bucket.labelRes),
+                    topPadding = if (firstHeader && pinned.isEmpty()) 16.dp else 12.dp,
+                )
+            }
+            firstHeader = false
+            items(
+                rows,
+                key = { it.id },
+                contentType = { "row" },
+                itemContent = itemContent,
+            )
+        }
+        return
+    }
     if (pinned.isNotEmpty()) {
         item(key = "header-chats", contentType = "header") {
             ConversationSectionHeader(
@@ -946,13 +1061,10 @@ private fun LazyListScope.conversationSections(
 }
 
 /**
- * Round 4 — the search pill that replaces the top bar while searching, like
- * Kristin's search-open screenshot: a full-width pill (48dp high, fully rounded),
- * "Search" placeholder, no magnifier inside, and Kristin's close-circle icon at
- * the right end — tapping it closes the pill (see `closeSearch` in
- * [ConversationsScreen]). The filtering itself is unchanged: the ViewModel still
- * filters on the same query, and while the pill is open the list is a flat
- * filtered list with no section headers.
+ * The search pill, restored for the Archived screen (Kristin: only the MAIN
+ * screen's header changes). The main screen's pill is inline in
+ * [ConversationsScreen]; Archived still swaps its title bar for this pill
+ * when the magnifier is tapped, sliding in from the right.
  */
 @Composable
 private fun SearchTopBar(
@@ -1000,6 +1112,159 @@ private fun SearchTopBar(
                         modifier = Modifier.size(24.dp),
                     )
                 }
+            },
+        )
+    }
+}
+
+/**
+ * Feedback round 10 — the home overflow menu, extracted from the old top bar so
+ * the new search-pill header can anchor it to the ⋮ inside the pill. Same items,
+ * same behaviour — just reached from the menu in the pill instead of the title
+ * bar. The 3-dot button and this menu live in the same anchor Box, so the menu
+ * opens below-right, under the ⋮.
+ */
+@Composable
+private fun ConversationsOverflowMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    archived: Boolean,
+    isPanicDecoy: Boolean,
+    sortMode: com.filestech.sms.domain.settings.SortMode,
+    onMarkAllRead: () -> Unit,
+    onCreateContact: () -> Unit,
+    onNewGroup: () -> Unit,
+    onOpenScheduledMessages: () -> Unit,
+    onOpenVault: () -> Unit,
+    onOpenArchived: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onSortModeChange: (com.filestech.sms.domain.settings.SortMode) -> Unit,
+) {
+    // Round 4 — rounded menu like the rest of the refreshed UI: 18dp, the same
+    // radius as the bubble long-press menu (BubbleMenuTrigger) and the theme's
+    // large shape.
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(18.dp),
+        // Feedback round 6 — 10dp more breathing room on each side than the
+        // Material default, like the bubble menu and the thread overflow menu.
+        modifier = Modifier.padding(horizontal = 10.dp),
+    ) {
+        // v1.8.0 — action "Tout marquer comme lu". Utile quand l'user a lu ses
+        // messages dans une autre app SMS et que les badges SMS Tech persistent
+        // (cache `messages.read` désynchronisé du système).
+        DropdownMenuItem(
+            leadingIcon = { Icon(Icons.Outlined.Check, contentDescription = null) },
+            text = { Text(stringResource(R.string.action_mark_all_read)) },
+            onClick = {
+                onDismiss()
+                onMarkAllRead()
+            },
+        )
+        // Ouvre l'éditeur de contacts du système sur un formulaire vierge
+        // (aucun numéro de contexte à ce niveau). Feedback snackbar si aucune
+        // app Contacts n'est installée. Partage le helper ContactIntents avec
+        // l'écran de composition.
+        DropdownMenuItem(
+            leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
+            text = { Text(stringResource(R.string.action_create_contact)) },
+            onClick = {
+                onDismiss()
+                onCreateContact()
+            },
+        )
+        // v1.28.3 — créer un groupe ouvre le composeur en mode groupe : toucher
+        // un contact y ajoute une puce au lieu d'ouvrir le fil.
+        DropdownMenuItem(
+            leadingIcon = { Icon(Icons.Outlined.Group, contentDescription = null) },
+            text = { Text(stringResource(R.string.action_new_group)) },
+            onClick = {
+                onDismiss()
+                onNewGroup()
+            },
+        )
+        // Feedback round 8 — Scheduled messages moved here from Settings: it
+        // lives in this menu, under "New group".
+        DropdownMenuItem(
+            leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+            text = { Text(stringResource(R.string.settings_scheduled_messages)) },
+            onClick = {
+                onDismiss()
+                onOpenScheduledMessages()
+            },
+        )
+        // Archived chats and the vault used to live as icons on the top bar;
+        // they now live here, so the bar stays a title plus the overflow.
+        // Same destinations, same behaviour — just reached from the menu.
+        // The vault stays hidden in a panic-decoy session (audit S-P0-1):
+        // hiding it entirely keeps the feature looking non-existent to a
+        // coerced observer, backed by the navigation guard and the
+        // repository-level filter.
+        if (!archived) {
+            if (!isPanicDecoy) {
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(Icons.Outlined.Lock, contentDescription = null)
+                    },
+                    text = { Text(stringResource(R.string.tab_vault)) },
+                    onClick = {
+                        onDismiss()
+                        onOpenVault()
+                    },
+                )
+            }
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(Icons.Outlined.Inventory2, contentDescription = null)
+                },
+                text = { Text(stringResource(R.string.tab_archived)) },
+                onClick = {
+                    onDismiss()
+                    onOpenArchived()
+                },
+            )
+        }
+        DropdownMenuItem(
+            leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
+            text = { Text(stringResource(R.string.settings_title)) },
+            onClick = {
+                onDismiss()
+                onOpenSettings()
+            },
+        )
+        // Sort section. Header is a non-interactive label rendered with
+        // `enabled = false` so the user can read it without it looking like
+        // an action item. The 3 sort options follow with a trailing check on
+        // the active mode.
+        androidx.compose.material3.HorizontalDivider(
+            modifier = Modifier.padding(vertical = 4.dp),
+        )
+        DropdownMenuItem(
+            text = {
+                Text(
+                    stringResource(R.string.sort_section),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            onClick = { },
+            enabled = false,
+        )
+        SortMenuItem(
+            label = stringResource(R.string.sort_date),
+            selected = sortMode == com.filestech.sms.domain.settings.SortMode.DATE,
+            onClick = {
+                onDismiss()
+                onSortModeChange(com.filestech.sms.domain.settings.SortMode.DATE)
+            },
+        )
+        SortMenuItem(
+            label = stringResource(R.string.sort_unread),
+            selected = sortMode == com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST,
+            onClick = {
+                onDismiss()
+                onSortModeChange(com.filestech.sms.domain.settings.SortMode.UNREAD_FIRST)
             },
         )
     }
@@ -1184,14 +1449,24 @@ private fun DefaultAppBanner(onSetDefault: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.size(8.dp))
+            // Feedback round 10 — the button gets 5px more horizontal
+            // padding (12dp -> 17dp) and, in dark mode, the light
+            // `#E5EAFD` background (was the brand primary in both
+            // themes) with dark-navy text, so it reads as a light
+            // chip on the dark banner. The dark/light split comes
+            // from the surface luminance, like the bubble colours.
+            val surface = cs.surface
+            val surfaceLuma = 0.2126f * surface.red + 0.7152f * surface.green +
+                0.0722f * surface.blue
+            val isDark = surfaceLuma < 0.5f
             FilledTonalButton(
                 onClick = onSetDefault,
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = cs.primary,
-                    contentColor = cs.onPrimary,
+                    containerColor = if (isDark) Color(0xFFE5EAFD) else cs.primary,
+                    contentColor = if (isDark) Color(0xFF001A40) else cs.onPrimary,
                 ),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                contentPadding = PaddingValues(horizontal = 17.dp, vertical = 0.dp),
             ) {
                 Text(
                     stringResource(R.string.settings_set_default),

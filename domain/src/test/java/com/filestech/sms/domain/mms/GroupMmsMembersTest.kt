@@ -62,4 +62,33 @@ class GroupMmsMembersTest {
     fun `un seul autre participant n'est pas un groupe`() {
         assertThat(membres(PAT, listOf("+33607231541"))).isNull()
     }
+
+    // v1.28.10 — `participantsOf` : tous les participants, nous compris, sans retrait.
+    private fun participants(from: String, to: List<String>, cc: List<String> = emptyList()) =
+        GroupMmsMembers.participantsOf(from, to, cc, ::cle)
+
+    @Test
+    fun `participantsOf rend tout le monde, nous compris, expediteur en tete`() {
+        val tous = participants(from = PAT, to = listOf("+33607231541", MARIE))
+
+        assertThat(tous.map { it.raw }).containsExactly(PAT, "+33607231541", MARIE).inOrder()
+    }
+
+    @Test
+    fun `participantsOf deduplique entre To et Cc`() {
+        val tous = participants(
+            from = PAT,
+            to = listOf("+33607231541", "06 98 76 54 32"),
+            cc = listOf(MARIE),
+        )
+
+        assertThat(tous).hasSize(3)
+    }
+
+    @Test
+    fun `participantsOf ignore les adresses vides`() {
+        val tous = participants(from = PAT, to = listOf("", MARIE))
+
+        assertThat(tous.map { it.raw }).containsExactly(PAT, MARIE).inOrder()
+    }
 }

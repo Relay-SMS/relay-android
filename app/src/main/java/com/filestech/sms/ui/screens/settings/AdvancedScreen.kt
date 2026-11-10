@@ -2,8 +2,10 @@ package com.filestech.sms.ui.screens.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -38,22 +41,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
-import com.filestech.sms.ui.components.RelayCard
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayPrimaryButton
+import com.filestech.sms.ui.components.RelaySettingRow
+import com.filestech.sms.ui.components.RelaySettingsGroup
+import com.filestech.sms.ui.components.RelaySwitchRow
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.theme.RelayColors
-import com.filestech.sms.ui.theme.RelayText
 
 /**
  * Advanced screen, reached from Settings ("Advanced", between "App Language"
@@ -64,6 +68,10 @@ import com.filestech.sms.ui.theme.RelayText
  * Reset all, Erase data. Same rows, same dialogs, same ViewModel wiring —
  * just housed here instead of at the bottom of the main Settings list. The
  * screen title reuses the section string, so no new strings were needed.
+ *
+ * Feedback round 10 — the rows now use the Seca grouped-list format (one
+ * [RelaySettingsGroup], same five rows in the same order), with the normal
+ * top bar keeping the title in it.
  *
  * No panic-decoy gating: the section was deliberately visible in decoy
  * sessions as a section (see the reset-all comment below), and nothing here
@@ -115,18 +123,8 @@ fun AdvancedScreen(
         }
     }
 
-    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the same
-    // canvas Settings and About sit on (see RelaySection). Picked from the
-    // surface luminance so it follows the active scheme, dark variants
-    // included.
-    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
-        RelayColors.CanvasDark
-    } else {
-        RelayColors.Surface
-    }
-
     Scaffold(
-        containerColor = pageBackground,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_section_advanced)) },
@@ -147,67 +145,78 @@ fun AdvancedScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 24.dp),
+                .padding(bottom = 32.dp),
         ) {
-            RelayCard {
+            RelaySettingsGroup {
                 // v1.27.12 — le bouton passe SOUS la description au lieu d'occuper le
                 // `trailingContent`. Meme defaut que le bandeau de [ConversationsScreen] et meme
                 // cause : le bouton y prenait sa largeur intrinseque et laissait au texte une
                 // colonne de quelques caracteres. Visible des qu'on cumule un ecran etroit et une
                 // police agrandie — mesure sur un Redmi 9C a 360 dp et `font_scale` 1,33.
-                val estParDefaut = viewModel.defaultAppManager.isDefault()
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    // Feedback round 5 — the glyph centres on the title line,
-                    // not on the whole row (same nesting as [ToggleRow] and
-                    // [RelayRow]): the icon and the title share an inner row,
-                    // and the description starts under the title text.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                //
+                // Feedback round 10 — the icon is the same 40dp round
+                // secondaryContainer badge [RelaySettingRow] uses, so this
+                // custom block lines up with the rows under it.
+                item {
+                    val estParDefaut = viewModel.defaultAppManager.isDefault()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Sms,
-                            contentDescription = null,
-                            // Feedback round 4 — row icons follow the theme's on-surface
-                            // colour (white in dark mode, black in light) instead of the
-                            // brand blue, which was hard to see in dark mode.
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(24.dp),
-                        )
+                        // Feedback round 5 — the glyph centres on the title line,
+                        // not on the whole row (same nesting as [ToggleRow] and
+                        // [RelayRow]): the icon and the title share an inner row,
+                        // and the description starts under the title text.
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Sms,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                            Text(
+                                text = stringResource(R.string.settings_default_sms_app),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                         Text(
-                            text = stringResource(R.string.settings_default_sms_app),
-                            style = RelayText.MessageBody,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Text(
-                        text = if (estParDefaut) {
-                            stringResource(R.string.settings_is_default)
-                        } else {
-                            stringResource(R.string.error_not_default_app)
-                        },
-                        // Feedback round 6 — M3 supporting text is bodyMedium
-                        // (14sp/20), not the 13sp/16 timestamp style.
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        // Feedback round 4 — a little gap between the row title
-                        // and its description line (same 2dp as [RelayRow]).
-                        modifier = Modifier.padding(start = 40.dp, top = 2.dp),
-                    )
-                    if (!estParDefaut) {
-                        Spacer(Modifier.size(10.dp))
-                        RelayPrimaryButton(
-                            text = stringResource(R.string.settings_set_default),
-                            onClick = {
-                                viewModel.defaultAppManager.buildChangeDefaultIntent()
-                                    ?.let { defaultLauncher.launch(it) }
+                            text = if (estParDefaut) {
+                                stringResource(R.string.settings_is_default)
+                            } else {
+                                stringResource(R.string.error_not_default_app)
                             },
+                            // Feedback round 6 — M3 supporting text is bodyMedium
+                            // (14sp/20), not the 13sp/16 timestamp style.
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // Feedback round 4 — a little gap between the row title
+                            // and its description line (same 2dp as [RelayRow]).
+                            modifier = Modifier.padding(start = 56.dp, top = 2.dp),
                         )
+                        if (!estParDefaut) {
+                            Spacer(Modifier.size(10.dp))
+                            RelayPrimaryButton(
+                                text = stringResource(R.string.settings_set_default),
+                                onClick = {
+                                    viewModel.defaultAppManager.buildChangeDefaultIntent()
+                                        ?.let { defaultLauncher.launch(it) }
+                                },
+                            )
+                        }
                     }
                 }
                 // Audit U15: label said "Archived" but the row opened the Blocked screen. Removed —
@@ -218,15 +227,13 @@ fun AdvancedScreen(
                 // indépendamment de l'app). Le re-import dedup via l'index UNIQUE telephony_uri.
                 // Feedback round 8 — the row lost its subtitle: the confirm
                 // dialog already explains the resync.
-                NavigationRow(
-                    title = stringResource(R.string.settings_resync_title),
-                    leadingIcon = Icons.Outlined.Sync,
-                    // v1.8.0 — dialog de confirmation (peut faire ré-apparaître
-                    // des conversations précédemment supprimées si toujours
-                    // présentes dans le content provider système).
-                    onClick = { showResyncConfirm = true },
-                    dividerAbove = true,
-                )
+                item(onClick = { showResyncConfirm = true }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Sync,
+                        title = stringResource(R.string.settings_resync_title),
+                        chevron = true,
+                    )
+                }
                 // v1.3.10 + v1.4.1 — Mode résistant OPT-IN (KeepAliveService foreground
                 // permanent). Toggle exposé pour TOUS les téléphones car la détection ROM
                 // est conservatrice : certains utilisateurs sur ROM "propre" pourraient
@@ -238,22 +245,23 @@ fun AdvancedScreen(
                 // comprendre la notif persistante.
                 // Feedback round 8 — the long ROM list lives in the info popup
                 // now (chevron before the switch); the row stays one-line.
-                ToggleRow(
-                    title = stringResource(R.string.settings_keep_alive_title),
-                    leadingIcon = Icons.Outlined.Bolt,
-                    infoText = stringResource(R.string.settings_keep_alive_desc),
-                    value = state.advanced.keepAliveService,
-                    dividerAbove = true,
-                    onChange = { v ->
-                        // v1.3.10 (C4) — single source of truth: only persist the flag here.
-                        // [MainApplication] observes the DataStore via `distinctUntilChanged`
-                        // and calls `KeepAliveService.start/stop` within ~50 ms — well under
-                        // the threshold of perceptibility. The previous inline `start/stop`
-                        // was redundant and caused a double `startForeground` on the same
-                        // notification id, which produced a brief notif-flash on MIUI.
-                        viewModel.update { it.copy(advanced = it.advanced.copy(keepAliveService = v)) }
-                    },
-                )
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.Bolt,
+                        title = stringResource(R.string.settings_keep_alive_title),
+                        checked = state.advanced.keepAliveService,
+                        onCheckedChange = { v ->
+                            // v1.3.10 (C4) — single source of truth: only persist the flag here.
+                            // [MainApplication] observes the DataStore via `distinctUntilChanged`
+                            // and calls `KeepAliveService.start/stop` within ~50 ms — well under
+                            // the threshold of perceptibility. The previous inline `start/stop`
+                            // was redundant and caused a double `startForeground` on the same
+                            // notification id, which produced a brief notif-flash on MIUI.
+                            viewModel.update { it.copy(advanced = it.advanced.copy(keepAliveService = v)) }
+                        },
+                        infoText = stringResource(R.string.settings_keep_alive_desc),
+                    )
+                }
                 // v1.8.0 — dialog de confirmation (les préférences reviennent
                 // aux defaults, mais les conversations restent intactes).
                 //
@@ -265,19 +273,21 @@ fun AdvancedScreen(
                 // effet — elle remettait `lockMode` et `vaultPinEnabled` à leurs défauts. C'est
                 // [SettingsViewModel.resetAll] qui préserve désormais le bloc sécurité, et c'est
                 // le bon endroit : un garde d'écran ne dit rien du prochain point d'entrée.
-                NavigationRow(
-                    title = stringResource(R.string.settings_reset_all),
-                    leadingIcon = Icons.Outlined.RestartAlt,
-                    onClick = { showResetAllConfirm = true },
-                    dividerAbove = true,
-                )
-                NavigationRow(
-                    title = stringResource(R.string.settings_nuke_data),
-                    leadingIcon = Icons.Outlined.DeleteForever,
-                    onClick = { showNuke = true },
-                    destructive = true,
-                    dividerAbove = true,
-                )
+                item(onClick = { showResetAllConfirm = true }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.RestartAlt,
+                        title = stringResource(R.string.settings_reset_all),
+                        chevron = true,
+                    )
+                }
+                item(onClick = { showNuke = true }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.DeleteForever,
+                        title = stringResource(R.string.settings_nuke_data),
+                        titleColor = RelayColors.Error,
+                        chevron = true,
+                    )
+                }
             }
         }
     }

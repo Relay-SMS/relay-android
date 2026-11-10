@@ -16,6 +16,30 @@ class StringExtTest {
         assertThat("06 + 12 34".normalizePhone()).isEqualTo("0612 34".replace(" ", ""))
     }
 
+    @Test fun `formatPhoneNumberForDisplay formats a 10-digit US number`() {
+        assertThat("5551234567".formatPhoneNumberForDisplay()).isEqualTo("(555) 123-4567")
+    }
+
+    @Test fun `formatPhoneNumberForDisplay formats an 11-digit number starting with 1`() {
+        assertThat("15551234567".formatPhoneNumberForDisplay()).isEqualTo("1 (555) 123-4567")
+    }
+
+    @Test fun `formatPhoneNumberForDisplay preserves an international number starting with plus`() {
+        assertThat("+15551234567".formatPhoneNumberForDisplay()).isEqualTo("+15551234567")
+        assertThat("+33612345678".formatPhoneNumberForDisplay()).isEqualTo("+33612345678")
+    }
+
+    @Test fun `formatPhoneNumberForDisplay leaves partial numbers and names unchanged`() {
+        assertThat("555123".formatPhoneNumberForDisplay()).isEqualTo("555123")
+        assertThat("Curt".formatPhoneNumberForDisplay()).isEqualTo("Curt")
+        assertThat("123".formatPhoneNumberForDisplay()).isEqualTo("123")
+    }
+
+    @Test fun `formatPhoneNumberForDisplay is idempotent on an already formatted number`() {
+        assertThat("(555) 123-4567".formatPhoneNumberForDisplay()).isEqualTo("(555) 123-4567")
+        assertThat("555-123-4567".formatPhoneNumberForDisplay()).isEqualTo("(555) 123-4567")
+    }
+
     @Test fun `avatarInitials returns first letters of first two words`() {
         assertThat("Patrice Haltaya".avatarInitials()).isEqualTo("PH")
         assertThat("alice".avatarInitials()).isEqualTo("A")

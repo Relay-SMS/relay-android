@@ -19,14 +19,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
-import com.filestech.sms.ui.components.RelayDivider
-import com.filestech.sms.ui.components.RelaySection
-import com.filestech.sms.ui.theme.RelayColors
+import com.filestech.sms.ui.components.RelaySectionLabel
+import com.filestech.sms.ui.components.RelaySettingsGroup
 
 /**
  * Help screen, reached from Settings ("Help", right above "About").
@@ -47,18 +45,8 @@ import com.filestech.sms.ui.theme.RelayColors
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
-    // Grouped-list page base: #F5F5F5 in light, #1B1B1B in dark — the same
-    // canvas Settings and About sit on (see RelaySection). Picked from the
-    // surface luminance so it follows the active scheme, dark variants
-    // included.
-    val pageBackground = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
-        RelayColors.CanvasDark
-    } else {
-        RelayColors.Surface
-    }
-
     Scaffold(
-        containerColor = pageBackground,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.help_title)) },
@@ -73,17 +61,17 @@ fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
             )
         },
     ) { padding ->
-        // Feedback round 8 — the recipes now use the Settings grouped-list
-        // style: each title is a section header and the steps sit in a
-        // rounded card (see [HelpRecipeSection]). The section owns its own
-        // side margins and the gap above its header, so the outer column
-        // only keeps a bottom breathing room.
+        // Feedback round 10 — the recipes now use the Seca grouped-list
+        // style: each title is a section label and the steps sit in a
+        // single segment of a [RelaySettingsGroup] (see [HelpRecipeSection]).
+        // The section label owns the gap above its header, so the outer
+        // column only keeps a bottom breathing room.
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 24.dp),
+                .padding(bottom = 32.dp),
         ) {
             helpRecipes(isPanicDecoy).forEach { recipe ->
                 HelpRecipeSection(title = recipe.title, steps = recipe.steps)
@@ -93,40 +81,40 @@ fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
 }
 
 /**
- * One recipe: the title as a Settings-style section header (the old 13sp/600
- * all-caps header, on-surface-variant, same spacing as the Settings cards)
- * and the numbered steps in the section's rounded card. The step numbers
- * use the same colour as the step text (on-surface); a divider separates
- * each step from the next.
+ * One recipe: the title as a section label and the numbered steps in a
+ * single segment of a [RelaySettingsGroup]. The steps are plain text
+ * lines in that one segment, not separate rows, so no divider separates
+ * them. The step numbers use the same colour as the step text
+ * (on-surface).
  */
 @Composable
 private fun HelpRecipeSection(title: String, steps: List<String>) {
-    RelaySection(title = title) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            steps.forEachIndexed { i, step ->
-                Row(
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "${i + 1}.",
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.SemiBold,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = step,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (i < steps.lastIndex) {
-                    RelayDivider()
+    RelaySectionLabel(text = title)
+    RelaySettingsGroup {
+        item {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                steps.forEachIndexed { i, step ->
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "${i + 1}.",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = step,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }

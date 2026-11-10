@@ -83,6 +83,9 @@ fun MessageSearchRow(
                 label = conversation.title,
                 customUri = conversation.avatarUri ?: contactPhotoUri,
                 isGroup = conversation.isGroup,
+                // Feedback round 10 — grey person avatar for a non-contact.
+                isUnknownContact = !conversation.isGroup &&
+                    conversation.displayName == null,
             )
             Spacer(Modifier.width(12.dp))
         }

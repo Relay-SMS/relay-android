@@ -909,6 +909,12 @@ class ConversationMirror @Inject constructor(
      * (`GroupMmsMembers`), ou `null` pour une conversation ordinaire. La ligne garde [address] =
      * l'expéditeur : c'est lui que la bulle nomme.
      *
+     * **v1.28.10** — [inclutSoi] : `true` quand [groupMembers] porte l'utilisateur lui-même
+     * (« Mon numéro » non renseigné). La conversation est alors retrouvée par rapprochement
+     * « moins un » (ces membres moins un, c'est le groupe) ; s'il n'existe pas encore, on retombe
+     * sur la conversation individuelle de l'expéditeur — on ne crée pas un groupe qui compterait
+     * l'utilisateur comme membre.
+     *
      * **v1.28.9 (F17, septième note d'Andrew sur la MR !38458) — idempotente par clé de transaction.**
      *
      * Le PDU d'un MMS dont le traitement a échoué est gardé, puis repris plus tard. La reprise doit
@@ -942,6 +948,7 @@ class ConversationMirror @Inject constructor(
         telephonyUri: String? = null,
         subId: Int? = null,
         groupMembers: List<PhoneAddress>? = null,
+        inclutSoi: Boolean = false,
         transactionKey: String? = null,
         encoreVoulu: () -> Boolean = { true },
     ): InscriptionMmsRecu? = withContext(io) {
@@ -950,7 +957,10 @@ class ConversationMirror @Inject constructor(
             val deja = transactionKey?.let { messageDao.findIdByTransactionKey(it) }
             if (deja != null) return@withTransaction InscriptionMmsRecu(deja, nouveau = false)
             if (!encoreVoulu()) return@withTransaction null
-            val convId = ensureConversation(groupMembers ?: listOf(PhoneAddress.of(address)))
+            val convId = ensureConversation(
+                groupMembers ?: listOf(PhoneAddress.of(address)),
+                inclutSoi = inclutSoi && groupMembers != null,
+            )
             val msg = MessageEntity(
                 conversationId = convId,
                 telephonyUri = telephonyUri,
@@ -1343,7 +1353,44 @@ class ConversationMirror @Inject constructor(
             null
         }
 
-    private suspend fun ensureConversation(addresses: List<PhoneAddress>): Long {
+    /**
+     * v1.28.10 — le jumeau « moins un » de [rapprocherGroupe] : la liste porte l'utilisateur
+     * lui-même (« Mon numéro » non renseigné), donc le groupe cherché a exactement un membre de
+     * moins que la liste. Trois adresses ou plus sont exigées : après nous avoir retirés, il
+     * doit rester au moins deux membres, sinon ce n'est pas un groupe.
+     */
+    private suspend fun rapprocherGroupeMoinsUn(addresses: List<PhoneAddress>): ConversationEntity? =
+        if (addresses.size > 2) {
+            ConversationRepositoryImpl.matchGroupByIdentityMinusOne(
+                conversationDao.snapshotGroupConversations(),
+                addresses,
+                phoneIdentity.snapshot()::matches,
+            )
+        } else {
+            null
+        }
+
+    /**
+     * v1.28.10 — résout une liste d'adresses qui porte l'utilisateur (« Mon numéro » non
+     * renseigné) : d'abord le groupe « moins un », sinon la conversation individuelle de
+     * l'expéditeur (en tête de liste). Ne crée jamais un groupe qui compterait l'utilisateur
+     * comme membre — sans groupe connu, on ne sait pas qui retirer.
+     */
+    private suspend fun resoudreAvecSoi(addresses: List<PhoneAddress>): Long {
+        rapprocherGroupeMoinsUn(addresses)?.let { existing ->
+            // Le nom vient des membres du groupe retrouvé, pas de la liste brute (qui porte
+            // aussi notre propre numéro).
+            if (existing.displayName == null) {
+                nomDeGroupe(PhoneAddress.list(existing.addressesCsv))?.let { nom ->
+                    conversationDao.update(existing.copy(displayName = nom))
+                }
+            }
+            return existing.id
+        }
+        return ensureConversation(listOf(addresses.first()))
+    }
+
+    private suspend fun ensureConversation(addresses: List<PhoneAddress>, inclutSoi: Boolean = false): Long {
         val csv = addresses.sortedBy { it.normalized }.toCsv()
         val resolved = if (addresses.size == 1) resolveDisplayName(addresses.first().raw) else nomDeGroupe(addresses)
 
@@ -1355,6 +1402,13 @@ class ConversationMirror @Inject constructor(
             }
             return existing.id
         }
+
+        // 1b) v1.28.10 — « moins un » : la liste porte l'utilisateur lui-même (« Mon numéro »
+        //     non renseigné), donc aucun groupe stocké ne peut l'égaler exactement — il a un
+        //     membre de moins. Un groupe dont les membres sont ces adresses moins une, c'est
+        //     le groupe (l'adresse en trop, c'est nous). Sans ce repli, la réponse à un groupe
+        //     existant tombait en conversation individuelle de l'expéditeur.
+        if (inclutSoi && addresses.size > 1) return resoudreAvecSoi(addresses)
 
         // 2) v1.3.3 — FALLBACK matching par suffix 8 chiffres pour les conversations
         //    1-to-1. Sans ce fallback, un SMS reçu en format national `0612345678` créerait
