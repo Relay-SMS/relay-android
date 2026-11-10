@@ -10,7 +10,7 @@ No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licens
 Source: [github.com/relay-sms/relay-android](https://github.com/relay-sms/relay-android) ·
 Releases: [GitHub Releases](https://github.com/relay-sms/relay-android/releases/latest)
 
-## ✨ Features
+## Features
 
 - Default SMS / MMS app for Android 8.0 and later (tested up to Android 16), with a one-time import
   of your existing messages.
@@ -45,7 +45,7 @@ Releases: [GitHub Releases](https://github.com/relay-sms/relay-android/releases/
   on your behalf. Pick one per app on Android 13 and later, or follow the system.
 - F-Droid friendly: no Google libraries, no proprietary blobs, reproducible build.
 
-## 🔐 Privacy
+## Privacy
 
 We collect **nothing**. No analytics, no crash reporting, no remote logging.
 Relay makes no network call: it does not hold the `INTERNET` permission, so its process cannot
@@ -60,7 +60,7 @@ See the [privacy policy](PRIVACY.md), the [terms of use](TERMS.md) and
 ([français](SECURITY.fr.md)). The privacy policy and the terms exist in English, French, German,
 Italian and Spanish; English and French are authoritative.
 
-## 📦 Build
+## Build
 
 ```bash
 ./gradlew assembleDebug          # → app/build/outputs/apk/debug/*.apk
@@ -69,7 +69,7 @@ Italian and Spanish; English and French are authoritative.
 
 Requires JDK 17. Min SDK 26 (Android 8.0), compile SDK 37, target SDK 35.
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 core/      Result, AppError, crypto (AES-GCM + Keystore + PBKDF2), Timber wrapper
@@ -84,7 +84,7 @@ ui/        Theme (M3, dynamic, AMOLED), Navigation (type-safe), Screens (Compose
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture and the end-to-end flow of a received SMS.
 
-## 📃 License
+## License
 
 Apache License 2.0 — see [LICENSE](LICENSE). Third-party libraries and their licences:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
