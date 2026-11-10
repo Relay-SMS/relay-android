@@ -97,12 +97,19 @@ private fun relayCardColor(): Color {
  * fully rounded ends, so it sits quieter against the card. The rounded
  * ends and reduced alpha are the system look, not the spec: the spec
  * itself has no corner radius or alpha for dividers.
+ *
+ * Feedback round 9 fix — the divider was full-width (`fillMaxWidth`
+ * with no inset), so the rounded ends sat flush against the card edge
+ * and were invisible: it read as a plain straight line. It is now
+ * inset 16dp on each side (matching the row content padding), so the
+ * rounded caps are visible against the card.
  */
 @Composable
 fun RelayDivider(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp)
             .height(1.dp)
             .clip(RoundedCornerShape(50))
             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
