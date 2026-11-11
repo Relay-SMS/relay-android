@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -18,7 +19,7 @@ plugins {
 // at partner.klipy.com. (Giphy was dropped 2026-11-11: its 100/hour beta limit
 // was too small.)
 val klipyApiKey: String = run {
-    val props = java.util.Properties()
+    val props = Properties()
     val localProps = rootProject.file("local.properties")
     if (localProps.exists()) {
         localProps.inputStream().use { props.load(it) }
