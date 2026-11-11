@@ -81,14 +81,9 @@ jobs:
       - name: Lint
         run: ./gradlew lintDebug --no-daemon
 
-      # v1.28.13 — SMS Tech ne détient plus INTERNET : le processus de l'app ne peut ouvrir aucune
-      # connexion, le MMS passant par le service MMS d'Android. La promesse est publique
-      # (PERMISSIONS.md, PRIVACY.md) ; c'est le manifeste fusionné RELEASE qui en décide, une
-      # dépendance pouvant y ajouter une permission. Le contrôle lit le XML, tient une liste revue,
-      # et prouve d'abord qu'il sait échouer (manifestes fautifs fabriqués).
-      # Après la 1.28.13, il refuse aussi toute exception non revue au lint ProtectedPermissions
-      # dans les manifestes source : elle cachait une permission système jamais accordée.
-      - name: Permissions (no INTERNET, no unreviewed protected permission)
+      # Round 13 — INTERNET is back in the manifest, for GIF search via Klipy only (see PERMISSIONS.md). The merged RELEASE manifest decides; the check reads the XML, holds a reviewed list, and first proves it can fail (fabricated faulty manifests). It also refuses any unreviewed ProtectedPermissions lint exception in the source manifests.
+      - name: Permissions (reviewed list, no unreviewed permission)
+
         run: |
           python3 .github/scripts/permissions-manifeste.py --controle-negatif
           ./gradlew :app:processReleaseMainManifest --no-daemon
