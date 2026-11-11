@@ -78,6 +78,18 @@ class MessageClassifierTest {
         ).isEqualTo(MessageCategory.TRANSACTIONS)
     }
 
+    @Test fun `affirm charge notice is transactions`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Affirm: You'll be charged \$138.98 on Oct 20 from Bank Account " +
+                    "or your maytag-us plan. Tap to pay: https://www.affirm.com/account/",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.TRANSACTIONS)
+    }
+
     @Test fun `french delivery update is transactions`() {
         assertThat(
             MessageClassifier.classify(
@@ -107,6 +119,44 @@ class MessageClassifierTest {
         assertThat(
             MessageClassifier.classify(
                 body = "Election Day is Tuesday. Vote for a better future - your vote matters!",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PROMOTIONAL)
+    }
+
+    @Test fun `vote plus party word is promotional`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Republicans voted for Medicaid cuts. Local Democrats are helping " +
+                    "PA families get medical debt relief. https://demswork.com/ " +
+                    "-Stronger Nation Stop to End",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PROMOTIONAL)
+    }
+
+    @Test fun `claim your free dvd text is promotional`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Claim your FREE DVD box set of the online course from Hillsdale " +
+                    "College: \"The Genesis Story\" >> hilltext.com/nbq7KQ3 STOPtoEND",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PROMOTIONAL)
+    }
+
+    @Test fun `political survey text is promotional`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hey, it's Emma. We're reaching out today to get Americans' " +
+                    "opinions on our relationship with Israel. Curious what you think. " +
+                    "Can we chat? Stop2End",
                 sender = regularNumber,
                 isContact = false,
                 isGroup = false,
@@ -221,6 +271,50 @@ class MessageClassifierTest {
         assertThat(
             MessageClassifier.classify(
                 body = "Estoy en camino, llego en diez minutos.",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `vote alone stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Did you vote today? The line at my polling place was so long.",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `party word alone stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "My uncle is a Democrat and we argue about it every Thanksgiving.",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `free alone stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "The concert was free, you should have come with us!",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `charged my phone stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "I charged my phone before we left, so I'm good for the day.",
                 sender = regularNumber,
                 isContact = false,
                 isGroup = false,

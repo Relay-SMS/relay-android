@@ -417,6 +417,7 @@
 
     <string name="settings_section_conversations">Unterhaltungen</string>
     <string name="settings_show_avatars">Kontaktbilder anzeigen</string>
+    <string name="settings_show_categories">Kategorien anzeigen</string>
     <string name="settings_signature">Automatische Signatur</string>
 
     <string name="settings_section_sending">Senden</string>
@@ -460,7 +461,7 @@
     <string name="settings_resync_title">Vom Telefon neu einlesen</string>
     <string name="settings_resync_desc">Importiert alle SMS erneut aus dem Android-System. Nützlich, wenn Nachrichten auf dem Telefon vorhanden sind, in der App aber fehlen. Gelöschtes kommt dadurch nicht zurück: Löschen entfernt auch die Kopie des Telefons. Keine Duplikate.</string>
     <string name="settings_resync_started">Neues Einlesen im Hintergrund gestartet.</string>
-    <string name="settings_send_reactions_title">Meine Reaktionen senden</string>
+    <string name="settings_send_reactions_title">Reaktionen senden</string>
     <string name="settings_row_info">Mehr Infos</string>
     <string name="settings_send_reactions_desc">Wenn Sie eine Emoji-Reaktion setzen (Herz, Daumen hoch…), wird eine SMS gesendet, die nur das Emoji enthält. Sie zählt als normale SMS zum Tarif Ihres Vertrags. Eine Reaktion zu ändern sendet eine neue SMS mit dem neuen Emoji; sie zu entfernen sendet eine SMS, die das Entfernen meldet.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options at a glance.
@@ -679,7 +680,7 @@
     <string name="category_promotional">Werbung</string>
     <string name="category_transactions">Transaktionen</string>
     <string name="category_other">Sonstige</string>
-    <string name="category_mute_subtitle">Keine Benachrichtigungen für diese Kategorie</string>
+    <string name="category_mute_subtitle">Benachrichtigungen für diese Kategorie deaktivieren</string>
 
     <!-- v1.8.0 — bug 3 fix: exposes PreviewMode + NotificationStyle in the UI. -->
     <string name="settings_notif_preview">Vorschau auf dem Sperrbildschirm</string>

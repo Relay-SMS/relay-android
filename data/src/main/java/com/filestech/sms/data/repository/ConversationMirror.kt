@@ -620,7 +620,7 @@ class ConversationMirror @Inject constructor(
             // sort order (sentinel timestamp masking the real last message). For
             // regular SMS, [touchConversation] behaviour is unchanged.
             if (mirrorBody.isNotEmpty()) {
-                touchConversation(convId, date, mirrorBody, deltaUnread = 0)
+                touchConversation(convId, date, mirrorBody, deltaUnread = 0, resetUnread = true)
             }
             msgId
         }
@@ -706,7 +706,7 @@ class ConversationMirror @Inject constructor(
                     durationMs = durationMs,
                 ),
             )
-            touchConversation(convId, date, preview, deltaUnread = 0)
+            touchConversation(convId, date, preview, deltaUnread = 0, resetUnread = true)
             msgId
         }
     }
@@ -768,7 +768,7 @@ class ConversationMirror @Inject constructor(
                     ),
                 )
             }
-            touchConversation(convId, date, preview, deltaUnread = 0)
+            touchConversation(convId, date, preview, deltaUnread = 0, resetUnread = true)
             msgId
         }
     }
@@ -819,7 +819,7 @@ class ConversationMirror @Inject constructor(
                     ),
                 )
             }
-            touchConversation(convId, date, preview, deltaUnread = 0)
+            touchConversation(convId, date, preview, deltaUnread = 0, resetUnread = true)
             msgId
         }
     }
@@ -871,7 +871,7 @@ class ConversationMirror @Inject constructor(
                     ),
                 )
             }
-            if (preview.isNotEmpty()) touchConversation(convId, date, preview, deltaUnread = 0)
+            if (preview.isNotEmpty()) touchConversation(convId, date, preview, deltaUnread = 0, resetUnread = true)
             msgId
         }
     }
@@ -1342,12 +1342,33 @@ class ConversationMirror @Inject constructor(
      * 1-à-1, en second choix après la CSV exacte, aux deux points de rapprochement — cf.
      * [ConversationRepositoryImpl.matchGroupByIdentity].
      */
+    /**
+     * Round 12 — comparateur indulgent pour les groupes. Le [matches] strict
+     * (E.164) échoue quand la région n'est pas établie (GrapheneOS : ni la SIM
+     * ni le réseau ne la donnent) et que les deux écritures du même numéro
+     * diffèrent — nationale `5551234567` contre internationale `+15551234567`.
+     * Le repli compare les 9 derniers chiffres (`blockKey`) : assez longs pour
+     * ne pas confondre deux correspondants, exigés des deux côtés et tous
+     * chiffres pour écarter les codes courts et les expéditeurs
+     * alphanumériques. Sans ce repli, la réponse à un groupe tombait en 1-à-1
+     * dès que « Mon numéro » n'était pas renseigné.
+     */
+    private fun lenientGroupMatches(strict: (String, String) -> Boolean): (String, String) -> Boolean =
+        { a, b ->
+            strict(a, b) || run {
+                val ka = a.stripMmsAddressSuffix().blockKey()
+                val kb = b.stripMmsAddressSuffix().blockKey()
+                ka.length == 9 && kb.length == 9 &&
+                    ka.all { it.isDigit() } && kb.all { it.isDigit() } && ka == kb
+            }
+        }
+
     private suspend fun rapprocherGroupe(addresses: List<PhoneAddress>): ConversationEntity? =
         if (addresses.size > 1) {
             ConversationRepositoryImpl.matchGroupByIdentity(
                 conversationDao.snapshotGroupConversations(),
                 addresses,
-                phoneIdentity.snapshot()::matches,
+                lenientGroupMatches(phoneIdentity.snapshot()::matches),
             )
         } else {
             null
@@ -1364,7 +1385,7 @@ class ConversationMirror @Inject constructor(
             ConversationRepositoryImpl.matchGroupByIdentityMinusOne(
                 conversationDao.snapshotGroupConversations(),
                 addresses,
-                phoneIdentity.snapshot()::matches,
+                lenientGroupMatches(phoneIdentity.snapshot()::matches),
             )
         } else {
             null
@@ -1614,7 +1635,20 @@ class ConversationMirror @Inject constructor(
         true
     }
 
-    private suspend fun touchConversation(convId: Long, date: Long, preview: String, deltaUnread: Int) {
+    /**
+     * Round 12 — [resetUnread] : quand on ENVOIE un message, la conversation n'a plus
+     * rien d'inattendu à signaler : répondre, c'est avoir lu. Sans ça, répondre
+     * depuis la notification (sans ouvrir le fil) laissait le compteur à 1 alors
+     * que l'utilisateur venait d'écrire. Les envois passent `resetUnread = true` ;
+     * les réceptions gardent `deltaUnread = +1`.
+     */
+    private suspend fun touchConversation(
+        convId: Long,
+        date: Long,
+        preview: String,
+        deltaUnread: Int,
+        resetUnread: Boolean = false,
+    ) {
         val current = conversationDao.findById(convId) ?: return
         // v1.27.2 (relecture Gemini du 2026-08-05) — 🔴 L'APERÇU ÉTAIT LE JUMEAU OUBLIÉ DE LA DATE.
         //
@@ -1635,7 +1669,7 @@ class ConversationMirror @Inject constructor(
                 lastMessageAt = maxOf(date, current.lastMessageAt),
                 lastMessagePreview =
                 if (isNewest) preview.take(MAX_PREVIEW) else current.lastMessagePreview,
-                unreadCount = (current.unreadCount + deltaUnread).coerceAtLeast(0),
+                unreadCount = if (resetUnread) 0 else (current.unreadCount + deltaUnread).coerceAtLeast(0),
             ),
         )
     }

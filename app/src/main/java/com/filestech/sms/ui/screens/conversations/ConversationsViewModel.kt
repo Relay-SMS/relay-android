@@ -283,11 +283,14 @@ class ConversationsViewModel @Inject constructor(
         // are computed from `matched` (search-filtered, not yet
         // category-filtered) and the list is then sorted as before, so
         // date grouping and unread-first sort operate on the filtered
-        // list unchanged.
+        // list unchanged. Round 12 — when the user hides categories
+        // (Settings → Appearance), no filter applies and no tabs are
+        // built, so the row never renders.
         val (visible, tabs) = applyCategoryFilter(
             matched,
             selected,
             s.conversations.mutedCategories,
+            s.conversations.showCategories,
         )
         val sorted = trierConversations(visible, s.conversations.sortMode)
         val nomsPartages = sorted
@@ -832,7 +835,11 @@ private fun applyCategoryFilter(
     matched: List<Conversation>,
     selected: MessageCategory?,
     muted: Set<MessageCategory>,
+    showCategories: Boolean,
 ): Pair<List<Conversation>, List<CategoryTab>> {
+    // Round 12 — categories hidden: the full list, no tabs, no filter —
+    // even if a category was selected before the toggle went off.
+    if (!showCategories) return matched to emptyList()
     val byCategory = matched.groupBy { MessageClassifier.classifyConversation(it) }
     val tabs = buildCategoryTabs(byCategory, matched.sumOf { it.unreadCount }, muted)
     val visible = if (selected == null) matched else byCategory[selected].orEmpty()

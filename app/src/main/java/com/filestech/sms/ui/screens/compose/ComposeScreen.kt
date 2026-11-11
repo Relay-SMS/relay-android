@@ -81,6 +81,7 @@ import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.textFieldCursorColor
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -267,13 +268,21 @@ fun ComposeScreen(
                 }
                 // Section label over the contact list, like the reference
                 // screen: only while there are contacts to pick from.
+                // Round 12 — same format as the main screen's section
+                // headers ("Pinned", "Today", ...): SectionHeader style,
+                // uppercased, same padding.
                 if (filtered.isNotEmpty()) {
                     item(key = "select-contact-label") {
                         Text(
-                            text = stringResource(R.string.compose_select_contact),
-                            style = RelayText.Preview,
+                            text = stringResource(R.string.compose_select_contact).uppercase(Locale.ROOT),
+                            style = RelayText.SectionHeader,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(
+                                start = 16.dp,
+                                end = 16.dp,
+                                top = 20.dp,
+                                bottom = 6.dp,
+                            ),
                         )
                     }
                 }

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.DarkMode
@@ -67,8 +68,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,6 +86,9 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
 import com.filestech.sms.domain.categories.MessageCategory
@@ -90,6 +96,7 @@ import com.filestech.sms.domain.settings.AutoLockDelay
 import com.filestech.sms.system.locale.ouvrirLaLangueDeLApplication
 import com.filestech.sms.system.notifications.CANAL_DU_RACCOURCI_D_URGENCE
 import com.filestech.sms.system.notifications.canalDesMessages
+import com.filestech.sms.system.notifications.canauxVisibles
 import com.filestech.sms.system.settings.ouvrirLesNotificationsDeLApplication
 import com.filestech.sms.ui.components.BanniereNotificationsCoupees
 import com.filestech.sms.ui.components.RelayDestructiveButton
@@ -398,6 +405,17 @@ fun SettingsScreen(
                         onCheckedChange = { v -> viewModel.update { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
                     )
                 }
+                // Round 12 — hide the category tab row on the main screen.
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.Category,
+                        title = stringResource(R.string.settings_show_categories),
+                        checked = state.conversations.showCategories,
+                        onCheckedChange = { v ->
+                            viewModel.update { it.copy(conversations = it.conversations.copy(showCategories = v)) }
+                        },
+                    )
+                }
                 // v1.26.1 (audit F3) — la signature était consommée à chaque SMS sortant sans
                 // qu'aucun écran ne permette de la définir. Voir [SignatureRow].
                 item {
@@ -411,122 +429,132 @@ fun SettingsScreen(
             }
 
             RelaySectionLabel(stringResource(R.string.settings_section_sending))
-            RelaySettingsGroup {
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.Check,
-                        title = stringResource(R.string.settings_delivery_reports),
-                        checked = state.sending.deliveryReports,
-                        onCheckedChange = { v ->
-                            viewModel.update { it.copy(sending = it.sending.copy(deliveryReports = v)) }
-                        },
-                    )
-                }
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.WarningAmber,
-                        title = stringResource(R.string.settings_confirm_broadcast),
-                        checked = state.sending.confirmBeforeBroadcast,
-                        onCheckedChange = { v ->
-                            viewModel.update { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) }
-                        },
-                    )
-                }
-                // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
-                // Feedback round 8 — the long hint lives in the info popup now
-                // (chevron before the switch); the row stays one-line.
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.Group,
-                        title = stringResource(R.string.settings_group_mms),
-                        checked = state.sending.groupMms,
-                        onCheckedChange = { v ->
-                            viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) }
-                        },
-                        infoText = stringResource(R.string.settings_group_mms_hint),
-                    )
-                }
-                // v1.2.6 audit F4 — saisie facultative du MSISDN. Sans cette valeur, les MMS
-                // envoyés peuvent afficher "insert-address-token" comme expéditeur dans
-                // d'autres apps SMS sur certaines ROM Samsung One UI.
-                item {
-                    MyNumberRow(
-                        current = state.sending.userMsisdn,
-                        onChange = { v ->
-                            viewModel.update { it.copy(sending = it.sending.copy(userMsisdn = v?.takeIf { s -> s.isNotBlank() })) }
-                        },
-                    )
-                }
-                // v1.21.0 — indicatif pays par défaut pour convertir les numéros nationaux
-                // au format international (E.164) avant l'envoi. "Auto" = pays de la SIM.
-                // Indispensable pour envoyer des numéros nationaux d'un pays depuis une SIM
-                // étrangère (ex. 06… français depuis une SIM luxembourgeoise).
-                item(onClick = { defaultRegionPickerOpen = true }) {
-                    RelaySettingRow(
-                        icon = Icons.Outlined.Public,
-                        title = stringResource(R.string.settings_default_region_title),
-                        chevron = true,
-                    )
-                }
-                // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
-                // OFF, les réactions restent strictement locales (badge visible uniquement
-                // dans Relay). La description prévient explicitement du coût SMS.
-                // Feedback round 8 — renamed to "Send my reactions"; the long
-                // cost warning lives in the info popup now (chevron before the
-                // switch); the row stays one-line.
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.EmojiEmotions,
-                        title = stringResource(R.string.settings_send_reactions_title),
-                        checked = state.sending.sendReactionsToRecipient,
-                        onCheckedChange = { v ->
-                            viewModel.update { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
-                        },
-                        infoText = stringResource(R.string.settings_send_reactions_desc),
-                    )
-                }
-                // v1.8.0 (bug 5 fix) — format du SMS de réaction. 3 options
-                // (anciennement boolean reactionEmojiOnly à 2 valeurs) :
-                //  - READABLE_FR (nouveau défaut) : "J'ai réagi par ❤️ à : «…»"
-                //    — naturel et lisible pour les destinataires francophones Android
-                //  - TAPBACK_EN (ancien défaut v1.7.x) : "Reacted ❤️ to «…»"
-                //    — compat iMessage iPhone + Google Messages récent
-                //  - EMOJI_ONLY : "❤️" seul — minimal, perd le contexte côté destinataire
-                //
-                // Affiché uniquement si l'envoi des réactions est activé. The
-                // old AnimatedVisibility is a plain `if` now: the group
-                // shapes are computed from the rows actually shown, and an
-                // animated segment would leave a square corner behind when
-                // it collapses.
-                if (state.sending.sendReactionsToRecipient) {
-                    item(onClick = { reactionFormatPickerOpen = true }) {
+            // Round 12 — the group's conditional rows (Reaction format,
+            // Sender name) are `if`-guarded inside the group's content
+            // lambda. That lambda is hoisted/reused because everything it
+            // captures is stable, so the group is skipped on recomposition
+            // and the rows never hide when the toggle flips. Keying the
+            // group on the two gating values forces a fresh composition —
+            // fresh item collection, correct corner rounding — when either
+            // changes.
+            key(state.sending.sendReactionsToRecipient, state.sending.reactionFormat) {
+                RelaySettingsGroup {
+                    item {
+                        RelaySwitchRow(
+                            icon = Icons.Outlined.Check,
+                            title = stringResource(R.string.settings_delivery_reports),
+                            checked = state.sending.deliveryReports,
+                            onCheckedChange = { v ->
+                                viewModel.update { it.copy(sending = it.sending.copy(deliveryReports = v)) }
+                            },
+                        )
+                    }
+                    item {
+                        RelaySwitchRow(
+                            icon = Icons.Outlined.WarningAmber,
+                            title = stringResource(R.string.settings_confirm_broadcast),
+                            checked = state.sending.confirmBeforeBroadcast,
+                            onCheckedChange = { v ->
+                                viewModel.update { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) }
+                            },
+                        )
+                    }
+                    // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
+                    // Feedback round 8 — the long hint lives in the info popup now
+                    // (chevron before the switch); the row stays one-line.
+                    item {
+                        RelaySwitchRow(
+                            icon = Icons.Outlined.Group,
+                            title = stringResource(R.string.settings_group_mms),
+                            checked = state.sending.groupMms,
+                            onCheckedChange = { v ->
+                                viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) }
+                            },
+                            infoText = stringResource(R.string.settings_group_mms_hint),
+                        )
+                    }
+                    // v1.2.6 audit F4 — saisie facultative du MSISDN. Sans cette valeur, les MMS
+                    // envoyés peuvent afficher "insert-address-token" comme expéditeur dans
+                    // d'autres apps SMS sur certaines ROM Samsung One UI.
+                    item {
+                        MyNumberRow(
+                            current = state.sending.userMsisdn,
+                            onChange = { v ->
+                                viewModel.update { it.copy(sending = it.sending.copy(userMsisdn = v?.takeIf { s -> s.isNotBlank() })) }
+                            },
+                        )
+                    }
+                    // v1.21.0 — indicatif pays par défaut pour convertir les numéros nationaux
+                    // au format international (E.164) avant l'envoi. "Auto" = pays de la SIM.
+                    // Indispensable pour envoyer des numéros nationaux d'un pays depuis une SIM
+                    // étrangère (ex. 06… français depuis une SIM luxembourgeoise).
+                    item(onClick = { defaultRegionPickerOpen = true }) {
                         RelaySettingRow(
-                            icon = Icons.Outlined.ChatBubbleOutline,
-                            title = stringResource(R.string.settings_reaction_format_title),
+                            icon = Icons.Outlined.Public,
+                            title = stringResource(R.string.settings_default_region_title),
                             chevron = true,
                         )
                     }
-                }
-                // v1.8.1 — nom inclus dans les SMS de réaction sortants au
-                // format READABLE_FR. Affiché uniquement si READABLE_FR est
-                // sélectionné ET envoi des réactions activé (cohérence UX).
-                if (state.sending.sendReactionsToRecipient &&
-                    state.sending.reactionFormat ==
-                        com.filestech.sms.domain.model.ReactionFormat.READABLE_FR
-                ) {
+                    // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
+                    // OFF, les réactions restent strictement locales (badge visible uniquement
+                    // dans Relay). La description prévient explicitement du coût SMS.
+                    // Feedback round 8 — renamed to "Send my reactions"; the long
+                    // cost warning lives in the info popup now (chevron before the
+                    // switch); the row stays one-line.
                     item {
-                        SenderNameRow(
-                            current = state.sending.senderDisplayName,
-                            onChange = { name ->
-                                viewModel.update {
-                                    it.copy(
-                                        sending = it.sending.copy(
-                                            senderDisplayName = name?.takeIf { s -> s.isNotBlank() },
-                                        ),
-                                    )
-                                }
+                        RelaySwitchRow(
+                            icon = Icons.Outlined.EmojiEmotions,
+                            title = stringResource(R.string.settings_send_reactions_title),
+                            checked = state.sending.sendReactionsToRecipient,
+                            onCheckedChange = { v ->
+                                viewModel.update { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
                             },
+                            infoText = stringResource(R.string.settings_send_reactions_desc),
                         )
+                    }
+                    // v1.8.0 (bug 5 fix) — format du SMS de réaction. 3 options
+                    // (anciennement boolean reactionEmojiOnly à 2 valeurs) :
+                    //  - READABLE_FR (nouveau défaut) : "J'ai réagi par ❤️ à : «…»"
+                    //    — naturel et lisible pour les destinataires francophones Android
+                    //  - TAPBACK_EN (ancien défaut v1.7.x) : "Reacted ❤️ to «…»"
+                    //    — compat iMessage iPhone + Google Messages récent
+                    //  - EMOJI_ONLY : "❤️" seul — minimal, perd le contexte côté destinataire
+                    //
+                    // Affiché uniquement si l'envoi des réactions est activé. The
+                    // old AnimatedVisibility is a plain `if` now: the group
+                    // shapes are computed from the rows actually shown, and an
+                    // animated segment would leave a square corner behind when
+                    // it collapses.
+                    if (state.sending.sendReactionsToRecipient) {
+                        item(onClick = { reactionFormatPickerOpen = true }) {
+                            RelaySettingRow(
+                                icon = Icons.Outlined.ChatBubbleOutline,
+                                title = stringResource(R.string.settings_reaction_format_title),
+                                chevron = true,
+                            )
+                        }
+                    }
+                    // v1.8.1 — nom inclus dans les SMS de réaction sortants au
+                    // format READABLE_FR. Affiché uniquement si READABLE_FR est
+                    // sélectionné ET envoi des réactions activé (cohérence UX).
+                    if (state.sending.sendReactionsToRecipient &&
+                        state.sending.reactionFormat ==
+                            com.filestech.sms.domain.model.ReactionFormat.READABLE_FR
+                    ) {
+                        item {
+                            SenderNameRow(
+                                current = state.sending.senderDisplayName,
+                                onChange = { name ->
+                                    viewModel.update {
+                                        it.copy(
+                                            sending = it.sending.copy(
+                                                senderDisplayName = name?.takeIf { s -> s.isNotBlank() },
+                                            ),
+                                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -2835,6 +2863,26 @@ private fun NotificationsSection(
     onOpenStylePicker: () -> Unit,
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    // Round 12 — whether the "notifications off" banner will actually
+    // render, hoisted here so the banner `item` below is only registered
+    // when it shows. Registered unconditionally it left an empty segment
+    // (a 2dp strip) between "Enable notifications" and "Reply from
+    // notification" whenever Android allowed notifications, doubling that
+    // gap. Same check as the banner itself, re-read on resume so it
+    // disappears on its own once notifications are re-enabled.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var showBanner by remember(notifications.style) {
+        mutableStateOf(!canauxVisibles(ctx, listOf(canalDesMessages(notifications.style))))
+    }
+    DisposableEffect(lifecycle, notifications.style) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                showBanner = !canauxVisibles(ctx, listOf(canalDesMessages(notifications.style)))
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     RelaySectionLabel(stringResource(R.string.settings_section_notifications))
     RelaySettingsGroup {
         item {
@@ -2850,8 +2898,12 @@ private fun NotificationsSection(
         // l'interrupteur ci-dessus dit « activées ». The banner is its own
         // segment, so the group splits around it and the shapes stay right.
         // It fills the segment (no inset) so the error card, not the
-        // segment surface, is what reads as the warning.
-        if (notifications.enabled) {
+        // segment surface, is what reads as the warning. Gated on
+        // `showBanner` (hoisted above): when the banner would render
+        // nothing, the item is not registered at all, so the gap between
+        // "Enable notifications" and "Reply from notification" stays the
+        // normal 2dp instead of doubling.
+        if (notifications.enabled && showBanner) {
             item {
                 BanniereNotificationsCoupees(
                     message = stringResource(R.string.notifications_off_messages),
@@ -2870,14 +2922,17 @@ private fun NotificationsSection(
         // Round 11 — mute notifications per category. Same switches as
         // the tab long-press: flipping one here toggles the same
         // `conversations.mutedCategories` entry, and the tab row reads it.
+        // Round 12 — the bell shows the state: crossed out when this
+        // category's notifications are off (muted), plain when they're on.
         val muteSubtitle = stringResource(R.string.category_mute_subtitle)
         for (category in MessageCategory.entries) {
+            val isMuted = category in mutedCategories
             item {
                 RelaySwitchRow(
-                    icon = Icons.Outlined.NotificationsOff,
+                    icon = if (isMuted) Icons.Outlined.NotificationsOff else Icons.Outlined.Notifications,
                     title = categoryLabel(category),
                     subtitle = muteSubtitle,
-                    checked = category in mutedCategories,
+                    checked = isMuted,
                     onCheckedChange = { v ->
                         onUpdate {
                             val muted = if (v) {

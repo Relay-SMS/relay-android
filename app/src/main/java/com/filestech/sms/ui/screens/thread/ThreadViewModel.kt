@@ -88,6 +88,22 @@ class ThreadViewModel @Inject constructor(
     /** Live playback state, surfaced for the composer's preview UI. */
     val playbackState: StateFlow<VoicePlaybackController.PlaybackState> get() = playbackController.state
 
+    /**
+     * Round 12 — the user's most recently used reaction emojis, most recent
+     * first, for the quick-reaction bar on a bubble tap. Empty until the
+     * first reaction is sent; the bar falls back to its defaults then.
+     *
+     * The store is built from the injected application context, not a
+     * constructor parameter: the constructor is at the Detekt 20-parameter
+     * limit, and the `preferencesDataStore` delegate is a singleton per
+     * name, so this shares the same file as any injected instance would.
+     */
+    private val recentReactionsStore =
+        com.filestech.sms.data.local.datastore.RecentReactionsStore(context)
+
+    val recentReactions: StateFlow<List<String>> = recentReactionsStore.flow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+
     private val conversationId: Long = checkNotNull(savedStateHandle["conversationId"])
 
     /**
@@ -1061,6 +1077,18 @@ class ThreadViewModel @Inject constructor(
                     targetIsRemoval = true
                 }
                 SetReactionResult.Noop -> return@launch
+            }
+
+            // Round 12 — record the emoji as recently used for the
+            // quick-reaction bar. Only for actual sets (First / Changed):
+            // removals pass `null` and Noops return above. A DataStore
+            // failure must not break the reaction itself — it is best
+            // effort, like the dispatch below.
+            if (!emoji.isNullOrBlank()) {
+                runCatching { recentReactionsStore.recordUsed(emoji) }
+                    .onFailure {
+                        timber.log.Timber.w(it, "setReaction recent record failed")
+                    }
             }
 
             // v1.3.1 audit P1 — tout le bloc post-dispatch est wrappé : un crash DataStore

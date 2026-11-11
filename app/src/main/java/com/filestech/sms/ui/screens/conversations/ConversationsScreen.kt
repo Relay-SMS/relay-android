@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -487,11 +488,14 @@ fun ConversationsScreen(
             // Hoisted: stringResource is @Composable and cannot run inside
             // .semantics {} (used by the close X below).
             val closeLabel = stringResource(R.string.action_close)
+            // Round 12 — the bottom padding is 16dp, double the 8dp above
+            // the pill: the category tabs sit further below the search bar,
+            // with the original 8dp gap then landing below the tabs.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RelayTextField(
@@ -545,8 +549,12 @@ fun ConversationsScreen(
                             // 3-dot menu inside the pill. The DropdownMenu
                             // anchors to this Box so it opens below-right,
                             // under the ⋮, like the old top-bar menu did.
+                            // Round 12 — shifted 15dp right, toward the
+                            // pill's edge: it sat too far inset, leaving a
+                            // wide gap on the right. The offset moves the
+                            // button and its menu anchor together.
                             Box(
-                                modifier = Modifier.size(36.dp),
+                                modifier = Modifier.size(36.dp).offset(x = 15.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Box(
@@ -1022,6 +1030,9 @@ private fun CategoryTabsRowIfShown(
             onSelect = onSelect,
             onToggleMute = onToggleMute,
         )
+        // Round 12 — the original 8dp gap, now below the tabs (the gap
+        // above them doubled to 16dp in the search pill's bottom padding).
+        Spacer(Modifier.height(8.dp))
     }
 }
 

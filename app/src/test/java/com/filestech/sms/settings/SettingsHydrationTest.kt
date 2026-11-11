@@ -239,6 +239,9 @@ class SettingsHydrationTest {
         /** La cle des categories sourdes, telle qu'elle est ecrite sur le disque. */
         val CATEGORIES_SOURDES = stringSetPreferencesKey("conv.mutedCategories")
 
+        /** La cle du reglage « Afficher les categories », telle qu'elle est ecrite sur le disque. */
+        val AFFICHER_CATEGORIES = booleanPreferencesKey("conv.showCategories")
+
         /** Les trois cles d'une version precedente, telles qu'elles sont ecrites sur le disque. */
         val TAG_DE_LANGUE = stringPreferencesKey("locale.tag")
         val PREMIER_JOUR = stringPreferencesKey("locale.firstDay")
@@ -478,6 +481,43 @@ class SettingsHydrationTest {
                 // Et `hydratedOrNull` est d'accord, sur le chemin chaud.
                 assertThat(depot.hydratedOrNull()?.conversations?.mutedCategories)
                     .containsExactly(MessageCategory.OTP, MessageCategory.PROMOTIONAL)
+            } finally {
+                portee.cancel()
+            }
+        }
+    }
+
+    /**
+     * Round 12 — le réglage « Afficher les catégories » survit à
+     * l'aller-retour DataStore, et le défaut déclaré est `true` : les
+     * onglets s'affichent par défaut.
+     */
+    @Test
+    fun afficherLesCategoriesSurvitALAllerRetour() {
+        runBlocking {
+            val portee = CoroutineScope(Dispatchers.Unconfined)
+            try {
+                val depot = SettingsRepository(magasin, portee)
+
+                // Le défaut déclaré est `true`.
+                val neuf = withTimeout(TIMEOUT_MS) { depot.hydratedOrNull() }
+                assertThat(neuf?.conversations?.showCategories).isTrue()
+
+                depot.update { s ->
+                    s.copy(conversations = s.conversations.copy(showCategories = false))
+                }
+
+                // Ce qui est gravé, c'est `false` sous la clé `conv.showCategories`.
+                assertThat(magasin.data.first()[AFFICHER_CATEGORIES]).isFalse()
+
+                // Et la collecte interne le publie.
+                val publie = withTimeout(TIMEOUT_MS) {
+                    depot.state.first { !it.conversations.showCategories }
+                }
+                assertThat(publie.conversations.showCategories).isFalse()
+
+                // Et `hydratedOrNull` est d'accord, sur le chemin chaud.
+                assertThat(depot.hydratedOrNull()?.conversations?.showCategories).isFalse()
             } finally {
                 portee.cancel()
             }

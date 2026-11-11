@@ -87,6 +87,13 @@ fun MessageBubble(
     /** v1.3.11 (F5) — forward the bubble's text body to another conversation. */
     onForward: (() -> Unit)? = null,
     /**
+     * Round 12 — quick-reaction bar on tap (incoming messages only; the
+     * caller passes `null` for outgoing). One bundle parameter instead of
+     * two — the bubble sits at the Detekt 20-parameter limit (see
+     * [BubbleMenuToggles]). `null` = tap opens the full menu, as before.
+     */
+    quickReactions: QuickReactionConfig? = null,
+    /**
      * Feedback round 5 — bascules « favori » / « épingler »
      * ([BubbleMenuToggles]) ; l'état épinglé est lu sur la conversation
      * (un seul message épinglé par fil), pas sur [message]. Un seul
@@ -180,8 +187,11 @@ fun MessageBubble(
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu ([BubbleMenu]), un appui long ouvre le menu aussi (la sélection
     // libre est supprimée, round 6), et un tap sur un message FAILED garde
-    // le retry ([onTap]).
+    // le retry ([onTap]). Round 12 — tap on an INCOMING bubble opens the
+    // quick-reaction bar instead ([QuickReactionBar]); long-press still
+    // opens the full menu, and outgoing bubbles keep tap → full menu.
     var menuExpanded by remember { mutableStateOf(false) }
+    var quickBarExpanded by remember { mutableStateOf(false) }
 
     // Feedback round 6 — press-down feedback: while the finger is down the
     // bubble sinks 2dp, so a long-press feels like pressing the bubble itself.
@@ -244,9 +254,12 @@ fun MessageBubble(
                             else Modifier.background(com.filestech.sms.ui.theme.bubbleIncomingColor(cs)),
                         )
                         // Relay — tap opens the bubble menu ([BubbleMenu]) ; tap on a
-                        // FAILED message still retries ([onTap]). Feedback round 6 —
-                        // long-press opens the menu too (the free text selection is
-                        // gone); FAILED keeps its tap-to-retry on tap only.
+                        // FAILED message still retries ([onTap]). Round 12 — tap on
+                        // an INCOMING bubble opens the quick-reaction bar
+                        // ([QuickReactionBar]) instead; outgoing bubbles keep
+                        // tap → full menu. Feedback round 6 — long-press opens
+                        // the menu too (the free text selection is gone);
+                        // FAILED keeps its tap-to-retry on tap only.
                         .combinedClickable(
                             interactionSource = pressSource,
                             indication = LocalIndication.current,
@@ -256,6 +269,8 @@ fun MessageBubble(
                                     com.filestech.sms.domain.model.Message.Status.FAILED
                                 ) {
                                     onTap()
+                                } else if (quickReactions != null) {
+                                    quickBarExpanded = true
                                 } else {
                                     menuExpanded = true
                                 }
@@ -376,6 +391,24 @@ fun MessageBubble(
                 toggles = toggles,
                 onDelete = onDelete,
             )
+            // Round 12 — quick-reaction bar on tap (incoming only). The "+"
+            // reuses [onReact]: it opens the full emoji picker for this
+            // message, exactly like the menu's "React" item.
+            if (quickReactions != null) {
+                QuickReactionBar(
+                    expanded = quickBarExpanded,
+                    onDismissRequest = { quickBarExpanded = false },
+                    recentEmojis = quickReactions.recentEmojis,
+                    onEmojiSelected = { emoji ->
+                        quickBarExpanded = false
+                        quickReactions.onSelect(emoji)
+                    },
+                    onOpenPicker = {
+                        quickBarExpanded = false
+                        onReact?.invoke()
+                    },
+                )
+            }
             // v1.7.1 — inline TranslationBlock removed (was rendering an in-app
             // translation result from ML Kit). Translation now happens out-of-process
             // via ACTION_PROCESS_TEXT — the user's chosen translation app shows the

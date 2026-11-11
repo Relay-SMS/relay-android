@@ -298,6 +298,7 @@ class SettingsRepository(
                 sortMode = enumOr(p, K.sortMode, SortMode.DATE, SortMode::valueOf),
                 previewLines = p[K.previewLines] ?: 2,
                 showAvatars = p[K.showAvatars] ?: true,
+                showCategories = p[K.showCategories] ?: true,
                 signature = p[K.signature],
                 // Round 11 — unknown names are dropped, like every stored enum.
                 mutedCategories = (p[K.mutedCategories] ?: emptySet())
@@ -471,6 +472,7 @@ class SettingsRepository(
         this[K.sortMode] = s.conversations.sortMode.name
         this[K.previewLines] = s.conversations.previewLines
         this[K.showAvatars] = s.conversations.showAvatars
+        this[K.showCategories] = s.conversations.showCategories
         s.conversations.signature?.let { this[K.signature] = it } ?: remove(K.signature)
         this[K.mutedCategories] = s.conversations.mutedCategories.map { it.name }.toSet()
 
@@ -613,6 +615,7 @@ class SettingsRepository(
         val sortMode = stringPreferencesKey("conv.sort")
         val previewLines = intPreferencesKey("conv.previewLines")
         val showAvatars = booleanPreferencesKey("conv.avatars")
+        val showCategories = booleanPreferencesKey("conv.showCategories")
         val signature = stringPreferencesKey("conv.signature")
 
         // Round 11 — muted categories, stored as enum names. An empty set

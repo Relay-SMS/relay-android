@@ -65,6 +65,12 @@ data class ConversationSettings(
     // Two preview lines (was 1): the list shows more of each message.
     val previewLines: Int = 2,
     val showAvatars: Boolean = true,
+    /**
+     * Round 12 — whether the category tab row shows on the main screen.
+     * Toggled in Settings → Appearance. When OFF the list shows every
+     * conversation unfiltered and no tab row is rendered.
+     */
+    val showCategories: Boolean = true,
     val signature: String? = null,
     /**
      * Round 11 — categories whose messages do not trigger a notification.

@@ -46,7 +46,9 @@ object MessageClassifier {
      * Bank / payment / delivery / appointment content.
      *
      * Deliberately NOT in this list: bare "paid", "order", "free", "save",
-     * "charge", "balance" — all common in personal messages. "en camino"
+     * "charge", "balance" — all common in personal messages. "charged on"
+     * counts (the billing pattern "you'll be charged $X on [date]"), but
+     * bare "charged" stays out ("I charged my phone"). "en camino"
      * (ES) is out too: "estoy en camino" ("I'm on my way") is everyday
      * personal Spanish; only "paquete/pedido en camino" counts. Bare
      * "cita" (ES) is out for the same reason ("tengo una cita" is a date,
@@ -64,7 +66,8 @@ object MessageClassifier {
         "package delivered", "parcel delivered", "your shipment",
         "payment received", "payment confirmed", "payment successful",
         "payment due", "your payment", "payment failed", "card charged",
-        "charged to your card", "transaction alert", "your transaction",
+        "charged to your card", "you ll be charged", "will be charged",
+        "charged on", "tap to pay", "transaction alert", "your transaction",
         "account balance", "your account", "your balance", "low balance",
         "statement ready", "direct debit", "withdrawal", "deposit received",
         "your receipt", "receipt for", "invoice", "your invoice",
@@ -134,8 +137,11 @@ object MessageClassifier {
      * "deal", "vote" — all common in personal messages ("I vote for
      * pizza", "garage sale", "job offer"). Only phrases ("free shipping",
      * "special offer", "sale ends", "vote for") and domain-specific words
-     * ("unsubscribe", "coupon", "election", "ballot") count. Bare
-     * "campagne" (FR) / "campagna" (IT) are out — both also mean
+     * ("unsubscribe", "coupon", "election", "ballot") count. Bare "vote"
+     * together with a party word is Promotional too — see [isPoliticalVote].
+     * The "Stop to End" / "Stop2End" opt-out footer ("stop2end",
+     * "stop to end") is a promo signal real personal messages don't carry.
+     * Bare "campagne" (FR) / "campagna" (IT) are out — both also mean
      * "countryside" ("à la campagne"); only "campagne électorale" /
      * "campagna elettorale" count. Bare "campana" (ES) is out too (a bell);
      * only "campaña electoral" / "campaña política" count. Bare "wahl"
@@ -145,13 +151,14 @@ object MessageClassifier {
      */
     private val PROMOTIONAL_KEYWORDS = listOf(
         // EN
-        "unsubscribe", "opt out", "reply stop", "to opt out", "limited time",
+        "unsubscribe", "opt out", "reply stop", "to opt out", "stop2end",
+        "stop to end", "limited time",
         "special offer", "exclusive offer", "limited offer", "offer ends",
         "offer expires", "discount code", "promo code", "percent off",
         "sale ends", "flash sale", "clearance sale", "big sale",
         "black friday", "free shipping", "free trial", "free gift",
-        "buy one get one", "deal of the day", "coupon", "voucher",
-        "sweepstakes", "you have won", "claim your prize",
+        "free dvd", "buy one get one", "deal of the day", "coupon", "voucher",
+        "sweepstakes", "you have won", "claim your", "claim your prize",
         "congratulations you have won", "election", "ballot", "vote for",
         "vote now", "your vote", "voting day", "candidate", "campaign",
         "donate", "donation",
@@ -211,10 +218,23 @@ object MessageClassifier {
             isOtp -> MessageCategory.OTP
             containsAny(paddedBody, TRANSACTION_KEYWORDS) -> MessageCategory.TRANSACTIONS
             containsAny(paddedBody, PROMOTIONAL_KEYWORDS) ||
+                isPoliticalVote(paddedBody) ||
                 isShortCode(digits) || isAlphanumericSender(sender) -> MessageCategory.PROMOTIONAL
             isContact || isGroup || isRegularNumber(digits) -> MessageCategory.PERSONAL
             else -> MessageCategory.OTHER
         }
+    }
+
+    /**
+     * A political text: a vote word ("vote", "voted", "voting", "votes")
+     * together with a party word ("republican(s)", "democrat(s)") in the
+     * same body. Either word alone is ordinary personal language ("Did you
+     * vote today?", "My uncle is a Democrat"), so only the pair counts.
+     */
+    private fun isPoliticalVote(paddedBody: String): Boolean {
+        val voteWords = listOf("vote", "voted", "voting", "votes")
+        val partyWords = listOf("republican", "republicans", "democrat", "democrats")
+        return containsAny(paddedBody, voteWords) && containsAny(paddedBody, partyWords)
     }
 
     /**

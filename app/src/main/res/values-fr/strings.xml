@@ -406,6 +406,7 @@
 
     <string name="settings_section_conversations">Conversations</string>
     <string name="settings_show_avatars">Afficher les avatars</string>
+    <string name="settings_show_categories">Afficher les catégories</string>
     <string name="settings_signature">Signature automatique</string>
 
     <string name="settings_section_sending">Envoi</string>
@@ -449,7 +450,7 @@
     <string name="settings_resync_title">Resynchroniser depuis le téléphone</string>
     <string name="settings_resync_desc">Réimporte tous les SMS depuis le système Android. Utile si des messages présents sur le téléphone manquent dans l\'app. Ne récupère pas ce que vous avez effacé : la suppression retire aussi la copie du téléphone. Sans doublons.</string>
     <string name="settings_resync_started">Resynchronisation lancée en arrière-plan.</string>
-    <string name="settings_send_reactions_title">Envoyer mes réactions</string>
+    <string name="settings_send_reactions_title">Envoyer des réactions</string>
     <string name="settings_row_info">Plus d\'infos</string>
     <string name="settings_send_reactions_desc">Quand vous posez une réaction emoji (cœur, pouce…), un SMS contenant uniquement l\'emoji est envoyé au correspondant. Cela compte comme un SMS normal au tarif de votre forfait. Changer de réaction envoie un nouveau SMS avec le nouvel emoji ; retirer une réaction envoie un SMS de retrait.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options en un coup d\'œil. -->
@@ -671,7 +672,7 @@
     <string name="category_promotional">Promotionnel</string>
     <string name="category_transactions">Transactions</string>
     <string name="category_other">Autres</string>
-    <string name="category_mute_subtitle">Aucune notification pour cette catégorie</string>
+    <string name="category_mute_subtitle">Désactiver les notifications pour cette catégorie</string>
 
     <!-- v1.8.0 — bug 3 fix : expose PreviewMode + NotificationStyle dans l\'UI. -->
     <string name="settings_notif_preview">Aperçu sur l\'écran de verrouillage</string>

@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filestech.sms.R
 
 /**
@@ -43,8 +44,8 @@ import com.filestech.sms.R
  * a section's rows share one tonal surface, split by thin gaps, and only
  * the group's outer corners are fully rounded. Each row carries its icon
  * on a round tonal badge, a title, an optional subtitle, and an optional
- * trailing control. Section labels use the primary colour; hints sit under
- * a group in the same inset.
+ * trailing control. Section labels use the row-title colour (onSurface);
+ * hints sit under a group in the same inset.
  *
  * Screens keep their normal top bar with the title in it — there is no
  * large in-content headline.
@@ -211,7 +212,13 @@ fun RelaySettingRow(
                         end = if (trailing != null || chevron) 16.dp else 0.dp,
                     ),
             ) {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = titleColor ?: cs.onSurface)
+                // Round 12 — the row title is 14sp, not titleMedium's 16sp:
+                // at 16sp the settings lines read a touch too big.
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                    color = titleColor ?: cs.onSurface,
+                )
                 subtitle?.let {
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 }
@@ -357,10 +364,12 @@ fun RelaySwitchRow(
 /** A group's title, lined up with the content of the segments under it. */
 @Composable
 fun RelaySectionLabel(text: String, modifier: Modifier = Modifier) {
+    // Round 12 — the label uses the row-title colour (onSurface), not
+    // primary: the blue labels read as links, not headings.
     Text(
         text = text,
         style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 8.dp),
     )
 }

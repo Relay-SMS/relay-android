@@ -416,6 +416,7 @@
 
     <string name="settings_section_conversations">Conversations</string>
     <string name="settings_show_avatars">Show avatars</string>
+    <string name="settings_show_categories">Show categories</string>
     <string name="settings_signature">Automatic signature</string>
 
     <string name="settings_section_sending">Sending</string>
@@ -459,7 +460,7 @@
     <string name="settings_resync_title">Resync from phone</string>
     <string name="settings_resync_desc">Re-imports all SMS from the Android system. Useful when messages present on the phone are missing from the app. It does not bring back what you deleted: deleting also removes the phone\'s copy. No duplicates.</string>
     <string name="settings_resync_started">Resync started in background.</string>
-    <string name="settings_send_reactions_title">Send my reactions</string>
+    <string name="settings_send_reactions_title">Send reactions</string>
     <string name="settings_row_info">More info</string>
     <string name="settings_send_reactions_desc">When you post an emoji reaction (heart, thumbs-up…), a SMS containing only the emoji is sent to the recipient. Counts as a normal SMS at your plan\'s rate. Changing a reaction sends a new SMS with the new emoji; removing one sends a removal SMS.</string>
     <!-- v1.8.0 — bug 5 fix : 3 options at a glance.
@@ -676,7 +677,7 @@
     <string name="category_promotional">Promotional</string>
     <string name="category_transactions">Transactions</string>
     <string name="category_other">Other</string>
-    <string name="category_mute_subtitle">No notifications for this category</string>
+    <string name="category_mute_subtitle">Turn off notifications for this category</string>
 
     <!-- v1.8.0 — bug 3 fix: exposes PreviewMode + NotificationStyle in the UI. -->
     <string name="settings_notif_preview">Lock-screen preview</string>

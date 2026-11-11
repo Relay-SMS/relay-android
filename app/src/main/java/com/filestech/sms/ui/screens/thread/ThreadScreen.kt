@@ -221,6 +221,9 @@ fun ThreadScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
+    // Round 12 — recent reaction emojis for the quick-reaction bar on a
+    // bubble tap (most recent first; empty until the first reaction).
+    val recentReactions by viewModel.recentReactions.collectAsStateWithLifecycle()
     // Playback progress ticks at 5 Hz while a voice clip plays, and every tick recomposes
     // this screen. Passing `{ playbackState }` inline to each message item would create a
     // fresh lambda on every one of those recompositions, so no item could ever skip — the
@@ -1023,6 +1026,10 @@ fun ThreadScreen(
                 onDelete = { msg -> pendingDelete = msg },
                 onReply = { msg -> viewModel.startReply(msg) },
                 onReact = { msgId -> pickingReactionFor = msgId },
+                // Round 12 — quick-reaction bar: sends the emoji immediately
+                // (same path as the picker); recording the recent happens in
+                // the ViewModel's setReaction.
+                onQuickReact = { msgId, emoji -> viewModel.setReaction(msgId, emoji) },
                 onForward = { msg -> forwardingMessage = msg },
                 onTranslate = { msg -> translateMessageExternal(msg) },
                 onCopy = { msg -> copyMessageBody(msg) },
@@ -1131,6 +1138,7 @@ fun ThreadScreen(
                     // Feedback round 5 — ce message est-il l'épinglé du fil ?
                     // Le menu bulle affiche alors « Désépingler » au lieu d'« Épingler ».
                     isPinnedMessage = msg.id == state.conversation?.pinnedMessageId,
+                    recentReactions = recentReactions,
                     actions = itemActions,
                 )
             }
@@ -3224,6 +3232,8 @@ private class ThreadMessageItemActions(
     val onDelete: (Message) -> Unit,
     val onReply: (Message) -> Unit,
     val onReact: (Long) -> Unit,
+    /** Round 12 — quick-reaction bar: sends [String] emoji for [Long] message id at once. */
+    val onQuickReact: (Long, String) -> Unit,
     val onForward: (Message) -> Unit,
     val onTranslate: (Message) -> Unit,
     val onCopy: (Message) -> Unit,
@@ -3282,6 +3292,8 @@ private fun ThreadMessageItem(
     searchHighlight: SearchHighlight = SearchHighlight(),
     /** Feedback round 5 — ce message est l'épinglé du fil (menu « Désépingler »). */
     isPinnedMessage: Boolean = false,
+    /** Round 12 — recent reaction emojis for the quick-reaction bar. */
+    recentReactions: List<String> = emptyList(),
     actions: ThreadMessageItemActions,
 ) {
     // Taille du texte des messages : tout l'élément (séparateur, bulle, citation, horodatage).
@@ -3338,6 +3350,19 @@ private fun ThreadMessageItem(
         val onReact = remember(msg, actions) {
             {
                 actions.onReact(msg.id)
+            }
+        }
+        // Round 12 — quick-reaction bar on tap, incoming messages only
+        // (same condition as [onReact]): recents + the send path, bundled
+        // in one parameter for [MessageBubble] (Detekt parameter limit).
+        val quickReactions = remember(msg, actions, recentReactions) {
+            if (msg.isIncoming) {
+                com.filestech.sms.ui.components.QuickReactionConfig(
+                    recentEmojis = recentReactions,
+                    onSelect = { emoji -> actions.onQuickReact(msg.id, emoji) },
+                )
+            } else {
+                null
             }
         }
         val onForward = remember(msg, actions) {
@@ -3467,6 +3492,8 @@ private fun ThreadMessageItem(
                     // the body is non-blank (nothing to translate on attachment-only messages).
                     onTranslate = if (msg.body.isNotBlank()) onTranslate else null,
                     onReact = if (msg.isIncoming) onReact else null,
+                    // Round 12 — quick-reaction bar on tap (incoming only).
+                    quickReactions = quickReactions,
                     onCopy = if (msg.body.isNotBlank()) onCopy else null,
                     onForward = onForward,
                     // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
