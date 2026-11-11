@@ -11,7 +11,10 @@ Haltaya**. See also the [terms of use](TERMS.md).
 
 ## What we collect
 
-**Nothing.** SMS Relay does not collect, transmit or aggregate any personal data of any kind.
+**Nothing.** SMS Relay does not collect, transmit or aggregate any personal data of any kind —
+with one exception: when you search for a GIF, the words you type are sent to Klipy so it can
+return matching GIFs (see [Network use](#network-use) below). Relay itself keeps nothing from
+that exchange beyond the GIF you choose to send.
 
 There is no analytics SDK, no crash reporter, no telemetry endpoint, no advertising identifier, no
 fingerprinting library. The binary contains no third-party tracking code.
@@ -36,10 +39,18 @@ device transfer without your explicit consent.
 
 ## Network use
 
-SMS Relay makes no network call. Since 1.28.13 it does not even hold the `INTERNET` permission, so
-its process cannot open a network connection. MMS are carried by Android's own MMS service, which
-talks to your carrier's MMSC when you send or receive one. No update check, no remote configuration,
-no analytics ping.
+SMS Relay holds the `INTERNET` permission for one feature only: GIF search. When you open the
+GIF tab and type a search, the words you type are sent to Klipy (`api.klipy.com`), which returns
+matching GIFs; tapping one downloads it from Klipy, and the thumbnails in the grid come from
+Klipy too. Klipy sees your search words and your IP address, as any service you contact does.
+That is the only network use in the app: no update check, no remote configuration, no analytics
+ping, no crash report. If the permission is blocked, the app still works — GIF search just
+returns nothing. Later, the same permission will also cover wifi/cloud pairing with the desktop
+app. (The permission was removed in 1.28.13, when the app made no network call at all; it
+returns now, deliberately, for GIF search only.)
+
+MMS are carried by Android's own MMS service, which talks to your carrier's MMSC when you send or
+receive one. MMS never needed the `INTERNET` permission and still do not use it.
 
 The messages you send travel through your carrier's network, as with any SMS app. The developer
 never receives them.

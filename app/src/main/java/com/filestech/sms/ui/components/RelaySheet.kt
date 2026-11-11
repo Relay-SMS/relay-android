@@ -16,6 +16,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 
 /**
@@ -24,12 +25,17 @@ import androidx.compose.ui.unit.dp
  * expanded — no half-expanded resting state. [contentWindowInsets] defaults to the
  * Material 3 bottom-sheet insets; pass `WindowInsets.navigationBars` when the content
  * manages the IME itself (e.g. a sheet with a search field).
+ *
+ * Round 13 — [shape] lets one sheet opt out of the 28dp top corners: the emoji picker
+ * passes fully-rounded (48dp) top corners so it reads as a pill, like the rest of the
+ * app's fully-rounded language. Every other caller keeps the default.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RelaySheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     contentWindowInsets: @Composable () -> WindowInsets = { BottomSheetDefaults.windowInsets },
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -38,7 +44,7 @@ fun RelaySheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        shape = shape,
         containerColor = cs.surface,
         scrimColor = Color.Black.copy(alpha = 0.16f),
         dragHandle = { RelayDragHandle() },

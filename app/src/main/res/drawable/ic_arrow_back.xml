@@ -1,0 +1,17 @@
+<!-- Kristin's own icon (arrow-back.svg, 23x23 viewBox): left arrow with a line,
+     stroked 2.16dp with round caps and joins. The grey stroke in the source
+     becomes black; the tint is applied at the Icon() call site from the theme,
+     so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="23"
+    android:viewportHeight="23">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M10.9609,17.9688L4.49219,11.5L10.9609,5.03125M5.39062,11.5H18.5078"
+        android:strokeWidth="2.15625"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

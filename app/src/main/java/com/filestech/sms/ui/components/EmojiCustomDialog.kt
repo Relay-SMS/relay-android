@@ -3,6 +3,7 @@ package com.filestech.sms.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -49,6 +50,9 @@ fun EmojiCustomDialog(
     RelayDialog(
         onDismissRequest = onDismiss,
         title = stringResource(R.string.reaction_picker_other_title),
+        // Round 13 — the emoji popup family is fully rounded (48dp), matching
+        // the reaction picker sheet; the shared dialog default stays 28dp.
+        shape = RoundedCornerShape(48.dp),
         content = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(

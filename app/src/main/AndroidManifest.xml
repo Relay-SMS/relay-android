@@ -57,17 +57,23 @@
          révocation potentielle Android 14+. Aucun usage de AlarmManager.setExact*
          vérifié par grep avant retrait. -->
 
-    <!-- v1.28.13 (MR F-Droid !38458, relecture de mezinster) — INTERNET RETIRÉE.
-         Elle était déclarée « pour le transport MMS », mais l'application n'ouvre aucune connexion :
-         l'envoi et la réception passent par SmsManager.sendMultimediaMessage /
-         downloadMultimediaMessage, et c'est le service MMS d'Android, dans son propre processus,
-         qui parle au MMSC de l'opérateur. Aucune bibliothèque ne l'apporte (manifeste fusionné
-         vérifié). Sans elle, le processus de l'app n'est pas dans le groupe noyau `inet` et ne peut
-         créer aucun socket : « aucun accès réseau » devient vérifiable, et
-         .github/scripts/permissions-manifeste.py le garde en CI.
-         ACCESS_NETWORK_STATE reste dans l'APK, apportée par androidx.work : elle LIT l'état de la
-         connexion, elle n'en ouvre aucune. Nos propres déclarations des deux sont retirées.
-         v1.3.5 G3 — CHANGE_NETWORK_STATE déjà retirée : aucun appel ConnectivityManager. -->
+    <!-- Round 13 — INTERNET is back, for ONE purpose only: GIF search via Klipy
+         (see data/.../klipy/KlipyClient.kt). The picker sends the typed search
+         words to api.klipy.com and downloads the chosen GIF; Coil fetches the
+         GIF thumbnails from Klipy the same way. Nothing else in the app opens a
+         network connection: no analytics, no crash reporter, no update check.
+         MMS still work exactly as before — Android's own MMS service, in its own
+         process, talks to the carrier's MMSC (SmsManager.sendMultimediaMessage /
+         downloadMultimediaMessage), so MMS never needed this permission and still
+         don't use it. Later, this same permission will also cover wifi/cloud
+         pairing with the desktop app. If the permission is blocked, the app
+         still works fully — GIF search just returns nothing.
+         History: INTERNET was removed in v1.28.13 (it had been declared "for MMS
+         transport", which was never true); it returns here deliberately, reviewed
+         in PERMISSIONS.md and allowed by .github/scripts/permissions-manifeste.py.
+         ACCESS_NETWORK_STATE remains in the APK, brought by androidx.work: it
+         READS the connection state, it opens no connection. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- v1.27.1 (N3) — requise par `Window.setHideOverlayWindows()`, qui masque les
          superpositions des autres applications pendant la saisie d'un secret

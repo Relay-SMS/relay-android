@@ -79,6 +79,13 @@ data class ConversationSettings(
      * dropped at read time, like every other stored enum.
      */
     val mutedCategories: Set<MessageCategory> = emptySet(),
+    /**
+     * Round 13 — the category tab the user last selected (`null` = All).
+     * Persisted by enum NAME (`conv.selectedCategory`); an unknown name
+     * reads back as `null` (All), like every other stored enum. UI state
+     * only — there is no Settings row for it.
+     */
+    val selectedCategory: MessageCategory? = null,
 )
 
 /**

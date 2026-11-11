@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AttachFile
@@ -36,11 +37,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
@@ -59,8 +63,10 @@ import java.io.File
  *
  *   - **Image** : thumbnail rendu par Coil ([AsyncImage]) avec contentScale = Crop,
  *     max 240×320 dp pour cohérence avec [MessageBubble]. Tap → `ACTION_VIEW`.
- *   - **Vidéo** : icône play + nom de fichier (pas de preview frame extraite pour
- *     éviter la dépendance MediaMetadataRetriever — overkill pour v1.3.3). Tap →
+ *   - **Vidéo** : première frame en vignette (Coil [VideoFrameDecoder],
+ *     même taille/forme que l'image) avec le disque lecture des messages
+ *     vocaux centré dessus. Si la frame ne se décode pas (vidéo corrompue,
+ *     URI `content://` morte), repli sur l'icône play + libellé. Tap →
  *     `ACTION_VIEW` ouvre le player système.
  *   - **Autre fichier** : icône doc + nom + taille. Tap → `ACTION_VIEW` (chooser).
  *
@@ -295,10 +301,8 @@ private fun MediaPreview(
             onClick = onClick,
         )
         attachment.mimeType.startsWith("video/", ignoreCase = true) ->
-            IconAttachment(
+            VideoPreview(
                 attachment = attachment,
-                icon = Icons.Outlined.PlayCircleOutline,
-                iconLabelRes = R.string.attachment_video_label,
                 shape = shape,
                 bgColor = bgColor,
                 isOutgoing = isOutgoing,
@@ -358,6 +362,132 @@ private fun ImagePreview(
                 Timber.w("MMS thumbnail load failed for attachment %d", attachment.id)
             },
         )
+    }
+}
+
+/**
+ * Round 13 — video thumbnail: the first frame, decoded by Coil's
+ * [VideoFrameDecoder] (`io.coil-kt:coil-video`), with Kristin's voice-message
+ * play disc ([R.drawable.ic_play_circle], 48dp) centred on top. Tap still
+ * opens the video in the system player ([ouvrirPieceJointe]) — the disc is a
+ * visual cue, not an in-bubble player.
+ *
+ * The decoder only applies when Coil reports a `video/` MIME type for the
+ * source ([VideoFrameDecoder.Factory] gates on it): `content://mms/part/N`
+ * parts resolve it via `ContentResolver.getType`, files via their extension.
+ * The [ImageLoader] is local to this preview (remembered) so the app-wide
+ * Coil setup is untouched — `RealImageLoader` appends all the default
+ * fetchers/decoders on top of the added factory, so a plain
+ * `.components { add(...) }` here does NOT drop them.
+ *
+ * Fallback: if the frame cannot be decoded (corrupt/unsupported video, dead
+ * `content://` URI — the same failure mode [ImagePreview] already handles),
+ * [onError] swaps in the plain [IconAttachment] below, so the bubble never
+ * shows a blank hole. While the frame is loading, the outlined play icon
+ * shows underneath on the bubble colour instead of an empty tile.
+ *
+ * Play disc: a plain white disc can wash out on a bright frame, so it sits
+ * on a 56dp dark scrim halo — the triangle hole in [R.drawable.ic_play_circle]
+ * shows the scrim through (dark triangle on a white disc), readable on any
+ * frame, in both themes.
+ */
+@Composable
+private fun VideoPreview(
+    attachment: Attachment,
+    shape: androidx.compose.ui.graphics.Shape,
+    bgColor: androidx.compose.ui.graphics.Color,
+    isOutgoing: Boolean,
+    onClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    // Round 13 — local loader with the video-frame decoder, remembered for
+    // the lifetime of this preview. One loader per video bubble is cheap:
+    // the frame itself is ~230 KiB, same 480px cap as [ImagePreview].
+    val videoImageLoader = remember(context) {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+    }
+    // Keyed on the video itself so a different attachment resets the state
+    // (a recycled list item must not keep the previous video's loaded/failed).
+    var thumbLoaded by remember(attachment.localUri) { mutableStateOf(false) }
+    var thumbFailed by remember(attachment.localUri) { mutableStateOf(false) }
+    if (thumbFailed) {
+        IconAttachment(
+            attachment = attachment,
+            icon = Icons.Outlined.PlayCircleOutline,
+            iconLabelRes = R.string.attachment_video_label,
+            shape = shape,
+            bgColor = bgColor,
+            isOutgoing = isOutgoing,
+            onClick = onClick,
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .widthIn(min = 80.dp, max = 240.dp)
+                .heightIn(min = 80.dp, max = 320.dp)
+                .clip(shape)
+                .background(bgColor)
+                .border(width = 1.dp, color = bgColor, shape = shape)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Underneath: the old video tile's outlined play icon, visible
+            // while the frame loads (and briefly if it errors, before the
+            // swap above). Same tint as the bubble text.
+            Icon(
+                imageVector = Icons.Outlined.PlayCircleOutline,
+                contentDescription = null,
+                tint = if (isOutgoing) Color.White else cs.onSurface,
+                modifier = Modifier.size(48.dp),
+            )
+            // v1.3.10 (P5) — same 480px decode cap as [ImagePreview] so a
+            // 4K video frame is downsampled at decode time, not on the GPU.
+            // No error/fallback painter: a failed load must stay transparent
+            // so the icon underneath (then the [IconAttachment] swap) shows.
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(attachment.modeleImage())
+                    .size(THUMBNAIL_PX)
+                    .crossfade(true)
+                    .build(),
+                imageLoader = videoImageLoader,
+                contentDescription = attachment.fileName
+                    ?: stringResource(R.string.attachment_video_label),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 240.dp, height = 240.dp),
+                onSuccess = { thumbLoaded = true },
+                onError = {
+                    Timber.w(
+                        "MMS video thumbnail load failed for attachment %d",
+                        attachment.id,
+                    )
+                    thumbFailed = true
+                },
+            )
+            if (thumbLoaded) {
+                // Kristin's voice-message play disc, 48dp, centred on the
+                // frame, on a 56dp dark scrim halo (see the KDoc above).
+                // No own clickable: the tap falls through to the Box and
+                // opens the video, exactly as before.
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_play_circle),
+                        contentDescription = stringResource(R.string.attachment_video_label),
+                        tint = Color.White,
+                        modifier = Modifier.size(48.dp),
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -88,7 +88,13 @@ fun EmojiReactionPickerSheet(
 
     // Relay UI refresh: the shared sheet shell (28dp top corners, drag handle, light
     // scrim) with a spring scale-in on the content as it appears.
-    RelaySheet(onDismissRequest = onDismiss) {
+    // Round 13 — the emoji popup's edges are fully rounded (48dp top corners, a
+    // pill like the quick-reaction bar), not the shared 28dp: pass the shape in
+    // rather than changing [RelaySheet] for every sheet.
+    RelaySheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 48.dp, topEnd = 48.dp),
+    ) {
         AnimatedVisibility(
             visible = true,
             enter = scaleIn(

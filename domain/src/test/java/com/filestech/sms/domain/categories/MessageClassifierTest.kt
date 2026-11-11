@@ -300,6 +300,28 @@ class MessageClassifierTest {
         ).isEqualTo(MessageCategory.PERSONAL)
     }
 
+    @Test fun `contact talking politics stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Did you vote for the Democrat or the Republican? I voted early.",
+                sender = regularNumber,
+                isContact = true,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `group talking politics stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Did you vote for the Democrat or the Republican? I voted early.",
+                sender = null,
+                isContact = false,
+                isGroup = true,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
     @Test fun `free alone stays personal`() {
         assertThat(
             MessageClassifier.classify(

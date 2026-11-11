@@ -159,9 +159,7 @@ object MessageClassifier {
         "black friday", "free shipping", "free trial", "free gift",
         "free dvd", "buy one get one", "deal of the day", "coupon", "voucher",
         "sweepstakes", "you have won", "claim your", "claim your prize",
-        "congratulations you have won", "election", "ballot", "vote for",
-        "vote now", "your vote", "voting day", "candidate", "campaign",
-        "donate", "donation",
+        "congratulations you have won",
         // FR
         "desinscrire", "vous desinscrire", "pour vous desinscrire",
         "offre speciale", "offre exclusive", "offre limitee",
@@ -169,31 +167,53 @@ object MessageClassifier {
         "bon de reduction", "en promotion", "soldes", "reduction",
         "livraison gratuite", "essai gratuit", "cadeau offert",
         "ventes flash", "gagnez", "vous avez gagne",
-        "felicitations vous avez gagne", "scrutin", "votez pour",
-        "candidat", "campagne electorale", "faites un don", "faire un don",
+        "felicitations vous avez gagne",
         // DE
         "abmelden", "sonderangebot", "exklusives angebot",
         "begrenztes angebot", "rabattcode", "gutscheincode", "gutschein",
         "rabatt", "aktion endet", "kostenloser versand",
         "kostenlose lieferung", "gratis", "gewinnen",
-        "sie haben gewonnen", "wahltag", "wahlen", "stimmzettel",
-        "kandidat", "kampagne", "spenden", "spende",
+        "sie haben gewonnen",
         // ES
         "darse de baja", "cancelar suscripcion", "oferta especial",
         "oferta exclusiva", "oferta limitada", "codigo promocional",
         "codigo de descuento", "descuento", "cupon", "promocion",
         "rebajas", "venta flash", "envio gratis", "prueba gratis",
         "regalo gratis", "has ganado", "felicidades has ganado",
-        "elecciones", "dia de las elecciones", "boleta", "vota por",
-        "tu voto", "candidato", "campana electoral", "campana politica",
-        "dona ahora", "donar",
         // IT
         "annulla iscrizione", "cancellati", "disiscriviti",
         "offerta speciale", "offerta esclusiva", "offerta limitata",
         "codice promozionale", "codice sconto", "sconto", "promozione",
         "saldi", "vendita lampo", "spedizione gratuita",
         "prova gratuita", "regalo gratuito", "hai vinto",
-        "congratulazioni hai vinto", "elezioni", "elezione",
+        "congratulazioni hai vinto",
+    )
+
+    /**
+     * Round 13 — political phrases, split out of [PROMOTIONAL_KEYWORDS].
+     * These are ordinary language in a personal chat ("Did you vote for
+     * the Democrat?"), so they only count as promotional from a stranger
+     * (see [classify]: gated on `!isContact && !isGroup`). A campaign text
+     * from a non-contact still matches; a contact or group talking politics
+     * does not.
+     */
+    private val POLITICAL_KEYWORDS = listOf(
+        // EN
+        "election", "ballot", "vote for",
+        "vote now", "your vote", "voting day", "candidate", "campaign",
+        "donate", "donation",
+        // FR
+        "scrutin", "votez pour",
+        "candidat", "campagne electorale", "faites un don", "faire un don",
+        // DE
+        "wahltag", "wahlen", "stimmzettel",
+        "kandidat", "kampagne", "spenden", "spende",
+        // ES
+        "elecciones", "dia de las elecciones", "boleta", "vota por",
+        "tu voto", "candidato", "campana electoral", "campana politica",
+        "dona ahora", "donar",
+        // IT
+        "elezioni", "elezione",
         "scheda elettorale", "vota per", "il tuo voto", "candidato",
         "campagna elettorale", "dona ora", "donazione",
     )
@@ -218,7 +238,14 @@ object MessageClassifier {
             isOtp -> MessageCategory.OTP
             containsAny(paddedBody, TRANSACTION_KEYWORDS) -> MessageCategory.TRANSACTIONS
             containsAny(paddedBody, PROMOTIONAL_KEYWORDS) ||
-                isPoliticalVote(paddedBody) ||
+                // Round 13 — political talk is only promotional from a
+                // stranger. A contact (or a group) talking about voting and
+                // saying "republican"/"democrat" stays Personal — real people
+                // talk politics. This covers both the political phrases
+                // ([POLITICAL_KEYWORDS], e.g. "vote for") and the vote+party
+                // pair ([isPoliticalVote]); without the guard either one
+                // caught any contact's political chat.
+                (!isContact && !isGroup && (containsAny(paddedBody, POLITICAL_KEYWORDS) || isPoliticalVote(paddedBody))) ||
                 isShortCode(digits) || isAlphanumericSender(sender) -> MessageCategory.PROMOTIONAL
             isContact || isGroup || isRegularNumber(digits) -> MessageCategory.PERSONAL
             else -> MessageCategory.OTHER

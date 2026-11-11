@@ -11,7 +11,10 @@ Haltaya**. Voir aussi les [conditions d'utilisation](TERMS.fr.md).
 
 ## Ce que nous collectons
 
-**Rien.** SMS Relay ne collecte, ne transmet ni n'agrège aucune donnée personnelle.
+**Rien.** SMS Relay ne collecte, ne transmet ni n'agrège aucune donnée personnelle — avec une
+seule exception : lorsque vous recherchez un GIF, les mots tapés sont envoyés à Klipy pour qu'il
+renvoie des GIF correspondants (voir [Réseau](#réseau) ci-dessous). Relay ne conserve rien de cet
+échange au-delà du GIF que vous choisissez d'envoyer.
 
 Aucun SDK d'analytique, aucun rapporteur de crash, aucun endpoint de télémétrie, aucun identifiant
 publicitaire, aucune bibliothèque de fingerprinting. Le binaire ne contient aucun code de pistage
@@ -37,10 +40,17 @@ lors d'un transfert d'appareil sans votre accord explicite.
 
 ## Réseau
 
-SMS Relay n'émet aucune requête réseau. Depuis la 1.28.13, elle ne détient même plus la permission
-`INTERNET` : son processus ne peut ouvrir aucune connexion réseau. Les MMS sont acheminés par le
-service MMS d'Android, qui contacte le MMSC de votre opérateur lorsque vous en envoyez ou en recevez
-un. Aucune vérification de mise à jour, aucune configuration distante, aucun ping analytique.
+SMS Relay détient la permission `INTERNET` pour une seule fonctionnalité : la recherche de GIF.
+Lorsque vous ouvrez l'onglet GIF et tapez une recherche, les mots tapés sont envoyés à Klipy
+(`api.klipy.com`), qui renvoie des GIF correspondants ; en toucher un le télécharge depuis Klipy,
+et les vignettes de la grille viennent aussi de Klipy. Klipy voit vos mots de recherche et votre
+adresse IP, comme tout service contacté. C'est la seule utilisation réseau de l'application :
+aucune vérification de mise à jour, aucune configuration distante, aucun ping analytique, aucun
+rapport de plantage. Si la permission est bloquée, l'application fonctionne toujours — la
+recherche de GIF ne renvoie simplement rien. Plus tard, la même permission couvrira aussi
+l'appairage wifi/cloud avec l'application de bureau. (La permission avait été retirée en 1.28.13,
+lorsque l'application n'émettait aucune requête réseau ; elle revient maintenant, délibérément,
+pour la recherche de GIF uniquement.)
 
 Les messages que vous envoyez passent par le réseau de votre opérateur, comme avec toute application
 de SMS. Le développeur ne les reçoit jamais.

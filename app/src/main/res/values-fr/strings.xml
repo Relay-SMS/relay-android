@@ -182,6 +182,10 @@
     <string name="compose_add_to_group">Ajouter au groupe</string>
     <string name="compose_add_contact">Ajouter un contact</string>
     <string name="compose_select_contact">Sélectionner un contact</string>
+    <string name="compose_name_your_group">Nommez votre groupe</string>
+    <string name="compose_group_name_placeholder">Nom du groupe</string>
+    <string name="compose_group_members">Membres</string>
+    <string name="compose_remove_member">Retirer ce membre</string>
     <string name="compose_contacts_refused_title">Pas d\'accès aux contacts</string>
     <string name="compose_contacts_refused_desc">Saisissez un numéro ci-dessus, ou touchez ici pour autoriser les Contacts dans les Paramètres de l\'application.</string>
 
@@ -753,6 +757,7 @@
     <string name="about_perm_notifications">Afficher les notifications de nouveaux messages.</string>
     <string name="about_perm_biometric">Déverrouillage biométrique facultatif.</string>
     <string name="about_perm_record_audio">Enregistrer les messages vocaux joints aux MMS sortants.</string>
+    <string name="about_perm_internet">Recherche de GIF uniquement (Klipy). L\'application fonctionne sans elle.</string>
     <string name="about_perm_foreground_service">Migration et sauvegarde de longue durée.</string>
     <string name="about_perm_location">Mode urgence uniquement, si vous l\'activez : une position au moment de l\'alerte, exacte ou approximative.</string>
     <string name="about_perm_call_phone">Tuiles d\'appel d\'urgence : appel direct. Refusée, elles ouvrent le composeur.</string>
@@ -768,6 +773,7 @@
     <string name="about_license">Licence</string>
     <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
     <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
+    <string name="twemoji_attribution">Emoji and sticker artwork: Twemoji (jdecked/twemoji fork), Copyright Twitter, Inc. and contributors, licensed under CC-BY 4.0. Source: https://github.com/jdecked/twemoji</string>
     <string name="about_privacy">Politique de confidentialité</string>
     <string name="about_terms">Conditions d\'utilisation</string>
     <string name="about_support">Soutenir le projet</string>
@@ -886,6 +892,13 @@
     <string name="thread_schedule_empty_body">Saisissez un message avant de programmer</string>
     <string name="thread_schedule_success">Message programmé</string>
     <string name="thread_schedule_failed">Échec de la programmation</string>
+    <string name="date_tomorrow">Demain</string>
+    <string name="schedule_preset_in_1_hour">Dans 1 heure · %1$s</string>
+    <string name="schedule_preset_day_time">%1$s, %2$s</string>
+    <string name="schedule_pick_date_time">Choisir la date et l\'heure</string>
+    <string name="emoji_picker_search_emoji">Rechercher un emoji</string>
+    <string name="emoji_picker_search_gif">Search KLIPY</string>
+    <string name="emoji_picker_search_sticker">Rechercher un sticker</string>
     <string name="thread_search_hint">Rechercher dans cette conversation</string>
     <string name="thread_search_match_count">%1$d sur %2$d</string>
     <string name="thread_search_no_results">Aucun résultat</string>
@@ -930,7 +943,7 @@
     <string name="about_feat_ui_label">UI fluide</string>
     <string name="about_feat_ui_desc">Compose + recomposition isolée par bulle. Tri des conversations dans le menu 3 points.</string>
     <string name="about_feat_noads_label">Zéro pub, zéro traceur</string>
-    <string name="about_feat_noads_desc">Aucune analytics. Aucun accès réseau : l\'application ne détient pas la permission Internet ; les MMS sont acheminés par le service MMS d\'Android.</string>
+    <string name="about_feat_noads_desc">Aucune analytics. Internet sert uniquement à la recherche de GIF (Klipy) ; les MMS sont acheminés par le service MMS d\'Android.</string>
 
     <!-- Recettes d'aide (7 titres + steps) -->
     <string name="about_help_default_title">Définir comme app SMS par défaut</string>
@@ -962,6 +975,30 @@
     <string name="about_help_update_step1">Bouton \"Voir les mises à jour\" en haut de cette page</string>
     <string name="about_help_update_step2">Ouvre la page Releases GitHub de SMS Relay</string>
     <string name="about_help_update_step3">L\'app ne tente jamais d\'auto-update sans votre accord</string>
+    <string name="about_help_schedule_title">Programmer un message</string>
+    <string name="about_help_schedule_step1">Dans une conversation, écrivez votre message, puis appui long sur le bouton d\'envoi</string>
+    <string name="about_help_schedule_step2">Choisissez un horaire prédéfini, ou votre propre date et heure</string>
+    <string name="about_help_schedule_step3">Le message est envoyé automatiquement à ce moment-là, même si l\'app est fermée</string>
+    <string name="about_help_schedule_step4">Menu ⋮ de l\'écran principal → \"Messages programmés\" pour voir ou annuler un envoi programmé</string>
+    <string name="about_help_categories_title">Utiliser les onglets de catégories</string>
+    <string name="about_help_categories_step1">Les conversations sont triées en onglets : Tout, Personnel, OTP, Promotionnel, Transactions, Autres</string>
+    <string name="about_help_categories_step2">Appui long sur un onglet (ou via Réglages) pour couper les notifications de cette catégorie</string>
+    <string name="about_help_categories_step3">Réglages → Apparence → \"Afficher les catégories\" masque complètement les onglets</string>
+    <string name="about_help_pin_title">Épingler un message</string>
+    <string name="about_help_pin_step1">Touchez une bulle → \"Épingler\" (l\'appui long fonctionne aussi)</string>
+    <string name="about_help_pin_step2">Le message épinglé s\'affiche dans une bannière sous l\'en-tête du fil</string>
+    <string name="about_help_pin_step3">Touchez la bannière pour aller au message ; touchez le X pour le désépingler</string>
+    <string name="about_help_pin_step4">Un seul épinglage par conversation pour l\'instant</string>
+    <string name="about_help_reactions_title">Réagir à un message</string>
+    <string name="about_help_reactions_step1">Touchez une bulle : vos emojis récents apparaissent — touchez-en un pour l\'envoyer aussitôt</string>
+    <string name="about_help_reactions_step2">Touchez + dans cette rangée pour le sélecteur d\'emojis complet</string>
+    <string name="about_help_reactions_step3">Appui long sur une bulle pour le menu complet (Réagir, Copier, Épingler, Supprimer)</string>
+    <string name="about_help_reactions_step4">Réglages → Envoi → \"Format des réactions\" ; pour vos contacts iPhone, une réaction arrive en texte, car le SMS n\'a pas de vraie réaction</string>
+    <string name="about_help_group_title">Créer une conversation de groupe</string>
+    <string name="about_help_group_step1">Nouveau message → \"Créer un groupe\", puis touchez les contacts pour les choisir</string>
+    <string name="about_help_group_step2">Touchez Continuer pour nommer le groupe (laissez vide pour ne pas le nommer)</string>
+    <string name="about_help_group_step3">Touchez le X à côté d\'un membre pour le retirer</string>
+    <string name="about_help_group_step4">Touchez Continuer pour ouvrir la conversation de groupe</string>
 
     <!-- v1.14.8 R1/R2 — notification d\'échec MMS entrant (taille trop grande ou erreur MMSC). -->
     <string name="mms_failure_notification_title">MMS non reçu</string>
@@ -1081,4 +1118,5 @@
         <item quantity="other">%1$d jours</item>
     </plurals>
     <string name="duration_days_hours">%1$d j %2$d h</string>
+    <string name="gif_search_unavailable">La recherche de GIF n\'est pas disponible pour le moment. Veuillez réessayer plus tard.</string>
 </resources>

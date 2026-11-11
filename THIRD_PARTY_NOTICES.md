@@ -63,13 +63,19 @@ the library publishes — not from memory.
 | JetBrains annotations, JSpecify | 23.0.0 / 1.0.0 | JetBrains / JSpecify | Apache 2.0 |
 | `javax.inject`, `jakarta.inject-api` | 1 / 2.0.1 | JSR-330 / Eclipse Foundation | Apache 2.0 |
 | Coil (image loading) | 2.7.0 | Coil contributors | Apache 2.0 |
+| Coil SVG (`io.coil-kt:coil-svg`, pulls in AndroidSVG) | 2.7.0 | Coil contributors | Apache 2.0 |
+| Twemoji graphics (emoji / sticker artwork) | Unicode 17, jdecked/twemoji fork | Twitter, Inc. and contributors | **CC-BY 4.0** — attribution below |
 | OkHttp, Okio (pulled in by Coil) | 4.12.0 / 3.9.1 | Square | Apache 2.0 |
 | Timber | 5.0.1 | Jake Wharton | Apache 2.0 |
 | **SQLCipher for Android** | 4.19.0 | Zetetic LLC | **BSD-3-Clause** — full text below |
 
 OkHttp is present because Coil depends on it. SMS Relay uses Coil to display contact photos and
-attachments stored on the phone; its one network use is MMS transport through your carrier (see
-[PRIVACY.md](PRIVACY.md)).
+attachments stored on the phone; its network uses are MMS transport through your carrier and GIF
+search via Klipy (see [PRIVACY.md](PRIVACY.md)).
+
+Twemoji graphics are bundled as SVG/PNG assets under `app/src/main/assets/twemoji/` and rendered
+by Coil; the Twemoji code is not used, only the graphics. The bundled set is a curated subset
+(241 emojis as SVG, 38 of them also as 72x72 PNG for sending stickers as MMS attachments).
 
 SQLCipher bundles **SQLite** and **LibTomCrypt**, both released into the public domain by their
 authors.
@@ -154,6 +160,15 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+### Twemoji graphics — Creative Commons Attribution 4.0 International (CC-BY 4.0)
+
+Emoji and sticker artwork: Twemoji (jdecked/twemoji fork, Unicode 17),
+Copyright Twitter, Inc. and contributors, licensed under CC-BY 4.0.
+Source: https://github.com/jdecked/twemoji — licence text:
+https://creativecommons.org/licenses/by/4.0/legalcode
+
+Only the graphics are bundled; the Twemoji code (MIT) is not used.
 
 ## Build and test tools (not shipped in the APK)
 

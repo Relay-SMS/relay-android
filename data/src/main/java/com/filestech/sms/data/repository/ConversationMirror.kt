@@ -951,6 +951,10 @@ class ConversationMirror @Inject constructor(
         inclutSoi: Boolean = false,
         transactionKey: String? = null,
         encoreVoulu: () -> Boolean = { true },
+        // Round 13 — the AOSP system thread ID for this MMS (group MMS only, resolved by
+        // `IntegrationMmsRecu` before the transaction). `0L` = unknown: routing is exactly
+        // as before. When > 0, `ensureConversation` tries it first.
+        systemThreadId: Long = 0L,
     ): InscriptionMmsRecu? = withContext(io) {
         val storedBody = caption?.trim().orEmpty()
         database.withTransaction {
@@ -960,6 +964,7 @@ class ConversationMirror @Inject constructor(
             val convId = ensureConversation(
                 groupMembers ?: listOf(PhoneAddress.of(address)),
                 inclutSoi = inclutSoi && groupMembers != null,
+                systemThreadId = systemThreadId,
             )
             val msg = MessageEntity(
                 conversationId = convId,
@@ -1253,7 +1258,8 @@ class ConversationMirror @Inject constructor(
 
         // v1.3.10 — exact-CSV fallback BEFORE the suffix-8 lookup. Catches the case where
         // [MmsDownloadedReceiver] just created the conversation without a system thread id
-        // (we never query content://mms-sms/threadID from the receiver) and the subsequent
+        // (round 13 now resolves one for group MMS via `SystemThreadResolver`, but a
+        // failed lookup still leaves `0L`) and the subsequent
         // [TelephonySyncManager.bulkImportMmsFromTelephony] is now importing the same MMS
         // with its real system thread id. Without this, we'd insert a second conversation
         // for the same correspondent — user-visible as a duplicate thread.
@@ -1396,8 +1402,13 @@ class ConversationMirror @Inject constructor(
      * renseigné) : d'abord le groupe « moins un », sinon la conversation individuelle de
      * l'expéditeur (en tête de liste). Ne crée jamais un groupe qui compterait l'utilisateur
      * comme membre — sans groupe connu, on ne sait pas qui retirer.
+     *
+     * Round 13 — [systemThreadId] is stamped onto the minus-one group when found (it IS
+     * that group), so the next message in the thread matches by thread ID. It is NEVER
+     * passed to the 1:1 fallback below: the sender's individual conversation must not
+     * carry a group thread ID.
      */
-    private suspend fun resoudreAvecSoi(addresses: List<PhoneAddress>): Long {
+    private suspend fun resoudreAvecSoi(addresses: List<PhoneAddress>, systemThreadId: Long = 0L): Long {
         rapprocherGroupeMoinsUn(addresses)?.let { existing ->
             // Le nom vient des membres du groupe retrouvé, pas de la liste brute (qui porte
             // aussi notre propre numéro).
@@ -1406,20 +1417,47 @@ class ConversationMirror @Inject constructor(
                     conversationDao.update(existing.copy(displayName = nom))
                 }
             }
+            if (systemThreadId > 0L && existing.threadId != systemThreadId) {
+                conversationDao.update(existing.copy(threadId = systemThreadId))
+            }
             return existing.id
         }
         return ensureConversation(listOf(addresses.first()))
     }
 
-    private suspend fun ensureConversation(addresses: List<PhoneAddress>, inclutSoi: Boolean = false): Long {
+    private suspend fun ensureConversation(
+        addresses: List<PhoneAddress>,
+        inclutSoi: Boolean = false,
+        // Round 13 — the AOSP system thread ID for this MMS (group MMS only; `0L` = unknown).
+        // The provider keys a thread by its recipient set, so this is the grouping Android
+        // itself uses — it works for a group Relay has never seen, and without our own
+        // number. `0L` leaves every existing path exactly as it was.
+        systemThreadId: Long = 0L,
+    ): Long {
         val csv = addresses.sortedBy { it.normalized }.toCsv()
         val resolved = if (addresses.size == 1) resolveDisplayName(addresses.first().raw) else nomDeGroupe(addresses)
 
-        // 1) Exact-CSV match — chemin rapide, couvre la majorité des cas (même format
-        //    d'adresse stocké et présenté).
-        (conversationDao.findByAddressesCsv(csv) ?: rapprocherGroupe(addresses))?.let { existing ->
+        // 0) + 1) Round 13 — the system thread ID first, then the exact-CSV / group
+        //    match. The provider keys a thread by its recipient set, so a thread hit IS
+        //    the conversation for this group, whatever the participant list looks like
+        //    (carrier-stripped `To`, national vs international spellings, our own number
+        //    present or not). A thread ID only ever matches the conversation for that
+        //    exact recipient set, so it cannot misroute a 1:1 into a group or vice versa.
+        //    When the match came from CSV / group instead, the thread ID is adopted:
+        //    the next message in this thread then matches by thread ID even if its
+        //    participant list is spelled differently. (For a thread hit the stamp is a
+        //    no-op — the stored ID already equals it.)
+        val byThread: ConversationEntity? = if (systemThreadId > 0L) {
+            conversationDao.findByThreadId(systemThreadId)
+        } else {
+            null
+        }
+        (byThread ?: conversationDao.findByAddressesCsv(csv) ?: rapprocherGroupe(addresses))?.let { existing ->
             if (existing.displayName == null && resolved != null) {
                 conversationDao.update(existing.copy(displayName = resolved))
+            }
+            if (systemThreadId > 0L && existing.threadId != systemThreadId) {
+                conversationDao.update(existing.copy(threadId = systemThreadId))
             }
             return existing.id
         }
@@ -1429,7 +1467,7 @@ class ConversationMirror @Inject constructor(
         //     membre de moins. Un groupe dont les membres sont ces adresses moins une, c'est
         //     le groupe (l'adresse en trop, c'est nous). Sans ce repli, la réponse à un groupe
         //     existant tombait en conversation individuelle de l'expéditeur.
-        if (inclutSoi && addresses.size > 1) return resoudreAvecSoi(addresses)
+        if (inclutSoi && addresses.size > 1) return resoudreAvecSoi(addresses, systemThreadId)
 
         // 2) v1.3.3 — FALLBACK matching par suffix 8 chiffres pour les conversations
         //    1-to-1. Sans ce fallback, un SMS reçu en format national `0612345678` créerait
@@ -1481,14 +1519,19 @@ class ConversationMirror @Inject constructor(
 
         // 3) Vraiment nouvelle conversation — création.
         //
-        // v1.28.3 (F01) — `threadId = null` et non plus `0L`. La réception ne consulte jamais
-        // `content://mms-sms/threadID`, donc toute conversation créée ici est sans fil système
-        // jusqu'à la resynchro suivante. Avec la sentinelle `0L` sous un index UNIQUE, deux
-        // correspondants inconnus reçus dans le même intervalle se chassaient l'un l'autre :
-        // le second insert supprimait la conversation du premier, messages compris.
+        // v1.28.3 (F01) — `threadId = null` quand aucun fil système n'est connu. Avec la
+        // sentinelle `0L` sous un index UNIQUE, deux correspondants inconnus reçus dans le
+        // même intervalle se chassaient l'un l'autre : le second insert supprimait la
+        // conversation du premier, messages compris.
+        //
+        // Round 13 — when a system thread ID is known (group MMS), store it: the NEXT
+        // message in the same system thread then matches by step 0 (`findByThreadId`),
+        // even if its participant list is incomplete. This is what makes a brand-new
+        // group work from the second message on — and, since the thread ID comes from
+        // the PDU addresses, from the first one too when the group is new to Relay.
         return conversationDao.insert(
             ConversationEntity(
-                threadId = null,
+                threadId = systemThreadId.takeIf { it > 0L },
                 addressesCsv = csv,
                 displayName = resolved,
                 // Same sentinel as `ensureConversationByThread` — see comment there.

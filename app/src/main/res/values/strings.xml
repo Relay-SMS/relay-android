@@ -188,6 +188,10 @@
     <string name="compose_add_to_group">Add to the group</string>
     <string name="compose_add_contact">Add contact</string>
     <string name="compose_select_contact">Select contact</string>
+    <string name="compose_name_your_group">Name your group</string>
+    <string name="compose_group_name_placeholder">Group name</string>
+    <string name="compose_group_members">Members</string>
+    <string name="compose_remove_member">Remove member</string>
     <string name="compose_contacts_refused_title">No access to contacts</string>
     <string name="compose_contacts_refused_desc">Type a number above, or tap here to allow Contacts in the app\'s Android settings.</string>
 
@@ -758,6 +762,7 @@
     <string name="about_perm_notifications">Show new-message notifications.</string>
     <string name="about_perm_biometric">Optional biometric unlock.</string>
     <string name="about_perm_record_audio">Record audio messages attached to outgoing MMS.</string>
+    <string name="about_perm_internet">GIF search only (Klipy). The app works without it.</string>
     <string name="about_perm_foreground_service">Long-running migration / backup.</string>
     <string name="about_perm_location">Emergency mode only, if you turn it on: one position at the moment of the alert, precise or approximate.</string>
     <string name="about_perm_call_phone">Emergency call tiles: call directly. Refused, they open the dialer instead.</string>
@@ -773,6 +778,7 @@
     <string name="about_license">License</string>
     <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
     <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
+    <string name="twemoji_attribution">Emoji and sticker artwork: Twemoji (jdecked/twemoji fork), Copyright Twitter, Inc. and contributors, licensed under CC-BY 4.0. Source: https://github.com/jdecked/twemoji</string>
     <string name="about_privacy">Privacy policy</string>
     <string name="about_terms">Terms of use</string>
     <string name="about_support">Support the project</string>
@@ -895,6 +901,13 @@
     <string name="thread_schedule_empty_body">Type a message before scheduling</string>
     <string name="thread_schedule_success">Message scheduled</string>
     <string name="thread_schedule_failed">Failed to schedule the message</string>
+    <string name="date_tomorrow">Tomorrow</string>
+    <string name="schedule_preset_in_1_hour">In 1 hour · %1$s</string>
+    <string name="schedule_preset_day_time">%1$s, %2$s</string>
+    <string name="schedule_pick_date_time">Pick date and time</string>
+    <string name="emoji_picker_search_emoji">Search emoji</string>
+    <string name="emoji_picker_search_gif">Search KLIPY</string>
+    <string name="emoji_picker_search_sticker">Search sticker</string>
     <string name="thread_search_hint">Search in this conversation</string>
     <string name="thread_search_match_count">%1$d of %2$d</string>
     <string name="thread_search_no_results">No results</string>
@@ -939,7 +952,7 @@
     <string name="about_feat_ui_label">Smooth UI</string>
     <string name="about_feat_ui_desc">Compose + per-bubble isolated recomposition. Conversation sorting in the 3-dot menu.</string>
     <string name="about_feat_noads_label">Zero ads, zero trackers</string>
-    <string name="about_feat_noads_desc">No analytics. No network access: the app does not hold the Internet permission; MMS are carried by Android\'s own MMS service.</string>
+    <string name="about_feat_noads_desc">No analytics. Internet is used only for GIF search (Klipy); MMS are carried by Android\'s own MMS service.</string>
 
     <!-- Help recipes (7 titles + steps) -->
     <string name="about_help_default_title">Set as default SMS app</string>
@@ -971,6 +984,30 @@
     <string name="about_help_update_step1">\"View updates\" button at the top of this page</string>
     <string name="about_help_update_step2">Opens the SMS Relay GitHub Releases page</string>
     <string name="about_help_update_step3">The app never attempts to auto-update without your consent</string>
+    <string name="about_help_schedule_title">Schedule a message</string>
+    <string name="about_help_schedule_step1">In a conversation, type your message, then long-press the send button</string>
+    <string name="about_help_schedule_step2">Pick a preset time, or choose your own date and time</string>
+    <string name="about_help_schedule_step3">The message is sent automatically at that time, even if the app is closed</string>
+    <string name="about_help_schedule_step4">Main screen menu ⋮ → \"Scheduled messages\" to see or cancel a scheduled send</string>
+    <string name="about_help_categories_title">Use the category tabs</string>
+    <string name="about_help_categories_step1">Conversations are sorted into tabs: All, Personal, OTP, Promotional, Transactions, Other</string>
+    <string name="about_help_categories_step2">Long-press a tab (or use Settings) to turn off notifications for that category</string>
+    <string name="about_help_categories_step3">Settings → Appearance → \"Show categories\" hides the tabs entirely</string>
+    <string name="about_help_pin_title">Pin a message</string>
+    <string name="about_help_pin_step1">Tap a bubble → \"Pin\" (long-press works too)</string>
+    <string name="about_help_pin_step2">The pinned message shows in a banner under the thread header</string>
+    <string name="about_help_pin_step3">Tap the banner to jump to the message; tap the X to unpin it</string>
+    <string name="about_help_pin_step4">One pin per conversation for now</string>
+    <string name="about_help_reactions_title">React to a message</string>
+    <string name="about_help_reactions_step1">Tap a bubble: your recent emojis pop up — tap one to send it right away</string>
+    <string name="about_help_reactions_step2">Tap + in that row for the full emoji picker</string>
+    <string name="about_help_reactions_step3">Long-press a bubble for the full menu (React, Copy, Pin, Delete)</string>
+    <string name="about_help_reactions_step4">Settings → Sending → \"Reaction format\"; to iPhone friends a reaction arrives as a text line, since SMS has no real reaction</string>
+    <string name="about_help_group_title">Create a group conversation</string>
+    <string name="about_help_group_step1">New message → \"Create a group\", then tap contacts to pick them</string>
+    <string name="about_help_group_step2">Tap Continue to name the group (leave it blank for no name)</string>
+    <string name="about_help_group_step3">Tap the X next to a member to remove them</string>
+    <string name="about_help_group_step4">Tap Continue to open the group conversation</string>
 
     <!-- v1.14.8 R1/R2 — incoming MMS failure notification (size cap or MMSC error). -->
     <string name="mms_failure_notification_title">MMS not received</string>
@@ -1094,4 +1131,5 @@
         <item quantity="other">%1$d days</item>
     </plurals>
     <string name="duration_days_hours">%1$d d %2$d h</string>
+    <string name="gif_search_unavailable">GIF search isn\'t available right now. Please try again later.</string>
 </resources>

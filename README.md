@@ -3,7 +3,7 @@
 English · 🇫🇷 [Version française](README.fr.md)
 
 A modern, private SMS & MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
-No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licensed.
+No ads, no trackers, no analytics. Internet is used only for GIF search (Klipy). Apache-2.0 licensed.
 
 > **Fork note:** Relay is based on [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine; Relay's UI and new features are © 2026 Relay Messaging.
 
@@ -48,8 +48,11 @@ Releases: [GitHub Releases](https://github.com/relay-sms/relay-android/releases/
 ## 🔐 Privacy
 
 We collect **nothing**. No analytics, no crash reporting, no remote logging.
-Relay makes no network call: it does not hold the `INTERNET` permission, so its process cannot
-open a connection. MMS are carried by Android's own MMS service, which talks to your carrier's MMSC.
+Relay holds the `INTERNET` permission for one feature only: GIF search via Klipy — the words you
+type are sent to Klipy (`api.klipy.com`) and the GIF you tap is downloaded from there. Nothing
+else in the app uses the network, and the app still works if the permission is blocked (GIF search
+just returns nothing). MMS are carried by Android's own MMS service, which talks to your carrier's
+MMSC.
 
 SMS is **not** end-to-end encrypted at the protocol level — this is a limitation of the carrier
 network, not a choice. Relay protects what's stored on your device, with SQLCipher + the

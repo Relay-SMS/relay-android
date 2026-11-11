@@ -188,6 +188,10 @@
     <string name="compose_add_to_group">Zur Gruppe hinzufügen</string>
     <string name="compose_add_contact">Kontakt hinzufügen</string>
     <string name="compose_select_contact">Kontakt auswählen</string>
+    <string name="compose_name_your_group">Gruppe benennen</string>
+    <string name="compose_group_name_placeholder">Gruppenname</string>
+    <string name="compose_group_members">Mitglieder</string>
+    <string name="compose_remove_member">Mitglied entfernen</string>
     <string name="compose_contacts_refused_title">Kein Zugriff auf Kontakte</string>
     <string name="compose_contacts_refused_desc">Geben Sie oben eine Nummer ein oder tippen Sie hier, um den Zugriff auf Kontakte in den App-Einstellungen zu erlauben.</string>
 
@@ -761,6 +765,7 @@
     <string name="about_perm_notifications">Benachrichtigungen über neue Nachrichten anzeigen.</string>
     <string name="about_perm_biometric">Optionales Entsperren per Biometrie.</string>
     <string name="about_perm_record_audio">Sprachnachrichten aufnehmen, die an ausgehende MMS angehängt werden.</string>
+    <string name="about_perm_internet">Nur GIF-Suche (Klipy). Die App funktioniert auch ohne sie.</string>
     <string name="about_perm_foreground_service">Lang laufende Migration bzw. Sicherung.</string>
     <string name="about_perm_location">Nur Notfallmodus, wenn Sie ihn aktivieren: eine Position im Moment des Alarms, genau oder ungefähr.</string>
     <string name="about_perm_call_phone">Notruf-Kacheln: direkter Anruf. Verweigert, öffnen sie stattdessen die Telefon-App.</string>
@@ -776,6 +781,7 @@
     <string name="about_license">Lizenz</string>
     <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
     <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
+    <string name="twemoji_attribution">Emoji and sticker artwork: Twemoji (jdecked/twemoji fork), Copyright Twitter, Inc. and contributors, licensed under CC-BY 4.0. Source: https://github.com/jdecked/twemoji</string>
     <string name="about_privacy">Datenschutzerklärung</string>
     <string name="about_terms">Nutzungsbedingungen</string>
     <string name="about_support">Das Projekt unterstützen</string>
@@ -899,6 +905,13 @@
     <string name="thread_schedule_empty_body">Schreiben Sie eine Nachricht, bevor Sie planen</string>
     <string name="thread_schedule_success">Nachricht geplant</string>
     <string name="thread_schedule_failed">Die Nachricht konnte nicht geplant werden</string>
+    <string name="date_tomorrow">Morgen</string>
+    <string name="schedule_preset_in_1_hour">In 1 Stunde · %1$s</string>
+    <string name="schedule_preset_day_time">%1$s, %2$s</string>
+    <string name="schedule_pick_date_time">Datum und Uhrzeit wählen</string>
+    <string name="emoji_picker_search_emoji">Emoji suchen</string>
+    <string name="emoji_picker_search_gif">Search KLIPY</string>
+    <string name="emoji_picker_search_sticker">Sticker suchen</string>
     <string name="thread_search_hint">In dieser Unterhaltung suchen</string>
     <string name="thread_search_match_count">%1$d von %2$d</string>
     <string name="thread_search_no_results">Keine Ergebnisse</string>
@@ -944,7 +957,7 @@
     <string name="about_feat_ui_label">Flüssige Oberfläche</string>
     <string name="about_feat_ui_desc">Compose mit pro Sprechblase isolierter Neuzeichnung. Sortierung der Unterhaltungen im Drei-Punkte-Menü.</string>
     <string name="about_feat_noads_label">Keine Werbung, keine Tracker</string>
-    <string name="about_feat_noads_desc">Keine Analyse. Kein Netzzugriff: Die App besitzt keine Internetberechtigung; MMS überträgt der MMS-Dienst von Android.</string>
+    <string name="about_feat_noads_desc">Keine Analyse. Internet wird nur für die GIF-Suche (Klipy) verwendet; MMS überträgt der MMS-Dienst von Android.</string>
 
     <!-- Help recipes (7 titles + steps) -->
     <string name="about_help_default_title">Als Standard-SMS-App festlegen</string>
@@ -976,6 +989,30 @@
     <string name="about_help_update_step1">Schaltfläche \"Aktualisierungen ansehen\" oben auf dieser Seite</string>
     <string name="about_help_update_step2">Öffnet die GitHub-Releases-Seite von SMS Relay</string>
     <string name="about_help_update_step3">Die App versucht nie, sich ohne Ihre Zustimmung selbst zu aktualisieren</string>
+    <string name="about_help_schedule_title">Eine Nachricht planen</string>
+    <string name="about_help_schedule_step1">In einer Unterhaltung die Nachricht tippen, dann die Senden-Schaltfläche lange drücken</string>
+    <string name="about_help_schedule_step2">Eine voreingestellte Zeit wählen, oder eigenes Datum und eigene Uhrzeit</string>
+    <string name="about_help_schedule_step3">Die Nachricht wird zum gewählten Zeitpunkt automatisch gesendet, auch wenn die App geschlossen ist</string>
+    <string name="about_help_schedule_step4">Menü ⋮ auf dem Hauptbildschirm → \"Geplante Nachrichten\", um einen geplanten Versand zu sehen oder abzubrechen</string>
+    <string name="about_help_categories_title">Die Kategorie-Tabs verwenden</string>
+    <string name="about_help_categories_step1">Unterhaltungen werden in Tabs sortiert: Alle, Persönlich, OTP, Werbung, Transaktionen, Sonstige</string>
+    <string name="about_help_categories_step2">Einen Tab lange drücken (oder in den Einstellungen), um Benachrichtigungen für diese Kategorie zu deaktivieren</string>
+    <string name="about_help_categories_step3">Einstellungen → Darstellung → \"Kategorien anzeigen\" blendet die Tabs ganz aus</string>
+    <string name="about_help_pin_title">Eine Nachricht anpinnen</string>
+    <string name="about_help_pin_step1">Eine Sprechblase antippen → \"Anheften\" (langes Drücken geht auch)</string>
+    <string name="about_help_pin_step2">Die angepinnte Nachricht erscheint in einem Banner unter dem Kopf des Threads</string>
+    <string name="about_help_pin_step3">Auf das Banner tippen, um zur Nachricht zu springen; auf das X tippen, um sie zu lösen</string>
+    <string name="about_help_pin_step4">Vorläufig ein Pin pro Unterhaltung</string>
+    <string name="about_help_reactions_title">Auf eine Nachricht reagieren</string>
+    <string name="about_help_reactions_step1">Eine Sprechblase antippen: Die zuletzt verwendeten Emojis erscheinen — eines antippen, um es sofort zu senden</string>
+    <string name="about_help_reactions_step2">Auf + in dieser Zeile tippen für die vollständige Emoji-Auswahl</string>
+    <string name="about_help_reactions_step3">Eine Sprechblase lange drücken für das vollständige Menü (Reagieren, Kopieren, Anheften, Löschen)</string>
+    <string name="about_help_reactions_step4">Einstellungen → Senden → \"Format der Reaktionen\"; bei iPhone-Kontakten kommt eine Reaktion als Textzeile an, da SMS keine echten Reaktionen kennt</string>
+    <string name="about_help_group_title">Eine Gruppenunterhaltung erstellen</string>
+    <string name="about_help_group_step1">Neue Nachricht → \"Gruppe erstellen\", dann Kontakte antippen, um sie auszuwählen</string>
+    <string name="about_help_group_step2">Auf Weiter tippen, um die Gruppe zu benennen (leer lassen für keinen Namen)</string>
+    <string name="about_help_group_step3">Auf das X neben einem Mitglied tippen, um es zu entfernen</string>
+    <string name="about_help_group_step4">Auf Weiter tippen, um die Gruppenunterhaltung zu öffnen</string>
 
     <!-- v1.14.8 R1/R2 — incoming MMS failure notification (size cap or MMSC error). -->
     <string name="mms_failure_notification_title">MMS nicht empfangen</string>
@@ -1080,4 +1117,5 @@
         <item quantity="other">%1$d Tage</item>
     </plurals>
     <string name="duration_days_hours">%1$d T %2$d Std.</string>
+    <string name="gif_search_unavailable">Die GIF-Suche ist gerade nicht verfügbar. Bitte versuchen Sie es später erneut.</string>
 </resources>

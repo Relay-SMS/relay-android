@@ -176,12 +176,25 @@ class ComposeViewModel @Inject constructor(
         return false
     }
 
-    fun createConversation() {
+    /**
+     * Round 13 — creates the conversation for the picked recipients, then
+     * applies a group name when one was typed on the "Name your group"
+     * screen: [conversationRepo.setCustomName] already exists (used by the
+     * rename flow), so no new repository work was needed. A blank name
+     * leaves the group unnamed (it shows member names, as before).
+     */
+    fun createConversation(groupName: String? = null) {
         viewModelScope.launch {
             val rec = _state.value.recipients
             if (rec.isEmpty()) return@launch
             val res = conversationRepo.findOrCreate(rec)
-            if (res is Outcome.Success) events.tryEmit(Event.ConversationCreated(res.value.id))
+            if (res is Outcome.Success) {
+                val name = groupName?.trim()
+                if (!name.isNullOrEmpty()) {
+                    conversationRepo.setCustomName(res.value.id, name)
+                }
+                events.tryEmit(Event.ConversationCreated(res.value.id))
+            }
         }
     }
 

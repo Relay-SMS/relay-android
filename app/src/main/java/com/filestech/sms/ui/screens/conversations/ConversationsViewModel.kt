@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -149,6 +150,18 @@ class ConversationsViewModel @Inject constructor(
         // Backfill contact names for conversations that existed before READ_CONTACTS was granted
         // or that imported with displayName=null. Cheap when there's nothing to do.
         viewModelScope.launch { runCatching { mirror.refreshContactNames() } }
+        // Round 13 — restore the category tab the user last selected: the
+        // persisted choice seeds the in-memory flow, so the list reopens
+        // on that tab instead of defaulting to All. `firstOrNull` (not
+        // `first`) so an unreadable store leaves the default All instead
+        // of failing the coroutine. The seed lands before the UI
+        // subscribes in practice, and re-emits harmlessly if it lands
+        // after — the combine below re-reads the flow.
+        viewModelScope.launch {
+            settings.flow.firstOrNull()?.conversations?.selectedCategory?.let {
+                selectedCategoryFlow.value = it
+            }
+        }
         // v1.13.0 audit SEC-4 — purge la sélection multiple à chaque entrée
         // en PanicDecoy (séparé du combine pour éviter une mutation depuis un
         // flow transform — anti-pattern fragile face à un futur changement de
@@ -285,10 +298,18 @@ class ConversationsViewModel @Inject constructor(
         // date grouping and unread-first sort operate on the filtered
         // list unchanged. Round 12 — when the user hides categories
         // (Settings → Appearance), no filter applies and no tabs are
-        // built, so the row never renders.
+        // built, so the row never renders. Round 13 — the stored tab may
+        // be stale (its category emptied out, or categories switched off),
+        // so the list honours the *effective* selection: All when the
+        // stored tab has no conversations left to show.
+        val effectiveSelected = effectiveSelectedCategory(
+            rows,
+            selected,
+            s.conversations.showCategories,
+        )
         val (visible, tabs) = applyCategoryFilter(
             matched,
-            selected,
+            effectiveSelected,
             s.conversations.mutedCategories,
             s.conversations.showCategories,
         )
@@ -334,7 +355,7 @@ class ConversationsViewModel @Inject constructor(
             showIAmOkChip = showChip,
             selectedIds = effectiveSelection,
             categoryTabs = tabs,
-            selectedCategory = selected,
+            selectedCategory = effectiveSelected,
         )
     }
         // v1.6.1 (audit QUAL-02) — `defaultAppManager.isDefault()` est un IPC Binder
@@ -552,10 +573,22 @@ class ConversationsViewModel @Inject constructor(
     /**
      * Round 11 — picks a category tab. Tapping the selected pill again,
      * or All (`null`), clears the filter back to the full list.
+     * Round 13 — the choice is persisted (by enum name) so the list
+     * reopens on it instead of defaulting to All. The write runs after
+     * the in-memory flow already moved, and it is best-effort: a failed
+     * write never blocks tab switching.
      */
     fun selectCategory(category: MessageCategory?) {
         selectedCategoryFlow.update { current ->
             if (current == category || category == null) null else category
+        }
+        val next = selectedCategoryFlow.value
+        viewModelScope.launch {
+            runCatching {
+                settings.update {
+                    it.copy(conversations = it.conversations.copy(selectedCategory = next))
+                }
+            }
         }
     }
 
@@ -819,6 +852,27 @@ class ConversationsViewModel @Inject constructor(
          */
         const val I_AM_OK_WINDOW_MS: Long = 30L * 60L * 1000L
     }
+}
+
+/**
+ * Round 13 — the selection the list actually honours. The stored tab
+ * may be stale: its category can have emptied out (its tab is then
+ * hidden) or categories can be switched off. In both cases the list
+ * falls back to All instead of filtering onto a tab that is not there.
+ * The stored value itself is left alone, so the choice comes back if
+ * the category fills up again. Checked against `rows` (the full list),
+ * not the search-filtered `matched`: while searching, the tab row is
+ * hidden anyway and the filter must keep applying to the query, even
+ * when it matches nothing in that category.
+ */
+private fun effectiveSelectedCategory(
+    rows: List<Conversation>,
+    selected: MessageCategory?,
+    showCategories: Boolean,
+): MessageCategory? {
+    if (!showCategories || selected == null) return null
+    val hasAny = rows.any { MessageClassifier.classifyConversation(it) == selected }
+    return if (hasAny) selected else null
 }
 
 /**

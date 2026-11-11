@@ -3,7 +3,7 @@
 🇬🇧 [English](README.md) · Version française
 
 Une application SMS & MMS moderne et privée pour Android — écrite en Kotlin, avec Jetpack Compose
-et Material 3. Sans publicité, sans traceur, sans analytique, **sans permission Internet**.
+et Material 3. Sans publicité, sans traceur, sans analytique. Internet est utilisé uniquement pour la recherche de GIF (Klipy).
 Licence Apache 2.0.
 
 > **Note sur ce fork :** Relay est basé sur [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) par Patrice Haltaya (Files Tech). Il reprend le moteur de SMS Tech ; l'interface de Relay et ses nouvelles fonctionnalités sont © 2026 Relay Messaging.
@@ -53,8 +53,11 @@ Versions : [GitHub Releases](https://github.com/relay-sms/relay-android/releases
 ## 🔐 Confidentialité
 
 Nous ne collectons **rien**. Aucune analytique, aucun rapport de plantage, aucune journalisation à
-distance. Relay n'émet aucune requête réseau : elle ne détient pas la permission `INTERNET`, son
-processus ne peut donc ouvrir aucune connexion. Les MMS sont acheminés par le service MMS d'Android,
+distance. Relay détient la permission `INTERNET` pour une seule fonctionnalité : la recherche de
+GIF via Klipy — les mots tapés sont envoyés à Klipy (`api.klipy.com`) et le GIF touché est
+téléchargé depuis là. Rien d'autre dans l'application n'utilise le réseau, et l'application
+fonctionne toujours si la permission est bloquée (la recherche de GIF ne renvoie simplement rien).
+Les MMS sont acheminés par le service MMS d'Android,
 qui contacte le MMSC de votre opérateur.
 
 Le SMS n'est **pas** chiffré de bout en bout au niveau du protocole — c'est une limite du réseau des

@@ -7,6 +7,7 @@ import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.repository.FichiersDePiecesJointes
 import com.filestech.sms.data.repository.IncomingAttachment
+import com.filestech.sms.data.sms.SystemThreadResolver
 import com.filestech.sms.domain.model.PhoneAddress
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
@@ -51,6 +52,10 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
     private val messageDao: MessageDao,
     private val fichiers: FichiersDePiecesJointes,
     private val ecrivain: EcrivainDePieces,
+    // Round 13 — the system thread-ID resolver, for group MMS. Nullable + defaulted so
+    // existing constructions (notably the instrumented test) keep working without one:
+    // without it no thread ID is resolved and routing is exactly as before.
+    private val threadResolver: SystemThreadResolver? = null,
 ) {
 
     @Inject constructor(
@@ -59,7 +64,8 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
         attachmentDao: AttachmentDao,
         messageDao: MessageDao,
         fichiers: FichiersDePiecesJointes,
-    ) : this(mirror, attachmentDao, messageDao, fichiers, EcrivainDePiecesSurDisque(context))
+        threadResolver: SystemThreadResolver,
+    ) : this(mirror, attachmentDao, messageDao, fichiers, EcrivainDePiecesSurDisque(context), threadResolver)
 
     sealed interface Resultat {
         data class Ecrit(val messageId: Long) : Resultat
@@ -102,6 +108,18 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
             messageDao.findIdByTransactionKey(cle)?.let { return completer(it, contenu) }
         }
         val pieces = ecrire(contenu.parties)
+        // Round 13 — the system thread ID, for a GROUP MMS only. The provider keys a thread
+        // by its recipient set, so the same group always resolves to the same thread — even
+        // when Relay has never seen the group, and even when our own number is unknown
+        // (no `userMsisdn` needed). Resolved here, OUTSIDE the mirror's transaction: the
+        // lookup is a ContentResolver query to another provider. `0L` (no resolver, or the
+        // lookup failed) means "no thread ID" and routing is exactly as before. 1:1
+        // messages deliberately keep `0L` — their routing is untouched.
+        val systemThreadId = if (membres != null) {
+            threadResolver?.resolve(membres.map { it.raw }) ?: 0L
+        } else {
+            0L
+        }
         val inscription = try {
             mirror.inscrireMmsRecu(
                 address = contenu.expediteur,
@@ -114,6 +132,7 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
                 inclutSoi = inclutSoi,
                 transactionKey = cle,
                 encoreVoulu = pduPresent,
+                systemThreadId = systemThreadId,
             )
         } catch (t: Throwable) {
             // Transaction annulée : aucune ligne ne cite ces fichiers.

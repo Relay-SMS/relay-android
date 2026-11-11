@@ -26,6 +26,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -56,6 +57,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
@@ -66,12 +68,10 @@ import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonSearch
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
@@ -87,7 +87,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -127,9 +126,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -159,6 +160,10 @@ import com.filestech.sms.ui.components.BubbleMenuToggles
 import com.filestech.sms.ui.components.BurstPosition
 import com.filestech.sms.ui.components.ComposerReplyChip
 import com.filestech.sms.ui.components.ContactIntents
+import com.filestech.sms.ui.components.EmojiPickerButton
+import com.filestech.sms.ui.components.EmojiPickerPanel
+import com.filestech.sms.ui.components.EmojiPickerTab
+import com.filestech.sms.ui.components.EmojiPickerTabStore
 import com.filestech.sms.ui.components.MAX_REACTION_EMOJIS
 import com.filestech.sms.ui.components.MessageBubble
 import com.filestech.sms.ui.components.RelayAvatar
@@ -166,10 +171,13 @@ import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.ReplyQuotePreview
+import com.filestech.sms.ui.components.ScheduleMenuActions
+import com.filestech.sms.ui.components.SchedulePresetMenu
 import com.filestech.sms.ui.components.SearchHighlight
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.SmsTechSnackbarVisuals
 import com.filestech.sms.ui.components.showError
+import com.filestech.sms.ui.components.stickerSendUri
 import com.filestech.sms.ui.components.toPlaybackUri
 import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.BrandDanger
@@ -354,6 +362,27 @@ fun ThreadScreen(
     // confirm (anti-race F4 : l'user a pu changer/retirer la réaction entre temps).
     var askDelete by remember { mutableStateOf(false) }
     var attachmentSheetOpen by remember { mutableStateOf(false) }
+    // Round 13 — emoji/GIF/sticker picker panel. It replaces the composer in the
+    // bottom bar while open (the list shrinks above it, like a keyboard); the
+    // keyboard is hidden on open and stays hidden until the panel closes.
+    // The last-used tab survives restarts via [EmojiPickerTabStore] — UI state,
+    // not a setting, so no Settings screen row.
+    val pickerTabStore = remember(context) { EmojiPickerTabStore(context) }
+    val lastPickerTab by pickerTabStore.tab.collectAsStateWithLifecycle(
+        initialValue = EmojiPickerTab.EMOJI,
+    )
+    var emojiPickerOpen by remember { mutableStateOf(false) }
+    var emojiPickerTab by remember { mutableStateOf(EmojiPickerTab.EMOJI) }
+    val onPickerTabSelected: (EmojiPickerTab) -> Unit = { tab ->
+        emojiPickerTab = tab
+        scope.launch { pickerTabStore.setTab(tab) }
+    }
+    val openEmojiPicker: () -> Unit = {
+        emojiPickerTab = lastPickerTab
+        keyboardController?.hide()
+        focusManager.clearFocus()
+        emojiPickerOpen = true
+    }
     // Round 4 — the camera icon opens the camera DIRECTLY instead of the attachment
     // sheet. The capture file lives in `cacheDir/mms_outgoing/`, one of the
     // FileProvider cache-paths declared in `file_provider_paths.xml`, so the
@@ -895,45 +924,104 @@ fun ThreadScreen(
                         onRemove = { id -> viewModel.removePendingAttachment(id) },
                     )
                 }
-                ComposerBar(
-                    voice = state.voice,
-                    playback = playbackState,
-                    draft = state.draft,
-                    isSendingVoice = state.isSendingVoice,
-                    isSending = state.isSending,
-                    hasPendingAttachments = state.pendingAttachments.isNotEmpty(),
-                    onDraftChanged = viewModel::updateDraft,
-                    onSendText = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.send()
-                        // v1.3.11 (F1) — drop focus + hide IME so the freshly-sent
-                        // message becomes visible at the bottom of the thread.
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                    },
-                    onStartRecording = viewModel::startVoiceRecording,
-                    onStopRecording = viewModel::stopVoiceRecording,
-                    onCancelRecording = viewModel::discardVoiceDraft,
-                    onTogglePreview = viewModel::togglePreviewPlayback,
-                    onSeekPreview = viewModel::seekPreviewTo,
-                    onDiscardDraft = viewModel::discardVoiceDraft,
-                    onSendVoice = {
-                        viewModel.sendVoiceMms()
-                        // v1.3.11 (F1) — symmetrical retract for voice MMS dispatch.
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                    },
-                    onAttachClick = { attachmentSheetOpen = true },
-                    onCameraClick = onCameraClick,
-                    onMicPermissionDenied = {
-                        // v1.3.7 — refus de permission = erreur utilisateur visible → rouge.
-                        scope.launch {
-                            snackbarHost.showError(
-                                context.getString(R.string.voice_permission_denied),
-                            )
-                        }
-                    },
-                )
+                // Round 13 — emoji/GIF/sticker picker: it takes the composer's
+                // place in the bottom bar while open, so the message list shrinks
+                // above it instead of being covered. An emoji tap appends to the
+                // draft (the draft is a plain String — no cursor is tracked, so
+                // insert-at-cursor is not available) and leaves the panel open for
+                // more picks. A sticker or GIF tap stages the file through the
+                // existing attachment path (`onAttachmentPicked`, the same one the
+                // attach button uses) and closes the panel — the staged chip sits
+                // in the composer bar above, and Send dispatches it as one MMS.
+                // The sticker URI comes from `stickerSendUri`, not
+                // `stickerAssetUri`: the latter is a `file:///android_asset/`
+                // URI the send path cannot read, while the former copies the PNG
+                // into the outgoing-MMS cache and returns a FileProvider
+                // `content://` URI (correct `image/png` MIME, too).
+                if (emojiPickerOpen) {
+                    EmojiPickerPanel(
+                        selectedTab = emojiPickerTab,
+                        onTabSelected = onPickerTabSelected,
+                        onClose = { emojiPickerOpen = false },
+                        onEmojiSelected = { emoji ->
+                            onPickerTabSelected(EmojiPickerTab.EMOJI)
+                            viewModel.updateDraft(state.draft + emoji)
+                        },
+                        onStickerSelected = { unicode ->
+                            onPickerTabSelected(EmojiPickerTab.STICKER)
+                            scope.launch {
+                                stickerSendUri(context, unicode)?.let { uri ->
+                                    viewModel.onAttachmentPicked(uri, AttachmentKind.PHOTO)
+                                }
+                            }
+                            emojiPickerOpen = false
+                        },
+                        onGifSelected = { uri ->
+                            onPickerTabSelected(EmojiPickerTab.GIF)
+                            viewModel.onAttachmentPicked(Uri.parse(uri), AttachmentKind.PHOTO)
+                            emojiPickerOpen = false
+                        },
+                    )
+                } else {
+                    ComposerBar(
+                        voice = state.voice,
+                        playback = playbackState,
+                        draft = state.draft,
+                        isSendingVoice = state.isSendingVoice,
+                        isSending = state.isSending,
+                        hasPendingAttachments = state.pendingAttachments.isNotEmpty(),
+                        onDraftChanged = viewModel::updateDraft,
+                        onSendText = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.send()
+                            // v1.3.11 (F1) — drop focus + hide IME so the freshly-sent
+                            // message becomes visible at the bottom of the thread.
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        },
+                        // Round 13 — long-press the send button to schedule: the
+                        // preset time goes through the existing `scheduleSend` path,
+                        // "Pick date and time" opens the DatePicker → TimePicker flow.
+                        scheduleMenuActions = ScheduleMenuActions(
+                            onPresetSelected = { epoch -> viewModel.scheduleSend(epoch) },
+                            onPickDateTime = { scheduleStep = "date" },
+                        ),
+                        onStartRecording = viewModel::startVoiceRecording,
+                        onStopRecording = viewModel::stopVoiceRecording,
+                        onCancelRecording = viewModel::discardVoiceDraft,
+                        onTogglePreview = viewModel::togglePreviewPlayback,
+                        onSeekPreview = viewModel::seekPreviewTo,
+                        onDiscardDraft = viewModel::discardVoiceDraft,
+                        onSendVoice = {
+                            viewModel.sendVoiceMms()
+                            // v1.3.11 (F1) — symmetrical retract for voice MMS dispatch.
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                        },
+                        attachmentActions = ComposerAttachmentActions(
+                            onAttachClick = { attachmentSheetOpen = true },
+                            onCameraClick = onCameraClick,
+                        ),
+                        // Round 13 — the composer icon shows the last-used picker tab
+                        // and opens the panel to it.
+                        emojiPickerButton = EmojiPickerButton(
+                            iconRes = when (lastPickerTab) {
+                                EmojiPickerTab.EMOJI -> R.drawable.ic_emoji_happy_outline
+                                EmojiPickerTab.GIF -> R.drawable.ic_gif
+                                EmojiPickerTab.STICKER -> R.drawable.ic_sticker
+                            },
+                            onClick = openEmojiPicker,
+                        ),
+                        onMicPermissionDenied = {
+                            // v1.3.7 — refus de permission = erreur utilisateur visible → rouge.
+                            scope.launch {
+                                snackbarHost.showError(
+                                    context.getString(R.string.voice_permission_denied),
+                                )
+                            }
+                        },
+                    )
+                }
             }
         },
     ) { padding ->
@@ -2345,6 +2433,16 @@ private fun DestructiveConfirmDialog(
 //  Composer bar — three modes
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Round 13 — the composer's attachment actions, bundled like [ScheduleMenuActions]
+ * so [ComposerBar] stays within the parameter-count limit: the + opens the
+ * attachment sheet, the camera captures directly (TakePicture).
+ */
+private data class ComposerAttachmentActions(
+    val onAttachClick: () -> Unit,
+    val onCameraClick: () -> Unit,
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 private fun ComposerBar(
@@ -2358,6 +2456,8 @@ private fun ComposerBar(
     hasPendingAttachments: Boolean,
     onDraftChanged: (String) -> Unit,
     onSendText: () -> Unit,
+    /** Round 13 — long-press the send button to schedule (see [ComposingRow]). */
+    scheduleMenuActions: ScheduleMenuActions,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
     onCancelRecording: () -> Unit,
@@ -2365,9 +2465,10 @@ private fun ComposerBar(
     onSeekPreview: (Int) -> Unit,
     onDiscardDraft: () -> Unit,
     onSendVoice: () -> Unit,
-    onAttachClick: () -> Unit,
-    /** Round 4 — camera icon: direct capture (TakePicture), not the sheet. */
-    onCameraClick: () -> Unit,
+    /** Round 13 — attachment actions, bundled (see [ComposerAttachmentActions]). */
+    attachmentActions: ComposerAttachmentActions,
+    /** Round 13 — picker: the composer button (last-used tab icon + tap). */
+    emojiPickerButton: EmojiPickerButton,
     onMicPermissionDenied: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -2398,6 +2499,7 @@ private fun ComposerBar(
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onSendText()
                 },
+                scheduleMenuActions = scheduleMenuActions,
                 onRequestPermission = { micPermission.launchPermissionRequest() },
                 onPressStart = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -2406,8 +2508,10 @@ private fun ComposerBar(
                 onReleaseStop = onStopRecording,
                 onReleaseCancel = onCancelRecording,
                 onCancelHintCrossed = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
-                onAttachClick = onAttachClick,
-                onCameraClick = onCameraClick,
+                onAttachClick = attachmentActions.onAttachClick,
+                onCameraClick = attachmentActions.onCameraClick,
+                emojiButtonIconRes = emojiPickerButton.iconRes,
+                onEmojiButtonClick = emojiPickerButton.onClick,
             )
 
             is ThreadViewModel.VoiceState.Reviewing -> ReviewingMode(
@@ -2457,6 +2561,8 @@ private fun ComposingRow(
     isSending: Boolean,
     onDraftChanged: (String) -> Unit,
     onSendText: () -> Unit,
+    /** Round 13 — long-press the send button to schedule (see below). */
+    scheduleMenuActions: ScheduleMenuActions,
     onRequestPermission: () -> Unit,
     onPressStart: () -> Unit,
     onReleaseStop: () -> Unit,
@@ -2465,18 +2571,26 @@ private fun ComposingRow(
     onAttachClick: () -> Unit,
     /** Round 4 — camera icon: direct capture (TakePicture), not the sheet. */
     onCameraClick: () -> Unit,
+    /** Round 13 — picker: the composer icon shows the last-used tab. */
+    emojiButtonIconRes: Int,
+    /** Round 13 — picker: tapping the composer icon opens the panel. */
+    onEmojiButtonClick: () -> Unit,
 ) {
     // v1.3.4 M1 — afficher le Mic seulement si pas de PJ stagées ; sinon l'utilisateur
     // doit pouvoir envoyer les PJ via le bouton Send même sans texte.
     val showMic = isRecording || (draft.isBlank() && !hasPendingAttachments)
+    // Round 13 — long-press schedule menu on the send button. Opens only when
+    // there is something to schedule (draft non-blank or attachments pending —
+    // the same gate as the header's Schedule action); a tap still sends immediately.
+    val canSchedule = draft.isNotBlank() || hasPendingAttachments
+    var scheduleMenuOpen by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
 
-    // Smiley : pas d'API publique pour forcer le clavier en disposition emoji — le tap
-    // met donc le focus sur le champ et ouvre le clavier, d'où l'utilisateur atteint
-    // la touche emoji de son propre clavier. (La popup emoji + l'onglet GIF arrivent
-    // plus tard ; le bouton est en place dès maintenant.)
+    // Round 13 — the leading icon shows the last-used picker tab (smile, GIF or
+    // sticker) and opens the picker panel to that tab. It used to put the focus on
+    // the field and open the keyboard (the system keyboard's own emoji key); the
+    // panel replaces that now.
     val composerFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    val keyboardController =
-        androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
 
     // Live cancel hint: true once the finger has dragged past the cancel threshold while pressing.
     var cancelHinted by remember { mutableStateOf(false) }
@@ -2529,15 +2643,12 @@ private fun ComposingRow(
                             // no-op — no focus, no keyboard, no cursor.
                             focusRequester = composerFocus,
                             leadingIcon = {
-                                // Smiley de Kristin : ouvre le clavier (touche emoji du
-                                // clavier système) — pas de popup emoji pour l'instant.
+                                // Round 13 — opens the emoji/GIF/sticker picker panel
+                                // to the last-used tab.
                                 ComposerIconButton(
-                                    painter = painterResource(R.drawable.ic_emoji_happy_outline),
+                                    painter = painterResource(emojiButtonIconRes),
                                     contentDescription = stringResource(R.string.thread_compose_emoji),
-                                    onClick = {
-                                        composerFocus.requestFocus()
-                                        keyboardController?.show()
-                                    },
+                                    onClick = onEmojiButtonClick,
                                 )
                             },
                             trailingIcon = {
@@ -2591,8 +2702,38 @@ private fun ComposingRow(
                     },
                 )
             } else {
-                // v1.26.1 (audit H7) — désactivé pendant l'envoi, comme le bouton vocal l'est déjà.
-                SendCircleButton(enabled = !isSending, onClick = onSendText)
+                // Round 13 — long-press the send button to schedule. The menu is
+                // anchored to this Box so it floats near the button; a tap still
+                // sends immediately. It only opens when there is something to
+                // schedule (draft or attachments) — otherwise a long-press does
+                // nothing. v1.26.1 (audit H7) — désactivé pendant l'envoi, comme
+                // le bouton vocal l'est déjà.
+                Box {
+                    SendCircleButton(
+                        enabled = !isSending,
+                        onClick = onSendText,
+                        onLongClick = if (canSchedule) {
+                            {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                scheduleMenuOpen = true
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                    SchedulePresetMenu(
+                        expanded = scheduleMenuOpen,
+                        onDismissRequest = { scheduleMenuOpen = false },
+                        onPresetSelected = { epoch ->
+                            scheduleMenuOpen = false
+                            scheduleMenuActions.onPresetSelected(epoch)
+                        },
+                        onPickDateTime = {
+                            scheduleMenuOpen = false
+                            scheduleMenuActions.onPickDateTime()
+                        },
+                    )
+                }
             }
         }
     }
@@ -2638,11 +2779,17 @@ private fun ComposerIconButton(
  * send icon, the same height as the composer pill. It slides up with a spring each
  * time it appears and scales to 0.90 while pressed; the haptic tick is fired by the
  * caller's [onClick] (see [ComposerBar]).
+ *
+ * Round 13 — [onLongClick] opens the schedule menu (long-press to schedule); it is
+ * null when there is nothing to schedule, so a long-press then does nothing. The
+ * press-scale animation and the tap path are unchanged: [combinedClickable] reads
+ * the same [interactionSource] the scale does.
  */
 @Composable
 private fun SendCircleButton(
     enabled: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -2672,11 +2819,18 @@ private fun SendCircleButton(
             .scale(pressScale)
             .clip(CircleShape)
             .background(if (pressed) RelayColors.BluePressed else RelayColors.Blue)
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 enabled = enabled,
+                onClickLabel = stringResource(R.string.action_send),
+                onLongClickLabel = if (onLongClick != null) {
+                    stringResource(R.string.thread_schedule_action)
+                } else {
+                    null
+                },
                 onClick = onClick,
+                onLongClick = onLongClick,
             )
             .semantics { role = Role.Button },
         contentAlignment = Alignment.Center,
@@ -2902,16 +3056,45 @@ private fun ReviewingMode(
     val sliderValue by remember(positionMs, totalMs) {
         derivedStateOf { if (totalMs <= 0) 0f else positionMs.toFloat() / totalMs }
     }
+    // Round 13 — the play disc and the filled progress share the bright
+    // `onSurface` tone (white in dark mode, black in light mode), matching the
+    // reference screenshot; the unfilled track is the muted
+    // `secondaryContainer` (#3D4758 in dark mode, as measured in the shot).
+    val controlColor = cs.onSurface
+    // Round 13 — tap/drag-to-seek on the thumbless bar: the same gesture shape
+    // as the voice bubbles' waveform (`awaitEachGesture` + `awaitFirstDown`,
+    // then a drag loop until the finger lifts).
+    val canSeek = !isSending && totalMs > 0
+    val seekGesture = Modifier.pointerInput(canSeek, totalMs) {
+        if (!canSeek) return@pointerInput
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            onSeek(((down.position.x / size.width).coerceIn(0f, 1f) * totalMs).toInt())
+            down.consume()
+            var dragging = true
+            while (dragging) {
+                val event = awaitPointerEvent()
+                val move = event.changes.firstOrNull()
+                if (move == null || !move.pressed) {
+                    dragging = false
+                } else {
+                    onSeek(((move.position.x / size.width).coerceIn(0f, 1f) * totalMs).toInt())
+                    move.consume()
+                }
+            }
+        }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Round 13 — bright X (was the muted `onSurfaceVariant`).
         IconButton(onClick = onDiscard, enabled = !isSending) {
             Icon(
                 Icons.Outlined.Close,
                 contentDescription = stringResource(R.string.voice_action_discard),
-                tint = cs.onSurfaceVariant,
+                tint = cs.onSurface,
             )
         }
         Row(
@@ -2923,28 +3106,80 @@ private fun ReviewingMode(
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onTogglePlay, enabled = !isSending) {
-                Icon(
-                    imageVector = if (playback.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = stringResource(
-                        if (playback.isPlaying) R.string.voice_action_pause
-                        else R.string.voice_action_play,
-                    ),
-                    tint = cs.primary,
+            // Round 13 — Kristin's voice-message play disc (`ic_play_circle`),
+            // the same disc the sent voice bubbles use, sized to the reference
+            // screenshot: the disc is about two thirds of the 48dp pill height
+            // (~32dp, the same proportion as in the voice bubbles), so it sits
+            // with breathing room instead of flush. 48dp touch target, 32dp
+            // visible disc in both states so the button never grows when
+            // playback starts. Playing uses the AudioMessageBubble treatment: a
+            // solid disc carrying two pause bars in the pill colour.
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = !isSending, onClick = onTogglePlay)
+                    .semantics { role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (playback.isPlaying) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(controlColor),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Pause,
+                            contentDescription = stringResource(R.string.voice_action_pause),
+                            tint = cs.surfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                } else {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_play_circle),
+                        contentDescription = stringResource(R.string.voice_action_play),
+                        tint = controlColor,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            // Round 13 — thumbless progress bar: a fully-rounded track, bright
+            // filled portion + muted `secondaryContainer` remainder. The track
+            // clips the filled portion, so the filled/unfilled boundary stays a
+            // clean vertical line and the outer ends stay rounded. Tap/drag
+            // seeks (same gesture as the voice bubbles' waveform).
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(cs.secondaryContainer)
+                    .then(seekGesture)
+                    .semantics {
+                        progressBarRangeInfo = ProgressBarRangeInfo(
+                            sliderValue.coerceIn(0f, 1f),
+                            0f..1f,
+                        )
+                    },
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(sliderValue.coerceIn(0f, 1f))
+                        .height(12.dp)
+                        .background(controlColor),
                 )
             }
-            Slider(
-                value = sliderValue.coerceIn(0f, 1f),
-                onValueChange = { f ->
-                    if (totalMs > 0) onSeek((f * totalMs).toInt())
-                },
-                modifier = Modifier.weight(1f),
-                enabled = !isSending && totalMs > 0,
-            )
+            Spacer(Modifier.width(12.dp))
+            // Round 13 — bright timer (was the muted `onSurfaceVariant`).
             Text(
                 text = formatDuration(if (positionMs > 0) positionMs.toLong() else totalMs.toLong()),
                 style = MaterialTheme.typography.labelLarge,
-                color = cs.onSurfaceVariant,
+                color = cs.onSurface,
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
         }

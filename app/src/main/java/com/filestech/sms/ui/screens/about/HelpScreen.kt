@@ -1,11 +1,15 @@
 package com.filestech.sms.ui.screens.about
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -19,6 +23,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,10 +67,11 @@ fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
         },
     ) { padding ->
         // Feedback round 10 — the recipes now use the Seca grouped-list
-        // style: each title is a section label and the steps sit in a
-        // single segment of a [RelaySettingsGroup] (see [HelpRecipeSection]).
-        // The section label owns the gap above its header, so the outer
-        // column only keeps a bottom breathing room.
+        // style: each title is a section label and each step is its own
+        // row of a [RelaySettingsGroup], so the dividers separate the
+        // steps (see [HelpRecipeSection]). The section label owns the gap
+        // above its header, so the outer column only keeps a bottom
+        // breathing room.
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -81,40 +87,47 @@ fun HelpScreen(onBack: () -> Unit, isPanicDecoy: Boolean) {
 }
 
 /**
- * One recipe: the title as a section label and the numbered steps in a
- * single segment of a [RelaySettingsGroup]. The steps are plain text
- * lines in that one segment, not separate rows, so no divider separates
- * them. The step numbers use the same colour as the step text
- * (on-surface).
+ * One recipe: the title as a section label and each numbered step as
+ * its own row of a [RelaySettingsGroup], so the group's dividers
+ * separate the steps — like the Settings rows. The step number sits in
+ * a 40dp [secondaryContainer] circle, the same badge the Settings rows
+ * use for their icons, with no period after it.
  */
 @Composable
 private fun HelpRecipeSection(title: String, steps: List<String>) {
     RelaySectionLabel(text = title)
     RelaySettingsGroup {
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                steps.forEachIndexed { i, step ->
-                    Row(
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        steps.forEachIndexed { i, step ->
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
                     ) {
                         Text(
-                            text = "${i + 1}.",
-                            style = MaterialTheme.typography.bodyLarge.copy(
+                            text = "${i + 1}",
+                            style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                             ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = step,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                     }
+                    Text(
+                        text = step,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 16.dp),
+                    )
                 }
             }
         }
@@ -204,6 +217,50 @@ private fun helpRecipes(isPanicDecoy: Boolean): List<HelpRecipe> = listOf(
             stringResource(R.string.about_help_update_step1),
             stringResource(R.string.about_help_update_step2),
             stringResource(R.string.about_help_update_step3),
+        ),
+    ),
+    HelpRecipe(
+        title = stringResource(R.string.about_help_schedule_title),
+        steps = listOf(
+            stringResource(R.string.about_help_schedule_step1),
+            stringResource(R.string.about_help_schedule_step2),
+            stringResource(R.string.about_help_schedule_step3),
+            stringResource(R.string.about_help_schedule_step4),
+        ),
+    ),
+    HelpRecipe(
+        title = stringResource(R.string.about_help_categories_title),
+        steps = listOf(
+            stringResource(R.string.about_help_categories_step1),
+            stringResource(R.string.about_help_categories_step2),
+            stringResource(R.string.about_help_categories_step3),
+        ),
+    ),
+    HelpRecipe(
+        title = stringResource(R.string.about_help_pin_title),
+        steps = listOf(
+            stringResource(R.string.about_help_pin_step1),
+            stringResource(R.string.about_help_pin_step2),
+            stringResource(R.string.about_help_pin_step3),
+            stringResource(R.string.about_help_pin_step4),
+        ),
+    ),
+    HelpRecipe(
+        title = stringResource(R.string.about_help_reactions_title),
+        steps = listOf(
+            stringResource(R.string.about_help_reactions_step1),
+            stringResource(R.string.about_help_reactions_step2),
+            stringResource(R.string.about_help_reactions_step3),
+            stringResource(R.string.about_help_reactions_step4),
+        ),
+    ),
+    HelpRecipe(
+        title = stringResource(R.string.about_help_group_title),
+        steps = listOf(
+            stringResource(R.string.about_help_group_step1),
+            stringResource(R.string.about_help_group_step2),
+            stringResource(R.string.about_help_group_step3),
+            stringResource(R.string.about_help_group_step4),
         ),
     ),
 ).filterNot { isPanicDecoy && it.sensitive }

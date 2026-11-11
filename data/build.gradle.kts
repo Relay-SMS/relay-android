@@ -6,12 +6,34 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Round 13 — Klipy GIF search: the app calls the Klipy API for GIF search
+// and trending (see data/.../klipy/KlipyClient.kt). The API key lives
+// ONLY in local.properties (repo root, gitignored, never committed) as
+// `klipyApiKey=...` — never in a source file or a committed file.
+// Kristin: paste your Klipy key from the Partner Panel (partner.klipy.com)
+// into local.properties. Until a real key is set, the client reports no key
+// and the GIF grid shows an empty state; everything else in the app works
+// unchanged. Rate limit: the TEST key allows ~100 calls/hour. The PRODUCTION
+// key is free and unlimited — requested via a simple form in the Partner Panel
+// at partner.klipy.com. (Giphy was dropped 2026-11-11: its 100/hour beta limit
+// was too small.)
+val klipyApiKey: String = run {
+    val props = java.util.Properties()
+    val localProps = rootProject.file("local.properties")
+    if (localProps.exists()) {
+        localProps.inputStream().use { props.load(it) }
+    }
+    props.getProperty("klipyApiKey", "")
+}
+
 android {
     namespace = "com.filestech.sms.data"
     compileSdk = 37
 
     defaultConfig {
         minSdk = 26
+
+        buildConfigField("String", "KLIPY_API_KEY", "\"$klipyApiKey\"")
     }
 
     buildTypes {

@@ -261,7 +261,8 @@ fun AboutScreen(
                     }
                 }
                 // 2026-10-29 — soutenir le projet : la page de dons du site, ouverte dans le navigateur
-                // comme les autres liens (l'application n'a toujours pas la permission Internet).
+                // comme les autres liens (ouverts dans le navigateur ; la permission Internet
+                // ne sert qu'à la recherche de GIF, cf. KlipyClient).
                 // Visible aussi en session leurre : une page publique de dons ne révèle rien.
                 item(onClick = {
                     safeStartActivity(context, Intent(Intent.ACTION_VIEW, urlPageDeDons(langue).toUri()))
@@ -512,7 +513,9 @@ private fun permissions(isPanicDecoy: Boolean): List<Permission> = listOf(
     Permission("USE_BIOMETRIC", stringResource(R.string.about_perm_biometric)),
     // v1.3.5 G3 + audit F1 — SCHEDULE_EXACT_ALARM retiré du manifest (envoi planifié via
     // WorkManager.enqueueUniqueWork, pas AlarmManager.setExact*).
-    // v1.28.13 — INTERNET retirée du manifeste : le MMS passe par le service MMS d'Android.
+    // Round 13 — INTERNET est de retour dans le manifeste, pour la recherche de GIF
+    // uniquement : le MMS passe toujours par le service MMS d'Android.
+    Permission("INTERNET", stringResource(R.string.about_perm_internet)),
     Permission("RECORD_AUDIO", stringResource(R.string.about_perm_record_audio)),
     // v1.28.13 — les deux permissions « dangereuses » du mode urgence manquaient à cette liste,
     // intitulée « Permissions utilisées » : précisément les plus sensibles. Masquées en leurre.

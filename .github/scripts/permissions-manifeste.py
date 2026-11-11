@@ -4,12 +4,19 @@
 
 Ce que ce controle protege
 --------------------------
-v1.28.13 (MR F-Droid !38458, relecture de mezinster) - SMS Tech ne detient plus la permission
-INTERNET. Elle etait declaree « pour le transport MMS », alors que l'application n'ouvre aucune
-connexion : le service MMS d'Android, dans son propre processus, parle au MMSC de l'operateur.
-Sans elle, le processus de l'application n'est pas dans le groupe noyau `inet` et ne peut creer
-aucun socket : « aucun acces reseau » devient VERIFIABLE. Une promesse qu'aucune build ne verifie
-n'est qu'une intention - modele : tools/check-manifest-permissions.py d'Agenda Tech.
+Round 13 (2026-11-11) - INTERNET est de retour dans le manifeste, pour la
+recherche de GIF via Giphy uniquement (voir PERMISSIONS.md et
+`data/.../giphy/GiphyClient.kt`). Historique : en v1.28.13 (MR F-Droid !38458,
+relecture de mezinster), INTERNET avait ete retiree - elle etait declaree
+« pour le transport MMS », alors que l'application n'ouvre aucune connexion :
+le service MMS d'Android, dans son propre processus, parle au MMSC de
+l'operateur. Ce qui ne change pas : le MMS ne passe toujours pas par cette
+permission, et aucune autre utilisation reseau n'est autorisee. La liste
+revue ci-dessous reste le garde-fou : une permission qui arrive par une
+dependance doit etre un acte delibere - l'ajouter a AUTORISEES ET a
+PERMISSIONS.md, ou retirer la dependance. Une promesse qu'aucune build ne
+verifie n'est qu'une intention - modele : tools/check-manifest-permissions.py
+d'Agenda Tech.
 
 Deux pieges que ce script evite
 -------------------------------
@@ -60,10 +67,11 @@ MANIFESTE_PAR_DEFAUT = os.path.join(
     "processReleaseMainManifest", "AndroidManifest.xml",
 )
 
-# Ne doit JAMAIS atteindre l'APK, quoi que dise la liste revue.
-INTERDITES = {
-    "android.permission.INTERNET",
-}
+# Ne doit JAMAIS atteindre l'APK, quoi que dise la liste revue. Vide depuis le
+# round 13 : INTERNET, seule permission reseau, est desormais revue et figure
+# dans AUTORISEES (recherche de GIF uniquement). L'ensemble reste : c'est le
+# crochet ou inscrire une future permission a bannir absolument.
+INTERDITES = set()
 
 # Tout ce que l'APK revu porte. Chaque entree est documentee dans PERMISSIONS.md.
 AUTORISEES = {
@@ -89,6 +97,10 @@ AUTORISEES = {
     "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
     "android.permission.RECEIVE_BOOT_COMPLETED",
+    # Round 13 — INTERNET, pour la recherche de GIF via Giphy uniquement (et,
+    # plus tard, l'appariement wifi/cloud avec l'app desktop). Documentee dans
+    # PERMISSIONS.md ; aucune autre utilisation reseau n'est autorisee.
+    "android.permission.INTERNET",
     # Transitives : androidx.biometric (Android 8) et androidx.work.
     "android.permission.USE_FINGERPRINT",
     "android.permission.WAKE_LOCK",
@@ -160,7 +172,7 @@ def verifier(chemin: str, bavard: bool = True) -> int:
         problemes.append("Permission RESEAU presente dans le manifeste fusionne release :")
         problemes += [f"  {nom}" for nom in interdites]
         problemes.append(
-            "SMS Tech annonce ne detenir aucune permission INTERNET (PERMISSIONS.md, PRIVACY.md). "
+            "Cette permission ne doit jamais atteindre l'APK (voir PERMISSIONS.md). "
             "Retirer la dependance qui l'apporte, ou la retirer par tools:node=\"remove\" en le justifiant."
         )
     inattendues = sorted(trouvees - AUTORISEES - INTERDITES)
@@ -180,7 +192,7 @@ def verifier(chemin: str, bavard: bool = True) -> int:
         erreur(problemes)
         return 1
     if bavard:
-        print("\nOK : pas d'INTERNET, et aucune permission hors de la liste revue.")
+        print("\nOK : aucune permission hors de la liste revue (INTERNET y figure, recherche de GIF uniquement).")
     return 0
 
 
@@ -273,11 +285,15 @@ def controle_negatif() -> int:
         return chemin
 
     conforme = sorted(AUTORISEES)
+    # Le cas « conforme » contient INTERNET (revue depuis le round 13) : son
+    # succes prouve qu'INTERNET est acceptee. Ce qui doit toujours etre REFUSE,
+    # c'est une permission reseau NON revue.
     # (nom, permissions, code attendu, ce que le refus doit nommer)
     cas = [
         ("conforme", conforme, 0, ()),
-        ("INTERNET ajoutee", conforme + ["android.permission.INTERNET"], 1,
-         ("Permission RESEAU", "android.permission.INTERNET")),
+        ("permission reseau non revue (CHANGE_NETWORK_STATE)",
+         conforme + ["android.permission.CHANGE_NETWORK_STATE"], 1,
+         ("hors de la liste revue", "android.permission.CHANGE_NETWORK_STATE")),
         ("permission inconnue", conforme + ["android.permission.READ_CALL_LOG"], 1,
          ("hors de la liste revue", "android.permission.READ_CALL_LOG")),
         ("manifeste vide", [], 1, ("aucune permission lue",)),

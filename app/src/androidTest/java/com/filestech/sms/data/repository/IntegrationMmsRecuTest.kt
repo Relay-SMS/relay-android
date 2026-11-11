@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.local.db.AppDatabase
+import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.mms.ContenuMmsRecu
 import com.filestech.sms.data.mms.EcrivainDePiecesSurDisque
 import com.filestech.sms.data.mms.IntegrationMmsRecu
@@ -14,7 +15,9 @@ import com.filestech.sms.data.mms.PartieMms
 import com.filestech.sms.data.mms.PdusEnAttente
 import com.filestech.sms.data.sms.PhoneIdentity
 import com.filestech.sms.data.sms.PhoneNumberWireFormatter
+import com.filestech.sms.data.sms.SystemThreadResolver
 import com.filestech.sms.domain.model.Contact
+import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ContactRepository
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CoroutineScope
@@ -199,6 +202,56 @@ class IntegrationMmsRecuTest {
         assertThat(nombreDeMessages()).isEqualTo(2)
     }
 
+    /**
+     * Round 13 — un MMS de groupe dont le fil système est connu retrouve la conversation
+     * de ce fil, même quand ses adresses ne correspondent à rien en base. La conversation
+     * pré-ensemencée porte des numéros volontairement différents des membres du PDU
+     * (ni CSV exact, ni rapprochement par clé) : seul le fil système peut la retrouver.
+     * C'est le cas qui cassait avant — un groupe jamais vu, ou un `To` dépouillé par
+     * l'opérateur, tombait en conversation individuelle.
+     */
+    @Test
+    fun unMmsDeGroupeAvecFilSystemeRetrouveLaConversationDuFil(): Unit = runBlocking {
+        val groupeId = db.conversationDao().insert(
+            ConversationEntity(
+                threadId = FIL,
+                addressesCsv = "0600000001;0600000002;0600000003",
+                displayName = null,
+                lastMessageAt = 0L,
+                lastMessagePreview = null,
+            ),
+        )
+        val membres = listOf(PhoneAddress.of(ALICE), PhoneAddress.of(BOB), PhoneAddress.of(CAROL))
+
+        val resultat = integration(resolveur = ResolveurFixe(FIL, context)).integrer(
+            contenu(), subId = 1, membres = membres, cle = null,
+        ) { true }
+
+        assertThat(resultat).isInstanceOf(Resultat.Ecrit::class.java)
+        val id = (resultat as Resultat.Ecrit).messageId
+        assertThat(db.messageDao().findById(id)?.conversationId).isEqualTo(groupeId)
+    }
+
+    /**
+     * Round 13 — un groupe nouveau pour Relay stocke son fil système à la création :
+     * le message suivant du même fil le retrouvera par `findByThreadId`, même si sa
+     * liste de participants est incomplète.
+     */
+    @Test
+    fun unNouveauGroupeStockeSonFilSysteme(): Unit = runBlocking {
+        val membres = listOf(PhoneAddress.of(ALICE), PhoneAddress.of(BOB), PhoneAddress.of(CAROL))
+
+        val resultat = integration(resolveur = ResolveurFixe(FIL_NOUVEAU, context)).integrer(
+            contenu(), subId = 1, membres = membres, cle = null,
+        ) { true }
+
+        assertThat(resultat).isInstanceOf(Resultat.Ecrit::class.java)
+        val id = (resultat as Resultat.Ecrit).messageId
+        val convId = db.messageDao().findById(id)?.conversationId
+        assertThat(convId).isNotNull()
+        assertThat(db.conversationDao().findByThreadId(FIL_NOUVEAU)?.id).isEqualTo(convId)
+    }
+
     // ───── Outillage ─────
 
     /** L'écrivain réel, qui refuse les types de [refuses] et note chaque fichier écrit. */
@@ -212,13 +265,22 @@ class IntegrationMmsRecuTest {
             }
         }
 
-    private fun integration(ecrivain: IntegrationMmsRecu.EcrivainDePieces = ecrivainReel()) = IntegrationMmsRecu(
+    private fun integration(
+        ecrivain: IntegrationMmsRecu.EcrivainDePieces = ecrivainReel(),
+        resolveur: SystemThreadResolver? = null,
+    ) = IntegrationMmsRecu(
         mirror,
         db.attachmentDao(),
         db.messageDao(),
         FichiersDePiecesJointes(db.attachmentDao(), db.scheduledMessageDao(), context),
         ecrivain,
+        resolveur,
     )
+
+    /** Round 13 — un résolveur qui rend toujours le même fil système, pour les tests. */
+    private class ResolveurFixe(private val fil: Long, context: Context) : SystemThreadResolver(context) {
+        override fun resolve(recipients: Collection<String>): Long = fil
+    }
 
     private fun contenu() = ContenuMmsRecu(
         expediteur = ALICE,
@@ -237,5 +299,10 @@ class IntegrationMmsRecuTest {
 
     private companion object {
         const val ALICE = "+33612345678"
+        const val BOB = "+33612345679"
+        const val CAROL = "+33612345680"
+        /** Fils système factices pour les tests du round 13 — jamais `0L` (inconnu). */
+        const val FIL = 9001L
+        const val FIL_NOUVEAU = 9002L
     }
 }

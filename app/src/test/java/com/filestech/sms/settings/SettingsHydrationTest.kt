@@ -242,6 +242,9 @@ class SettingsHydrationTest {
         /** La cle du reglage « Afficher les categories », telle qu'elle est ecrite sur le disque. */
         val AFFICHER_CATEGORIES = booleanPreferencesKey("conv.showCategories")
 
+        /** La cle de l'onglet categorie choisi, telle qu'elle est ecrite sur le disque. */
+        val CATEGORIE_CHOISIE = stringPreferencesKey("conv.selectedCategory")
+
         /** Les trois cles d'une version precedente, telles qu'elles sont ecrites sur le disque. */
         val TAG_DE_LANGUE = stringPreferencesKey("locale.tag")
         val PREMIER_JOUR = stringPreferencesKey("locale.firstDay")
@@ -518,6 +521,55 @@ class SettingsHydrationTest {
 
                 // Et `hydratedOrNull` est d'accord, sur le chemin chaud.
                 assertThat(depot.hydratedOrNull()?.conversations?.showCategories).isFalse()
+            } finally {
+                portee.cancel()
+            }
+        }
+    }
+
+    /**
+     * Round 13 — l'onglet catégorie choisi survit à l'aller-retour
+     * DataStore, et le défaut déclaré est `null` (Tous) : la liste
+     * s'ouvre sur Tous par défaut. La persistance est PAR NOM
+     * (`conv.selectedCategory` stocke le nom d'enum).
+     */
+    @Test
+    fun laCategorieChoisieSurvitALAllerRetour() {
+        runBlocking {
+            val portee = CoroutineScope(Dispatchers.Unconfined)
+            try {
+                val depot = SettingsRepository(magasin, portee)
+
+                // Le défaut déclaré est `null` (Tous).
+                val neuf = withTimeout(TIMEOUT_MS) { depot.hydratedOrNull() }
+                assertThat(neuf?.conversations?.selectedCategory).isNull()
+
+                depot.update { s ->
+                    s.copy(
+                        conversations = s.conversations.copy(
+                            selectedCategory = MessageCategory.OTP,
+                        ),
+                    )
+                }
+
+                // Ce qui est gravé, c'est le nom sous la clé `conv.selectedCategory`.
+                assertThat(magasin.data.first()[CATEGORIE_CHOISIE]).isEqualTo("OTP")
+
+                // Et la collecte interne le publie.
+                val publie = withTimeout(TIMEOUT_MS) {
+                    depot.state.first { it.conversations.selectedCategory == MessageCategory.OTP }
+                }
+                assertThat(publie.conversations.selectedCategory).isEqualTo(MessageCategory.OTP)
+
+                // Et `hydratedOrNull` est d'accord, sur le chemin chaud.
+                assertThat(depot.hydratedOrNull()?.conversations?.selectedCategory)
+                    .isEqualTo(MessageCategory.OTP)
+
+                // Revenir à Tous efface la clé.
+                depot.update { s ->
+                    s.copy(conversations = s.conversations.copy(selectedCategory = null))
+                }
+                assertThat(magasin.data.first()[CATEGORIE_CHOISIE]).isNull()
             } finally {
                 portee.cancel()
             }

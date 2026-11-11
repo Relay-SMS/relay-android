@@ -78,6 +78,13 @@ fun LicenseScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.size(24.dp))
+            Text(
+                text = stringResource(R.string.twemoji_attribution),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

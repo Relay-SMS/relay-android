@@ -551,10 +551,12 @@ fun ConversationsScreen(
                             // under the ⋮, like the old top-bar menu did.
                             // Round 12 — shifted 15dp right, toward the
                             // pill's edge: it sat too far inset, leaving a
-                            // wide gap on the right. The offset moves the
-                            // button and its menu anchor together.
+                            // wide gap on the right. Round 13 — pulled back
+                            // 6dp to 9dp: 15dp overshot and sat too close to
+                            // the edge. The offset moves the button and its
+                            // menu anchor together.
                             Box(
-                                modifier = Modifier.size(36.dp).offset(x = 15.dp),
+                                modifier = Modifier.size(36.dp).offset(x = 9.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Box(
@@ -1032,7 +1034,9 @@ private fun CategoryTabsRowIfShown(
         )
         // Round 12 — the original 8dp gap, now below the tabs (the gap
         // above them doubled to 16dp in the search pill's bottom padding).
-        Spacer(Modifier.height(8.dp))
+        // Round 13 — 10dp: Kristin wanted a touch more breathing room
+        // under the tabs (+2dp).
+        Spacer(Modifier.height(10.dp))
     }
 }
 

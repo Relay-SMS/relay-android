@@ -46,6 +46,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
@@ -188,7 +189,9 @@ fun AdvancedScreen(
                             }
                             Text(
                                 text = stringResource(R.string.settings_default_sms_app),
-                                style = MaterialTheme.typography.titleMedium,
+                                // Round 13 — 14sp like the other row titles: round 12
+                                // changed RelaySettingRow but missed this custom row.
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f),
                             )

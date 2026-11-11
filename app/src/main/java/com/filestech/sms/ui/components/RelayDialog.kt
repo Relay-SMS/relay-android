@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -36,12 +37,17 @@ import com.filestech.sms.ui.theme.RelayText
  * [properties] when the dialog holds a text field the keyboard must not cover — the
  * passphrase dialogs use `decorFitsSystemWindows = false` with `imePadding` so the
  * confirm button stays reachable with the keyboard open.
+ *
+ * Round 13 — [shape] lets one dialog opt out of the 28dp corners: the emoji "Other"
+ * dialog passes fully-rounded (48dp) corners, matching the emoji picker sheet.
+ * Every other caller keeps the default.
  */
 @Composable
 fun RelayDialog(
     onDismissRequest: () -> Unit,
     title: String,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(28.dp),
     content: @Composable ColumnScope.() -> Unit,
     confirmButton: @Composable () -> Unit,
     dismissButton: (@Composable () -> Unit)? = null,
@@ -68,7 +74,7 @@ fun RelayDialog(
         },
         confirmButton = confirmButton,
         dismissButton = dismissButton,
-        shape = RoundedCornerShape(28.dp),
+        shape = shape,
         containerColor = cs.surface,
         titleContentColor = cs.onSurface,
         textContentColor = cs.onSurface,
