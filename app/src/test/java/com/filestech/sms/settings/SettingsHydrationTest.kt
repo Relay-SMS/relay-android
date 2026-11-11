@@ -3,8 +3,10 @@ package com.filestech.sms.settings
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.filestech.sms.data.local.datastore.SettingsRepository
+import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.ReactionFormat
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.PreviewMode
@@ -234,6 +236,9 @@ class SettingsHydrationTest {
         /** La cle du format de reaction, telle qu'elle est ecrite sur le disque. */
         val FORMAT_DE_REACTION = stringPreferencesKey("send.reactions.format")
 
+        /** La cle des categories sourdes, telle qu'elle est ecrite sur le disque. */
+        val CATEGORIES_SOURDES = stringSetPreferencesKey("conv.mutedCategories")
+
         /** Les trois cles d'une version precedente, telles qu'elles sont ecrites sur le disque. */
         val TAG_DE_LANGUE = stringPreferencesKey("locale.tag")
         val PREMIER_JOUR = stringPreferencesKey("locale.firstDay")
@@ -423,6 +428,79 @@ class SettingsHydrationTest {
                     .isEqualTo(SendingSettings().reactionFormat)
                 assertThat(neuf?.sending?.reactionFormat)
                     .isEqualTo(ReactionFormat.IOS_TAPBACK)
+            } finally {
+                portee.cancel()
+            }
+        }
+    }
+
+    /**
+     * Round 11 — les catégories sourdes survivent à l'aller-retour DataStore.
+     *
+     * La persistance est PAR NOM (`conv.mutedCategories` stocke les noms
+     * d'enum) : ce test fige à la fois l'écriture (ce qui est sur le disque,
+     * ce sont les noms) et la lecture (les noms relus donnent les bonnes
+     * catégories).
+     */
+    @Test
+    fun lesCategoriesSourdesSurviventALAllerRetour() {
+        runBlocking {
+            val portee = CoroutineScope(Dispatchers.Unconfined)
+            try {
+                val depot = SettingsRepository(magasin, portee)
+                depot.update { s ->
+                    s.copy(
+                        conversations = s.conversations.copy(
+                            mutedCategories = setOf(
+                                MessageCategory.OTP,
+                                MessageCategory.PROMOTIONAL,
+                            ),
+                        ),
+                    )
+                }
+
+                // Ce qui est gravé, ce sont les noms.
+                assertThat(magasin.data.first()[CATEGORIES_SOURDES])
+                    .containsExactly("OTP", "PROMOTIONAL")
+
+                // Et la collecte interne les publie comme catégories.
+                val publie = withTimeout(TIMEOUT_MS) {
+                    depot.state.first {
+                        it.conversations.mutedCategories == setOf(
+                            MessageCategory.OTP,
+                            MessageCategory.PROMOTIONAL,
+                        )
+                    }
+                }
+                assertThat(publie.conversations.mutedCategories)
+                    .containsExactly(MessageCategory.OTP, MessageCategory.PROMOTIONAL)
+
+                // Et `hydratedOrNull` est d'accord, sur le chemin chaud.
+                assertThat(depot.hydratedOrNull()?.conversations?.mutedCategories)
+                    .containsExactly(MessageCategory.OTP, MessageCategory.PROMOTIONAL)
+            } finally {
+                portee.cancel()
+            }
+        }
+    }
+
+    /**
+     * Le pendant du test précédent : un nom inconnu — une catégorie
+     * renommée ou retirée par une version future — est abandonné à la
+     * lecture au lieu de faire planter le décodage des réglages.
+     */
+    @Test
+    fun unNomDeCategorieInconnuEstAbandonneALaLecture() {
+        runBlocking {
+            val portee = CoroutineScope(Dispatchers.Unconfined)
+            try {
+                magasin.edit { prefs ->
+                    prefs[CATEGORIES_SOURDES] = setOf("OTP", "BOGUS", "TRANSACTIONS")
+                }
+                val depot = SettingsRepository(magasin, portee)
+                val relu = withTimeout(TIMEOUT_MS) { depot.hydratedOrNull() }
+                assertThat(relu?.conversations?.mutedCategories)
+                    .containsExactly(MessageCategory.OTP, MessageCategory.TRANSACTIONS)
             } finally {
                 portee.cancel()
             }

@@ -24,9 +24,22 @@ class StringExtTest {
         assertThat("15551234567".formatPhoneNumberForDisplay()).isEqualTo("1 (555) 123-4567")
     }
 
-    @Test fun `formatPhoneNumberForDisplay preserves an international number starting with plus`() {
-        assertThat("+15551234567".formatPhoneNumberForDisplay()).isEqualTo("+15551234567")
+    @Test fun `formatPhoneNumberForDisplay leaves a non-North-American 10-digit number unchanged`() {
+        // A 10-digit number starting with 0 or 1 cannot be a US number (an area code
+        // starts with 2-9) — e.g. a French number must not be US-formatted.
+        assertThat("0617332729".formatPhoneNumberForDisplay()).isEqualTo("0617332729")
+        assertThat("15551234567".formatPhoneNumberForDisplay()).isEqualTo("1 (555) 123-4567")
+        assertThat("1111111111".formatPhoneNumberForDisplay()).isEqualTo("1111111111")
+    }
+
+    @Test fun `formatPhoneNumberForDisplay formats a US number with the plus-one country code`() {
+        assertThat("+15551234567".formatPhoneNumberForDisplay()).isEqualTo("+1 (555) 123-4567")
+        assertThat("+1 555 123 4567".formatPhoneNumberForDisplay()).isEqualTo("+1 (555) 123-4567")
+    }
+
+    @Test fun `formatPhoneNumberForDisplay preserves a non-US international number starting with plus`() {
         assertThat("+33612345678".formatPhoneNumberForDisplay()).isEqualTo("+33612345678")
+        assertThat("+442071234567".formatPhoneNumberForDisplay()).isEqualTo("+442071234567")
     }
 
     @Test fun `formatPhoneNumberForDisplay leaves partial numbers and names unchanged`() {

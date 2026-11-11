@@ -23,6 +23,7 @@ import com.filestech.sms.R
 import com.filestech.sms.core.ext.avatarInitials
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.scaledBy
 
 /**
  * Circular avatar of the Relay design system: 48dp by default (32dp in the thread header),
@@ -102,10 +103,14 @@ fun RelayAvatar(
                 modifier = Modifier.size(size * 0.55f),
             )
         } else {
+            // The initials scale with the avatar: at the default 48dp they
+            // keep the fixed 17sp, but in a 32dp mini they shrink to ~11sp
+            // so the letters keep clear whitespace instead of touching the
+            // circle's edge.
             Text(
                 text = initials,
                 color = avatarForeground,
-                style = RelayText.ConvoName,
+                style = RelayText.ConvoName.scaledBy(size / 48.dp),
             )
         }
     }
@@ -133,11 +138,12 @@ data class GroupMemberAvatar(
  *
  * Geometry: two circles of two-thirds the slot (32dp in the 48dp slot),
  * the first at the top-start, the second at the bottom-end, overlapping by
- * a third of the slot. The front circle carries a ring in the surface
- * colour, drawn on top of it, so it reads as separate from the one behind
- * instead of blending into it when both share the same tint.
- * `Alignment.TopStart` / `BottomEnd` keep the diagonal correct in
- * right-to-left layouts.
+ * a third of the slot. Both minis carry the same 2dp ring in the surface
+ * colour, drawn on top of them: the ring separates the front circle from
+ * the one behind, and giving it to both keeps their tint interiors the
+ * same apparent size — a ring on the front one alone made it read ~4dp
+ * smaller than the back one. `Alignment.TopStart` / `BottomEnd` keep the
+ * diagonal correct in right-to-left layouts.
  */
 @Composable
 fun RelayGroupAvatar(
@@ -149,35 +155,50 @@ fun RelayGroupAvatar(
     val mini = size * 2f / 3f
     Box(modifier = modifier.size(size)) {
         members.getOrNull(0)?.let { first ->
-            RelayAvatar(
-                label = first.label,
+            GroupMiniAvatar(
+                member = first,
                 size = mini,
-                customUri = first.photoUri,
-                isUnknownContact = first.isUnknownContact,
+                ringColor = cs.surface,
                 modifier = Modifier.align(Alignment.TopStart),
             )
         }
         members.getOrNull(1)?.let { second ->
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(mini),
-            ) {
-                RelayAvatar(
-                    label = second.label,
-                    size = mini,
-                    customUri = second.photoUri,
-                    isUnknownContact = second.isUnknownContact,
-                )
-                // Ring on top of the front circle (a border on the wrapper
-                // would sit underneath the avatar and be hidden). Without
-                // it two tint circles would read as one blob.
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .border(2.dp, cs.surface, CircleShape),
-                )
-            }
+            GroupMiniAvatar(
+                member = second,
+                size = mini,
+                ringColor = cs.surface,
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
         }
+    }
+}
+
+/**
+ * One mini of the group avatar: the member's avatar with a 2dp ring in the
+ * surface colour drawn on top of it. Both minis carry the same ring, so
+ * their tint interiors read the same size.
+ */
+@Composable
+private fun GroupMiniAvatar(
+    member: GroupMemberAvatar,
+    size: Dp,
+    ringColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier.size(size)) {
+        RelayAvatar(
+            label = member.label,
+            size = size,
+            customUri = member.photoUri,
+            isUnknownContact = member.isUnknownContact,
+        )
+        // Ring on top of the circle (a border on the wrapper would sit
+        // underneath the avatar and be hidden). Without it two tint
+        // circles would read as one blob.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .border(2.dp, ringColor, CircleShape),
+        )
     }
 }

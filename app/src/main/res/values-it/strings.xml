@@ -125,6 +125,7 @@
     <string name="thread_create_contact">Crea un contatto</string>
     <string name="thread_update_contact">Aggiorna un contatto</string>
     <string name="action_create_contact">Crea contatto</string>
+    <string name="action_create_group">Crea gruppo</string>
     <string name="action_details">Dettagli della conversazione</string>
 
     <string name="thread_details_messages">%1$d messaggi</string>
@@ -183,9 +184,11 @@
 
     <!-- Compose -->
     <string name="compose_to_label">A:</string>
-    <string name="compose_search_contact">Cerchi un contatto o un numero di telefono</string>
+    <string name="compose_search_contact">Contatto o numero di telefono</string>
     <string name="compose_use_this_number">Usa questo numero</string>
     <string name="compose_add_to_group">Aggiungi al gruppo</string>
+    <string name="compose_add_contact">Aggiungi contatto</string>
+    <string name="compose_select_contact">Seleziona contatto</string>
     <string name="compose_contacts_refused_title">Nessun accesso ai contatti</string>
     <string name="compose_contacts_refused_desc">Digiti un numero qui sopra oppure tocchi qui per consentire l\'accesso ai contatti nelle impostazioni dell\'app.</string>
 
@@ -671,6 +674,15 @@
     <string name="settings_notifications_enabled">Attiva le notifiche</string>
     <string name="settings_inline_reply">Rispondi dalla notifica</string>
 
+    <!-- Round 11 — category tabs: labels + per-category mute subtitle -->
+    <string name="category_all">Tutti</string>
+    <string name="category_personal">Personale</string>
+    <string name="category_otp">OTP</string>
+    <string name="category_promotional">Promozioni</string>
+    <string name="category_transactions">Transazioni</string>
+    <string name="category_other">Altri</string>
+    <string name="category_mute_subtitle">Nessuna notifica per questa categoria</string>
+
     <!-- v1.8.0 — bug 3 fix: exposes PreviewMode + NotificationStyle in the UI. -->
     <string name="settings_notif_preview">Anteprima sulla schermata di blocco</string>
     <string name="settings_notif_preview_always">Mostra sempre nome e contenuto</string>
@@ -694,7 +706,7 @@
     <string name="notifications_off_messages">I nuovi messaggi arrivano senza notifica.</string>
 
     <string name="settings_section_security">Sicurezza e privacy</string>
-    <string name="settings_flag_secure">Nascondi l\'anteprima nelle app recenti</string>
+    <string name="settings_flag_secure">Schermata privata</string>
     <string name="settings_flag_secure_desc">Nasconde la miniatura della conversazione nel selettore delle app di sistema e blocca screenshot e registrazione dello schermo mentre l\'app è aperta.</string>
     <string name="settings_lock_vault_on_leave">Blocca la cassaforte all\'uscita</string>
     <string name="settings_lock_vault_on_leave_desc">Blocca automaticamente la cassaforte cifrata non appena l\'app passa in secondo piano. Al ritorno dovrà sbloccarla di nuovo.</string>

@@ -135,6 +135,24 @@ class ComposeViewModel @Inject constructor(
     }
 
     /**
+     * Group picking (the compose screen's "Create a group" mode): tapping a contact
+     * adds their number when it is not there yet, and removes it when it already is —
+     * the same add the old per-row +person icon did, but reversible, so the selection
+     * circle can fill and empty. Matches by normalized number, like [addRecipient].
+     */
+    fun toggleRecipient(rawNumber: String) {
+        val addr = PhoneAddress.of(rawNumber)
+        if (addr.normalized.isEmpty()) return
+        _state.update { s ->
+            if (s.recipients.any { it.normalized == addr.normalized }) {
+                s.copy(recipients = s.recipients.filterNot { it.normalized == addr.normalized })
+            } else {
+                s.copy(recipients = s.recipients + addr)
+            }
+        }
+    }
+
+    /**
      * v1.3.11 (F2) — "tap-to-pick" UX: when the picker is empty (the common single-recipient
      * case), tapping a contact / free-entry row should immediately open the thread instead of
      * requiring an extra "Continuer" tap. If the user has already started building a group

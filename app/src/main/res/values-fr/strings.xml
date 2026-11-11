@@ -123,6 +123,7 @@
     <string name="thread_create_contact">Créer un contact</string>
     <string name="thread_update_contact">Mettre à jour un contact</string>
     <string name="action_create_contact">Créer un contact</string>
+    <string name="action_create_group">Créer un groupe</string>
     <string name="action_details">Détails de la conversation</string>
 
     <string name="thread_details_messages">%1$d messages</string>
@@ -176,9 +177,11 @@
     <string name="voice_permission_denied">Autorisation du micro refusée. Ouvrez les Paramètres pour l\'activer.</string>
 
     <string name="compose_to_label">À :</string>
-    <string name="compose_search_contact">Chercher un contact ou un numéro</string>
+    <string name="compose_search_contact">Contact ou numéro de téléphone</string>
     <string name="compose_use_this_number">Utiliser ce numéro</string>
     <string name="compose_add_to_group">Ajouter au groupe</string>
+    <string name="compose_add_contact">Ajouter un contact</string>
+    <string name="compose_select_contact">Sélectionner un contact</string>
     <string name="compose_contacts_refused_title">Pas d\'accès aux contacts</string>
     <string name="compose_contacts_refused_desc">Saisissez un numéro ci-dessus, ou touchez ici pour autoriser les Contacts dans les Paramètres de l\'application.</string>
 
@@ -661,6 +664,15 @@
     <string name="settings_notifications_enabled">Activer les notifications</string>
     <string name="settings_inline_reply">Répondre depuis la notification</string>
 
+    <!-- Round 11 — category tabs: labels + per-category mute subtitle -->
+    <string name="category_all">Tout</string>
+    <string name="category_personal">Personnel</string>
+    <string name="category_otp">OTP</string>
+    <string name="category_promotional">Promotionnel</string>
+    <string name="category_transactions">Transactions</string>
+    <string name="category_other">Autres</string>
+    <string name="category_mute_subtitle">Aucune notification pour cette catégorie</string>
+
     <!-- v1.8.0 — bug 3 fix : expose PreviewMode + NotificationStyle dans l\'UI. -->
     <string name="settings_notif_preview">Aperçu sur l\'écran de verrouillage</string>
     <string name="settings_notif_preview_always">Toujours afficher nom et contenu</string>
@@ -684,7 +696,7 @@
     <string name="notifications_off_messages">Les nouveaux messages arrivent sans notification.</string>
 
     <string name="settings_section_security">Sécurité &amp; confidentialité</string>
-    <string name="settings_flag_secure">Masquer l\'aperçu dans les Récents</string>
+    <string name="settings_flag_secure">Écran privé</string>
     <string name="settings_flag_secure_desc">Cache le contenu des conversations dans le sélecteur de tâches Android et bloque les captures / enregistrements d\'écran tant que l\'application est ouverte.</string>
     <string name="settings_lock_vault_on_leave">Verrouiller le coffre à la sortie</string>
     <string name="settings_lock_vault_on_leave_desc">Verrouille automatiquement le coffre chiffré dès que l\'application passe en arrière-plan. Une nouvelle authentification sera nécessaire au retour.</string>

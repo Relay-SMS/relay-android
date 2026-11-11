@@ -124,6 +124,7 @@
     <string name="thread_create_contact">Kontakt erstellen</string>
     <string name="thread_update_contact">Kontakt aktualisieren</string>
     <string name="action_create_contact">Kontakt erstellen</string>
+    <string name="action_create_group">Gruppe erstellen</string>
     <string name="action_details">Details der Unterhaltung</string>
 
 
@@ -182,9 +183,11 @@
 
     <!-- Compose -->
     <string name="compose_to_label">An:</string>
-    <string name="compose_search_contact">Kontakt oder Rufnummer suchen</string>
+    <string name="compose_search_contact">Kontakt oder Telefonnummer</string>
     <string name="compose_use_this_number">Diese Nummer verwenden</string>
     <string name="compose_add_to_group">Zur Gruppe hinzufügen</string>
+    <string name="compose_add_contact">Kontakt hinzufügen</string>
+    <string name="compose_select_contact">Kontakt auswählen</string>
     <string name="compose_contacts_refused_title">Kein Zugriff auf Kontakte</string>
     <string name="compose_contacts_refused_desc">Geben Sie oben eine Nummer ein oder tippen Sie hier, um den Zugriff auf Kontakte in den App-Einstellungen zu erlauben.</string>
 
@@ -669,6 +672,15 @@
     <string name="settings_notifications_enabled">Benachrichtigungen aktivieren</string>
     <string name="settings_inline_reply">Aus der Benachrichtigung antworten</string>
 
+    <!-- Round 11 — category tabs: labels + per-category mute subtitle -->
+    <string name="category_all">Alle</string>
+    <string name="category_personal">Persönlich</string>
+    <string name="category_otp">OTP</string>
+    <string name="category_promotional">Werbung</string>
+    <string name="category_transactions">Transaktionen</string>
+    <string name="category_other">Sonstige</string>
+    <string name="category_mute_subtitle">Keine Benachrichtigungen für diese Kategorie</string>
+
     <!-- v1.8.0 — bug 3 fix: exposes PreviewMode + NotificationStyle in the UI. -->
     <string name="settings_notif_preview">Vorschau auf dem Sperrbildschirm</string>
     <string name="settings_notif_preview_always">Name und Inhalt immer anzeigen</string>
@@ -692,7 +704,7 @@
     <string name="notifications_off_messages">Neue Nachrichten kommen ohne Benachrichtigung an.</string>
 
     <string name="settings_section_security">Sicherheit &amp; Privatsphäre</string>
-    <string name="settings_flag_secure">Vorschau in der Übersicht verbergen</string>
+    <string name="settings_flag_secure">Privater Bildschirm</string>
     <string name="settings_flag_secure_desc">Verbirgt das Vorschaubild der Unterhaltung in der Systemübersicht und verhindert Bildschirmfotos und Bildschirmaufnahmen, solange die App geöffnet ist.</string>
     <string name="settings_lock_vault_on_leave">Tresor beim Verlassen sperren</string>
     <string name="settings_lock_vault_on_leave_desc">Sperrt den verschlüsselten Tresor automatisch, sobald die App in den Hintergrund geht. Bei der Rückkehr müssen Sie erneut entsperren.</string>

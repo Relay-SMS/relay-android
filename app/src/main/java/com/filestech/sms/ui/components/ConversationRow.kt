@@ -149,18 +149,10 @@ fun ConversationRow(
                             color = cs.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
+                            // 8dp of air before the date: the name cuts off
+                            // earlier and never runs right up against it.
+                            modifier = Modifier.weight(1f).padding(end = 8.dp),
                         )
-                        // v1.28.3 — le nombre de membres, discret, à côté du titre d'un groupe.
-                        if (conversation.isGroup) {
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = "· ${conversation.addresses.size}",
-                                style = RelayText.Timestamp.scaledBy(textFactor),
-                                color = cs.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.width(6.dp))
-                        }
                         if (conversation.muted) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.VolumeOff,

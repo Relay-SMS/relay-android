@@ -67,13 +67,22 @@ fun RelayGroupItem(
     onLongClickLabel: String? = null,
     content: @Composable () -> Unit,
 ) {
+    // Round 11 — the group grey is one step lighter in dark mode
+    // (`surfaceContainerHigh` instead of `surfaceContainer`): on a dark
+    // background the plain container was so dark the groups were hard to
+    // see. Light mode keeps `surfaceContainer` — it already pops enough
+    // off the white background. Same surface-luminance split as the
+    // set-as-default button and the recipient pills.
+    val cs = MaterialTheme.colorScheme
+    val surfaceLuma = 0.2126f * cs.surface.red + 0.7152f * cs.surface.green + 0.0722f * cs.surface.blue
+    val groupColor = if (surfaceLuma < 0.5f) cs.surfaceContainerHigh else cs.surfaceContainer
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .padding(bottom = if (index < count - 1) 2.dp else 0.dp)
             .clip(relaySegmentShape(index, count))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .background(groupColor)
             .then(
                 when {
                     onClick == null -> Modifier
@@ -243,6 +252,17 @@ fun RelaySwitchRow(
 ) {
     val cs = MaterialTheme.colorScheme
     var infoOpen by remember { mutableStateOf(false) }
+    // Round 11 — the toggle's active colours match the "Set as default"
+    // button: in dark mode a light track with a dark thumb (instead of
+    // the brand-blue track), in light mode the button is brand blue so
+    // the switch is unchanged. Same surface-luminance split as the
+    // button, the recipient pills and the group segments.
+    val surfaceLuma = 0.2126f * cs.surface.red + 0.7152f * cs.surface.green + 0.0722f * cs.surface.blue
+    val switchColors = SwitchDefaults.colors(
+        checkedTrackColor = if (surfaceLuma < 0.5f) Color(0xFFE5EAFD) else cs.primary,
+        checkedThumbColor = if (surfaceLuma < 0.5f) Color(0xFF001A40) else cs.onPrimary,
+        checkedIconColor = if (surfaceLuma < 0.5f) Color(0xFFE5EAFD) else cs.primary,
+    )
     if (infoText == null) {
         RelaySettingRow(
             icon = icon,
@@ -253,6 +273,7 @@ fun RelaySwitchRow(
                 Switch(
                     checked = checked,
                     onCheckedChange = null,
+                    colors = switchColors,
                     thumbContent = if (checked) {
                         {
                             Icon(
@@ -295,6 +316,7 @@ fun RelaySwitchRow(
                     Switch(
                         checked = checked,
                         onCheckedChange = onCheckedChange,
+                        colors = switchColors,
                         thumbContent = if (checked) {
                             {
                                 Icon(

@@ -94,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.ui.components.ContactIntents
 import com.filestech.sms.ui.components.ConversationRow
@@ -652,6 +653,19 @@ fun ConversationsScreen(
                 visible = state.showIAmOkChip && !isPanicDecoy,
                 onConfirmer = viewModel::triggerIAmOk,
             )
+            // Round 11 — category tabs, main screen only, hidden while
+            // searching. Shown once more than All exists (All alone means
+            // no conversations at all); the row stays up when the selected
+            // category filters the list to nothing, so All is still there
+            // to clear the filter.
+            CategoryTabsRowIfShown(
+                archived = archived,
+                searchOpen = searchOpen,
+                tabs = state.categoryTabs,
+                selectedCategory = state.selectedCategory,
+                onSelect = viewModel::selectCategory,
+                onToggleMute = viewModel::toggleCategoryMute,
+            )
             // v1.23.x — noms de contact partagés par ≥2 conversations : le numéro n'est affiché
             // sous le nom que pour celles-là. v1.28.3 (audit global C-03) — calculé dans le
             // ViewModel, sur IO, avec le filtre et le tri.
@@ -983,6 +997,32 @@ private fun shouldGroupByDate(
     sortMode: com.filestech.sms.domain.settings.SortMode,
 ): Boolean {
     return !searching && sortMode == com.filestech.sms.domain.settings.SortMode.DATE
+}
+
+/**
+ * Round 11 — the category tab row, main screen only and hidden while
+ * searching. Extracted for the same Detekt reason as [shouldGroupByDate].
+ * Shown once more than All exists — All alone means no conversations at
+ * all — and it stays up when the selected category filters the list to
+ * nothing, so All is still there to clear the filter.
+ */
+@Composable
+private fun CategoryTabsRowIfShown(
+    archived: Boolean,
+    searchOpen: Boolean,
+    tabs: List<CategoryTab>,
+    selectedCategory: MessageCategory?,
+    onSelect: (MessageCategory?) -> Unit,
+    onToggleMute: (MessageCategory) -> Unit,
+) {
+    if (!archived && !searchOpen && tabs.size > 1) {
+        CategoryTabRow(
+            tabs = tabs,
+            selectedCategory = selectedCategory,
+            onSelect = onSelect,
+            onToggleMute = onToggleMute,
+        )
+    }
 }
 
 /**

@@ -18,6 +18,8 @@ import com.filestech.sms.R
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.di.IoDispatcher
+import com.filestech.sms.domain.categories.MessageClassifier
+import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.notification.ConversationNotificationCanceller
 import com.filestech.sms.domain.otp.OtpCodeDetector
 import com.filestech.sms.domain.repository.ContactRepository
@@ -98,9 +100,12 @@ class IncomingMessageNotifier @Inject constructor(
         // s'agit d'une conv vault. Le silence du return suffit côté debug.
         if (inVault) return@withContext
 
-        // Resolve the contact name so the notification shows "Marie" instead of "+33612345678".
-        // Falls back gracefully if READ_CONTACTS is denied or no match exists.
-        val senderName = runCatching { contacts.lookupByPhone(address)?.displayName }.getOrNull()
+        // Resolve the contact so the notification shows "Marie" instead of "+33612345678".
+        // Falls back gracefully if READ_CONTACTS is denied or no match exists. The lookup
+        // result is also what tells the category check below whether the sender is a
+        // contact — one lookup serves both.
+        val contact = runCatching { contacts.lookupByPhone(address) }.getOrNull()
+        val senderName = contact?.displayName
             ?.takeIf { it.isNotBlank() } ?: address
         // v1.6.1 (audit PERF-11) — on évite `flow.first()` sur chaque SMS entrant (ouverture
         // DataStore + désérialisation, 5-15 ms sous charge, notification retardée d'autant).
@@ -117,7 +122,35 @@ class IncomingMessageNotifier @Inject constructor(
         // [hydratedOrNull] garde le chemin chaud à coût nul et ne paie la lecture qu'une fois
         // par démarrage à froid. Même famille de défaut que celui corrigé dans
         // [com.filestech.sms.system.scheduler.SafetyCallWorker].
-        val notifSettings = settings.hydratedOrNull()?.notifications ?: FALLBACK_NOTIFICATIONS
+        //
+        // Un seul instantané sert aux DEUX lectures ci-dessous — le contrôle de catégorie et
+        // les réglages de notification — pour ne payer la lecture qu'une fois.
+        val appSettings = settings.hydratedOrNull()
+
+        // Round 11 — category mute: a message whose category the user muted
+        // (long-press on a tab, or Settings → Notifications) does not ring.
+        // A group reply's sender is a real person, so it lands in Personal —
+        // muting Promotional never silences a person. Pure string matching,
+        // no extra query.
+        //
+        // Fail OPEN, unlike the vault guard above: if settings cannot be
+        // read (`hydratedOrNull()` returns null), `mutedCategories` is empty
+        // and the message notifies as normal. A missed notification is worse
+        // than a muted one misfiring once — and unlike the vault, nothing
+        // private leaks by notifying: the sender name and preview still
+        // follow the user's preview settings either way.
+        val mutedCategories = appSettings?.conversations?.mutedCategories.orEmpty()
+        if (mutedCategories.isNotEmpty()) {
+            val category = MessageClassifier.classify(
+                body = body,
+                sender = PhoneAddress.of(address),
+                isContact = contact != null,
+                isGroup = false,
+            )
+            if (category in mutedCategories) return@withContext
+        }
+
+        val notifSettings = appSettings?.notifications ?: FALLBACK_NOTIFICATIONS
         if (!notifSettings.enabled) return@withContext
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(

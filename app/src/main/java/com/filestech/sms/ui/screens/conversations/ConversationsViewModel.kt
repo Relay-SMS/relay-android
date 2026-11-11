@@ -15,6 +15,8 @@ import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.sms.DefaultSmsAppManager
 import com.filestech.sms.data.sync.TelephonySyncManager
 import com.filestech.sms.di.IoDispatcher
+import com.filestech.sms.domain.categories.MessageCategory
+import com.filestech.sms.domain.categories.MessageClassifier
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.MessageSearchHit
 import com.filestech.sms.domain.repository.ContactRepository
@@ -48,6 +50,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
+
+/**
+ * Round 11 — one tab in the category row: `null` is All, otherwise the
+ * category. [unreadCount] is the summed unread of that category's
+ * conversations (total unread for All); [muted] comes from
+ * `conversations.mutedCategories`.
+ */
+data class CategoryTab(
+    val category: MessageCategory?,
+    val unreadCount: Int,
+    val muted: Boolean,
+)
 
 /**
  * State holder for the [ConversationsScreen]. Exposes a single [UiState] driven by four flows
@@ -206,6 +220,19 @@ class ConversationsViewModel @Inject constructor(
          * en mode décoy vide la sélection par `clearSelection`).
          */
         val selectedIds: Set<Long> = emptySet(),
+        /**
+         * Round 11 — the category tabs above the list: All (always) plus
+         * each category holding at least one conversation, computed from
+         * the search-filtered list BEFORE the category filter, so a tab
+         * never vanishes because it is selected. Empty when nothing has
+         * loaded yet.
+         */
+        val categoryTabs: List<CategoryTab> = emptyList(),
+        /**
+         * Round 11 — the selected tab (`null` = All). The list shows only
+         * this category's conversations while set.
+         */
+        val selectedCategory: MessageCategory? = null,
     ) {
         val selectionMode: Boolean get() = selectedIds.isNotEmpty()
     }
@@ -231,6 +258,13 @@ class ConversationsViewModel @Inject constructor(
      */
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
 
+    /**
+     * Round 11 — the selected category tab (`null` = All). Folded into
+     * the packed combine arm below so the outer combine keeps its 5-arg
+     * typed shape.
+     */
+    private val selectedCategoryFlow = MutableStateFlow<MessageCategory?>(null)
+
     val state: StateFlow<UiState> = combine(
         repo.observeAll(includeArchived = archivedFlag),
         settings.flow,
@@ -238,14 +272,24 @@ class ConversationsViewModel @Inject constructor(
         // v1.13.0 — Triple : on packe defaultRefreshTick + appLock.state + selectedIds
         // pour rester dans la limite 5-args typée. Tous sont des inputs de
         // recomposition pure ; le packing est sound.
-        combine(defaultRefreshTick, appLock.state, selectedIds) { _, lockState, sel ->
-            lockState to sel
+        combine(defaultRefreshTick, appLock.state, selectedIds, selectedCategoryFlow) { _, lockState, sel, cat ->
+            Triple(lockState, sel, cat)
         },
         syncManager.state,
-    ) { rows, s, q, lockAndSelection, syncState ->
-        val (lockState, sel) = lockAndSelection
+    ) { rows, s, q, lockSelAndCategory, syncState ->
+        val (lockState, sel, selected) = lockSelAndCategory
         val matched = filterConversations(rows, q)
-        val sorted = trierConversations(matched, s.conversations.sortMode)
+        // Round 11 — category filter AFTER search, BEFORE sort: the tabs
+        // are computed from `matched` (search-filtered, not yet
+        // category-filtered) and the list is then sorted as before, so
+        // date grouping and unread-first sort operate on the filtered
+        // list unchanged.
+        val (visible, tabs) = applyCategoryFilter(
+            matched,
+            selected,
+            s.conversations.mutedCategories,
+        )
+        val sorted = trierConversations(visible, s.conversations.sortMode)
         val nomsPartages = sorted
             .mapNotNull { it.displayName?.takeIf { n -> n.isNotBlank() } }
             .groupingBy { it }
@@ -286,6 +330,8 @@ class ConversationsViewModel @Inject constructor(
             isPanicDecoy = isPanic,
             showIAmOkChip = showChip,
             selectedIds = effectiveSelection,
+            categoryTabs = tabs,
+            selectedCategory = selected,
         )
     }
         // v1.6.1 (audit QUAL-02) — `defaultAppManager.isDefault()` est un IPC Binder
@@ -498,6 +544,32 @@ class ConversationsViewModel @Inject constructor(
     /** Persists the picked sort mode — observed by the conversations Flow which re-sorts. */
     fun setSortMode(mode: SortMode) = viewModelScope.launch {
         settings.update { it.copy(conversations = it.conversations.copy(sortMode = mode)) }
+    }
+
+    /**
+     * Round 11 — picks a category tab. Tapping the selected pill again,
+     * or All (`null`), clears the filter back to the full list.
+     */
+    fun selectCategory(category: MessageCategory?) {
+        selectedCategoryFlow.update { current ->
+            if (current == category || category == null) null else category
+        }
+    }
+
+    /**
+     * Round 11 — mutes / unmutes a category's notifications, from the tab
+     * long-press or the matching Settings toggle: both flip the same
+     * `conversations.mutedCategories` entry.
+     */
+    fun toggleCategoryMute(category: MessageCategory) = viewModelScope.launch {
+        settings.update {
+            val muted = if (category in it.conversations.mutedCategories) {
+                it.conversations.mutedCategories - category
+            } else {
+                it.conversations.mutedCategories + category
+            }
+            it.copy(conversations = it.conversations.copy(mutedCategories = muted))
+        }
     }
 
     /**
@@ -744,4 +816,49 @@ class ConversationsViewModel @Inject constructor(
          */
         const val I_AM_OK_WINDOW_MS: Long = 30L * 60L * 1000L
     }
+}
+
+/**
+ * Round 11 — applies the selected category to the search-filtered list
+ * and builds the tab row from the SAME list, before the category filter:
+ * every conversation is classified exactly once, the tabs never lose a
+ * category because it is selected, and the visible list keeps its
+ * relative order (each category keeps its encounter order in `matched`).
+ *
+ * Returns the visible conversations and the tabs (All first, then each
+ * non-empty category in enum order).
+ */
+private fun applyCategoryFilter(
+    matched: List<Conversation>,
+    selected: MessageCategory?,
+    muted: Set<MessageCategory>,
+): Pair<List<Conversation>, List<CategoryTab>> {
+    val byCategory = matched.groupBy { MessageClassifier.classifyConversation(it) }
+    val tabs = buildCategoryTabs(byCategory, matched.sumOf { it.unreadCount }, muted)
+    val visible = if (selected == null) matched else byCategory[selected].orEmpty()
+    return visible to tabs
+}
+
+/**
+ * Round 11 — All (always, with the total unread) plus each category
+ * holding at least one conversation. Empty categories get no tab.
+ */
+private fun buildCategoryTabs(
+    byCategory: Map<MessageCategory, List<Conversation>>,
+    totalUnread: Int,
+    muted: Set<MessageCategory>,
+): List<CategoryTab> {
+    val tabs = ArrayList<CategoryTab>(MessageCategory.entries.size + 1)
+    tabs += CategoryTab(category = null, unreadCount = totalUnread, muted = false)
+    for (category in MessageCategory.entries) {
+        val inCategory = byCategory[category].orEmpty()
+        if (inCategory.isNotEmpty()) {
+            tabs += CategoryTab(
+                category = category,
+                unreadCount = inCategory.sumOf { it.unreadCount },
+                muted = category in muted,
+            )
+        }
+    }
+    return tabs
 }

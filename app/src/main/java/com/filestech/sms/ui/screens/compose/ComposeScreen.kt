@@ -1,6 +1,7 @@
 package com.filestech.sms.ui.screens.compose
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,7 +26,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -41,17 +40,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -64,6 +69,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
 import com.filestech.sms.ui.components.ContactIntents
@@ -91,6 +97,18 @@ fun ComposeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
+    // Group picking, entered from the "Create a group" row on the new-message
+    // screen (the navigation `groupe` mode is the same picking behaviour,
+    // reached from the list). `rememberSaveable` so a rotation does not drop
+    // the mode mid-pick; tapping the row again leaves the mode.
+    var groupPicking by rememberSaveable { mutableStateOf(false) }
+    // Either group entry point: rows show a selection circle and a tap
+    // toggles the recipient instead of opening the thread.
+    val picking = groupe || groupPicking
+    // Normalized numbers already picked, for the circles' filled state.
+    val selectedNumbers = remember(state.recipients) {
+        state.recipients.map { it.normalized }.toSet()
+    }
     LaunchedEffect(Unit) {
         viewModel.events.collect { e ->
             when (e) {
@@ -138,22 +156,56 @@ fun ComposeScreen(
         // déjà ; cet écran, non.
         Column(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
             RecipientField(
-                recipients = state.recipients,
                 query = viewModel.searchInput,
                 onQueryChange = viewModel::setQuery,
-                onRemoveRecipient = viewModel::removeRecipient,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             )
+            // The picked recipients live OUTSIDE the search pill, as their
+            // own wrapping row directly under it: chips inside the pill
+            // made the box grow taller with every pick, which read as weird.
+            // The search pill stays a fixed single line; the pills row only
+            // shows while there is at least one recipient.
+            if (state.recipients.isNotEmpty()) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    state.recipients.forEach { addr ->
+                        RecipientChip(
+                            address = addr.raw,
+                            onRemove = { viewModel.removeRecipient(addr) },
+                        )
+                    }
+                }
+            }
             LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                // "Create a group" sits above "Create contact": tapping it
+                // enters group-picking mode (a selection circle appears on
+                // each row and a tap toggles that contact), tapping it again
+                // leaves the mode. Same [ContactActionRow] as "Create
+                // contact" so both lines restyle together later. Hidden in
+                // the navigation group mode, which already is group picking.
+                if (!groupe) {
+                    item(key = "create-group") {
+                        ContactActionRow(
+                            title = stringResource(R.string.action_create_group),
+                            subtitle = null,
+                            icon = painterResource(R.drawable.ic_group_filled),
+                            active = groupPicking,
+                            onClick = { groupPicking = !groupPicking },
+                        )
+                    }
+                }
                 // Entrée persistante en tête de liste : ouvre l'éditeur de contacts du
                 // système sur un formulaire vierge (choix produit : toujours vierge,
                 // indépendamment de la recherche saisie). Placée au-dessus des résultats
                 // pour rester atteignable même quand la liste est longue.
                 item(key = "create-contact") {
                     ContactActionRow(
-                        title = stringResource(R.string.action_create_contact),
+                        title = stringResource(R.string.compose_add_contact),
                         subtitle = null,
-                        icon = Icons.Outlined.PersonAdd,
+                        icon = painterResource(R.drawable.ic_contact_add),
                         onClick = {
                             if (!ContactIntents.createContact(context)) {
                                 scope.launch {
@@ -175,7 +227,7 @@ fun ComposeScreen(
                         ContactActionRow(
                             title = stringResource(R.string.compose_contacts_refused_title),
                             subtitle = stringResource(R.string.compose_contacts_refused_desc),
-                            icon = Icons.Outlined.PersonOff,
+                            icon = rememberVectorPainter(Icons.Outlined.PersonOff),
                             onClick = { ouvrirLaFicheDeLApplication(context) },
                         )
                     }
@@ -200,29 +252,48 @@ fun ComposeScreen(
                                 else R.string.compose_add_to_group
                             ),
                             photoUri = null,
+                            showSelection = picking,
+                            selected = selectedNumbers.contains(PhoneAddress.of(input).normalized),
                             onClick = {
-                                viewModel.pickRecipient(input)
-                                viewModel.setQuery("")
-                            },
-                            onAdd = {
-                                viewModel.addRecipient(input)
+                                if (picking) {
+                                    viewModel.toggleRecipient(input)
+                                } else {
+                                    viewModel.pickRecipient(input)
+                                }
                                 viewModel.setQuery("")
                             },
                         )
                     }
                 }
+                // Section label over the contact list, like the reference
+                // screen: only while there are contacts to pick from.
+                if (filtered.isNotEmpty()) {
+                    item(key = "select-contact-label") {
+                        Text(
+                            text = stringResource(R.string.compose_select_contact),
+                            style = RelayText.Preview,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
                 items(filtered, key = { it.id ?: it.hashCode().toLong() }) { contact ->
                     val number = contact.firstPhone?.raw.orEmpty()
+                    // Display-only formatting, same as the thread header:
+                    // the reference screen shows (xxx) xxx-xxxx numbers.
+                    val displayNumber = number.formatPhoneNumberForDisplay()
                     ContactRow(
-                        name = contact.displayName ?: number,
-                        detail = number,
+                        name = contact.displayName ?: displayNumber,
+                        detail = displayNumber,
                         photoUri = contact.photoUri,
+                        showSelection = picking,
+                        selected = selectedNumbers.contains(PhoneAddress.of(number).normalized),
                         onClick = {
-                            viewModel.pickRecipient(number)
-                            viewModel.setQuery("")
-                        },
-                        onAdd = {
-                            viewModel.addRecipient(number)
+                            if (picking) {
+                                viewModel.toggleRecipient(number)
+                            } else {
+                                viewModel.pickRecipient(number)
+                            }
                             viewModel.setQuery("")
                         },
                         enabled = number.isNotBlank(),
@@ -293,18 +364,19 @@ private fun ComposeGroupHeader(onBack: () -> Unit) {
 }
 
 /**
- * Recipient field of the Relay design system: one filled pill (surface fill, 10dp
- * corners) holding the "To:" label, the recipient chips and the search input. The chips
- * wrap above the input line; tapping anywhere in the pill focuses the input. The input
- * still reads [ComposeViewModel.searchInput] directly so the typed value comes back in
- * the same recomposition (see [ComposeViewModel.searchInput]).
+ * The search pill of the new-message screen: one fixed 48dp single-line pill
+ * ("Contact or phone number") holding only the search input. The picked
+ * recipients deliberately do NOT live here — they render as their own row
+ * below the pill (see [ComposeScreen]), because chips inside the pill made
+ * the box grow taller with every pick. Tapping anywhere in the pill focuses
+ * the input. The input still reads [ComposeViewModel.searchInput] directly
+ * so the typed value comes back in the same recomposition (see
+ * [ComposeViewModel.searchInput]).
  */
 @Composable
 private fun RecipientField(
-    recipients: List<PhoneAddress>,
     query: String,
     onQueryChange: (String) -> Unit,
-    onRemoveRecipient: (PhoneAddress) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -312,14 +384,13 @@ private fun RecipientField(
     val pillInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
-            // Feedback round 9 — the "To" field matches the search and
-            // composer boxes: 48dp minimum height and a 24dp pill radius
-            // (was a 10dp corner with content-driven height), with the same
-            // 16dp horizontal padding. It still grows when recipient chips
-            // wrap above the input line. The height constraint sits BEFORE
-            // the padding: `heightIn` after `padding` measured the content
-            // alone, so the box rendered 48dp + 20dp of padding = 68dp tall
-            // and the 24dp radius read as semi-rounded instead of a pill.
+            // Feedback round 9 — the search field matches the search and
+            // composer boxes: 48dp fixed height and a 24dp pill radius, with
+            // the same 16dp horizontal padding. The height constraint sits
+            // BEFORE the padding: measuring the content alone rendered the
+            // box 48dp + 20dp of padding = 68dp tall and the 24dp radius
+            // read as semi-rounded instead of a pill. Fixed height now —
+            // the field never grows.
             .clip(RoundedCornerShape(24.dp))
             .background(cs.surfaceVariant)
             .clickable(
@@ -327,96 +398,79 @@ private fun RecipientField(
                 indication = null,
                 onClick = { focusRequester.requestFocus() },
             )
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
+            .height(48.dp)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (recipients.isNotEmpty()) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    recipients.forEach { addr ->
-                        RecipientChip(
-                            address = addr.raw,
-                            onRemove = { onRemoveRecipient(addr) },
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
+            textStyle = RelayText.MessageBody.copy(color = cs.onSurface),
+            singleLine = true,
+            // Cursor in `textFieldCursorColor`, not the fixed brand blue: the
+            // fixed blue is near-invisible on the dark field background
+            // (2.16:1); dark mode uses white, light mode the brand blue.
+            cursorBrush = SolidColor(textFieldCursorColor(cs)),
+            decorationBox = { innerTextField ->
+                Box {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.compose_search_contact),
+                            style = RelayText.MessageBody,
+                            color = RelayColors.TextTertiary,
+                            maxLines = 1,
                         )
                     }
+                    innerTextField()
                 }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.compose_to_label),
-                    style = RelayText.MessageBody,
-                    color = cs.onSurfaceVariant,
-                )
-                Box(modifier = Modifier.weight(1f)) {
-                    BasicTextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester),
-                        textStyle = RelayText.MessageBody.copy(color = cs.onSurface),
-                        singleLine = true,
-                        // Cursor in `textFieldCursorColor`, not the fixed brand blue: the
-                        // fixed blue is near-invisible on the dark field background
-                        // (2.16:1); dark mode uses white, light mode the brand blue.
-                        cursorBrush = SolidColor(textFieldCursorColor(cs)),
-                        decorationBox = { innerTextField ->
-                            Box {
-                                if (query.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.compose_search_contact),
-                                        style = RelayText.MessageBody,
-                                        color = RelayColors.TextTertiary,
-                                        maxLines = 1,
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        },
-                    )
-                }
-            }
-        }
+            },
+        )
     }
 }
 
 /**
- * One recipient inside the recipient field: a pill on the blue tint with the address and
+ * One recipient, as a large full pill below the search pill: the address and
  * a close glyph. Tapping it removes the recipient.
+ *
+ * Colours match the "Set as default" button in [DefaultAppBanner] (same dark/light
+ * split from the surface luminance): dark mode gets the light `#E5EAFD`
+ * background with dark-navy text, light mode the brand primary with white text.
  */
 @Composable
 private fun RecipientChip(address: String, onRemove: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val surface = cs.surface
+    val surfaceLuma = 0.2126f * surface.red + 0.7152f * surface.green +
+        0.0722f * surface.blue
+    val isDark = surfaceLuma < 0.5f
+    val containerColor = if (isDark) Color(0xFFE5EAFD) else cs.primary
+    val contentColor = if (isDark) Color(0xFF001A40) else cs.onPrimary
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(cs.primaryContainer)
+            .clip(RoundedCornerShape(50))
+            .background(containerColor)
             .clickable(onClick = onRemove)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 text = address,
-                style = RelayText.Preview,
-                color = cs.onPrimaryContainer,
+                style = RelayText.MessageBody,
+                color = contentColor,
                 maxLines = 1,
             )
             Icon(
                 Icons.Outlined.Close,
                 contentDescription = null,
-                tint = cs.onPrimaryContainer,
-                modifier = Modifier.size(14.dp),
+                tint = contentColor,
+                modifier = Modifier.size(16.dp),
             )
         }
     }
@@ -425,8 +479,10 @@ private fun RecipientChip(address: String, onRemove: () -> Unit) {
 /**
  * One contact row, in the conversation-list geometry: 72dp row, 16dp horizontal inset,
  * 48dp [RelayAvatar] leading, 12dp gap, name 17sp/500 over the number 15sp/400 in the
- * secondary colour. The trailing add glyph puts a chip on the recipient field without
- * navigating (the row tap itself still opens the thread when the picker is empty).
+ * secondary colour. Tapping the row picks the contact (see the call sites: in group
+ * picking it toggles the recipient instead). In group picking ([showSelection]) a
+ * [SelectionCircle] sits at the trailing end, filled when the number is already a
+ * recipient — the old trailing +person icon is gone, the row tap is the affordance.
  */
 @Composable
 private fun ContactRow(
@@ -434,7 +490,8 @@ private fun ContactRow(
     detail: String,
     photoUri: String?,
     onClick: () -> Unit,
-    onAdd: () -> Unit,
+    showSelection: Boolean = false,
+    selected: Boolean = false,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
@@ -466,27 +523,67 @@ private fun ContactRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(onClick = onAdd, enabled = enabled) {
+        if (showSelection) {
+            Spacer(Modifier.width(12.dp))
+            SelectionCircle(selected = selected)
+        }
+    }
+}
+
+/**
+ * Group-picking selection circle: a 24dp ring when unselected, Kristin's
+ * check-mark disc when selected. The disc is tinted from the surface
+ * luminance (like [RecipientChip]): dark mode gets a WHITE disc, so the
+ * check cutout shows the dark row background through it — exactly her
+ * reference screenshot; light mode flips to a BRAND-PRIMARY disc, so the
+ * cutout shows the light background as a white check. Display-only — the
+ * row tap toggles it (see [ComposeViewModel.toggleRecipient]).
+ */
+@Composable
+private fun SelectionCircle(selected: Boolean, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier.size(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            val surface = cs.surface
+            val surfaceLuma = 0.2126f * surface.red + 0.7152f * surface.green +
+                0.0722f * surface.blue
             Icon(
-                Icons.Outlined.PersonAdd,
-                contentDescription = stringResource(R.string.compose_add_to_group),
-                tint = cs.onSurfaceVariant,
+                painterResource(R.drawable.ic_check_circle),
+                contentDescription = null,
+                tint = if (surfaceLuma < 0.5f) Color.White else cs.primary,
+                modifier = Modifier.size(24.dp),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .border(2.dp, cs.onSurfaceVariant, CircleShape),
             )
         }
     }
 }
 
 /**
- * One action row (create a contact, or the contacts-permission notice): same 72dp
- * geometry as [ContactRow], with a 22dp outlined glyph in a 48dp slot instead of an
- * avatar, and an optional second line.
+ * One action row (create a contact, create a group, or the contacts-permission
+ * notice): same 72dp geometry as [ContactRow], with the glyph in a 48dp circle
+ * on the surfaceVariant background (dark grey in dark mode, light grey in
+ * light mode — the reference screen's icon discs) tinted onSurfaceVariant,
+ * and an optional second line. [active] tints the glyph in the brand primary
+ * (used by "Create a group" while group picking is on). The icon is a [Painter]
+ * so Kristin's own drawables can be used alongside Material icons (via
+ * [rememberVectorPainter]). Both action lines go through this one component
+ * so they restyle together.
  */
 @Composable
 private fun ContactActionRow(
     title: String,
     subtitle: String?,
-    icon: ImageVector,
+    icon: Painter,
     onClick: () -> Unit,
+    active: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -499,13 +596,16 @@ private fun ContactActionRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(cs.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 icon,
                 contentDescription = null,
-                tint = cs.onSurfaceVariant,
+                tint = if (active) cs.primary else cs.onSurfaceVariant,
                 modifier = Modifier.size(22.dp),
             )
         }

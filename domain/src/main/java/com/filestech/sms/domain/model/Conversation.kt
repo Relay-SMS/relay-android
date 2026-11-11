@@ -1,5 +1,7 @@
 package com.filestech.sms.domain.model
 
+import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
+
 data class Conversation(
     val id: Long,
     /**
@@ -47,10 +49,18 @@ data class Conversation(
     /**
      * v1.28.3 — **la** règle de titre : nom choisi, sinon nom résolu, sinon les numéros. Six
      * sites la recalculaient chacun de leur côté ; un nom choisi aurait dû être ajouté six fois.
+     *
+     * Round 11 — les numéros sont affichés formatés, comme dans l'en-tête de fil
+     * (`formatPhoneNumberForDisplay`) : `(xxx) xxx-xxxx`, `1 (xxx) xxx-xxxx`,
+     * `+1 (xxx) xxx-xxxx`. Le nom choisi par l'utilisateur n'est pas touché ; un nom de
+     * contact passe tel quel (le formateur laisse les noms inchangés). Le nom affiché
+     * d'un groupe est une liste séparée par ", " : chaque partie est formatée à part.
      */
     val title: String
         get() = customName?.takeIf { it.isNotBlank() }
-            ?: displayName?.takeIf { it.isNotBlank() }
-            ?: addresses.joinToString { it.raw }
+            ?: displayName?.takeIf { it.isNotBlank() }?.let { display ->
+                display.split(", ").joinToString(", ") { it.formatPhoneNumberForDisplay() }
+            }
+            ?: addresses.joinToString { it.raw.formatPhoneNumberForDisplay() }
     val firstAddress: PhoneAddress? get() = addresses.firstOrNull()
 }

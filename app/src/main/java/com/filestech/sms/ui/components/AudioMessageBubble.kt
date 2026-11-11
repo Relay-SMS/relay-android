@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +39,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -304,25 +306,42 @@ fun AudioMessageBubble(
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(12.dp))
-                        // Phase 8 — la durée est du méta-texte de mise en page, comme
-                        // l'heure : 12sp fixe (voir [FixedTypeSize]), pas `labelSmall`
-                        // multiplié par le coefficient « Taille du texte des messages ».
-                        // Feedback round 10 — the fixed 44dp width is gone: it
-                        // left a wide empty gap before the duration (the text
-                        // is right-aligned in the box), which is why the left
-                        // gap was bigger than the right one. Natural width
-                        // now, so the 12dp spacer is the whole gap. Digits
-                        // are tabular in the default font, so the width only
-                        // changes at a minute boundary — the waveform does
-                        // not jitter second to second.
+                        // Round 11 — the duration gets its own fixed-width
+                        // space: an invisible copy of the total duration
+                        // sizes the box, and the live time is drawn
+                        // right-aligned on top of it. The total never
+                        // changes for a clip, so the box never changes
+                        // width — seeking or ticking can't push the
+                        // waveform around. The old fixed 44dp box (round
+                        // 10) left a wide empty gap; this one is exactly
+                        // as wide as the time it shows. The invisible copy
+                        // is hidden from accessibility (it would otherwise
+                        // be read out twice).
+                        val displayedMs = if (isPlaying && positionMs > 0) {
+                            positionMs.toLong()
+                        } else {
+                            totalMs.toLong()
+                        }
                         FixedTypeSize {
-                            Text(
-                                text = formatBubbleDuration(if (isPlaying && positionMs > 0) positionMs.toLong() else totalMs.toLong()),
-                                style = RelayText.BubbleMeta,
-                                color = labelColor,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                modifier = Modifier.padding(end = 4.dp),
-                            )
+                            Box(modifier = Modifier.width(IntrinsicSize.Max)) {
+                                Text(
+                                    text = formatBubbleDuration(totalMs.toLong()),
+                                    style = RelayText.BubbleMeta,
+                                    color = Color.Transparent,
+                                    modifier = Modifier
+                                        .padding(end = 4.dp)
+                                        .clearAndSetSemantics {},
+                                )
+                                Text(
+                                    text = formatBubbleDuration(displayedMs),
+                                    style = RelayText.BubbleMeta,
+                                    color = labelColor,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(end = 4.dp),
+                                )
+                            }
                         }
                     }
                     // Relay — heure (+ statut sortant) en petit, en bas à droite,

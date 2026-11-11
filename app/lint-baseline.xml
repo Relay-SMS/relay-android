@@ -1755,6 +1755,17 @@
 
     <issue
         id="UnusedResources"
+        message="The resource `R.string.compose_to_label` appears to be unused"
+        errorLine1="    &lt;string name=&quot;compose_to_label&quot;>To:&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="185"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
         message="The resource `R.string.vault_unlock_required` appears to be unused"
         errorLine1="    &lt;string name=&quot;vault_unlock_required&quot;>Unlock the app to access the vault.&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">

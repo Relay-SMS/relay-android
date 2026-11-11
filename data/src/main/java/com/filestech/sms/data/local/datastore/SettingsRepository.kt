@@ -8,8 +8,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.filestech.sms.di.ApplicationScope
+import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.ReactionFormat
 import com.filestech.sms.domain.settings.AdvancedSettings
 import com.filestech.sms.domain.settings.AppSettings
@@ -297,6 +299,10 @@ class SettingsRepository(
                 previewLines = p[K.previewLines] ?: 2,
                 showAvatars = p[K.showAvatars] ?: true,
                 signature = p[K.signature],
+                // Round 11 — unknown names are dropped, like every stored enum.
+                mutedCategories = (p[K.mutedCategories] ?: emptySet())
+                    .mapNotNull { runCatching { MessageCategory.valueOf(it) }.getOrNull() }
+                    .toSet(),
             ),
             sending = SendingSettings(
                 confirmBeforeBroadcast = p[K.confirmBroadcast] ?: false,
@@ -466,6 +472,7 @@ class SettingsRepository(
         this[K.previewLines] = s.conversations.previewLines
         this[K.showAvatars] = s.conversations.showAvatars
         s.conversations.signature?.let { this[K.signature] = it } ?: remove(K.signature)
+        this[K.mutedCategories] = s.conversations.mutedCategories.map { it.name }.toSet()
 
         this[K.confirmBroadcast] = s.sending.confirmBeforeBroadcast
         this[K.convertMmsAfter] = s.sending.convertToMmsAfterSegments
@@ -607,6 +614,11 @@ class SettingsRepository(
         val previewLines = intPreferencesKey("conv.previewLines")
         val showAvatars = booleanPreferencesKey("conv.avatars")
         val signature = stringPreferencesKey("conv.signature")
+
+        // Round 11 — muted categories, stored as enum names. An empty set
+        // is stored as an empty set (not removed), so "nothing muted" and
+        // "never set" read the same.
+        val mutedCategories = stringSetPreferencesKey("conv.mutedCategories")
         val confirmBroadcast = booleanPreferencesKey("send.confirmBroadcast")
         val convertMmsAfter = intPreferencesKey("send.convertMmsAfter")
         val mmsQuality = stringPreferencesKey("send.mmsQuality")

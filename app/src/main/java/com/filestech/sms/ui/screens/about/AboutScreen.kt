@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -304,18 +305,25 @@ private fun HeaderBlock(
         // (adaptive-icon foreground vector, tail bottom-right) on a
         // brand-blue rounded tile, the same treatment as the splash. The
         // old upstream PNG (`sms_tech_icon`) is no longer used here.
+        // Round 11 — the bubble is sized up: the adaptive-icon foreground
+        // carries the 108dp safe-zone padding, so the bubble itself is only
+        // ~48x44 of the 108 viewport and read as tiny inside the tile.
+        // The 11dp inset is dropped and the image is scaled 1.8x around its
+        // centre (the bubble is centred on the viewport), so the bubble
+        // fills the tile; the tile's rounded clip keeps the overflow inside.
         Box(
             modifier = Modifier
                 .size(80.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(BrandBlue)
-                .padding(11.dp),
+                .background(BrandBlue),
             contentAlignment = Alignment.Center,
         ) {
             Image(
                 painter = painterResource(id = R.drawable.ic_launcher_foreground),
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(1.8f),
             )
         }
         Spacer(Modifier.size(14.dp))

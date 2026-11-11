@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.material.icons.outlined.PersonOutline
@@ -84,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.settings.AutoLockDelay
 import com.filestech.sms.system.locale.ouvrirLaLangueDeLApplication
 import com.filestech.sms.system.notifications.CANAL_DU_RACCOURCI_D_URGENCE
@@ -104,6 +106,7 @@ import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.rememberPermissionAccordee
 import com.filestech.sms.ui.components.rememberPermissionLocalisation
 import com.filestech.sms.ui.components.showError
+import com.filestech.sms.ui.screens.conversations.categoryLabel
 import com.filestech.sms.ui.security.ProtectSecretInput
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
@@ -532,6 +535,7 @@ fun SettingsScreen(
             // Comportement identique, lecture facilitée (avant : 68 lignes inline ici).
             NotificationsSection(
                 notifications = state.notifications,
+                mutedCategories = state.conversations.mutedCategories,
                 onUpdate = viewModel::update,
                 onOpenPreviewPicker = { previewModePickerOpen = true },
                 onOpenStylePicker = { notifStylePickerOpen = true },
@@ -1560,7 +1564,15 @@ private fun ThemeSwatch(
     modifier: Modifier = Modifier,
 ) {
     val colors = swatchPalette(mode)
-    val ringColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+    // Round 11 — the selected swatch's accent (ring, check badge, label)
+    // matches the "Set as default" button: light in dark mode, brand blue
+    // in light mode. Same surface-luminance split as the button, the
+    // recipient pills and the settings toggles.
+    val cs = MaterialTheme.colorScheme
+    val surfaceLuma = 0.2126f * cs.surface.red + 0.7152f * cs.surface.green + 0.0722f * cs.surface.blue
+    val accent = if (surfaceLuma < 0.5f) Color(0xFFE5EAFD) else cs.primary
+    val onAccent = if (surfaceLuma < 0.5f) Color(0xFF001A40) else cs.onPrimary
+    val ringColor = if (selected) accent else Color.Transparent
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
@@ -1619,13 +1631,13 @@ private fun ThemeSwatch(
                         .padding(4.dp)
                         .size(14.dp)
                         .clip(RoundedCornerShape(7.dp))
-                        .background(MaterialTheme.colorScheme.primary),
+                        .background(accent),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         Icons.Outlined.Check,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        tint = onAccent,
                         modifier = Modifier.size(10.dp),
                     )
                 }
@@ -1635,8 +1647,7 @@ private fun ThemeSwatch(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -2818,6 +2829,7 @@ private fun VaultPinSetupDialog(
 @Composable
 private fun NotificationsSection(
     notifications: com.filestech.sms.domain.settings.NotificationSettings,
+    mutedCategories: Set<MessageCategory>,
     onUpdate: (transform: (com.filestech.sms.domain.settings.AppSettings) -> com.filestech.sms.domain.settings.AppSettings) -> Unit,
     onOpenPreviewPicker: () -> Unit,
     onOpenStylePicker: () -> Unit,
@@ -2854,6 +2866,30 @@ private fun NotificationsSection(
                 checked = notifications.inlineReply,
                 onCheckedChange = { v -> onUpdate { it.copy(notifications = it.notifications.copy(inlineReply = v)) } },
             )
+        }
+        // Round 11 — mute notifications per category. Same switches as
+        // the tab long-press: flipping one here toggles the same
+        // `conversations.mutedCategories` entry, and the tab row reads it.
+        val muteSubtitle = stringResource(R.string.category_mute_subtitle)
+        for (category in MessageCategory.entries) {
+            item {
+                RelaySwitchRow(
+                    icon = Icons.Outlined.NotificationsOff,
+                    title = categoryLabel(category),
+                    subtitle = muteSubtitle,
+                    checked = category in mutedCategories,
+                    onCheckedChange = { v ->
+                        onUpdate {
+                            val muted = if (v) {
+                                it.conversations.mutedCategories + category
+                            } else {
+                                it.conversations.mutedCategories - category
+                            }
+                            it.copy(conversations = it.conversations.copy(mutedCategories = muted))
+                        }
+                    },
+                )
+            }
         }
         // v1.28.3 (audit global D-01) — le toggle « Vibrer » est retiré : aucun code ne le
         // lisait, la vibration appartient au canal et se règle dans les paramètres système.

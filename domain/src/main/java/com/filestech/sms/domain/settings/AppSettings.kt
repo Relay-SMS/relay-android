@@ -1,5 +1,6 @@
 package com.filestech.sms.domain.settings
 
+import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.ReactionFormat
 
 /** User-facing immutable snapshot of all preferences. */
@@ -65,6 +66,13 @@ data class ConversationSettings(
     val previewLines: Int = 2,
     val showAvatars: Boolean = true,
     val signature: String? = null,
+    /**
+     * Round 11 — categories whose messages do not trigger a notification.
+     * Toggled from a tab's long-press or from Settings → Notifications.
+     * Persisted by enum NAME (`conv.mutedCategories`); unknown names are
+     * dropped at read time, like every other stored enum.
+     */
+    val mutedCategories: Set<MessageCategory> = emptySet(),
 )
 
 /**

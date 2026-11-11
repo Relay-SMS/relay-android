@@ -18,14 +18,30 @@ import java.text.Normalizer
  * already present (`(555) 123-4567`, `555-123-4567`) are stripped and the
  * number is re-formatted, so the function is idempotent.
  */
+/**
+ * Display-only formatting of a US phone number: `5551234567` -> `(555) 123-4567`,
+ * `15551234567` -> `1 (555) 123-4567`, `+15551234567` -> `+1 (555) 123-4567`.
+ * Only numbers that plausibly ARE North-American are formatted: a 10-digit number
+ * must start with 2-9 (an area code never starts with 0 or 1), so a French number
+ * like `0617332729` or any other non-NANP number is left untouched, as are partial
+ * numbers, names, and other international numbers.
+ */
 fun String.formatPhoneNumberForDisplay(): String {
     val trimmed = trim()
-    if (trimmed.startsWith("+")) return trimmed
     val digits = trimmed.filter { it.isDigit() }
+    // Area code = the first 3 digits of the 10-digit national number.
+    val areaStartsValid = digits.length == 10 && digits[0] in '2'..'9'
+    val withCountryCode = digits.length == 11 && digits.startsWith("1") && digits[1] in '2'..'9'
     return when {
-        digits.length == 10 ->
+        // US number with the +1 country code: "+1" + 10 digits.
+        // (Kristin's 2026-11-10 ask: "+1xxxxxxxxxx" showed unformatted.)
+        trimmed.startsWith("+1") && withCountryCode ->
+            "+1 (${digits.substring(1, 4)}) ${digits.substring(4, 7)}-${digits.substring(7)}"
+        // Any other international number: leave untouched.
+        trimmed.startsWith("+") -> trimmed
+        areaStartsValid ->
             "(${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6)}"
-        digits.length == 11 && digits.startsWith("1") ->
+        withCountryCode ->
             "1 (${digits.substring(1, 4)}) ${digits.substring(4, 7)}-${digits.substring(7)}"
         else -> trimmed
     }
