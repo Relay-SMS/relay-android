@@ -18,8 +18,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Writes outgoing-MMS rows + addresses + parts into the **system content provider**
- * (`content://mms`), so an MMS sent through Relay survives a re-install (system rows
+ * Writes MMS rows + addresses + parts into the **system content provider**
+ * (`content://mms`), so an MMS sent or received through Relay survives a re-install (system rows
  * persist while our local SQLCipher mirror is wiped) and is also visible to other SMS apps
  * the user might switch to later.
  *
@@ -31,6 +31,11 @@ import javax.inject.Singleton
  *  2. The OS `MmsService` takes over and runs the MMSC POST.
  *  3. On the result callback (`MmsSentReceiver`), call **`markSent(id)`** (→ `msg_box = SENT (2)`)
  *     or **`delete(id)`** on failure so we don't leave a stale outbox row.
+ *
+ * Round 16 adds the incoming side: **`insertInbox(...)`** writes a received group MMS
+ * into the inbox box and returns the thread Android assigned to it, so group replies
+ * are grouped by the system thread instead of by Relay's own reconstruction from the
+ * PDU header (which needs our own number — blank on GrapheneOS).
  *
  * Reading + writing `content://mms` requires being the default SMS app. Calls return null /
  * false silently when that's not the case — the caller logs but doesn't crash.
@@ -186,6 +191,147 @@ class MmsSystemWriteback @Inject constructor(
         }
 
         // 3. Insert parts. Optional text caption first, then each attachment.
+        insertParts(mmsId, textBody, attachments)
+
+        Timber.i("MmsSystemWriteback: inserted outbox row id=%d (%d recipient(s), %d attachment(s))", mmsId, recipients.size, attachments.size)
+        mmsId
+    }
+
+    /**
+     * Round 16 — mirrors an INCOMING group MMS into `content://mms` (inbox box),
+     * the way the outgoing path mirrors sent MMS into the outbox, and returns
+     * the provider row id together with the thread Android assigned to it.
+     *
+     * This is the Qik-shaped fix for group replies landing in 1:1 threads:
+     * Relay used to keep incoming MMS only in its own database and compute the
+     * group thread itself from the PDU header — which needs our own number to
+     * exclude it from the recipient set, and that number is blank on
+     * GrapheneOS. Writing the message into the system store and reading the
+     * thread back off the row lets Android own the grouping, exactly as it
+     * does for the sent side (same recipient set, same thread). A second
+     * benefit: received group MMS now survive an uninstall like SMS does, and
+     * other SMS apps can see them.
+     *
+     * The thread is computed from [threadRecipients] — the group members with
+     * ourselves already excluded when our number is known (the caller passes
+     * the list [com.filestech.sms.domain.mms.GroupMmsMembers] built) — via the
+     * same canonicalisation as [insertOutbox], so sent and received sides of
+     * one group resolve to the same thread. The address rows, by contrast,
+     * stay faithful to the PDU: `To` still lists us, as AOSP's own persister
+     * writes it. After the insert, the thread is READ BACK from the row
+     * rather than trusted from the computation, so whatever thread the
+     * provider actually assigned is the one the caller routes on.
+     *
+     * Returns `null` when we are not the default SMS app (the provider
+     * refuses the insert), when the thread cannot be resolved, or on any
+     * failure — the caller then falls back to the previous routing. Never
+     * throws. The row is written UNREAD (`READ = 0`, `SEEN = 0`); Relay's own
+     * unread badge still comes from its Room mirror.
+     */
+    suspend fun insertInbox(
+        sender: String,
+        to: List<String>,
+        cc: List<String>,
+        threadRecipients: Collection<String>,
+        attachments: List<MmsAttachment>,
+        textBody: String?,
+        dateMs: Long,
+    ): InboxWrite? = withContext(io) {
+        if (sender.isBlank()) return@withContext null
+        if (!attachmentsAreSafe(attachments)) return@withContext null
+
+        val systemThreadId: Long = safe("getOrCreateThreadId") {
+            Telephony.Threads.getOrCreateThreadId(context, canonicalRecipients(threadRecipients))
+        } ?: 0L
+        // No thread, no row: a thread-less inbox row would group nowhere and
+        // the caller has nothing to route on — it falls back instead.
+        if (systemThreadId <= 0L) return@withContext null
+
+        val dateSec = dateMs / 1000L
+        val mmsValues = ContentValues().apply {
+            put(Telephony.Mms.DATE, dateSec)
+            put(Telephony.Mms.DATE_SENT, dateSec)
+            put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_INBOX)
+            put(Telephony.Mms.READ, 0)
+            put(Telephony.Mms.SEEN, 0)
+            put(Telephony.Mms.MESSAGE_TYPE, MSG_TYPE_RETRIEVE_CONF)
+            put(Telephony.Mms.MMS_VERSION, MMS_VERSION_1_0)
+            put(Telephony.Mms.PRIORITY, PRIORITY_NORMAL)
+            put(Telephony.Mms.CONTENT_TYPE, "application/vnd.wap.multipart.related")
+            put(Telephony.Mms.THREAD_ID, systemThreadId)
+        }
+        val mmsUri = safe("insertInbox.row") {
+            resolver.insert(Telephony.Mms.Inbox.CONTENT_URI, mmsValues)
+        } ?: return@withContext null
+        val mmsId = mmsUri.lastPathSegment?.toLongOrNull() ?: run {
+            Timber.w("MmsSystemWriteback: cannot parse mmsId from %s", mmsUri)
+            return@withContext null
+        }
+
+        // Addresses, faithful to the PDU — each insert in its own safe() so
+        // one failure does not skip the rest (same as insertOutbox).
+        val addrUri = Uri.parse("content://mms/$mmsId/addr")
+        safe("addr.from") {
+            resolver.insert(
+                addrUri,
+                ContentValues().apply {
+                    put("address", sender)
+                    put("type", ADDR_TYPE_FROM)
+                    put("charset", CHARSET_UTF8)
+                },
+            )
+        }
+        for (recipient in to) {
+            safe("addr.to") {
+                resolver.insert(
+                    addrUri,
+                    ContentValues().apply {
+                        put("address", recipient)
+                        put("type", ADDR_TYPE_TO)
+                        put("charset", CHARSET_UTF8)
+                    },
+                )
+            }
+        }
+        for (recipient in cc) {
+            safe("addr.cc") {
+                resolver.insert(
+                    addrUri,
+                    ContentValues().apply {
+                        put("address", recipient)
+                        put("type", ADDR_TYPE_CC)
+                        put("charset", CHARSET_UTF8)
+                    },
+                )
+            }
+        }
+
+        insertParts(mmsId, textBody, attachments)
+
+        // Read the thread back off the row itself: whatever Android assigned
+        // is the grouping to use. Falls back to the computed thread when the
+        // read fails — the row still carries it.
+        val threadId = readThreadId(mmsId) ?: systemThreadId
+        Timber.i(
+            "MmsSystemWriteback: inserted inbox row id=%d thread=%d (%d attachment(s))",
+            mmsId,
+            threadId,
+            attachments.size,
+        )
+        InboxWrite(mmsId, threadId)
+    }
+
+    /** The provider row id and the thread Android assigned to it (see [insertInbox]). */
+    data class InboxWrite(val mmsId: Long, val threadId: Long)
+
+    /**
+     * Inserts the text caption (first) and the binary parts of an MMS row.
+     * Shared by [insertOutbox] and [insertInbox]: same part layout, same
+     * streaming (Android 10+ rejects `_data`, so bytes go through
+     * `openOutputStream`). Each part insert is its own `safe()` so one bad
+     * part does not skip the rest.
+     */
+    private fun insertParts(mmsId: Long, textBody: String?, attachments: List<MmsAttachment>) {
         val partsUri = Uri.parse("content://mms/$mmsId/part")
         if (!textBody.isNullOrBlank()) {
             safe("part.text") {
@@ -221,10 +367,16 @@ class MmsSystemWriteback @Inject constructor(
                 }
             }
         }
-
-        Timber.i("MmsSystemWriteback: inserted outbox row id=%d (%d recipient(s), %d attachment(s))", mmsId, recipients.size, attachments.size)
-        mmsId
     }
+
+    /** Reads `THREAD_ID` back off a provider row, or `null` when it cannot be read. */
+    private fun readThreadId(mmsId: Long): Long? =
+        safe("readThreadId") {
+            val uri = ContentUris.withAppendedId(Telephony.Mms.CONTENT_URI, mmsId)
+            resolver.query(uri, arrayOf(Telephony.Mms.THREAD_ID), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0).takeIf { it > 0L } else null
+            }
+        }
 
     /** Promotes a previously inserted outbox row to SENT (`msg_box = 2`). */
     suspend fun markSent(mmsSystemId: Long): Boolean = withContext(io) {
@@ -347,10 +499,12 @@ class MmsSystemWriteback @Inject constructor(
 
         // PduHeaders constants — kept inline (hidden in the framework, can't import).
         const val MSG_TYPE_SEND_REQ: Int = 128
+        const val MSG_TYPE_RETRIEVE_CONF: Int = 132
         const val MMS_VERSION_1_0: Int = 16
         const val PRIORITY_NORMAL: Int = 129
         const val ADDR_TYPE_FROM: Int = 137
         const val ADDR_TYPE_TO: Int = 151
+        const val ADDR_TYPE_CC: Int = 130
         const val CHARSET_UTF8: Int = 106
     }
 }

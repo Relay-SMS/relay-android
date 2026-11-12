@@ -98,6 +98,7 @@
     <string name="sort_date">Neueste zuerst</string>
     <string name="sort_unread">Ungelesene zuerst</string>
     <string name="action_back">Zurück</string>
+    <string name="action_backspace">Rücktaste</string>
     <string name="action_copy">Kopieren</string>
     <string name="action_forward">Weiterleiten</string>
     <string name="action_retry">Erneut versuchen</string>

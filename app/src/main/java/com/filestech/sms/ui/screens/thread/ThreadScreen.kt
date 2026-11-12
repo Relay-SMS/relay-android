@@ -2568,6 +2568,7 @@ private fun ComposerBar(
                 onCameraClick = attachmentActions.onCameraClick,
                 emojiButtonIconRes = emojiPickerButton.iconRes,
                 onEmojiButtonClick = emojiPickerButton.onClick,
+                pickerOpen = pickerOpen,
                 onTextFieldFocused = onTextFieldFocused,
             )
 
@@ -2603,6 +2604,70 @@ private fun ComposerBar(
  * Feedback round 6 — reverted to the 48dp pill: the 36dp version read cramped
  * and the mic did not match the pill height.
  */
+
+/** U+FE0F — variation selector 16, trailing a base emoji (❤️). */
+private const val BACKSPACE_VARIATION_SELECTOR = 0xFE0F
+
+/** U+200D — zero-width joiner, the glue in ZWJ sequences. */
+private const val BACKSPACE_ZERO_WIDTH_JOINER = 0x200D
+
+/** U+20E3 — combining enclosing keycap (1️⃣). */
+private const val BACKSPACE_KEYCAP = 0x20E3
+
+/** Skin-tone modifiers U+1F3FB–U+1F3FF. */
+private val BACKSPACE_SKIN_TONES = 0x1F3FB..0x1F3FF
+
+/** Regional indicators U+1F1E6–U+1F1FF — flags are pairs of these. */
+private val BACKSPACE_REGIONAL_INDICATORS = 0x1F1E6..0x1F1FF
+
+/**
+ * Round 15 — [text] with its last grapheme cluster removed: one VISIBLE
+ * character, so a backspace tap deletes a whole emoji instead of leaving
+ * half of it behind. Hand-rolled on purpose: `BreakIterator` splits ZWJ
+ * sequences and skin tones on the JDK (verified: 👩‍❤️‍👨 lost only its
+ * last man), and its behaviour varies by device ICU version, so the
+ * cluster is walked back by hand — trailing VS16 / tone modifiers, then
+ * the ZWJ chain (each component may carry its own modifiers), then a
+ * flag pair or keycap base. Empty text stays empty.
+ */
+private fun dropLastGrapheme(text: String): String {
+    if (text.isEmpty()) return text
+    var start = text.offsetByCodePoints(text.length, -1)
+    var codePoint = text.codePointAt(start)
+    // Keycap first: U+20E3 sits after its base (and VS16), so step back
+    // onto the VS16 and let the modifier loop below consume it.
+    if (codePoint == BACKSPACE_KEYCAP && start > 0) {
+        start = text.offsetByCodePoints(start, -1)
+        codePoint = text.codePointAt(start)
+    }
+    // Trailing VS16 / tone modifiers belong to the char before them.
+    while (codePoint == BACKSPACE_VARIATION_SELECTOR || codePoint in BACKSPACE_SKIN_TONES) {
+        if (start == 0) return ""
+        start = text.offsetByCodePoints(start, -1)
+        codePoint = text.codePointAt(start)
+    }
+    // ZWJ chain: while a joiner precedes the cluster, extend back over the
+    // joiner and the component before it (which may carry modifiers too).
+    while (start > 0 && text.codePointBefore(start) == BACKSPACE_ZERO_WIDTH_JOINER) {
+        start = text.offsetByCodePoints(start, -1)
+        if (start == 0) break
+        start = text.offsetByCodePoints(start, -1)
+        codePoint = text.codePointAt(start)
+        while (codePoint == BACKSPACE_VARIATION_SELECTOR || codePoint in BACKSPACE_SKIN_TONES) {
+            if (start == 0) break
+            start = text.offsetByCodePoints(start, -1)
+            codePoint = text.codePointAt(start)
+        }
+    }
+    // Regional-indicator flag pair: a lone RI takes the one before it.
+    if (codePoint in BACKSPACE_REGIONAL_INDICATORS &&
+        start > 0 && text.codePointBefore(start) in BACKSPACE_REGIONAL_INDICATORS
+    ) {
+        start = text.offsetByCodePoints(start, -1)
+    }
+    return text.substring(0, start)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("LongParameterList")
 @Composable
@@ -2633,6 +2698,10 @@ private fun ComposingRow(
     emojiButtonIconRes: Int,
     /** Round 13 — picker: tapping the composer icon opens the panel. */
     onEmojiButtonClick: () -> Unit,
+    /** Round 15 — the picker is open below the composer: tapping the composer
+     * icon closes it AND focuses the text field, so the keyboard pops up and
+     * the user can type or delete straight away. */
+    pickerOpen: Boolean,
     /** Round 14 — the text field gained focus (keyboard coming up): the caller
      * closes the picker so the two never stack. */
     onTextFieldFocused: () -> Unit,
@@ -2706,11 +2775,20 @@ private fun ComposingRow(
                             focusRequester = composerFocus,
                             leadingIcon = {
                                 // Round 13 — opens the emoji/GIF/sticker picker panel
-                                // to the last-used tab.
+                                // to the last-used tab. Round 15 — when the panel is
+                                // open, the same tap closes it AND focuses the text
+                                // field, so the keyboard pops up and the user can
+                                // type or delete straight away. (Opening the panel
+                                // never focuses — the keyboard stays hidden there.)
                                 ComposerIconButton(
                                     painter = painterResource(emojiButtonIconRes),
                                     contentDescription = stringResource(R.string.thread_compose_emoji),
-                                    onClick = onEmojiButtonClick,
+                                    onClick = {
+                                        onEmojiButtonClick()
+                                        if (pickerOpen) {
+                                            runCatching { composerFocus.requestFocus() }
+                                        }
+                                    },
                                 )
                             },
                             trailingIcon = {
@@ -2738,11 +2816,25 @@ private fun ComposingRow(
                                             onClick = onCameraClick,
                                         )
                                     }
-                                    ComposerIconButton(
-                                        painter = painterResource(R.drawable.ic_add_circle_outline),
-                                        contentDescription = stringResource(R.string.action_attach),
-                                        onClick = onAttachClick,
-                                    )
+                                    // Round 15 — while the picker drawer is open,
+                                    // the + becomes a backspace key: tapping it
+                                    // deletes the last character of the draft (a
+                                    // whole emoji), so a changed mind doesn't mean
+                                    // swapping back to the keyboard and back to
+                                    // the drawer. The + returns when it closes.
+                                    if (pickerOpen) {
+                                        ComposerIconButton(
+                                            painter = painterResource(R.drawable.ic_backspace),
+                                            contentDescription = stringResource(R.string.action_backspace),
+                                            onClick = { onDraftChanged(dropLastGrapheme(draft)) },
+                                        )
+                                    } else {
+                                        ComposerIconButton(
+                                            painter = painterResource(R.drawable.ic_add_circle_outline),
+                                            contentDescription = stringResource(R.string.action_attach),
+                                            onClick = onAttachClick,
+                                        )
+                                    }
                                 }
                             },
                         )

@@ -13,21 +13,21 @@ import kotlinx.coroutines.flow.asStateFlow
  * parameter — the grid's signature is fixed. The panel writes the submitted
  * text here instead; the grid reads it.
  *
- * Submit-only: the panel calls [submit] when the user submits a search (IME
- * search action / enter key) — never from `onValueChange`, never on every
- * keystroke. A search costs exactly one API call, and the beta-key rate limit
- * is shared by every user of the app. If live search is ever added, it must
- * be debounced (~500 ms after the user stops typing) before calling [submit].
+ * Two ways in: the panel's live search ([GifLiveSearchEffect], debounced
+ * ~500 ms after the user stops typing, 2+ characters) and the explicit
+ * submit (IME search action / enter key). Either way a search costs one
+ * API call; the debounce keeps typing from burning the shared rate limit.
  */
 object GifSearchQuery {
     private val _submittedQuery = MutableStateFlow("")
     val submittedQuery: StateFlow<String> = _submittedQuery.asStateFlow()
 
     /**
-     * Called by the picker panel's search field ONLY when the user submits
-     * (IME search action / enter key). Never call this from `onValueChange` —
-     * that would search on every keystroke and burn the shared rate limit.
-     * Submit `""` (or [clear]) to go back to trending.
+     * Called by the picker panel when the user submits (IME search action /
+     * enter key) or when the debounced live search fires. Never call this
+     * from `onValueChange` directly — that would search on every keystroke
+     * and burn the shared rate limit. Submit `""` (or [clear]) to go back
+     * to trending.
      */
     fun submit(query: String) {
         _submittedQuery.value = query

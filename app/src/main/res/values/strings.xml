@@ -99,6 +99,7 @@
     <string name="sort_date">Most recent first</string>
     <string name="sort_unread">Unread first</string>
     <string name="action_back">Back</string>
+    <string name="action_backspace">Backspace</string>
     <string name="action_copy">Copy</string>
     <string name="action_forward">Forward</string>
     <string name="action_retry">Retry</string>

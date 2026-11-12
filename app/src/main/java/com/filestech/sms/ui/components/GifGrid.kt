@@ -54,12 +54,10 @@ import timber.log.Timber
  * below; a future DI wiring can inject the provider instead. A blank query
  * shows trending GIFs.
  *
- * Search is submit-only: the picker panel's search field keeps the typed text
- * locally and calls [GifSearchQuery.submit] when the user submits (IME search
- * action / enter key) — never on every keystroke, so a search costs exactly
- * one API call. If live search is ever added, it must be debounced (~500 ms
- * after the user stops typing) before calling [GifSearchQuery.submit]; the
- * test-key rate limit is shared by every user of the app.
+ * Search is live and debounced: the picker panel submits the typed text
+ * ~500 ms after the user stops typing (or immediately on enter) via
+ * [GifSearchQuery.submit] — one API call per pause, never per keystroke.
+ * A blank query shows trending GIFs.
  *
  * Behaviour: every time the tab opens it calls Trending fresh, and every
  * submitted search calls Search fresh — no caching anywhere, per Klipy's
@@ -172,10 +170,12 @@ fun GifGrid(modifier: Modifier = Modifier, onGifSelected: (String) -> Unit) {
 }
 
 /**
- * One grid cell: the GIF thumbnail, square-cropped. Coil renders the first
- * frame as a still here — the app has no `coil-gif` decoder dependency, so the
- * thumbnails do not animate in the grid. The downloaded file is the real
- * animated GIF, and it stays animated when sent as an MMS attachment.
+ * One grid cell: the GIF thumbnail, square-cropped, animated through
+ * Coil's `GifDecoder` (`io.coil-kt:coil-gif`). The downloaded file is the
+ * real animated GIF, and it stays animated when sent as an MMS attachment:
+ * the send path never JPEG-compresses a GIF, and an oversized MEDIUM
+ * rendition falls back to the SMALL one at download time (see the
+ * provider's [GifProvider.download]).
  *
  * The thumbnail request disables Coil's disk cache on purpose: Klipy's terms
  * prohibit a partner-operated media cache, so no thumbnail is ever written
@@ -185,6 +185,7 @@ fun GifGrid(modifier: Modifier = Modifier, onGifSelected: (String) -> Unit) {
 @Composable
 private fun GifTile(gif: GifItem, enabled: Boolean, onClick: () -> Unit) {
     val context = LocalContext.current
+    val gifImageLoader = rememberGifImageLoader()
     Box(
         modifier = Modifier
             .aspectRatio(1f)
@@ -199,6 +200,7 @@ private fun GifTile(gif: GifItem, enabled: Boolean, onClick: () -> Unit) {
                 .diskCachePolicy(CachePolicy.DISABLED)
                 .crossfade(true)
                 .build(),
+            imageLoader = gifImageLoader,
             contentDescription = gif.title.ifBlank { null },
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),

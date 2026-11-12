@@ -989,7 +989,13 @@ class ConversationMirror @Inject constructor(
                 // `IGNORE` : un index unique a refusé la ligne. Pour la clé, c'est le message déjà là ;
                 // pour tout autre conflit, rien ne permet de rendre un id honnête — on lève, et le
                 // receveur garde le PDU.
+                //
+                // Round 16 — la clé n'est pas le seul index unique : un MMS de groupe écrit dans le
+                // fournisseur porte aussi `telephony_uri`, et une synchronisation qui l'aurait
+                // importé entre l'écriture fournisseur et cette transaction rendrait la ligne par
+                // CET index. Sans ce repli, le conflit lèverait alors que le message est bien là.
                 val existant = transactionKey?.let { messageDao.findIdByTransactionKey(it) }
+                    ?: telephonyUri?.let { messageDao.findByTelephonyUri(it)?.id }
                     ?: error("MMS entrant refuse par un index unique")
                 return@withTransaction InscriptionMmsRecu(existant, nouveau = false)
             }

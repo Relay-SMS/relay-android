@@ -64,6 +64,14 @@
 -keep class com.caverock.androidsvg.** { *; }
 -dontwarn com.caverock.androidsvg.**
 
+# ----- Coil / GIF (Klipy) -----------------------------------------------------------------------
+# Round 16 — same R8 trap as the SVG decoder above: the GIF search grid and the
+# thread image bubbles decode GIFs through Coil's GifDecoder, which R8 strips
+# without these keeps (animated GIFs would go back to a static first frame in
+# release while debug works fine).
+-keep class coil.decode.GifDecoder { *; }
+-keep class coil.decode.GifDecoder$Factory { *; }
+
 # ----- Timber ----------------------------------------------------------------------------------
 -dontwarn org.jetbrains.annotations.**
 

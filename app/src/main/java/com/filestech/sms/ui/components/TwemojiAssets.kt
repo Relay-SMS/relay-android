@@ -5,13 +5,17 @@
 package com.filestech.sms.ui.components
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import coil.ImageLoader
+import coil.decode.GifDecoder
 import coil.decode.SvgDecoder
+import com.caverock.androidsvg.SVG
 import com.filestech.sms.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -90,26 +94,32 @@ val PEOPLE_EMOJIS: List<String> = listOf(
 /**
  * Round 14 — the family emojis (Kristin, 2026-11-11). ZWJ sequences
  * (man/woman + children); families take no skin tones in Unicode, so
- * none of these is in [SKIN_TONE_BASES].
+ * none of these is in [SKIN_TONE_BASES]. Round 15 — the same-sex-parent
+ * families (👨‍👨‍👦 👨‍👨‍👧 👨‍👨‍👧‍👦 👩‍👩‍👦 👩‍👩‍👧
+ * 👩‍👩‍👧‍👦) are deliberately not included, per Kristin.
  */
 val FAMILY_EMOJIS: List<String> = listOf(
-    "👨‍👩‍👦", "👨‍👩‍👧", "👨‍👩‍👧‍👦", "👨‍👨‍👦", "👨‍👨‍👧", "👨‍👨‍👧‍👦",
-    "👩‍👩‍👦", "👩‍👩‍👧", "👩‍👩‍👧‍👦", "👨‍👦", "👨‍👧", "👨‍👧‍👦",
+    "👨‍👩‍👦", "👨‍👩‍👧", "👨‍👩‍👧‍👦", "👨‍👦", "👨‍👧", "👨‍👧‍👦",
     "👩‍👦", "👩‍👧", "👩‍👧‍👦", "👪",
 )
 
 /**
  * Round 14 — the couples. Hearts and kisses take skin tones (Unicode 14,
  * both people — see [COUPLE_TONE_EMOJIS]); the plain holding-hands
- * pairs (👫👭👬) and 💑💏 do not. The gendered holding-hands (👩‍🤝‍👨
+ * pair (👫) and 💑💏 do not. The gendered holding-hands (👩‍🤝‍👨
  * and friends) are NOT here: Twemoji ships no picture for them at all —
  * base or toned — in either the fork or the original repo, so only the
- * neutral 🧑‍🤝‍🧑 (full set) is included.
+ * neutral 🧑‍🤝‍🧑 (full set) is included. Round 15 — the same-sex
+ * pairs (👨‍❤️‍👨 👩‍❤️‍👩 👨‍❤️‍💋‍👨 👩‍❤️‍💋‍👩 👭 👬) are
+ * deliberately not included, per Kristin.
  */
 val COUPLE_EMOJIS: List<String> = listOf(
-    "👩‍❤️‍👨", "👨‍❤️‍👨", "👩‍❤️‍👩", "💑",
-    "👩‍❤️‍💋‍👨", "👨‍❤️‍💋‍👨", "👩‍❤️‍💋‍👩", "💏",
-    "👫", "👭", "👬", "🧑‍🤝‍🧑",
+    "👩‍❤️‍👨",
+    "💑",
+    "👩‍❤️‍💋‍👨",
+    "💏",
+    "👫",
+    "🧑‍🤝‍🧑",
 )
 
 /**
@@ -118,11 +128,7 @@ val COUPLE_EMOJIS: List<String> = listOf(
  */
 val COUPLE_TONE_EMOJIS: List<String> = listOf(
     "👩‍❤️‍👨",
-    "👨‍❤️‍👨",
-    "👩‍❤️‍👩",
     "👩‍❤️‍💋‍👨",
-    "👨‍❤️‍💋‍👨",
-    "👩‍❤️‍💋‍👩",
     "🧑‍🤝‍🧑",
 )
 
@@ -478,12 +484,6 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "👨‍👩‍👦" to "family man woman boy",
     "👨‍👩‍👧" to "family man woman girl",
     "👨‍👩‍👧‍👦" to "family man woman girl boy",
-    "👨‍👨‍👦" to "family man man boy dad",
-    "👨‍👨‍👧" to "family man man girl dad",
-    "👨‍👨‍👧‍👦" to "family man man girl boy dad",
-    "👩‍👩‍👦" to "family woman woman boy mom",
-    "👩‍👩‍👧" to "family woman woman girl mom",
-    "👩‍👩‍👧‍👦" to "family woman woman girl boy mom",
     "👨‍👦" to "family man boy dad son",
     "👨‍👧" to "family man girl dad daughter",
     "👨‍👧‍👦" to "family man girl boy dad",
@@ -493,16 +493,10 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "👪" to "family",
     // Couples
     "👩‍❤️‍👨" to "couple love heart woman man",
-    "👨‍❤️‍👨" to "couple love heart man man",
-    "👩‍❤️‍👩" to "couple love heart woman woman",
     "💑" to "couple love heart",
     "👩‍❤️‍💋‍👨" to "kiss couple love woman man",
-    "👨‍❤️‍💋‍👨" to "kiss couple love man man",
-    "👩‍❤️‍💋‍👩" to "kiss couple love woman woman",
     "💏" to "kiss couple love",
     "👫" to "couple holding hands man woman",
-    "👭" to "couple holding hands women friends",
-    "👬" to "couple holding hands men friends",
     "🧑‍🤝‍🧑" to "holding hands people couple friends",
     // Professions
     "👩‍⚕️" to "woman doctor nurse health worker medical",
@@ -941,22 +935,34 @@ fun twemojiPngAssetUri(unicode: String): String =
 fun stickerAssetUri(unicode: String): String = twemojiPngAssetUri(unicode)
 
 /**
- * Copies the sticker's bundled PNG out of assets into the outgoing-MMS
+ * Renders the sticker's bundled SVG to a 512px PNG in the outgoing-MMS
  * cache (`cacheDir/mms_outgoing/`, covered by the FileProvider paths) and
  * returns a `content://` URI the MMS send path can read via
- * `ContentResolver.openInputStream`. Returns `null` on IO failure or when
- * the emoji has no bundled PNG (only [STICKER_EMOJIS] do). The file is
- * reused across sends, so no duplicates pile up in the cache.
+ * `ContentResolver.openInputStream`.
+ *
+ * Round 16 — the bundled PNGs are only 72x72, and the thread bubble shows
+ * them at 240dp, so sent stickers looked grainy and stretched. Rendering
+ * the vector at 512px (about 2x the bubble size) keeps them crisp. The
+ * renderer is AndroidSVG, already a dependency through `coil-svg` (and
+ * already ProGuard-kept). When the SVG render fails for any reason, the
+ * old 72px PNG copy is the fallback — a grainy sticker still beats no
+ * sticker. Returns `null` on IO failure or when the emoji has no bundled
+ * asset (only [STICKER_EMOJIS] do). The file is reused across sends, so
+ * no duplicates pile up in the cache; the `-512` suffix in the name keeps
+ * a stale 72px file from an older build from being reused.
  */
 suspend fun stickerSendUri(context: Context, unicode: String): Uri? =
     withContext(Dispatchers.IO) {
         runCatching {
             val name = twemojiFileName(unicode)
             val dir = File(context.cacheDir, "mms_outgoing").apply { mkdirs() }
-            val target = File(dir, "sticker-$name.png")
+            val target = File(dir, "sticker-$name-512.png")
             if (!target.exists()) {
-                context.assets.open("twemoji/png/$name.png").use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
+                val rendered = renderStickerSvg(context, name, target)
+                if (!rendered) {
+                    context.assets.open("twemoji/png/$name.png").use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
                 }
             }
             runCatching {
@@ -968,6 +974,36 @@ suspend fun stickerSendUri(context: Context, unicode: String): Uri? =
             }.getOrElse { Uri.fromFile(target) }
         }.getOrNull()
     }
+
+/**
+ * Renders the bundled Twemoji SVG for [name] into [target] as a
+ * [STICKER_SEND_PX] PNG. `false` on any failure — the caller falls back
+ * to the bundled 72px PNG. Never throws.
+ */
+private fun renderStickerSvg(context: Context, name: String, target: File): Boolean =
+    runCatching {
+        val svg = context.assets.open("twemoji/svg/$name.svg").use { SVG.getFromInputStream(it) }
+        svg.documentWidth = STICKER_SEND_PX.toFloat()
+        svg.documentHeight = STICKER_SEND_PX.toFloat()
+        val bitmap = Bitmap.createBitmap(STICKER_SEND_PX, STICKER_SEND_PX, Bitmap.Config.ARGB_8888)
+        try {
+            svg.renderToCanvas(Canvas(bitmap))
+            val ok = target.outputStream().use { output ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            }
+            check(ok) { "PNG compress failed" }
+        } finally {
+            bitmap.recycle()
+        }
+        true
+    }.onFailure {
+        // Never leave a partial file behind: `stickerSendUri` reuses an
+        // existing target, and a truncated PNG would be sent as-is.
+        runCatching { target.delete() }
+    }.getOrDefault(false)
+
+/** Send-time sticker render size: ~2x the 240dp thread bubble, crisp on every density. */
+private const val STICKER_SEND_PX = 512
 
 /**
  * Local Coil loader with the SVG decoder, remembered for the lifetime of
@@ -982,6 +1018,24 @@ fun rememberTwemojiImageLoader(): ImageLoader {
     return remember(context) {
         ImageLoader.Builder(context)
             .components { add(SvgDecoder.Factory()) }
+            .build()
+    }
+}
+
+/**
+ * Local Coil loader with the GIF decoder, remembered for the lifetime of
+ * the calling composable. Same pattern as [rememberTwemojiImageLoader]:
+ * a local loader leaves the app-wide Coil setup untouched, and
+ * `RealImageLoader` appends the default fetchers/decoders on top of the
+ * added factory. Used by the GIF search grid ([GifGrid]) so thumbnails
+ * animate instead of showing a static first frame.
+ */
+@Composable
+fun rememberGifImageLoader(): ImageLoader {
+    val context = LocalContext.current
+    return remember(context) {
+        ImageLoader.Builder(context)
+            .components { add(GifDecoder.Factory()) }
             .build()
     }
 }

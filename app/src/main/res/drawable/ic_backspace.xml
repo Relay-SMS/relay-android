@@ -1,0 +1,30 @@
+<!-- Kristin's own icon (backspace.svg, 25x19 viewBox): an outlined backspace key
+     with an X inside, shown in the composer while the picker drawer is open.
+     Both source paths are STROKED (no fill), so the vector keeps stroke
+     attributes and a transparent fill; the grey strokes become black and the
+     tint is applied at the Icon() call site from the theme (same pattern as
+     ic_add_circle_outline), so it follows light/dark mode. The 25x19 glyph is
+     centred in a square 25x25 viewport with a group translateY of 3 (rather
+     than re-coordinating the paths), so the 24dp display keeps its true
+     proportions instead of being stretched square. Path data copied verbatim. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="25"
+    android:viewportHeight="25">
+    <group android:translateY="3">
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="@android:color/black"
+            android:strokeWidth="1.88889"
+            android:strokeLineJoin="round"
+            android:pathData="M6.18954 17.3624C6.34898 17.5451 6.54567 17.6916 6.7664 17.792C6.98713 17.8924 7.22678 17.9444 7.46927 17.9445H22.0054C22.4568 17.9424 22.8891 17.7622 23.2082 17.4431C23.5274 17.1239 23.7076 16.6917 23.7096 16.2403V2.64859C23.7076 2.19725 23.5274 1.76497 23.2082 1.44582C22.8891 1.12667 22.4568 0.946477 22.0054 0.944458H7.46927C7.227 0.944682 6.98758 0.996612 6.76699 1.09678C6.54641 1.19694 6.34974 1.34303 6.19013 1.52529L0.944336 9.44446L6.18954 17.3607V17.3624Z" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="@android:color/black"
+            android:strokeWidth="1.88889"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M18.0824 5.68616L14.2453 9.52326M14.2453 9.52326L10.4082 13.3604M14.2453 9.52326L18.0824 13.3604M14.2453 9.52326L10.4082 5.68616" />
+    </group>
+</vector>

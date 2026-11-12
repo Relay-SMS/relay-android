@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -176,6 +177,9 @@ private fun EmojiCell(
                 val windowX = coords.positionInWindow().x
                 position.centerX = windowX + coords.size.width / 2f
             }
+            // Round 15 — the clip sits BEFORE the clickable, so the tap
+            // ripple follows the rounded shape instead of the square cell.
+            .clip(RoundedCornerShape(EMOJI_CELL_CORNER_DP.dp))
             .combinedClickable(
                 onClick = { onEmojiSelected(emoji) },
                 onLongClick = {
@@ -259,6 +263,8 @@ private fun TonePickerPopup(
                 Box(
                     modifier = Modifier
                         .size(TONE_OPTION_SIZE_DP.dp)
+                        // Round 15 — same rounded tap highlight as the grid cells.
+                        .clip(RoundedCornerShape(EMOJI_CELL_CORNER_DP.dp))
                         .clickable { onToneSelected(variant) },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -302,6 +308,13 @@ private const val EMOJI_CELL_MIN_DP = 48
 
 /** The Twemoji image size inside each cell (centred, so the header inset is half the leftover cell width). */
 private const val EMOJI_IMAGE_SIZE_DP = 36
+
+/**
+ * Tap-highlight corner radius for emoji cells and tone options (round 15) —
+ * the ripple follows the clip, so the highlight is rounded, not square.
+ * Matches the GIF tiles' 12dp.
+ */
+private const val EMOJI_CELL_CORNER_DP = 12
 
 /** Tone popup: 6 options x 40dp + 16dp side padding. Fixed, for the clamp. */
 private const val TONE_POPUP_WIDTH_DP = 256

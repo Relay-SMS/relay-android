@@ -97,6 +97,7 @@
     <string name="sort_date">Plus récent d\'abord</string>
     <string name="sort_unread">Non lus d\'abord</string>
     <string name="action_back">Retour</string>
+    <string name="action_backspace">Retour arrière</string>
     <string name="action_copy">Copier</string>
     <string name="action_forward">Transférer</string>
     <string name="action_retry">Réessayer</string>

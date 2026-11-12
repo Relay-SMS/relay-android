@@ -3,7 +3,6 @@ package com.filestech.sms.ui.components
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.decode.GifDecoder
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import com.filestech.sms.R
@@ -320,7 +320,15 @@ private fun MediaPreview(
     }
 }
 
-/** Thumbnail image via Coil. Tap = ACTION_VIEW. */
+/**
+ * Thumbnail image via Coil. Tap = ACTION_VIEW.
+ *
+ * Round 16 — the image loads through a local loader with the GIF decoder
+ * (`io.coil-kt:coil-gif`), so animated GIFs play in the thread instead of
+ * showing a static first frame. Same pattern as the video-frame loader in
+ * [VideoPreview]. The 1dp border is gone: it read as a blue outline in
+ * dark mode — the rounded clip alone shapes the bubble.
+ */
 @Composable
 private fun ImagePreview(
     attachment: Attachment,
@@ -329,12 +337,16 @@ private fun ImagePreview(
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val gifImageLoader = remember(context) {
+        ImageLoader.Builder(context)
+            .components { add(GifDecoder.Factory()) }
+            .build()
+    }
     Box(
         modifier = Modifier
             .widthIn(min = 80.dp, max = 240.dp)
             .heightIn(min = 80.dp, max = 320.dp)
             .clip(shape)
-            .border(width = 1.dp, color = bgColor, shape = shape)
             .clickable(onClick = onClick),
     ) {
         // v1.3.10 (P5) — Coil `.size(px)` cap so multi-megapixel incoming MMS images (2048×1536
@@ -348,6 +360,7 @@ private fun ImagePreview(
                 .size(THUMBNAIL_PX)
                 .crossfade(true)
                 .build(),
+            imageLoader = gifImageLoader,
             contentDescription = attachment.fileName ?: stringResource(R.string.attachment_image_label),
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(width = 240.dp, height = 240.dp),
@@ -430,7 +443,6 @@ private fun VideoPreview(
                 .heightIn(min = 80.dp, max = 320.dp)
                 .clip(shape)
                 .background(bgColor)
-                .border(width = 1.dp, color = bgColor, shape = shape)
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {

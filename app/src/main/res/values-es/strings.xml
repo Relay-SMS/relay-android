@@ -100,6 +100,7 @@
     <string name="sort_date">Las más recientes primero</string>
     <string name="sort_unread">No leídas primero</string>
     <string name="action_back">Atrás</string>
+    <string name="action_backspace">Retroceso</string>
     <string name="action_copy">Copiar</string>
     <string name="action_forward">Reenviar</string>
     <string name="action_retry">Reintentar</string>

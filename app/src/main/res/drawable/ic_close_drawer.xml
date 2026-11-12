@@ -1,0 +1,17 @@
+<!-- Kristin's own icon (close-drawer.svg, 24x24 viewBox): a filled disc with an
+     X cut out of it, for closing the emoji picker. The SVG path is copied
+     verbatim (circle + X subpaths, M/C/L/Z only — all valid VectorDrawable
+     commands). fillType evenOdd cuts the X hole out of the disc regardless
+     of subpath winding; the grey fill in the source becomes black and the
+     tint is applied at the Icon() call site from the theme (same pattern as
+     ic_gif), so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/black"
+        android:fillType="evenOdd"
+        android:pathData="M12 0C5.38327 0 0 5.38327 0 12C0 18.6167 5.38327 24 12 24C18.6167 24 24 18.6167 24 12C24 5.38327 18.6167 0 12 0ZM16.3448 15.0398C16.4341 15.1247 16.5056 15.2266 16.5549 15.3395C16.6042 15.4524 16.6304 15.574 16.632 15.6972C16.6336 15.8204 16.6105 15.9427 16.5641 16.0568C16.5177 16.1709 16.4489 16.2746 16.3617 16.3617C16.2746 16.4489 16.1709 16.5177 16.0568 16.5641C15.9427 16.6105 15.8204 16.6336 15.6972 16.632C15.574 16.6304 15.4524 16.6042 15.3395 16.5549C15.2266 16.5056 15.1247 16.4341 15.0398 16.3448L12 13.3056L8.96019 16.3448C8.78567 16.5106 8.55329 16.6017 8.31259 16.5986C8.07188 16.5955 7.84191 16.4985 7.67169 16.3283C7.50147 16.1581 7.40448 15.9281 7.4014 15.6874C7.39832 15.4467 7.48939 15.2143 7.65519 15.0398L10.6944 12L7.65519 8.96019C7.48939 8.78567 7.39832 8.55329 7.4014 8.31259C7.40448 8.07188 7.50147 7.84191 7.67169 7.67169C7.84191 7.50147 8.07188 7.40448 8.31259 7.4014C8.55329 7.39832 8.78567 7.48939 8.96019 7.65519L12 10.6944L15.0398 7.65519C15.2143 7.48939 15.4467 7.39832 15.6874 7.4014C15.9281 7.40448 16.1581 7.50147 16.3283 7.67169C16.4985 7.84191 16.5955 8.07188 16.5986 8.31259C16.6017 8.55329 16.5106 8.78567 16.3448 8.96019L13.3056 12L16.3448 15.0398Z" />
+</vector>

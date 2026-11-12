@@ -8,6 +8,7 @@ import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.repository.FichiersDePiecesJointes
 import com.filestech.sms.data.repository.IncomingAttachment
 import com.filestech.sms.data.sms.SystemThreadResolver
+import com.filestech.sms.domain.mms.MmsAttachment
 import com.filestech.sms.domain.model.PhoneAddress
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.NonCancellable
@@ -29,6 +30,12 @@ import javax.inject.Singleton
  * personne ne le rouvrait : il partait au bout de 24 h. Rejouer demande de savoir si le message a déjà été
  * écrit, sinon on le duplique ; d'où la clé de transaction ([PdusEnAttente]) cherchée dans la transaction
  * d'écriture ([ConversationMirror.inscrireMmsRecu]).
+ *
+ * Round 16 — un MMS de groupe entrant EST désormais écrit dans `content://mms`
+ * ([MmsSystemWriteback.insertInbox]), et le fil qu'Android lui assigne sert au
+ * routage (voir [integrer]). La déduplication par clé de transaction reste la
+ * garde contre les rejouements : elle tranche AVANT l'écriture fournisseur,
+ * donc un PDU rejoué n'écrit jamais une seconde ligne système.
  *
  * # Les issues
  *
@@ -56,6 +63,10 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
     // existing constructions (notably the instrumented test) keep working without one:
     // without it no thread ID is resolved and routing is exactly as before.
     private val threadResolver: SystemThreadResolver? = null,
+    // Round 16 — the system-provider writer, for group MMS. Same nullable +
+    // defaulted shape as the resolver: without it no provider row is written
+    // and routing falls back to the round-13 resolution.
+    private val systemWriteback: MmsSystemWriteback? = null,
 ) {
 
     @Inject constructor(
@@ -65,7 +76,16 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
         messageDao: MessageDao,
         fichiers: FichiersDePiecesJointes,
         threadResolver: SystemThreadResolver,
-    ) : this(mirror, attachmentDao, messageDao, fichiers, EcrivainDePiecesSurDisque(context), threadResolver)
+        systemWriteback: MmsSystemWriteback,
+    ) : this(
+        mirror,
+        attachmentDao,
+        messageDao,
+        fichiers,
+        EcrivainDePiecesSurDisque(context),
+        threadResolver,
+        systemWriteback,
+    )
 
     sealed interface Resultat {
         data class Ecrit(val messageId: Long) : Resultat
@@ -108,18 +128,28 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
             messageDao.findIdByTransactionKey(cle)?.let { return completer(it, contenu) }
         }
         val pieces = ecrire(contenu.parties)
-        // Round 13 — the system thread ID, for a GROUP MMS only. The provider keys a thread
-        // by its recipient set, so the same group always resolves to the same thread — even
-        // when Relay has never seen the group, and even when our own number is unknown
-        // (no `userMsisdn` needed). Resolved here, OUTSIDE the mirror's transaction: the
-        // lookup is a ContentResolver query to another provider. `0L` (no resolver, or the
-        // lookup failed) means "no thread ID" and routing is exactly as before. 1:1
-        // messages deliberately keep `0L` — their routing is untouched.
-        val systemThreadId = if (membres != null) {
-            threadResolver?.resolve(membres.map { it.raw }) ?: 0L
-        } else {
-            0L
-        }
+        // Round 16 — the system thread ID, for a GROUP MMS only, from the
+        // provider row itself: the message is written into `content://mms`
+        // first and the thread Android assigned to that row is read back
+        // (see `MmsSystemWriteback.insertInbox`). The provider keys a thread
+        // by its recipient set, so the same group always lands in the same
+        // thread — the sent side of the group resolves identically — even
+        // when Relay has never seen the group, and even when our own number
+        // is unknown (no `userMsisdn` needed for the read-back). The write
+        // runs here, OUTSIDE the mirror's transaction: it is a
+        // ContentResolver call to another provider. When the write is
+        // unavailable (not the default SMS app) or fails, the round-13
+        // resolution (thread from the recipient set, no provider row) is
+        // the fallback, and `0L` still means "no thread ID". The provider
+        // URI is passed to the mirror so the later bulk import recognises
+        // this message by its UNIQUE `telephony_uri` and never duplicates
+        // it — and so deleting it in Relay also removes the system row.
+        // 1:1 messages deliberately keep `0L` and no provider row — their
+        // routing is untouched.
+        val systemWrite = if (membres != null) ecrireDansFournisseur(contenu, membres, pieces) else null
+        val systemThreadId = systemWrite?.threadId
+            ?: if (membres != null) threadResolver?.resolve(membres.map { it.raw }) ?: 0L else 0L
+        val telephonyUri = systemWrite?.let { "content://mms/${it.mmsId}" }
         val inscription = try {
             mirror.inscrireMmsRecu(
                 address = contenu.expediteur,
@@ -127,6 +157,7 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
                 caption = contenu.legende,
                 previewLabel = contenu.libelleApercu,
                 date = contenu.date,
+                telephonyUri = telephonyUri,
                 subId = subId,
                 groupMembers = membres,
                 inclutSoi = inclutSoi,
@@ -155,6 +186,44 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
         } else {
             Resultat.Ecrit(inscription.messageId)
         }
+    }
+
+    /**
+     * Round 16 — writes a received group MMS into the system provider and
+     * returns the row id + the thread Android assigned, or `null` when the
+     * write is unavailable (no writeback, not the default SMS app) or fails.
+     * The thread recipients are the group members as reconstructed from the
+     * PDU header — ourselves already excluded when our number is known, the
+     * full participant list otherwise (the provider still keys a stable
+     * thread on it, so every reply in the group lands in the same thread).
+     * The parts are the files just written to disk: the provider row streams
+     * the same bytes Relay keeps, so both copies agree. Never throws.
+     */
+    private suspend fun ecrireDansFournisseur(
+        contenu: ContenuMmsRecu,
+        membres: List<PhoneAddress>,
+        pieces: List<IncomingAttachment>,
+    ): MmsSystemWriteback.InboxWrite? {
+        val writeback = systemWriteback ?: return null
+        return runCatching {
+            writeback.insertInbox(
+                sender = contenu.expediteur,
+                to = contenu.destinataires,
+                cc = contenu.copies,
+                threadRecipients = membres.map { it.raw },
+                attachments = pieces.map { piece ->
+                    MmsAttachment(
+                        file = piece.file,
+                        mimeType = piece.mimeType,
+                        kind = kindFor(piece.mimeType),
+                    )
+                },
+                textBody = contenu.legende,
+                dateMs = contenu.date,
+            )
+        }.onFailure {
+            Timber.w(it, "MMS: ecriture fournisseur echouee — repli sur la resolution de fil")
+        }.getOrNull()
     }
 
     /**
@@ -189,6 +258,19 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
     }
 
     private fun ecrire(parties: List<PartieMms>): List<IncomingAttachment> = parties.mapNotNull(ecrivain::ecrire)
+
+    /**
+     * Round 16 — the SMIL kind of a received part, for the provider write.
+     * Only the file and the mime type reach the provider row; the kind is
+     * carried for symmetry with the outgoing [MmsAttachment] shape.
+     */
+    private fun kindFor(mime: String): MmsAttachment.Kind =
+        when {
+            mime.startsWith("audio/", ignoreCase = true) -> MmsAttachment.Kind.AUDIO
+            mime.startsWith("image/", ignoreCase = true) -> MmsAttachment.Kind.IMAGE
+            mime.startsWith("video/", ignoreCase = true) -> MmsAttachment.Kind.VIDEO
+            else -> MmsAttachment.Kind.OTHER
+        }
 
     private suspend fun effacer(pieces: List<IncomingAttachment>) {
         if (pieces.isEmpty()) return

@@ -318,6 +318,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.video)
     implementation(libs.coil.svg)
+    implementation(libs.coil.gif)
 
     // Accompanist
     implementation(libs.accompanist.permissions)

@@ -63,6 +63,7 @@ import com.filestech.sms.R
 import com.filestech.sms.ui.theme.pickerPanelColor
 import com.filestech.sms.ui.theme.pickerTabIndicatorColor
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -170,15 +171,15 @@ fun EmojiPickerPanel(
     val scope = rememberCoroutineScope()
     var panelAnimation by remember { mutableStateOf<Job?>(null) }
     var closing by remember { mutableStateOf(false) }
-    // Search query, typed in the bar above the grid. It is SUBMIT-only: typing
-    // never searches — the user submits with the keyboard's search action (or
-    // enter), and only then does the GIF grid search, via [GifSearchQuery.submit].
-    // One submit costs one API call against the beta key's shared rate limit, so
-    // searching on every keystroke is out. The emoji/sticker grids take no
-    // query. The query is cleared whenever the tab changes or the panel closes,
-    // so reopening always starts from trending. The field never takes focus on
-    // its own — opening the panel never summons the keyboard; only an explicit
-    // tap on the field does, to type a GIF search.
+    // Search query, typed in the bar above the grid. On the GIF tab it searches
+    // live, debounced ([GifLiveSearchEffect]): half a second after the user
+    // stops typing, the query goes to [GifSearchQuery.submit] — one API call
+    // per pause, never per keystroke, so the test key's shared rate limit is
+    // respected. Enter still submits immediately. The emoji/sticker grids
+    // filter locally on the same text. The query is cleared whenever the tab
+    // changes or the panel closes, so reopening always starts from trending.
+    // The field never takes focus on its own — opening the panel never summons
+    // the keyboard; only an explicit tap on the field does, to type a GIF search.
     var searchQuery by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -228,6 +229,9 @@ fun EmojiPickerPanel(
     LaunchedEffect(fullPx) {
         if (heightPx > fullPx) heightPx = fullPx
     }
+
+    // Round 15 — live GIF search, debounced (see [GifLiveSearchEffect]).
+    GifLiveSearchEffect(query = searchQuery, selectedTab = selectedTab)
 
     val dragModifier = Modifier.pointerInput(Unit) {
         detectVerticalDragGestures(
@@ -279,6 +283,31 @@ fun EmojiPickerPanel(
 }
 
 /**
+ * Round 15 — live GIF search, debounced: typing searches once the user stops
+ * for [GIF_LIVE_SEARCH_DEBOUNCE_MS], so there is no need to press enter. The
+ * effect restarts on every keystroke (and tab change), so the delay only
+ * completes after a pause. A query already submitted costs no extra API call;
+ * a single character never searches live (it is never a useful GIF search —
+ * enter still submits it immediately); clearing the field back to blank
+ * returns to trending. Runs only on the GIF tab; the keyboard stays up —
+ * only the explicit submit hides it.
+ */
+@Composable
+private fun GifLiveSearchEffect(query: String, selectedTab: EmojiPickerTab) {
+    LaunchedEffect(query, selectedTab) {
+        if (selectedTab == EmojiPickerTab.GIF) {
+            val candidate = query.trim()
+            if (candidate.isEmpty() || candidate.length >= GIF_LIVE_SEARCH_MIN_CHARS) {
+                delay(GIF_LIVE_SEARCH_DEBOUNCE_MS)
+                if (candidate != GifSearchQuery.submittedQuery.value) {
+                    GifSearchQuery.submit(candidate)
+                }
+            }
+        }
+    }
+}
+
+/**
  * Drag handle — the SAME 32x4dp pill as the app's other sheets (`RelaySheet`'s
  * `RelayDragHandle`), centred in a 24dp-tall hit area (10dp above and below the
  * pill, matching the sheet's 10dp top padding). The drag gesture lives on the
@@ -305,11 +334,11 @@ private fun PickerDragHandle(dragModifier: Modifier) {
 /**
  * Search bar: back arrow on the left (closes the panel), an editable search
  * field whose placeholder changes with the tab, and the three tab icons on the
- * right. Typing only edits the local text — the GIF grid searches only when the
- * user submits (keyboard search action / enter), via [GifSearchQuery.submit];
- * the emoji and sticker grids take no query, so the text is inert on those
- * tabs. The field never requests focus by itself, so opening the panel never
- * summons the keyboard — only an explicit tap on the field does.
+ * right. Typing edits the local text and, on the GIF tab, searches live once
+ * the user pauses ([GifLiveSearchEffect]); enter submits immediately. The
+ * emoji and sticker grids filter locally on the same text. The field never
+ * requests focus by itself, so opening the panel never summons the keyboard
+ * — only an explicit tap on the field does.
  */
 @Composable
 private fun PickerSearchBar(
@@ -340,8 +369,8 @@ private fun PickerSearchBar(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_arrow_back),
-                contentDescription = stringResource(R.string.action_back),
+                painter = painterResource(R.drawable.ic_close_drawer),
+                contentDescription = stringResource(R.string.action_close),
                 tint = cs.onSurfaceVariant,
                 modifier = Modifier.size(24.dp),
             )
@@ -379,12 +408,12 @@ private fun PickerSearchBar(
 }
 
 /**
- * The three tab icons, with a rounded box behind the active one that SLIDES to
- * whichever tab is tapped (animated offset, one tab width per step). The
- * indicator spans the FULL tab slot ([TAB_SIZE_DP] wide) and nearly the full
- * bar height ([TAB_INDICATOR_HEIGHT_DP], centred vertically): the earlier
- * 36dp box sat top-aligned and short in the 48dp bar, and read as shifted
- * right behind the icon.
+ * The three tab icons, with a CIRCLE behind the active one that SLIDES to
+ * whichever tab is tapped (animated offset, one tab width per step). Round 15
+ * — the indicator is a true circle ([CircleShape]) filling the tab slot
+ * ([TAB_SIZE_DP]): the 24dp icon sits inside it with 8dp of breathing room
+ * on every side, tight around the icon the way Kristin's mockup shows it.
+ * (The earlier rounded box was 40x44dp and read as shifted.)
  */
 @Composable
 private fun PickerTabs(
@@ -407,10 +436,10 @@ private fun PickerTabs(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .offset(x = indicatorOffset)
-                .size(width = TAB_SIZE_DP.dp, height = TAB_INDICATOR_HEIGHT_DP.dp)
+                .size(TAB_SIZE_DP.dp)
                 .background(
                     pickerTabIndicatorColor(cs),
-                    RoundedCornerShape(TAB_INDICATOR_CORNER_DP.dp),
+                    CircleShape,
                 ),
         )
         Row(
@@ -457,8 +486,8 @@ private fun PickerTabButton(
 /**
  * Content area: the grid for the active tab, filling the rest of the panel.
  * The search query filters the emoji and sticker grids LIVE as it is typed
- * (local data, no API cost); the GIF grid ignores it and searches only on
- * submit, via [GifSearchQuery].
+ * (local data, no API cost); the GIF grid searches live too, debounced, via
+ * [GifSearchQuery] ([GifLiveSearchEffect]).
  */
 @Composable
 private fun PickerContent(
@@ -499,12 +528,6 @@ private const val TAB_SIZE_DP = 40
 /** Search bar height — the tab cluster fills it so the indicator centres. */
 private const val SEARCH_BAR_HEIGHT_DP = 48
 
-/** Active-tab indicator height: nearly the full bar, 2dp margins. */
-private const val TAB_INDICATOR_HEIGHT_DP = 44
-
-/** Active-tab indicator corner radius, for the taller box. */
-private const val TAB_INDICATOR_CORNER_DP = 12
-
 /** Panel corner radius — fully rounded, like the rest of the app. */
 private const val PANEL_CORNER_DP = 28
 
@@ -523,3 +546,5 @@ private const val FULL_FRACTION = 0.85f
 private const val ENTER_DURATION_MS = 300
 private const val SNAP_DURATION_MS = 300
 private const val CLOSE_DURATION_MS = 250
+private const val GIF_LIVE_SEARCH_DEBOUNCE_MS = 500L
+private const val GIF_LIVE_SEARCH_MIN_CHARS = 2

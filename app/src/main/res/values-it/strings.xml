@@ -99,6 +99,7 @@
     <string name="sort_date">Prima le più recenti</string>
     <string name="sort_unread">Prima le non lette</string>
     <string name="action_back">Indietro</string>
+    <string name="action_backspace">Backspace</string>
     <string name="action_copy">Copia</string>
     <string name="action_forward">Inoltra</string>
     <string name="action_retry">Riprova</string>

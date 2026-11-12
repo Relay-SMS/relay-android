@@ -1297,11 +1297,20 @@ class ThreadViewModel @Inject constructor(
                 _events.tryEmit(Event.ShowSnackbar(snackAttachCapReached()))
                 return@launch
             }
-            val finalFile = if (estImage && file.length() > part) compressImage(file, part) ?: file else file
+            // Round 16 — a GIF is never JPEG-compressed: re-encoding it to JPEG
+            // would keep only the first frame and kill the animation. GIFs
+            // arrive already sized for MMS (the Klipy download falls back to
+            // the SMALL rendition when MEDIUM exceeds the carrier cap), and
+            // the projected-total check below still refuses an over-cap GIF
+            // honestly instead of silently flattening it.
+            val estGif = mime.equals("image/gif", ignoreCase = true)
+            val finalFile =
+                if (estImage && !estGif && file.length() > part) compressImage(file, part) ?: file else file
             // Les images deja en attente prennent leur nouvelle part. Une recompression qui
             // echoue laisse le fichier tel quel : la projection ci-dessous tranchera.
             val reequilibrees = enAttente.map { pj ->
-                if (pj.mimeType.startsWith("image/") && pj.sizeBytes > part) {
+                val pjEstGif = pj.mimeType.equals("image/gif", ignoreCase = true)
+                if (pj.mimeType.startsWith("image/") && !pjEstGif && pj.sizeBytes > part) {
                     val reduite = compressImage(pj.file, part) ?: pj.file
                     pj.copy(file = reduite, sizeBytes = reduite.length())
                 } else {

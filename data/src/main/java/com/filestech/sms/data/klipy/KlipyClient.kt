@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.filestech.sms.core.mms.MmsConstants
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.BuildConfig
@@ -197,6 +198,15 @@ open class KlipyClient @Inject constructor(
      * file is transient staging for the outgoing MMS, not a media cache: it is
      * never re-served as a thumbnail, and it lives in `cacheDir`, so the OS may
      * purge it.
+     *
+     * Round 16 — the MEDIUM rendition (the download URL, ~640 px) is often
+     * larger than the carrier MMS cap (~280 KB), and a GIF cannot be shrunk
+     * at send time: JPEG re-encoding would keep only the first frame and
+     * kill the animation. When the downloaded file does not fit the cap,
+     * the SMALL rendition (the thumbnail URL, the same GIF at ~220 px) is
+     * downloaded instead and used when it is smaller. If that download
+     * fails, the MEDIUM file stays and the staging cap check refuses it
+     * honestly.
      */
     override suspend fun download(item: GifItem): Outcome<Uri> = withContext(io) {
         val safeId = item.id.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
@@ -214,6 +224,24 @@ open class KlipyClient @Inject constructor(
         if (!downloaded) {
             file.delete()
             return@withContext Outcome.Failure(AppError.Network())
+        }
+        // Round 16 — MEDIUM too big for MMS: try the SMALL rendition. Same
+        // scheme guard as above: the thumbnail URL comes from the same API
+        // response, and a `file://` URL must never reach `downloadToFile`.
+        if (file.length() > MmsConstants.CARRIER_PAYLOAD_CAP_BYTES &&
+            item.thumbnailUrl != item.downloadUrl &&
+            isHttpUrl(item.thumbnailUrl)
+        ) {
+            val smallFile = File(file.parentFile, "klipy-$safeId-small.gif")
+            val smallDownloaded = runCatching { downloadToFile(item.thumbnailUrl, smallFile) }
+                .onFailure { Timber.w(it, "GIF small-rendition download failed") }
+                .getOrDefault(false)
+            if (smallDownloaded && smallFile.length() < file.length()) {
+                file.delete()
+                smallFile.renameTo(file)
+            } else {
+                smallFile.delete()
+            }
         }
         runCatching {
             FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -279,6 +307,12 @@ open class KlipyClient @Inject constructor(
         } finally {
             connection.disconnect()
         }
+    }
+
+    /** `true` for an http(s) URL — the thumbnail URL gets the same scheme guard as the download URL. */
+    private fun isHttpUrl(url: String): Boolean {
+        val scheme = url.substringBefore("://", missingDelimiterValue = "").lowercase()
+        return scheme == "http" || scheme == "https"
     }
 
     /** Streams the GIF at [url] into [file]; `false` on a non-200 status or over [MAX_GIF_BYTES]. */
