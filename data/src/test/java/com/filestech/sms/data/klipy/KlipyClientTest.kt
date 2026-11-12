@@ -157,7 +157,12 @@ class KlipyClientTest {
 
     @Test
     fun `placeholder key means no key yet`() {
-        val client = KlipyClient(mockk<Context>(), Dispatchers.Unconfined)
+        // Round 18 fix (2026-11-12) — this must NOT read the key baked into
+        // the build: CI builds now ship a real key from the repository
+        // secret, so a plain client reports hasApiKey == true there and
+        // this test failed run #119. Pin the placeholder through the fake
+        // instead, like the no-network test below does.
+        val client = FakeKlipyClient(body = sampleBody, apiKey = "YOUR_KLIPY_API_KEY")
 
         assertThat(client.hasApiKey).isFalse()
     }

@@ -3,19 +3,16 @@ package com.filestech.sms.data.klipy
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
-import androidx.datastore.preferences.core.stringPreferencesKey
 import com.filestech.sms.core.mms.MmsConstants
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.BuildConfig
-import com.filestech.sms.data.local.datastore.dataStore
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.gif.GifItem
 import com.filestech.sms.domain.gif.GifProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -129,33 +126,20 @@ open class KlipyClient @Inject constructor(
 
     /**
      * The API key, from the single `KLIPY_API_KEY` `buildConfigField` in
-     * `data/build.gradle.kts` (read from `local.properties`, gitignored).
-     * `open` so tests can substitute a key without a real one (the checked-in
-     * value is the placeholder, so [hasApiKey] is `false` in tests and in the
-     * app until Kristin pastes her key).
+     * `data/build.gradle.kts` — baked in at build time, from the CI
+     * repository secret on CI builds or from `local.properties`
+     * (gitignored) on a dev machine. `open` so tests can substitute a key
+     * without a real one (the checked-in value is the placeholder, so
+     * [hasApiKey] is `false` in tests and in any build without a key).
+     * Round 18 fix (2026-11-12) — the temporary Settings → Advanced
+     * key field was removed: the BuildConfig key is the only key now.
      */
     internal open val apiKey: String
         get() = BuildConfig.KLIPY_API_KEY
 
-    /** `true` once a real key has been pasted into `local.properties`. */
+    /** `true` once a real key is baked in at build time. */
     val hasApiKey: Boolean
         get() = apiKey.isNotBlank() && apiKey != API_KEY_PLACEHOLDER
-
-    /**
-     * Round 13 fix (2026-11-11) — the effective key for this call. The
-     * Settings → Advanced field ([AdvancedSettings.klipyApiKey], pasted by
-     * the user for testing) wins when non-blank; otherwise the BuildConfig
-     * key ([apiKey]) is used. Read from the same DataStore file
-     * [SettingsRepository] writes (`sms_tech_settings`); any read failure
-     * falls back to the BuildConfig key instead of failing the request.
-     * The key is a path segment, so the resolved value is never logged.
-     */
-    private suspend fun resolveApiKey(): String {
-        val fromSettings = runCatching {
-            context.dataStore.data.firstOrNull()?.get(SETTINGS_KLIPY_KEY)?.trim()
-        }.getOrNull().orEmpty()
-        return fromSettings.ifBlank { apiKey }
-    }
 
     private fun hasKey(key: String): Boolean =
         key.isNotBlank() && key != API_KEY_PLACEHOLDER
@@ -166,7 +150,7 @@ open class KlipyClient @Inject constructor(
      * attempt.
      */
     override suspend fun trending(): Outcome<List<GifItem>> = withContext(io) {
-        val key = resolveApiKey()
+        val key = apiKey
         if (!hasKey(key)) return@withContext Outcome.Success(emptyList())
         when (val result = fetchGifs(trendingUrl(DEFAULT_LIMIT, key))) {
             is Outcome.Success -> Outcome.Success(result.value.map { it.toGifItem() })
@@ -181,7 +165,7 @@ open class KlipyClient @Inject constructor(
      * no network attempt.
      */
     override suspend fun search(query: String): Outcome<List<GifItem>> = withContext(io) {
-        val key = resolveApiKey()
+        val key = apiKey
         if (!hasKey(key) || query.isBlank()) return@withContext Outcome.Success(emptyList())
         when (val result = fetchGifs(searchUrl(query, DEFAULT_LIMIT, key))) {
             is Outcome.Success -> Outcome.Success(result.value.map { it.toGifItem() })
@@ -493,11 +477,6 @@ private const val HTTP_TOO_MANY_REQUESTS = 429
 // `data/build.gradle.kts`: the client treats that value as "no key yet".
 private const val API_KEY_PLACEHOLDER = "YOUR_KLIPY_API_KEY"
 private const val DEFAULT_LIMIT = 25
-
-// Round 13 fix (2026-11-11) — must match the DataStore key in
-// `SettingsRepository.K.klipyApiKey` (`advanced.klipyApiKey`), the
-// Settings → Advanced field where the user pastes a key for testing.
-private val SETTINGS_KLIPY_KEY = stringPreferencesKey("advanced.klipyApiKey")
 
 // Strictest content filter (Klipy: off/low/medium/high) — the equivalent of
 // Giphy's rating=g: general audiences only.

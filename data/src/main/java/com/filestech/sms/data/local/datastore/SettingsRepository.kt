@@ -48,7 +48,7 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-internal val Context.dataStore by preferencesDataStore(name = "sms_tech_settings")
+private val Context.dataStore by preferencesDataStore(name = "sms_tech_settings")
 
 /**
  * v1.26.1 (audit H14) — nombre de reprises sur une lecture DataStore en échec avant d'abandonner
@@ -451,8 +451,6 @@ class SettingsRepository(
                 reactionFormatMigreIosTapback = p[K.reactionFormatMigreIosTapback] ?: false,
                 identityDedupRepairedV1272 = p[K.identityDedupRepairedV1272] ?: false,
                 emptyConversationsPurgedV1272 = p[K.emptyConversationsPurgedV1272] ?: false,
-                // Round 13 fix (2026-11-11) — Klipy API key pasted in Settings → Advanced.
-                klipyApiKey = p[K.klipyApiKey] ?: "",
             ),
         )
     }
@@ -582,9 +580,6 @@ class SettingsRepository(
         this[K.reactionFormatMigreIosTapback] = s.advanced.reactionFormatMigreIosTapback
         this[K.identityDedupRepairedV1272] = s.advanced.identityDedupRepairedV1272
         this[K.emptyConversationsPurgedV1272] = s.advanced.emptyConversationsPurgedV1272
-        // Round 13 fix (2026-11-11) — Klipy API key pasted in Settings → Advanced.
-        // Stored as-is (may be blank = no key); the client trims it on read.
-        this[K.klipyApiKey] = s.advanced.klipyApiKey
     }
 
     private inline fun <reified E : Enum<E>> enumOr(p: Preferences, key: Preferences.Key<String>, def: E, valueOf: (String) -> E): E =
@@ -760,8 +755,10 @@ class SettingsRepository(
         val splashShown = booleanPreferencesKey("advanced.splashShown")
         val keepAliveService = booleanPreferencesKey("advanced.keepAliveService")
 
-        // Round 13 fix (2026-11-11) — Klipy API key pasted in Settings → Advanced.
-        val klipyApiKey = stringPreferencesKey("advanced.klipyApiKey")
+        // Round 18 fix (2026-11-12) — the temporary Klipy API key
+        // (`advanced.klipyApiKey`, pasted in Settings → Advanced) was
+        // removed: CI builds now bake the key in from the repository
+        // secret. A value stored on an existing install is never read again.
         // v1.8.0 — flag one-shot pour la migration de purge des badges hérités v1.7.1.
         val unreadResetV180 = booleanPreferencesKey("advanced.unreadResetV180")
         // v1.22.x — flag de complétion de la dédup des conversations du même numéro.
