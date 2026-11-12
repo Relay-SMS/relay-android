@@ -215,8 +215,15 @@ class LinkPreviewFetcherTest {
 
     @Test
     fun `oEmbed with no title and no thumbnail yields no preview`() {
-        assertThat(parseOEmbed("""{"type":"video","provider_name":"YouTube"}""", "https://www.youtube.com/watch?v=x")).isNull()
-        assertThat(parseOEmbed("not json at all", "https://www.youtube.com/watch?v=x")).isNull()
+        assertThat(
+            parseOEmbed(
+                """{"type":"video","provider_name":"YouTube"}""",
+                "https://www.youtube.com/watch?v=x",
+            ),
+        ).isNull()
+        assertThat(
+            parseOEmbed("not json at all", "https://www.youtube.com/watch?v=x"),
+        ).isNull()
     }
 
     private val xPostLike = """

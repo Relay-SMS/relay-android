@@ -3442,15 +3442,18 @@ private fun ReviewingMode(
                 CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
             }
         } else {
-            // Explicit colours (2026-11-06): same white-on-white issue as the composer
-            // send button — blue tile, white icon.
-            // Phase 8 — le contenu suit `onPrimary` : blanc fixe sur le bleu éclairci du
-            // thème sombre ne donnerait que 2.57:1.
+            // Round 18 — fixed brand blue, like the composer send button
+            // ([SendCircleButton]): `cs.primary` is the LIGHTENED `#7AA0F5`
+            // in the dark scheme, so the tile rendered pale blue with a
+            // dark-navy arrow instead of the brand blue with a white arrow
+            // Kristin asked for. Filled buttons keep the fixed brand blue
+            // in both themes (see [Color.kt], DarkPalette comment) — only
+            // text, icons, switches and pills use the lightened accent.
             FilledIconButton(
                 onClick = onSend,
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = cs.primary,
-                    contentColor = cs.onPrimary,
+                    containerColor = RelayColors.Blue,
+                    contentColor = Color.White,
                 ),
             ) {
                 Icon(
