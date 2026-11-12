@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Round 14 — SimSelfNumber reads the device's own number from the SIM
+        (SubscriptionManager.getPhoneNumber / SubscriptionInfo.number /
+        TelephonyManager.line1Number). The module that uses a permission
+        declares it: without this, Lint's MissingPermission check fails the
+        :data lint, because this module previously had no manifest at all.
+        The app module declares both permissions too, so the merged manifest
+        — and what the user is asked for — is unchanged.
+    -->
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+</manifest>
