@@ -37,6 +37,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Inject Klipy API key
+        run: echo "klipyApiKey=${{ secrets.KLIPY_API_KEY }}" >> local.properties   
+
       # v1.28.12 - PARITE DES TRADUCTIONS, avant toute compilation : le controle coute une
       # seconde la ou un echec de build en coute dix minutes. Une langue qui perd des cles ne
       # devient pas incomplete au grand jour, elle le devient EN SILENCE : l'ecran retombe en
