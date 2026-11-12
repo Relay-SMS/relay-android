@@ -2083,6 +2083,9 @@ private fun ConversationsEmptyState(archived: Boolean, filtered: Boolean, onComp
                 iconRes = R.drawable.ic_empty_archive,
                 headline = stringResource(R.string.conversations_archived_empty),
                 body = stringResource(R.string.conversations_archived_empty_body),
+                // Round 18 — Kristin's icon at its designed size (76dp),
+                // like her mockup, not the shared 48dp default.
+                iconSize = 76.dp,
             )
         } else {
             RelayEmptyState(

@@ -171,4 +171,101 @@ class LinkPreviewFetcherTest {
         assertThat(charsetFrom("text/html")).isNull()
         assertThat(charsetFrom("text/html; charset=not-a-charset")).isNull()
     }
+
+    // Round 18 — oEmbed (YouTube) and X post shaping. The JSON and the og
+    // tags below are the real responses captured live with curl 2026-11-12.
+
+    private val youTubeOEmbed = """
+        {"title":"I need Junk Drawers: Onefinity ep 9","author_name":"jimmydiresta",
+        "author_url":"https://www.youtube.com/@jimmydiresta","type":"video",
+        "provider_name":"YouTube","provider_url":"https://www.youtube.com/",
+        "thumbnail_height":360,"thumbnail_width":480,
+        "thumbnail_url":"https://i.ytimg.com/vi/8di8glAj0S8/hqdefault.jpg"}
+    """.trimIndent()
+
+    @Test
+    fun `oEmbed parses a YouTube video into title, channel and thumbnail`() {
+        val preview = parseOEmbed(youTubeOEmbed, "https://www.youtube.com/watch?v=8di8glAj0S8")
+
+        assertThat(preview).isNotNull()
+        assertThat(preview!!.title).isEqualTo("I need Junk Drawers: Onefinity ep 9")
+        assertThat(preview.siteName).isEqualTo("jimmydiresta")
+        assertThat(preview.imageUrl).isEqualTo("https://i.ytimg.com/vi/8di8glAj0S8/hqdefault.jpg")
+        assertThat(preview.description).isNull()
+    }
+
+    @Test
+    fun `oEmbed unescapes surrogate-pair emoji in a Shorts title`() {
+        val shortsJson = """
+            {"title":"\uD83D\uDC40\uD83C\uDFDB\uFE0FLEAKED Church Plans\u2026\uD83D\uDC40\uD83C\uDFDB\uFE0F",
+            "author_name":"RISE ZION","type":"video",
+            "thumbnail_url":"https://i.ytimg.com/vi/zJNyt1GJVjg/hq2.jpg"}
+        """.trimIndent()
+
+        val preview = parseOEmbed(shortsJson, "https://youtube.com/shorts/zJNyt1GJVjg")
+
+        assertThat(preview).isNotNull()
+        assertThat(preview!!.title).isEqualTo(
+            // 👀 🌻️ … — written as escapes so the VS16 is unambiguous.
+            "\uD83D\uDC40\uD83C\uDFDB\uFE0FLEAKED Church Plans\u2026\uD83D\uDC40\uD83C\uDFDB\uFE0F",
+        )
+        assertThat(preview.siteName).isEqualTo("RISE ZION")
+        assertThat(preview.imageUrl).isEqualTo("https://i.ytimg.com/vi/zJNyt1GJVjg/hq2.jpg")
+    }
+
+    @Test
+    fun `oEmbed with no title and no thumbnail yields no preview`() {
+        assertThat(parseOEmbed("""{"type":"video","provider_name":"YouTube"}""", "https://www.youtube.com/watch?v=x")).isNull()
+        assertThat(parseOEmbed("not json at all", "https://www.youtube.com/watch?v=x")).isNull()
+    }
+
+    private val xPostLike = """
+        <html><head>
+        <meta property="og:site_name" content="X (formerly Twitter)"/>
+        <meta property="og:url" content="https://x.com/Interior/status/507185938620219395"/>
+        <meta property="og:type" content="article"/>
+        <meta property="og:title" content="U.S. Department of the Interior (@Interior) on X"/>
+        <meta property="og:description" content="Happy 50th anniversary to the Wilderness Act! Here&#x27;s a great wilderness photo from @YosemiteNPS. #Wilderness50"/>
+        <meta property="og:image" content="https://pbs.twimg.com/media/Bwni7DgCQAABVQh?format=webp&amp;name=large"/>
+        </head></html>
+    """.trimIndent()
+
+    @Test
+    fun `an X post preview shows the post text, not the profile name`() {
+        val parsed = parseOpenGraph(xPostLike, "https://x.com/Interior/status/507185938620219395")!!
+        val preview = shapeXPost(parsed)
+
+        assertThat(preview.title).isEqualTo(
+            "Happy 50th anniversary to the Wilderness Act! Here's a great wilderness photo " +
+                "from @YosemiteNPS. #Wilderness50",
+        )
+        assertThat(preview.siteName).isEqualTo("U.S. Department of the Interior (@Interior)")
+        assertThat(preview.imageUrl).isEqualTo(
+            "https://pbs.twimg.com/media/Bwni7DgCQAABVQh?format=webp&name=large",
+        )
+        assertThat(preview.description).isNull()
+    }
+
+    @Test
+    fun `an X text-only post drops the avatar image`() {
+        val html = xPostLike.replace(
+            "https://pbs.twimg.com/media/Bwni7DgCQAABVQh?format=webp&amp;name=large",
+            "https://pbs.twimg.com/profile_images/1234567/avatar.jpg",
+        )
+        val parsed = parseOpenGraph(html, "https://x.com/Interior/status/507185938620219395")!!
+        val preview = shapeXPost(parsed)
+
+        assertThat(preview.title).startsWith("Happy 50th anniversary")
+        assertThat(preview.imageUrl).isNull()
+    }
+
+    @Test
+    fun `JSON string escapes decode, including surrogate pairs`() {
+        assertThat("""A \uD83D\uDC40 B""".unescapeJsonString()).isEqualTo("A \uD83D\uDC40 B")
+        assertThat("""wait\u2026""".unescapeJsonString()).isEqualTo("wait\u2026")
+        assertThat("""say \"hi\"""".unescapeJsonString()).isEqualTo("say \"hi\"")
+        assertThat("""back\\slash""".unescapeJsonString()).isEqualTo("back\\slash")
+        assertThat("""lone \uD83D here""".unescapeJsonString()).isEqualTo("lone ? here")
+        assertThat("no escapes here".unescapeJsonString()).isEqualTo("no escapes here")
+    }
 }

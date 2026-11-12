@@ -18,6 +18,11 @@ plugins {
 // key is free and unlimited — requested via a simple form in the Partner Panel
 // at partner.klipy.com. (Giphy was dropped 2026-11-11: its 100/hour beta limit
 // was too small.)
+// Round 18 — CI builds get the same key without committing it: the workflow
+// writes local.properties from the KLIPY_API_KEY repository secret before
+// the first Gradle step, so every APK (including CI-built ones) ships with
+// GIF search working out of the box. Swap the secret's value to move from
+// the test key to the production key — no code change needed.
 val klipyApiKey: String = run {
     val props = Properties()
     val localProps = rootProject.file("local.properties")

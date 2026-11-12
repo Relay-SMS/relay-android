@@ -19,13 +19,16 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.ui.theme.RelayText
 
 /**
  * Shared empty state of the Relay design system: a centred glyph, one headline, an optional
  * body line, and an optional primary button. Screens pass their own copy — the geometry stays
- * identical everywhere.
+ * identical everywhere. The glyph defaults to 48dp; screens with their own artwork pass
+ * [iconSize] (round 18: Kristin's archive/clock/vault icons render at their designed
+ * sizes, 76/67/80dp, like her mockups).
  */
 @Composable
 fun RelayEmptyState(
@@ -35,6 +38,7 @@ fun RelayEmptyState(
     modifier: Modifier = Modifier,
     buttonText: String? = null,
     onButtonClick: (() -> Unit)? = null,
+    iconSize: Dp = 48.dp,
 ) {
     RelayEmptyStateContent(
         painter = rememberVectorPainter(icon),
@@ -43,6 +47,7 @@ fun RelayEmptyState(
         modifier = modifier,
         buttonText = buttonText,
         onButtonClick = onButtonClick,
+        iconSize = iconSize,
     )
 }
 
@@ -60,6 +65,7 @@ fun RelayEmptyState(
     modifier: Modifier = Modifier,
     buttonText: String? = null,
     onButtonClick: (() -> Unit)? = null,
+    iconSize: Dp = 48.dp,
 ) {
     RelayEmptyStateContent(
         painter = painterResource(iconRes),
@@ -68,6 +74,7 @@ fun RelayEmptyState(
         modifier = modifier,
         buttonText = buttonText,
         onButtonClick = onButtonClick,
+        iconSize = iconSize,
     )
 }
 
@@ -79,6 +86,7 @@ private fun RelayEmptyStateContent(
     modifier: Modifier = Modifier,
     buttonText: String? = null,
     onButtonClick: (() -> Unit)? = null,
+    iconSize: Dp = 48.dp,
 ) {
     val cs = MaterialTheme.colorScheme
     Column(
@@ -92,7 +100,7 @@ private fun RelayEmptyStateContent(
             painter = painter,
             contentDescription = null,
             tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.size(iconSize),
         )
         Text(
             text = headline,

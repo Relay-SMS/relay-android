@@ -682,6 +682,9 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                                 iconRes = R.drawable.ic_vault,
                                 headline = stringResource(R.string.vault_empty),
                                 body = stringResource(R.string.vault_empty_body),
+                                // Round 18 — Kristin's icon at its designed size (80dp),
+                                // like her mockup, not the shared 48dp default.
+                                iconSize = 80.dp,
                             )
                         }
                     } else {

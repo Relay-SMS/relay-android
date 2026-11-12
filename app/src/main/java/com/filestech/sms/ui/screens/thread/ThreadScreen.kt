@@ -37,10 +37,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -104,6 +106,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -194,6 +197,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Date
@@ -587,6 +591,26 @@ fun ThreadScreen(
             listState.animateScrollToItem(bottomItemIndex)
         }
     }
+    // Round 18 — same as the picker above, for the keyboard: when the IME
+    // opens, the viewport shrinks from the bottom and the newest messages
+    // slide below it, behind the keyboard — it looked like the keyboard was
+    // overlaying the texts. If the user was at the tail when the keyboard
+    // opened, scroll to the bottom once the resize has settled so the last
+    // message sits above the composer. A user scrolled up reading older
+    // messages — or searching — is left alone. (The pinned-scroll effect
+    // below also covers this; this one guarantees the smooth animated
+    // landing even if a layout emission is missed mid-animation.)
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+    val keyboardOpen = imeBottomPx > 0
+    LaunchedEffect(keyboardOpen) {
+        if (!keyboardOpen) return@LaunchedEffect
+        val wasAtBottom = isAtBottom
+        val searching = threadSearchOpen
+        delay(320)
+        if (wasAtBottom && !searching && state.messages.isNotEmpty()) {
+            listState.animateScrollToItem(bottomItemIndex)
+        }
+    }
     // Audit R4 (v1.14.8) — Compteur de messages non-vus apparus pendant que l'user était
     // scrollé vers le haut. Affiche un chip "↓ N nouveau(x)" cliquable en bas-droite.
     // Sans ça, un message arrivait silencieusement et restait invisible.
@@ -630,6 +654,36 @@ fun ThreadScreen(
             // they are looking at.
             listState.animateScrollToItem(bottomItemIndex)
             lastSeenMessageId = newestMessageId
+        }
+    }
+    // Round 18 — keep the tail pinned when content grows after the first
+    // paint: link preview cards (and images) load asynchronously, so a
+    // bubble grows taller after the initial scroll-to-bottom has already
+    // landed — re-entering a thread showed the newest message cut off at
+    // the viewport's bottom edge. While pinned to the bottom and not
+    // scrolling, re-scroll whenever the bottom item is no longer fully
+    // visible. A scroll gesture unpins immediately, so reading older
+    // messages is never yanked back; reaching the bottom again re-pins.
+    // The pin starts false and is only set by actually seeing the bottom
+    // item fully visible — merely sitting one item up never pins.
+    LaunchedEffect(listState, bottomItemIndex) {
+        var pinnedToBottom = false
+        snapshotFlow { listState.layoutInfo }.collect { info ->
+            if (listState.isScrollInProgress) {
+                pinnedToBottom = false
+            } else {
+                val last = info.visibleItemsInfo.lastOrNull()
+                if (last != null) {
+                    val bottomFullyVisible = last.index == bottomItemIndex &&
+                        last.offset + last.size <= info.viewportEndOffset
+                    if (bottomFullyVisible) {
+                        pinnedToBottom = true
+                    } else {
+                        if (last.index < bottomItemIndex - 1) pinnedToBottom = false
+                        if (pinnedToBottom) listState.scrollToItem(bottomItemIndex)
+                    }
+                }
+            }
         }
     }
 
@@ -3365,13 +3419,22 @@ private fun ReviewingMode(
                 )
             }
             Spacer(Modifier.width(12.dp))
-            // Round 13 — bright timer (was the muted `onSurfaceVariant`).
-            Text(
-                text = formatDuration(if (positionMs > 0) positionMs.toLong() else totalMs.toLong()),
-                style = MaterialTheme.typography.labelLarge,
-                color = cs.onSurface,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
+            // Round 18 — the timer matches the bubble timestamps: the same
+            // 12sp [RelayText.BubbleMeta] in the same muted tone, fixed
+            // against the message-text scale and the system font scale
+            // (see [BubbleTimestamp]). It was `labelLarge` (14sp) in
+            // bright `onSurface`, which read bigger and bolder than any
+            // other timestamp in the thread.
+            FixedTypeSize {
+                Text(
+                    text = formatDuration(
+                        if (positionMs > 0) positionMs.toLong() else totalMs.toLong(),
+                    ),
+                    style = RelayText.BubbleMeta,
+                    color = cs.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
         }
         Spacer(Modifier.width(8.dp))
         if (isSending) {

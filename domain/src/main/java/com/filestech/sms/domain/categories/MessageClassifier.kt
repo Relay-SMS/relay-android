@@ -43,6 +43,9 @@ object MessageClassifier {
     private const val SHORT_CODE_MAX_DIGITS = 6
     private const val REGULAR_NUMBER_MIN_DIGITS = 7
 
+    /** Round 18 — distinct service nouns for the list pitch (see [isColdSalesPitch]). */
+    private const val MIN_LIST_PITCH_SERVICES = 2
+
     /**
      * Bank / payment / delivery / appointment content.
      *
@@ -231,15 +234,32 @@ object MessageClassifier {
      * far rarer than a pitch using the phrase, and classification follows
      * the latest message, so a real person's next normal text re-files
      * the conversation as Personal.
+     *
+     * Round 18 — three more pitches Kristin reported: "offering" ("We're
+     * offering affordable tree trimming") and "reaching out" ("I'm a local
+     * investor and reaching out") join the offer markers, and tree work
+     * ("tree", "trimming", "removal", "arborist"), vent cleaning ("vent",
+     * "vents", "cleaning") and house investors ("investor", "investors")
+     * join the nouns. [COLD_PITCH_CLOSERS] is the pitch's call to action
+     * for the list rule in [isColdSalesPitch].
      */
-    private val COLD_PITCH_OFFER_MARKERS = listOf("no cost", "free", "complimentary")
+    private val COLD_PITCH_OFFER_MARKERS = listOf(
+        "no cost",
+        "free",
+        "complimentary",
+        "offering",
+        "reaching out",
+    )
     private val COLD_PITCH_SERVICE_NOUNS = listOf(
         "roof", "roofing", "solar", "inspection", "inspections",
         "estimate", "estimates", "quote", "quotes", "consultation",
         "hvac", "duct", "ducts", "gutter", "gutters", "siding",
         "plumbing", "remodel", "remodeling", "driveway", "paving",
         "window", "windows",
+        "tree", "trimming", "removal", "arborist", "vent", "vents",
+        "cleaning", "investor", "investors",
     )
+    private val COLD_PITCH_CLOSERS = listOf("interested")
 
     /**
      * Round 17 — a business self-introduction in the folded body: "it's
@@ -307,19 +327,29 @@ object MessageClassifier {
      * it's Maria with Roofing Pros. We're doing no-cost roof inspections
      * in Springfield"). Either half alone is ordinary personal language —
      * "Hi, it's Frank", "it's Sarah with the kids", "I got a free quote",
-     * "the concert was free" — so only a combination counts. Two of them:
-     * an offer marker together with a home-service noun (the pitch with
-     * or without an introduction), or a business introduction together
+     * "the concert was free" — so only a combination counts. Three of
+     * them: an offer marker together with a home-service noun (the pitch
+     * with or without an introduction), a business introduction together
      * with an offer marker or a service noun (the pitch whose offer is
-     * worded without "free"/"no cost"). English only for now — this is
-     * the US lead-gen template; other locales are a later addition.
+     * worded without "free"/"no cost"), or — round 18 — the list pitch:
+     * two or more distinct service nouns together with the closer
+     * ("We provide quotes … for air duct and dryer vent cleaning.
+     * Interested?"), which carries no offer marker and no "with"
+     * introduction. English only for now — this is the US lead-gen
+     * template; other locales are a later addition.
      */
     private fun isColdSalesPitch(paddedBody: String): Boolean {
         val hasOffer = containsAny(paddedBody, COLD_PITCH_OFFER_MARKERS)
         val hasService = containsAny(paddedBody, COLD_PITCH_SERVICE_NOUNS)
         if (hasOffer && hasService) return true
-        return hasBusinessIntro(paddedBody) && (hasOffer || hasService)
+        if (hasBusinessIntro(paddedBody) && (hasOffer || hasService)) return true
+        return containsAny(paddedBody, COLD_PITCH_CLOSERS) &&
+            distinctServiceCount(paddedBody) >= MIN_LIST_PITCH_SERVICES
     }
+
+    /** Distinct home-service nouns in the body (repeats count once). */
+    private fun distinctServiceCount(paddedBody: String): Int =
+        COLD_PITCH_SERVICE_NOUNS.count { noun -> paddedBody.contains(" $noun ") }
 
     private fun hasBusinessIntro(paddedBody: String): Boolean =
         BUSINESS_INTRO_REGEX.containsMatchIn(paddedBody)

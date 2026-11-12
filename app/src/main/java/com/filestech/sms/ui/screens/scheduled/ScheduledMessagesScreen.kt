@@ -180,6 +180,9 @@ fun ScheduledMessagesScreen(
                     iconRes = R.drawable.ic_empty_scheduled,
                     headline = stringResource(R.string.scheduled_empty),
                     body = stringResource(R.string.scheduled_empty_explainer),
+                    // Round 18 — Kristin's icon at its designed size (67dp),
+                    // like her mockup, not the shared 48dp default.
+                    iconSize = 67.dp,
                 )
             }
         } else {
