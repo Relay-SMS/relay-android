@@ -4,8 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,8 +55,8 @@ import kotlin.math.roundToInt
  * Live search: while [query] is non-blank the sections collapse into a flat
  * list of matches ([emojiMatchesQuery]) — typing filters on every keystroke,
  * no submit needed (the data is local, so there is no API cost). Long-press
- * on a hand emoji opens the skin-tone picker ([TonePickerPopup]) above the
- * cell; tapping a variant inserts that variant.
+ * on a hand or people emoji opens the skin-tone picker ([TonePickerPopup])
+ * above the cell; tapping a variant inserts that variant.
  *
  * This is NOT the reaction picker ([EmojiReactionPickerSheet]) — that sheet
  * reacts to a message, this grid inserts an emoji into the composer.
@@ -75,27 +77,64 @@ fun EmojiGrid(
             EMOJI_GRID_EMOJIS.filter { emojiMatchesQuery(it, trimmedQuery) }
         }
     }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 48.dp),
-        modifier = modifier,
-    ) {
-        when {
-            searchResults == null -> {
-                EMOJI_SECTIONS.forEachIndexed { index, section ->
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "header-${section.titleRes}") {
-                        Text(
-                            text = stringResource(section.titleRes),
-                            style = RelayText.SectionHeader,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(
-                                start = 16.dp,
-                                end = 16.dp,
-                                top = if (index == 0) 8.dp else 16.dp,
-                                bottom = 4.dp,
-                            ),
-                        )
+    BoxWithConstraints(modifier = modifier) {
+        // Round 14 — the section titles sit on the same vertical line as
+        // the first emoji of each row (Kristin, 2026-11-11). The cells are
+        // adaptive (48dp minimum) with a centred 36dp image, so the first
+        // emoji's left edge is half the leftover cell width in from the
+        // grid edge — computed here from the real width, not guessed, so
+        // it holds on any screen width.
+        val columns = maxOf(1, (maxWidth / EMOJI_CELL_MIN_DP.dp).toInt())
+        val cellWidth = maxWidth / columns
+        val headerStart = ((cellWidth - EMOJI_IMAGE_SIZE_DP.dp) / 2).coerceAtLeast(0.dp)
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = EMOJI_CELL_MIN_DP.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            when {
+                searchResults == null -> {
+                    EMOJI_SECTIONS.forEachIndexed { index, section ->
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "header-${section.titleRes}") {
+                            Text(
+                                text = stringResource(section.titleRes),
+                                style = RelayText.SectionHeader,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(
+                                    start = headerStart,
+                                    end = 16.dp,
+                                    top = if (index == 0) 8.dp else 16.dp,
+                                    bottom = 4.dp,
+                                ),
+                            )
+                        }
+                        items(section.emojis, key = { it }) { emoji ->
+                            EmojiCell(
+                                emoji = emoji,
+                                imageLoader = imageLoader,
+                                showTonePicker = tonePickerFor == emoji,
+                                onLongPress = { tonePickerFor = emoji },
+                                onTonePickerDismiss = { tonePickerFor = null },
+                                onEmojiSelected = onEmojiSelected,
+                            )
+                        }
                     }
-                    items(section.emojis, key = { it }) { emoji ->
+                }
+                searchResults.isEmpty() -> {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Box(
+                            modifier = Modifier.padding(top = 32.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.thread_search_no_results),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    items(searchResults, key = { it }) { emoji ->
                         EmojiCell(
                             emoji = emoji,
                             imageLoader = imageLoader,
@@ -107,40 +146,14 @@ fun EmojiGrid(
                     }
                 }
             }
-            searchResults.isEmpty() -> {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Box(
-                        modifier = Modifier.padding(top = 32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.thread_search_no_results),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-            else -> {
-                items(searchResults, key = { it }) { emoji ->
-                    EmojiCell(
-                        emoji = emoji,
-                        imageLoader = imageLoader,
-                        showTonePicker = tonePickerFor == emoji,
-                        onLongPress = { tonePickerFor = emoji },
-                        onTonePickerDismiss = { tonePickerFor = null },
-                        onEmojiSelected = onEmojiSelected,
-                    )
-                }
-            }
         }
     }
 }
 
 /**
  * One emoji cell. Tap inserts the emoji; long-press on a skin-tone-capable
- * emoji (hands) opens the tone picker above the cell. Long-press elsewhere
- * does nothing — no popup, no haptic.
+ * emoji (hands, people) opens the tone picker above the cell. Long-press
+ * elsewhere does nothing — no popup, no haptic.
  */
 @Composable
 private fun EmojiCell(
@@ -279,10 +292,16 @@ private fun TwemojiImage(
             imageLoader = imageLoader,
             contentDescription = emoji,
             onError = { loadFailed = true },
-            modifier = Modifier.size(36.dp),
+            modifier = Modifier.size(EMOJI_IMAGE_SIZE_DP.dp),
         )
     }
 }
+
+/** Grid cell minimum size — the adaptive column count derives from this. */
+private const val EMOJI_CELL_MIN_DP = 48
+
+/** The Twemoji image size inside each cell (centred, so the header inset is half the leftover cell width). */
+private const val EMOJI_IMAGE_SIZE_DP = 36
 
 /** Tone popup: 6 options x 40dp + 16dp side padding. Fixed, for the clamp. */
 private const val TONE_POPUP_WIDTH_DP = 256

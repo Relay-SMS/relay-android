@@ -130,14 +130,16 @@ class EmojiPickerTabStore(context: Context) {
 private val Context.emojiPickerDataStore by preferencesDataStore(name = "emoji_picker")
 
 /**
- * The picker panel shell. Enters by growing from 0 to the midway height; the back
- * arrow ([onClose] is only called after the shrink animation finishes, so the
- * composer slides back in underneath instead of popping).
+ * The picker panel shell. It sits BELOW the composer (round 14 — the message box
+ * stays visible above it, so picked emojis land in a draft the user can see).
+ * Enters by growing from 0 to the midway height; the back arrow ([onClose] is
+ * only called after the shrink animation finishes, so the panel shrinks away
+ * instead of popping).
  *
  * Drag is FREE: the handle can be dragged to any height between [MIN_HEIGHT_DP]
  * and full; on release the panel snaps to the nearest of the two resting heights
- * (midway = half the screen, as in Kristin's screenshot; full = 85% of the
- * screen). Dragging never closes the panel — only the back arrow does.
+ * (midway = half the space below the composer, as in Kristin's screenshot;
+ * full = 85% of it). Dragging never closes the panel — only the back arrow does.
  */
 @Composable
 fun EmojiPickerPanel(
@@ -148,15 +150,22 @@ fun EmojiPickerPanel(
     onStickerSelected: (String) -> Unit,
     onGifSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Round 14 — height (px) of the composer stacked above the panel: the resting
+     * heights are fractions of the space BELOW it, so composer + panel never
+     * exceed the screen. `0f` keeps the old full-screen fractions.
+     */
+    reservedTopPx: Float = 0f,
 ) {
     val cs = MaterialTheme.colorScheme
     val density = LocalDensity.current
     val screenHeightPx = with(density) {
         LocalConfiguration.current.screenHeightDp.dp.toPx()
     }
-    val midwayPx = screenHeightPx * MIDWAY_FRACTION
-    val fullPx = screenHeightPx * FULL_FRACTION
     val minPx = with(density) { MIN_HEIGHT_DP.dp.toPx() }
+    val availablePx = (screenHeightPx - reservedTopPx).coerceAtLeast(minPx)
+    val midwayPx = (availablePx * MIDWAY_FRACTION).coerceAtLeast(minPx)
+    val fullPx = (availablePx * FULL_FRACTION).coerceAtLeast(minPx)
     var heightPx by remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     var panelAnimation by remember { mutableStateOf<Job?>(null) }
@@ -211,6 +220,13 @@ fun EmojiPickerPanel(
     // Enter: grow from 0 to midway.
     LaunchedEffect(Unit) {
         animateHeightTo(midwayPx, ENTER_DURATION_MS)
+    }
+
+    // Round 14 — if the space above grows while the panel is open (a reply chip
+    // armed, an attachment staged), the ceiling drops: clamp the panel to it
+    // instead of overflowing the screen.
+    LaunchedEffect(fullPx) {
+        if (heightPx > fullPx) heightPx = fullPx
     }
 
     val dragModifier = Modifier.pointerInput(Unit) {

@@ -1124,6 +1124,10 @@
     <string name="settings_klipy_key_not_set">Non définie</string>
     <string name="settings_klipy_key_hint">Collez votre clé API Klipy</string>
     <string name="emoji_section_smileys">Smileys</string>
+    <string name="emoji_section_people">Personnes</string>
+    <string name="emoji_section_families">Familles</string>
+    <string name="emoji_section_couples">Couples</string>
+    <string name="emoji_section_professions">Métiers</string>
     <string name="emoji_section_hands">Mains</string>
     <string name="emoji_section_hearts">Cœurs</string>
     <string name="emoji_section_animals">Animaux</string>
@@ -1132,4 +1136,5 @@
     <string name="emoji_section_objects">Objets</string>
     <string name="emoji_section_nature">Nature</string>
     <string name="emoji_section_symbols">Symboles</string>
+    <string name="emoji_section_flags">Drapeaux</string>
 </resources>

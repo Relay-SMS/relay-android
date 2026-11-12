@@ -5,6 +5,7 @@ import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.mms.IntegrationMmsRecu
 import com.filestech.sms.data.mms.IntegrationMmsRecu.Resultat
 import com.filestech.sms.data.sms.PhoneIdentity
+import com.filestech.sms.data.sms.SimSelfNumber
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
@@ -19,6 +20,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
@@ -35,6 +37,7 @@ class TraitementMmsRecuTest {
     private val blocage = mockk<IncomingBlockPolicy> { coEvery { doitEcarter(any()) } returns false }
     private val reglages = mockk<AppSettingsSource> { coEvery { hydratedOrNull() } returns AppSettings() }
     private val identite = mockk<PhoneIdentity> { coEvery { snapshot() } returns PhoneIdentity.Snapshot("FR") }
+    private val simSelf = mockk<SimSelfNumber> { every { ownNumber(any()) } answers { null } }
     private val integration = mockk<IntegrationMmsRecu>()
     private val messages = mockk<MessageDao> {
         coEvery { findById(ID) } returns mockk<MessageEntity> { every { conversationId } returns CONVERSATION }
@@ -42,7 +45,8 @@ class TraitementMmsRecuTest {
     private val notifier = mockk<IncomingMessageNotifier>(relaxed = true)
     private val echecs = mockk<MmsFailureNotifier>(relaxed = true)
 
-    private val traitement = TraitementMmsRecu(blocage, reglages, identite, integration, messages, notifier, echecs)
+    private val traitement =
+        TraitementMmsRecu(blocage, reglages, identite, simSelf, integration, messages, notifier, echecs)
 
     private fun conf() = RetrieveConf().apply {
         setFrom(EncodedStringValue("$ALICE/TYPE=PLMN"))
@@ -192,6 +196,50 @@ class TraitementMmsRecuTest {
         // Les participants bruts, nous compris (ALICE est l'expéditrice, MOI et BOB en To).
         assertThat(vus.single()?.map { it.raw }).containsExactly(ALICE, MOI, BOB).inOrder()
         assertThat(drapeaux.single()).isTrue()
+    }
+
+    /** Round 14 — sans « Mon numéro » saisi, le numéro de la SIM reconstitue le groupe. */
+    @Test
+    fun `sans mon numero saisi, le numero SIM reconstitue le groupe sans inclutSoi`() = runTest {
+        coEvery { reglages.hydratedOrNull() } returns
+            AppSettings(sending = SendingSettings(groupMms = true, userMsisdn = null))
+        every { simSelf.ownNumber(any()) } returns MOI
+        val vus = mutableListOf<List<PhoneAddress>?>()
+        val drapeaux = mutableListOf<Boolean>()
+        coEvery {
+            integration.integrer(any(), any(), captureNullable(vus), capture(drapeaux), any(), any())
+        } returns Resultat.DejaComplet(ID)
+        val conf = conf().apply {
+            addTo(EncodedStringValue(MOI))
+            addTo(EncodedStringValue(BOB))
+        }
+
+        traitement.traiter(conf, CLE, 1, null) { true }
+
+        // MOI est retiré grâce à la SIM : les membres sont ceux du groupe, sans drapeau.
+        assertThat(vus.single()?.map { it.raw }).containsExactly(ALICE, BOB).inOrder()
+        assertThat(drapeaux.single()).isFalse()
+    }
+
+    /** Round 14 — le réglage gagne sur la SIM quand il est renseigné (la SIM n'est pas lue). */
+    @Test
+    fun `mon numero saisi gagne sur le numero SIM`() = runTest {
+        coEvery { reglages.hydratedOrNull() } returns
+            AppSettings(sending = SendingSettings(groupMms = true, userMsisdn = MOI))
+        every { simSelf.ownNumber(any()) } returns BOB
+        val vus = mutableListOf<List<PhoneAddress>?>()
+        coEvery { integration.integrer(any(), any(), captureNullable(vus), any(), any(), any()) } returns
+            Resultat.DejaComplet(ID)
+        val conf = conf().apply {
+            addTo(EncodedStringValue(MOI))
+            addTo(EncodedStringValue(BOB))
+        }
+
+        traitement.traiter(conf, CLE, 1, null) { true }
+
+        // MOI (le réglage) est retiré, BOB reste membre : la SIM n'a pas servi.
+        assertThat(vus.single()?.map { it.raw }).containsExactly(ALICE, BOB).inOrder()
+        verify(exactly = 0) { simSelf.ownNumber(any()) }
     }
 
     @Test

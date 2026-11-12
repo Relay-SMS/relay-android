@@ -16,7 +16,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import timber.log.Timber
@@ -343,33 +342,43 @@ internal data class KlipyDataDto(
 
 @Serializable
 internal data class KlipyGifDto(
-    val url: String = "",
     val title: String = "",
     val slug: String = "",
     val file: KlipyFileDto? = null,
-    @SerialName("file_meta") val fileMeta: KlipyFileMetaDto? = null,
     val tags: List<String> = emptyList(),
     val type: String = "",
 )
 
+/**
+ * Round 14 — the real `file` shape, verified against the live API 2026-11-11:
+ * size tiers first (`hd`/`md`/`sm`/`xs`), then formats, each rendition
+ * carrying its own URL and dimensions. The round-13 DTOs had this backwards
+ * (`file.gif` as a bare string), so every item parsed to an empty URL and the
+ * grid showed "No results" with a perfectly valid key.
+ */
 @Serializable
 internal data class KlipyFileDto(
-    val mp4: String = "",
-    val gif: String = "",
-    val webp: String = "",
+    val hd: KlipyTierDto? = null,
+    val md: KlipyTierDto? = null,
+    val sm: KlipyTierDto? = null,
+    val xs: KlipyTierDto? = null,
 )
 
 @Serializable
-internal data class KlipyFileMetaDto(
-    val mp4: KlipySizeDto? = null,
-    val gif: KlipySizeDto? = null,
-    val webp: KlipySizeDto? = null,
+internal data class KlipyTierDto(
+    val gif: KlipyRenditionDto? = null,
+    val webp: KlipyRenditionDto? = null,
+    val jpg: KlipyRenditionDto? = null,
+    val mp4: KlipyRenditionDto? = null,
+    val webm: KlipyRenditionDto? = null,
 )
 
 @Serializable
-internal data class KlipySizeDto(
+internal data class KlipyRenditionDto(
+    val url: String = "",
     val width: Int = 0,
     val height: Int = 0,
+    val size: Int = 0,
 )
 
 /**
@@ -387,25 +396,40 @@ internal fun parseKlipyResponse(body: String): List<KlipyGif> {
 }
 
 /**
- * The `gif` file URL serves as both the grid thumbnail and the download
- * (Klipy returns one GIF rendition per item, ~320 px wide — small enough for
- * MMS). Entries with no usable GIF URL, no slug, or an ad type are skipped.
- * `file_meta.gif` carries the dimensions; missing meta means 0×0.
+ * The thumbnail is the SMALL gif (fast grid, ~220 px); the download is the
+ * MEDIUM gif (~640 px, ~0.5–1.3 MB — fits MMS, unlike the multi-MB HD one).
+ * Each falls back through the other tiers so a missing tier never drops the
+ * item; only an item with no GIF rendition at any tier (or no slug, or an ad
+ * type) is skipped. Dimensions come from the download rendition.
  */
 private fun KlipyGifDto.toKlipyGif(): KlipyGif? {
     if (type == "ad") return null
-    val gifUrl = file?.gif?.takeIf { it.isNotBlank() } ?: return null
     val id = slug.takeIf { it.isNotBlank() } ?: return null
-    val meta = fileMeta?.gif
-    return KlipyGif(
-        id = id,
-        title = title,
-        thumbnailUrl = gifUrl,
-        downloadUrl = gifUrl,
-        width = meta?.width ?: 0,
-        height = meta?.height ?: 0,
-    )
+    val file = file ?: return null
+    return file.thumbnailGif()?.let { thumb ->
+        file.downloadGif()?.let { download ->
+            KlipyGif(
+                id = id,
+                title = title,
+                thumbnailUrl = thumb.url,
+                downloadUrl = download.url,
+                width = download.width,
+                height = download.height,
+            )
+        }
+    }
 }
+
+private fun KlipyFileDto.gifAt(tier: KlipyTierDto?): KlipyRenditionDto? =
+    tier?.gif?.takeIf { it.url.isNotBlank() }
+
+/** Thumbnail: small first (fast grid), then extra-small, medium, HD. */
+private fun KlipyFileDto.thumbnailGif(): KlipyRenditionDto? =
+    gifAt(sm) ?: gifAt(xs) ?: gifAt(md) ?: gifAt(hd)
+
+/** Download: medium first (MMS-sized), then small, extra-small, HD last. */
+private fun KlipyFileDto.downloadGif(): KlipyRenditionDto? =
+    gifAt(md) ?: gifAt(sm) ?: gifAt(xs) ?: gifAt(hd)
 
 // The host, fixed: Klipy requires requests from the end-user client ("Do not
 // route requests through partner-operated servers, proxies, CDNs, or other

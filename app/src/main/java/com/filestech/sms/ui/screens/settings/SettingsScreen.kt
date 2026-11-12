@@ -91,6 +91,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.data.sms.readSimMsisdn
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.settings.AutoLockDelay
 import com.filestech.sms.system.locale.ouvrirLaLangueDeLApplication
@@ -1736,6 +1737,11 @@ private sealed interface MsisdnDetection {
  * v1.2.7 audits S4 (checkSelfPermission strict) + Q6 (l'appel doit être fait sur Dispatchers.IO
  * par le caller — `getSystemService` + `activeSubscriptionInfoList` font un binder IPC qui peut
  * geler le main thread sur Samsung).
+ *
+ * Round 14 — la lecture elle-même vit désormais dans [readSimMsisdn], partagée avec le
+ * chemin de réception des MMS : une seule définition des trois sources, au lieu de deux
+ * copies qui dériveraient. Ce qui reste ici, c'est la distinction UI « permission » /
+ * « indisponible », que le chemin de réception n'a pas à faire.
  */
 @android.annotation.SuppressLint("MissingPermission")
 private fun detectMsisdn(context: android.content.Context): MsisdnDetection {
@@ -1747,48 +1753,8 @@ private fun detectMsisdn(context: android.content.Context): MsisdnDetection {
     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     if (!granted) return MsisdnDetection.PermissionDenied
 
-    val sm = context.getSystemService(android.content.Context.TELEPHONY_SUBSCRIPTION_SERVICE)
-        as? android.telephony.SubscriptionManager ?: return MsisdnDetection.Unavailable
-    val defaultId = android.telephony.SubscriptionManager.getDefaultSmsSubscriptionId()
-    if (defaultId == android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-        return MsisdnDetection.Unavailable
-    }
-    // v1.2.8 : la lecture du MSISDN est notoirement capricieuse sur Samsung One UI 6 /
-    // Free Mobile FR / MVNO. On essaie 3 sources dans l'ordre, et la première qui rend une
-    // valeur non vide gagne :
-    //   1. `SubscriptionManager.getPhoneNumber(subId)` (API 33+) — méthode officielle moderne,
-    //      ajoutée précisément pour résoudre ce problème ; agrège SIM / carrier / IMS.
-    //   2. `SubscriptionInfo.number` (API 22+, deprecated API 30+) — historique.
-    //   3. `TelephonyManager.createForSubscriptionId(subId).line1Number` (API 22+) — fallback
-    //      ROM/carrier qui répond parfois quand les deux autres rendent vide.
-    val candidates = sequence {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            runCatching { sm.getPhoneNumber(defaultId) }
-                .getOrNull()
-                ?.takeIf { it.isNotBlank() }
-                ?.let { yield(it) }
-        }
-        runCatching {
-            val info = sm.activeSubscriptionInfoList?.firstOrNull { it.subscriptionId == defaultId }
-            @Suppress("DEPRECATION")
-            info?.number
-        }
-            .getOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { yield(it) }
-        runCatching {
-            val tm = context.getSystemService(android.telephony.TelephonyManager::class.java)
-                ?.createForSubscriptionId(defaultId)
-            @Suppress("DEPRECATION")
-            tm?.line1Number
-        }
-            .getOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { yield(it) }
-    }
-    val number = candidates.firstOrNull()
+    val number = readSimMsisdn(context, null)
     return if (number.isNullOrBlank()) {
-        timber.log.Timber.w("detectMsisdn: no source returned a number (subId=%d)", defaultId)
         MsisdnDetection.Unavailable
     } else {
         MsisdnDetection.Success(number)

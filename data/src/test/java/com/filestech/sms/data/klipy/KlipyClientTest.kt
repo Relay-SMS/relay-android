@@ -22,42 +22,52 @@ import org.junit.jupiter.api.Test
  */
 class KlipyClientTest {
 
+    // Round 14 — the REAL response shape, verified against the live API
+    // 2026-11-11: `file` is tiers first (hd/md/sm/xs), then formats, each
+    // rendition carrying its own URL and dimensions. The round-13 fixture had
+    // this backwards (`file.gif` as a bare string), which is exactly why the
+    // grid showed "No results" with a valid key — every item parsed to an
+    // empty URL and was dropped.
     private val sampleBody = """
         {
           "result": true,
           "data": {
             "data": [
               {
-                "url": "https://klipy.com/gifs/happy-cat",
+                "id": 3480491069936577,
                 "title": "Happy Cat",
                 "slug": "happy-cat",
                 "file": {
-                  "mp4": "https://static.klipy.com/ii/abc/1/happy-cat.mp4",
-                  "gif": "https://static.klipy.com/ii/abc/1/happy-cat.gif",
-                  "webp": "https://static.klipy.com/ii/abc/1/happy-cat.webp"
-                },
-                "file_meta": {
-                  "mp4": {"width": 320, "height": 320},
-                  "gif": {"width": 320, "height": 320},
-                  "webp": {"width": 320, "height": 320}
+                  "hd": {"gif": {"url": "https://static.klipy.com/ii/abc/1/hd-happy-cat.gif", "width": 498, "height": 373, "size": 4286735}},
+                  "md": {"gif": {"url": "https://static.klipy.com/ii/abc/1/md-happy-cat.gif", "width": 640, "height": 480, "size": 515511}},
+                  "sm": {"gif": {"url": "https://static.klipy.com/ii/abc/1/sm-happy-cat.gif", "width": 220, "height": 165, "size": 51878}},
+                  "xs": {"gif": {"url": "https://static.klipy.com/ii/abc/1/xs-happy-cat.gif", "width": 120, "height": 90, "size": 20705}}
                 },
                 "tags": ["cat", "happy"],
                 "type": "gif"
               },
               {
-                "url": "https://klipy.com/gifs/only-gif",
                 "title": "",
-                "slug": "only-gif",
-                "file": {"gif": "https://static.klipy.com/ii/def/2/only-gif.gif"},
+                "slug": "only-sm",
+                "file": {
+                  "sm": {"gif": {"url": "https://static.klipy.com/ii/def/2/sm-only.gif", "width": 220, "height": 165, "size": 51878}}
+                },
+                "type": "gif"
+              },
+              {
+                "title": "HD only",
+                "slug": "hd-only",
+                "file": {
+                  "hd": {"gif": {"url": "https://static.klipy.com/ii/ghi/3/hd-only.gif", "width": 498, "height": 373, "size": 4248588}}
+                },
                 "type": "gif"
               },
               {"slug": "no-file", "title": "No file"},
-              {"slug": "blank-url", "title": "", "file": {"gif": ""}},
+              {"slug": "blank-url", "title": "", "file": {"md": {"gif": {"url": ""}}}},
               {
-                "url": "https://klipy.com/ads/something",
                 "title": "An ad",
                 "slug": "an-ad",
-                "file": {"gif": "https://static.klipy.com/ii/ad/3/ad.gif"},
+                "file": {"md": {"gif": {"url": "https://static.klipy.com/ii/ad/3/ad.gif", "width": 640, "height": 480, "size": 100}}},
                 "type": "ad"
               }
             ],
@@ -72,22 +82,29 @@ class KlipyClientTest {
     fun `parsing keeps usable gifs and skips the rest`() {
         val gifs = parseKlipyResponse(sampleBody)
 
-        assertThat(gifs).hasSize(2)
+        assertThat(gifs).hasSize(3)
+        // Thumbnail = small gif, download = medium gif, dimensions from medium.
         assertThat(gifs[0]).isEqualTo(
             KlipyGif(
                 id = "happy-cat",
                 title = "Happy Cat",
-                thumbnailUrl = "https://static.klipy.com/ii/abc/1/happy-cat.gif",
-                downloadUrl = "https://static.klipy.com/ii/abc/1/happy-cat.gif",
-                width = 320,
-                height = 320,
+                thumbnailUrl = "https://static.klipy.com/ii/abc/1/sm-happy-cat.gif",
+                downloadUrl = "https://static.klipy.com/ii/abc/1/md-happy-cat.gif",
+                width = 640,
+                height = 480,
             ),
         )
-        assertThat(gifs[1].id).isEqualTo("only-gif")
-        assertThat(gifs[1].thumbnailUrl).isEqualTo("https://static.klipy.com/ii/def/2/only-gif.gif")
-        assertThat(gifs[1].downloadUrl).isEqualTo("https://static.klipy.com/ii/def/2/only-gif.gif")
-        assertThat(gifs[1].width).isEqualTo(0)
-        assertThat(gifs[1].height).isEqualTo(0)
+        // One tier only: both URLs fall back to it.
+        assertThat(gifs[1].id).isEqualTo("only-sm")
+        assertThat(gifs[1].thumbnailUrl).isEqualTo("https://static.klipy.com/ii/def/2/sm-only.gif")
+        assertThat(gifs[1].downloadUrl).isEqualTo("https://static.klipy.com/ii/def/2/sm-only.gif")
+        assertThat(gifs[1].width).isEqualTo(220)
+        assertThat(gifs[1].height).isEqualTo(165)
+        assertThat(gifs[2].id).isEqualTo("hd-only")
+        assertThat(gifs[2].thumbnailUrl).isEqualTo("https://static.klipy.com/ii/ghi/3/hd-only.gif")
+        assertThat(gifs[2].downloadUrl).isEqualTo("https://static.klipy.com/ii/ghi/3/hd-only.gif")
+        assertThat(gifs[2].width).isEqualTo(498)
+        assertThat(gifs[2].height).isEqualTo(373)
     }
 
     @Test
@@ -158,7 +175,7 @@ class KlipyClientTest {
         val second = client.trending()
 
         assertThat(first).isEqualTo(second)
-        assertThat((first as Outcome.Success).value).hasSize(2)
+        assertThat((first as Outcome.Success).value).hasSize(3)
         assertThat(client.calls).isEqualTo(2)
     }
 
@@ -195,10 +212,10 @@ class KlipyClientTest {
         val items = (first as Outcome.Success).value
 
         assertThat(first).isEqualTo(second)
-        assertThat(items).hasSize(2)
+        assertThat(items).hasSize(3)
         assertThat(items[0].id).isEqualTo("happy-cat")
-        assertThat(items[0].thumbnailUrl).isEqualTo("https://static.klipy.com/ii/abc/1/happy-cat.gif")
-        assertThat(items[0].downloadUrl).isEqualTo("https://static.klipy.com/ii/abc/1/happy-cat.gif")
+        assertThat(items[0].thumbnailUrl).isEqualTo("https://static.klipy.com/ii/abc/1/sm-happy-cat.gif")
+        assertThat(items[0].downloadUrl).isEqualTo("https://static.klipy.com/ii/abc/1/md-happy-cat.gif")
         assertThat(other).isEqualTo(first)
         // No cache (Klipy does not permit one): a repeat search costs a call, like any other.
         assertThat(fake.calls).isEqualTo(3)

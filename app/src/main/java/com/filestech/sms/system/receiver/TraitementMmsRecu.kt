@@ -7,6 +7,7 @@ import com.filestech.sms.data.mms.IntegrationMmsRecu
 import com.filestech.sms.data.mms.IntegrationMmsRecu.Resultat
 import com.filestech.sms.data.mms.LecteurRetrieveConf
 import com.filestech.sms.data.sms.PhoneIdentity
+import com.filestech.sms.data.sms.SimSelfNumber
 import com.filestech.sms.domain.mms.GroupMmsMembers
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.settings.AppSettingsSource
@@ -39,6 +40,7 @@ class TraitementMmsRecu @Inject constructor(
     private val blockPolicy: IncomingBlockPolicy,
     private val settings: AppSettingsSource,
     private val phoneIdentity: PhoneIdentity,
+    private val simSelfNumber: SimSelfNumber,
     private val integration: IntegrationMmsRecu,
     private val messageDao: MessageDao,
     private val notifier: IncomingMessageNotifier,
@@ -82,7 +84,7 @@ class TraitementMmsRecu @Inject constructor(
             Timber.i("Dropping downloaded MMS from blocked sender")
             return Issue(garderLePdu = false, consigner = false)
         }
-        val groupe = membresDuGroupe(contenu)
+        val groupe = membresDuGroupe(contenu, subId)
         return when (
             val resultat = integration.integrer(
                 contenu,
@@ -129,12 +131,17 @@ class TraitementMmsRecu @Inject constructor(
      * [GroupeRecu.inclutSoi], et le miroir la rapproche d'un groupe existant « moins un ». Le groupe est
      * donc retrouvé sans que le numéro soit saisi ; s'il n'existe pas encore, on retombe sur la
      * conversation individuelle de l'expéditeur (on ne peut pas créer un groupe sans savoir qui retirer).
+     *
+     * Round 14 — avant ce repli, la carte SIM : quand « Mon numéro » n'est pas renseigné, le
+     * numéro lu sur la SIM ([SimSelfNumber]) sert de « nous ». Le réglage gagne toujours quand
+     * il est renseigné ; la SIM ne fait que le remplacer quand il est vide — et si elle ne rend
+     * rien non plus, le repli v1.28.10 ci-dessus s'applique, inchangé.
      */
-    private suspend fun membresDuGroupe(contenu: ContenuMmsRecu): GroupeRecu {
+    private suspend fun membresDuGroupe(contenu: ContenuMmsRecu, subId: Int?): GroupeRecu {
         val envoi = runCatchingCancellable { settings.hydratedOrNull() }.getOrNull()?.sending
         if (envoi?.groupMms != true) return GroupeRecu(null, false)
         val identite = phoneIdentity.snapshot()
-        val moi = envoi.userMsisdn?.takeIf { it.isNotBlank() }
+        val moi = envoi.userMsisdn?.takeIf { it.isNotBlank() } ?: simSelfNumber.ownNumber(subId)
         val groupe = if (moi != null) {
             GroupeRecu(
                 GroupMmsMembers.of(

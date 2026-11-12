@@ -36,11 +36,17 @@ import java.io.File
  * - `assets/twemoji/png/<codepoint>.png` — 72x72 PNG, sticker subset only,
  *   for sending as an MMS attachment.
  *
- * Filename rule (verified against the fork): the emoji's code points in
- * lowercase hex joined with `-`, with U+FE0F stripped — the red heart is
- * `2764.svg`, not `2764-fe0f.svg`. The grid set is single-codepoint emojis
- * only (no ZWJ sequences, no flags); skin-tone variants are base +
- * modifier, e.g. `1f44d-1f3fb.svg`, and the same rule maps them.
+ * Filename rule (verified against the fork, round 14): the emoji's code
+ * points in lowercase hex joined with `-`. U+FE0F is stripped ONLY for a
+ * single-codepoint emoji — the red heart is `2764.svg`, not
+ * `2764-fe0f.svg` — but KEPT in multi-codepoint sequences: the man health
+ * worker is `1f468-200d-2695-fe0f.svg`, the rainbow flag is
+ * `1f3f3-fe0f-200d-1f308.svg` (see [twemojiFileName]). The set started as
+ * single-codepoint emojis only; round 14 added ZWJ sequences (families,
+ * couples, professions) and flags. Skin-tone variants are base + modifier
+ * for singles, e.g. `1f44d-1f3fb.svg`; for ZWJ sequences the modifier
+ * follows each person component, e.g. `1f469-1f3fb-200d-1f4bb.svg`
+ * (see [skinToneVariants]).
  */
 
 /** One titled section of the emoji grid. */
@@ -52,13 +58,98 @@ data class EmojiSection(
 /**
  * The hand emojis — every one of them ships skin-tone variants (see
  * [SKIN_TONE_MODIFIERS]), so the list lives here once and the Hands section
- * below reuses it. The set has no people emojis yet (no man/woman/person),
- * so hands are the only skin-tone-capable cells in the grid.
+ * below reuses it.
  */
 val HAND_EMOJIS: List<String> = listOf(
     "👍", "👎", "👌", "✌️", "🤞", "🤟", "🤙", "👏",
     "🙌", "🙏", "💪", "👋", "🤝", "👊", "✊", "👈",
     "👉", "👆", "👇", "☝️",
+    "🫰", "🫵", "🫶", "🤲", "👐", "🫳", "🫴",
+)
+
+/**
+ * Round 14 — the people emojis (Kristin, 2026-11-11: the grid had no
+ * man/woman/person). Single-codepoint only, like the rest of the set — no
+ * ZWJ sequences (families, gendered professions), which need a different
+ * tone-modifier placement. Every one of these supports skin tones, so they
+ * all ship the five variants and long-press opens the tone picker, like
+ * hands. Deliberately NOT here: 👼 🧞 🧟 — Unicode gives them no skin
+ * tones at all, so they would be the only cells where long-press does
+ * nothing.
+ */
+val PEOPLE_EMOJIS: List<String> = listOf(
+    "👶", "👦", "👧", "🧑", "👨", "👩", "🧓", "👴", "👵",
+    "👱", "👲", "👳", "👮", "👷", "💂", "🕵️", "👰", "🤵",
+    "🎅", "🤶", "🦸", "🦹", "🧙", "🧚", "🧛", "🧜", "🧝",
+    "💆", "💇", "🚶", "🏃", "💃", "🕺", "🧖", "🧗", "🤸",
+    "🏄", "🏊", "🚴",
+    "🏋️", "🤾", "🤽", "🧘", "🧎", "🧍", "🏌️", "⛹️",
+    "🚣",
+)
+
+/**
+ * Round 14 — the family emojis (Kristin, 2026-11-11). ZWJ sequences
+ * (man/woman + children); families take no skin tones in Unicode, so
+ * none of these is in [SKIN_TONE_BASES].
+ */
+val FAMILY_EMOJIS: List<String> = listOf(
+    "👨‍👩‍👦", "👨‍👩‍👧", "👨‍👩‍👧‍👦", "👨‍👨‍👦", "👨‍👨‍👧", "👨‍👨‍👧‍👦",
+    "👩‍👩‍👦", "👩‍👩‍👧", "👩‍👩‍👧‍👦", "👨‍👦", "👨‍👧", "👨‍👧‍👦",
+    "👩‍👦", "👩‍👧", "👩‍👧‍👦", "👪",
+)
+
+/**
+ * Round 14 — the couples. Hearts and kisses take skin tones (Unicode 14,
+ * both people — see [COUPLE_TONE_EMOJIS]); the plain holding-hands
+ * pairs (👫👭👬) and 💑💏 do not. The gendered holding-hands (👩‍🤝‍👨
+ * and friends) are NOT here: Twemoji ships no picture for them at all —
+ * base or toned — in either the fork or the original repo, so only the
+ * neutral 🧑‍🤝‍🧑 (full set) is included.
+ */
+val COUPLE_EMOJIS: List<String> = listOf(
+    "👩‍❤️‍👨", "👨‍❤️‍👨", "👩‍❤️‍👩", "💑",
+    "👩‍❤️‍💋‍👨", "👨‍❤️‍💋‍👨", "👩‍❤️‍💋‍👩", "💏",
+    "👫", "👭", "👬", "🧑‍🤝‍🧑",
+)
+
+/**
+ * Couples that take skin tones — hearts, kisses, neutral holding hands.
+ * One per line: the 3-3-1 grouping tripped ktlint's argument-wrapping rule.
+ */
+val COUPLE_TONE_EMOJIS: List<String> = listOf(
+    "👩‍❤️‍👨",
+    "👨‍❤️‍👨",
+    "👩‍❤️‍👩",
+    "👩‍❤️‍💋‍👨",
+    "👨‍❤️‍💋‍👨",
+    "👩‍❤️‍💋‍👩",
+    "🧑‍🤝‍🧑",
+)
+
+/**
+ * Round 14 — the professions (woman/man/person × 16 jobs). ZWJ sequences;
+ * the tone modifier follows the person component ([skinToneVariants]).
+ */
+val PROFESSION_EMOJIS: List<String> = listOf(
+    "👩‍⚕️", "👨‍⚕️", "🧑‍⚕️", "👩‍🎓", "👨‍🎓", "🧑‍🎓", "👩‍🏫", "👨‍🏫",
+    "🧑‍🏫", "👩‍⚖️", "👨‍⚖️", "🧑‍⚖️", "👩‍🌾", "👨‍🌾", "🧑‍🌾", "👩‍🍳",
+    "👨‍🍳", "🧑‍🍳", "👩‍🔧", "👨‍🔧", "🧑‍🔧", "👩‍🏭", "👨‍🏭", "🧑‍🏭",
+    "👩‍💼", "👨‍💼", "🧑‍💼", "👩‍🔬", "👨‍🔬", "🧑‍🔬", "👩‍💻", "👨‍💻",
+    "🧑‍💻", "👩‍🎤", "👨‍🎤", "🧑‍🎤", "👩‍🎨", "👨‍🎨", "🧑‍🎨", "👩‍✈️",
+    "👨‍✈️", "🧑‍✈️", "👩‍🚀", "👨‍🚀", "🧑‍🚀", "👩‍🚒", "👨‍🚒", "🧑‍🚒",
+)
+
+/**
+ * Round 14 — the country flags (top 30) plus rainbow and pirate. Flag
+ * sequences (regional indicators, or tag characters for 🇬🇧); no skin
+ * tones. The 🇬🇧 file is a tag sequence (`1f3f4-e0067-…-e007f`),
+ * handled by the same filename rule.
+ */
+val FLAG_EMOJIS: List<String> = listOf(
+    "🇺🇸", "🇬🇧", "🇨🇦", "🇫🇷", "🇩🇪", "🇪🇸", "🇮🇹", "🇲🇽",
+    "🇧🇷", "🇯🇵", "🇰🇷", "🇨🇳", "🇮🇳", "🇦🇺", "🇳🇱", "🇸🇪",
+    "🇳🇴", "🇩🇰", "🇫🇮", "🇨🇭", "🇦🇹", "🇧🇪", "🇮🇪", "🇵🇹",
+    "🇬🇷", "🇵🇱", "🇺🇦", "🇿🇦", "🇳🇿", "🇦🇷", "🏳️‍🌈", "🏴‍☠️",
 )
 
 /**
@@ -75,8 +166,15 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
             "🥳", "😭", "😢", "😡", "🤗", "😇", "😏", "😌",
             "😬", "🤨", "🫠", "🥹", "😪", "😷", "🥵", "🥶",
             "😃", "😄", "😆", "😝", "😛", "🤪", "🙃", "😀",
+            "🫡", "🤫", "🫢", "🫣", "🥴", "🤢", "🤮", "🤧",
+            "🥱", "🤠", "🥸", "😈", "👻", "💀", "🤖", "👽",
+            "🎃",
         ),
     ),
+    EmojiSection(R.string.emoji_section_people, PEOPLE_EMOJIS),
+    EmojiSection(R.string.emoji_section_families, FAMILY_EMOJIS),
+    EmojiSection(R.string.emoji_section_couples, COUPLE_EMOJIS),
+    EmojiSection(R.string.emoji_section_professions, PROFESSION_EMOJIS),
     EmojiSection(R.string.emoji_section_hands, HAND_EMOJIS),
     EmojiSection(
         R.string.emoji_section_hearts,
@@ -84,6 +182,7 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
             "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍",
             "🤎", "💔", "💕", "💖", "💗", "💓", "💞", "💘",
             "💝",
+            "💟", "❣️", "🫀", "🩷", "🩵", "🩶",
         ),
     ),
     EmojiSection(
@@ -93,6 +192,8 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
             "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🙈",
             "🙉", "🙊", "🐔", "🐧", "🐦", "🦄", "🐝", "🦋",
             "🐢", "🐍", "🐳", "🐬",
+            "🦒", "🦘", "🦥", "🦦", "🦔", "🦇", "🦉", "🦅",
+            "🦆", "🦢", "🦩", "🐙", "🦀", "🦞", "🐠", "🦖",
         ),
     ),
     EmojiSection(
@@ -104,6 +205,8 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
             "🍟", "🌭", "🍿", "🍩", "🍪", "🎂", "🍰", "🧁",
             "🍫", "🍬", "🍭", "🍺", "🍷", "🥂", "🍾", "☕",
             "🧋", "🥤",
+            "🥞", "🧇", "🥓", "🍗", "🌮", "🌯", "🥗", "🍝",
+            "🍜", "🍣", "🍤", "🥟", "🍦", "🧃", "🥛", "🫖",
         ),
     ),
     EmojiSection(
@@ -121,6 +224,8 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
             "💻", "⌚", "📷", "🔑", "🔒", "✂️", "📌", "📍",
             "✏️", "📚", "💰", "💎", "💍", "👑", "🎩", "👓",
             "🕶️", "🧢", "👕", "👗", "👠", "👟", "🧸",
+            "💌", "📧", "🎟️", "🎫", "🪩", "🎻", "🥁", "🎺",
+            "🎷", "🎹", "📸", "📹", "📺", "📻", "⏰", "⌛",
         ),
     ),
     EmojiSection(
@@ -130,6 +235,8 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
             "🌈", "🔥", "💧", "🌊", "🌍", "🌙", "⭐", "🌟",
             "🌸", "🌹", "🌺", "🌻", "🌼", "🌷", "🌱", "🌲",
             "🌵", "🍀",
+            "🌋", "🌌", "🌠", "🌡️", "🌬️", "🌫️", "🌨️", "🌩️",
+            "🌦️", "🪐", "🌕", "🌝",
         ),
     ),
     EmojiSection(
@@ -137,8 +244,11 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
         listOf(
             "✅", "❌", "❓", "❗", "💯", "🔔", "🔕", "💬",
             "💭", "💤", "🛑", "⛔", "⚠️", "🚫",
+            "➕", "➖", "✖️", "♾️", "©️", "®️", "™️", "🔱",
+            "⚜️", "♻️", "✳️", "❇️",
         ),
     ),
+    EmojiSection(R.string.emoji_section_flags, FLAG_EMOJIS),
 )
 
 /** Flat view of [EMOJI_SECTIONS], for callers that do not need sections. */
@@ -204,22 +314,48 @@ val SKIN_TONE_MODIFIERS: List<String> = listOf(
     SKIN_TONE_DARK,
 ).map { Character.toString(it) }
 
-/** Hand emojis that ship skin-tone variants — exactly [HAND_EMOJIS]. */
-val SKIN_TONE_BASES: Set<String> = HAND_EMOJIS.toSet()
+/** Emojis that ship skin-tone variants — hands, people, professions, and the tone-capable couples (round 14). */
+val SKIN_TONE_BASES: Set<String> =
+    (HAND_EMOJIS + PEOPLE_EMOJIS + PROFESSION_EMOJIS + COUPLE_TONE_EMOJIS).toSet()
 
 /** Whether long-pressing [emoji] in the grid offers skin tones. */
 fun supportsSkinTones(emoji: String): Boolean = emoji in SKIN_TONE_BASES
 
 /**
+ * The person emojis that take a tone modifier inside a ZWJ sequence — the
+ * only person components in the set's sequences (professions, couples).
+ * The modifier goes right after each of these, never after the other
+ * components (the 🤝 in 🧑‍🤝‍🧑 takes none; the ❤️ in a couple keeps its
+ * U+FE0F).
+ */
+private val ZWJ_PERSON_COMPONENTS: Set<String> = setOf("👨", "👩", "🧑")
+
+/** Zero-width joiner, U+200D — the glue in ZWJ sequences (families, couples, professions, flags). */
+private const val ZERO_WIDTH_JOINER = 0x200D
+
+/**
  * The base emoji plus its five skin-tone variants, for the long-press
- * picker. ✌️/☝️ carry U+FE0F; the tone modifier replaces it — "✌🏻" is
- * U+270C U+1F3FB, and [twemojiFileName] strips FE0F either way, so the
- * asset is `270c-1f3fb.svg`. The base itself stays first: the default
- * yellow is a valid pick too.
+ * picker. For a single emoji the modifier replaces U+FE0F — "✌🏻" is U+270C
+ * U+1F3FB, and [twemojiFileName] strips FE0F for singles either way, so
+ * the asset is `270c-1f3fb.svg`. For a ZWJ sequence the modifier follows
+ * each person component and the other components keep their FE0F:
+ * "👩🏻‍⚕️" is U+1F469 U+1F3FB U+200D U+2695 U+FE0F, asset
+ * `1f469-1f3fb-200d-2695-fe0f.svg`. The base itself stays first: the
+ * default yellow is a valid pick too.
  */
 fun skinToneVariants(base: String): List<String> {
-    val stripped = base.filter { it.code != VARIATION_SELECTOR_16 }
-    return listOf(base) + SKIN_TONE_MODIFIERS.map { stripped + it }
+    val zwj = ZERO_WIDTH_JOINER.toChar().toString()
+    val parts = base.split(zwj)
+    if (parts.size == 1) {
+        val stripped = base.filter { it.code != VARIATION_SELECTOR_16 }
+        return listOf(base) + SKIN_TONE_MODIFIERS.map { stripped + it }
+    }
+    return listOf(base) + SKIN_TONE_MODIFIERS.map { modifier ->
+        parts.joinToString(zwj) { component ->
+            val person = component.filter { it.code != VARIATION_SELECTOR_16 }
+            if (person in ZWJ_PERSON_COMPONENTS) person + modifier else component
+        }
+    }
 }
 
 /**
@@ -272,6 +408,151 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "🤪" to "crazy silly zany",
     "🙃" to "upside down silly",
     "😀" to "smile happy grin",
+    "🫡" to "salute respect yes sir",
+    "🤫" to "shush quiet secret",
+    "🫢" to "surprise shock hand mouth oops",
+    "🫣" to "peek shy hiding",
+    "🥴" to "woozy dizzy drunk",
+    "🤢" to "nauseated sick gross",
+    "🤮" to "vomit sick puke",
+    "🤧" to "sneeze sick achoo",
+    "🥱" to "yawn tired sleepy bored",
+    "🤠" to "cowboy hat yeehaw",
+    "🥸" to "disguise glasses mustache spy",
+    "😈" to "devil evil smirk horns",
+    "👻" to "ghost boo halloween spooky",
+    "💀" to "skull death dead",
+    "🤖" to "robot bot ai",
+    "👽" to "alien ufo space",
+    "🎃" to "pumpkin halloween jack lantern",
+    // People
+    "👶" to "baby infant child",
+    "👦" to "boy child kid son",
+    "👧" to "girl child kid daughter",
+    "🧑" to "person adult human",
+    "👨" to "man adult male guy",
+    "👩" to "woman adult female lady",
+    "🧓" to "older person elderly senior",
+    "👴" to "old man grandpa elderly senior",
+    "👵" to "old woman grandma elderly senior",
+    "👱" to "blond blonde person hair",
+    "👲" to "skullcap person hat",
+    "👳" to "turban person hat",
+    "👮" to "police officer cop",
+    "👷" to "construction worker builder hard hat",
+    "💂" to "guard soldier royal",
+    "🕵️" to "detective spy sleuth",
+    "👰" to "bride veil wedding married",
+    "🤵" to "groom tuxedo wedding married",
+    "🎅" to "santa claus christmas",
+    "🤶" to "mrs claus christmas santa",
+    "🦸" to "superhero hero cape",
+    "🦹" to "supervillain villain evil",
+    "🧙" to "mage wizard witch magic",
+    "🧚" to "fairy magic wings",
+    "🧛" to "vampire dracula fangs",
+    "🧜" to "merperson mermaid merman sea",
+    "🧝" to "elf fantasy ears magic",
+    "💆" to "massage spa face relax",
+    "💇" to "haircut barber salon hair",
+    "🚶" to "walking walk pedestrian",
+    "🏃" to "running run jog sprint",
+    "💃" to "dancing dance woman flamenco",
+    "🕺" to "dancing dance man disco",
+    "🧖" to "sauna steam spa relax",
+    "🧗" to "climbing rock climb",
+    "🤸" to "cartwheel gymnastics flip",
+    "🏄" to "surfing surf wave",
+    "🏊" to "swimming swim pool",
+    "🚴" to "biking cycling bike ride",
+    "🏋️" to "weightlifting gym lift weights",
+    "🤾" to "handball sport ball",
+    "🤽" to "water polo sport pool ball",
+    "🧘" to "yoga meditation lotus calm",
+    "🧎" to "kneeling person",
+    "🧍" to "standing person",
+    "🏌️" to "golf golfer sport",
+    "⛹️" to "basketball ball sport",
+    "🚣" to "rowing boat row",
+    // Families
+    "👨‍👩‍👦" to "family man woman boy",
+    "👨‍👩‍👧" to "family man woman girl",
+    "👨‍👩‍👧‍👦" to "family man woman girl boy",
+    "👨‍👨‍👦" to "family man man boy dad",
+    "👨‍👨‍👧" to "family man man girl dad",
+    "👨‍👨‍👧‍👦" to "family man man girl boy dad",
+    "👩‍👩‍👦" to "family woman woman boy mom",
+    "👩‍👩‍👧" to "family woman woman girl mom",
+    "👩‍👩‍👧‍👦" to "family woman woman girl boy mom",
+    "👨‍👦" to "family man boy dad son",
+    "👨‍👧" to "family man girl dad daughter",
+    "👨‍👧‍👦" to "family man girl boy dad",
+    "👩‍👦" to "family woman boy mom son",
+    "👩‍👧" to "family woman girl mom daughter",
+    "👩‍👧‍👦" to "family woman girl boy mom",
+    "👪" to "family",
+    // Couples
+    "👩‍❤️‍👨" to "couple love heart woman man",
+    "👨‍❤️‍👨" to "couple love heart man man",
+    "👩‍❤️‍👩" to "couple love heart woman woman",
+    "💑" to "couple love heart",
+    "👩‍❤️‍💋‍👨" to "kiss couple love woman man",
+    "👨‍❤️‍💋‍👨" to "kiss couple love man man",
+    "👩‍❤️‍💋‍👩" to "kiss couple love woman woman",
+    "💏" to "kiss couple love",
+    "👫" to "couple holding hands man woman",
+    "👭" to "couple holding hands women friends",
+    "👬" to "couple holding hands men friends",
+    "🧑‍🤝‍🧑" to "holding hands people couple friends",
+    // Professions
+    "👩‍⚕️" to "woman doctor nurse health worker medical",
+    "👨‍⚕️" to "man doctor nurse health worker medical",
+    "🧑‍⚕️" to "health worker doctor nurse medical person",
+    "👩‍🎓" to "woman student graduate school college",
+    "👨‍🎓" to "man student graduate school college",
+    "🧑‍🎓" to "student graduate school college person",
+    "👩‍🏫" to "woman teacher school",
+    "👨‍🏫" to "man teacher school",
+    "🧑‍🏫" to "teacher school person",
+    "👩‍⚖️" to "woman judge court law",
+    "👨‍⚖️" to "man judge court law",
+    "🧑‍⚖️" to "judge court law person",
+    "👩‍🌾" to "woman farmer farm",
+    "👨‍🌾" to "man farmer farm",
+    "🧑‍🌾" to "farmer farm person",
+    "👩‍🍳" to "woman cook chef kitchen",
+    "👨‍🍳" to "man cook chef kitchen",
+    "🧑‍🍳" to "cook chef kitchen person",
+    "👩‍🔧" to "woman mechanic wrench fix",
+    "👨‍🔧" to "man mechanic wrench fix",
+    "🧑‍🔧" to "mechanic wrench fix person",
+    "👩‍🏭" to "woman factory worker industrial",
+    "👨‍🏭" to "man factory worker industrial",
+    "🧑‍🏭" to "factory worker industrial person",
+    "👩‍💼" to "woman office worker business briefcase",
+    "👨‍💼" to "man office worker business briefcase",
+    "🧑‍💼" to "office worker business briefcase person",
+    "👩‍🔬" to "woman scientist lab science",
+    "👨‍🔬" to "man scientist lab science",
+    "🧑‍🔬" to "scientist lab science person",
+    "👩‍💻" to "woman technologist coder computer developer",
+    "👨‍💻" to "man technologist coder computer developer",
+    "🧑‍💻" to "technologist coder computer developer person",
+    "👩‍🎤" to "woman singer music mic",
+    "👨‍🎤" to "man singer music mic",
+    "🧑‍🎤" to "singer music mic person",
+    "👩‍🎨" to "woman artist paint art",
+    "👨‍🎨" to "man artist paint art",
+    "🧑‍🎨" to "artist paint art person",
+    "👩‍✈️" to "woman pilot plane fly",
+    "👨‍✈️" to "man pilot plane fly",
+    "🧑‍✈️" to "pilot plane fly person",
+    "👩‍🚀" to "woman astronaut space rocket",
+    "👨‍🚀" to "man astronaut space rocket",
+    "🧑‍🚀" to "astronaut space rocket person",
+    "👩‍🚒" to "woman firefighter fire truck",
+    "👨‍🚒" to "man firefighter fire truck",
+    "🧑‍🚒" to "firefighter fire truck person",
     // Hands
     "👍" to "thumbs up like good yes approve",
     "👎" to "thumbs down dislike no bad",
@@ -293,6 +574,13 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "👆" to "point up",
     "👇" to "point down",
     "☝️" to "point up one finger",
+    "🫰" to "hand fingers crossed money",
+    "🫵" to "hand pointing you finger",
+    "🫶" to "heart hands love",
+    "🤲" to "palms up hands together pray",
+    "👐" to "open hands hug",
+    "🫳" to "palm down hand",
+    "🫴" to "palm up hand",
     // Hearts
     "❤️" to "red heart love",
     "🧡" to "orange heart love",
@@ -311,6 +599,12 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "💞" to "revolving hearts love",
     "💘" to "arrow heart love cupid",
     "💝" to "gift heart love",
+    "💟" to "heart decoration",
+    "❣️" to "heart exclamation love",
+    "🫀" to "heart anatomical organ",
+    "🩷" to "pink heart love",
+    "🩵" to "light blue heart love",
+    "🩶" to "grey gray heart love",
     // Animals
     "🐶" to "dog puppy",
     "🐱" to "cat kitten",
@@ -340,6 +634,22 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "🐍" to "snake",
     "🐳" to "whale",
     "🐬" to "dolphin",
+    "🦒" to "giraffe",
+    "🦘" to "kangaroo",
+    "🦥" to "sloth slow",
+    "🦦" to "otter",
+    "🦔" to "hedgehog",
+    "🦇" to "bat halloween vampire",
+    "🦉" to "owl bird wise",
+    "🦅" to "eagle bird",
+    "🦆" to "duck bird",
+    "🦢" to "swan bird",
+    "🦩" to "flamingo bird pink",
+    "🐙" to "octopus sea",
+    "🦀" to "crab sea",
+    "🦞" to "lobster sea food",
+    "🐠" to "tropical fish sea",
+    "🦖" to "t rex dinosaur",
     // Food
     "🍎" to "apple fruit",
     "🍐" to "pear fruit",
@@ -383,6 +693,22 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "☕" to "coffee",
     "🧋" to "bubble tea boba",
     "🥤" to "drink soda cup",
+    "🥞" to "pancakes breakfast",
+    "🧇" to "waffle breakfast",
+    "🥓" to "bacon breakfast meat",
+    "🍗" to "chicken leg meat food",
+    "🌮" to "taco mexican food",
+    "🌯" to "burrito wrap mexican food",
+    "🥗" to "salad green healthy food",
+    "🍝" to "spaghetti pasta italian food",
+    "🍜" to "noodles ramen soup food",
+    "🍣" to "sushi japanese food",
+    "🍤" to "shrimp tempura food",
+    "🥟" to "dumpling food",
+    "🍦" to "ice cream soft serve dessert",
+    "🧃" to "juice box drink",
+    "🥛" to "milk glass drink",
+    "🫖" to "teapot tea",
     // Activities
     "⚽" to "soccer football",
     "🏀" to "basketball",
@@ -439,6 +765,22 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "👠" to "heel shoe",
     "👟" to "sneaker shoe",
     "🧸" to "teddy bear toy",
+    "💌" to "love letter mail",
+    "📧" to "email mail",
+    "🎟️" to "ticket admission",
+    "🎫" to "ticket",
+    "🪩" to "disco ball mirror party",
+    "🎻" to "violin music",
+    "🥁" to "drum music",
+    "🎺" to "trumpet music horn",
+    "🎷" to "saxophone music jazz",
+    "🎹" to "piano music keyboard",
+    "📸" to "camera flash photo",
+    "📹" to "video camera film",
+    "📺" to "tv television",
+    "📻" to "radio",
+    "⏰" to "alarm clock morning",
+    "⌛" to "hourglass time sand",
     // Nature
     "☀️" to "sun sunny",
     "🌤️" to "sun cloud partly cloudy",
@@ -466,6 +808,18 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "🌲" to "tree pine evergreen",
     "🌵" to "cactus",
     "🍀" to "clover lucky four leaf",
+    "🌋" to "volcano eruption lava",
+    "🌌" to "milky way galaxy stars night",
+    "🌠" to "shooting star wish",
+    "🌡️" to "thermometer temperature hot cold",
+    "🌬️" to "wind blow face",
+    "🌫️" to "fog mist",
+    "🌨️" to "snow cloud winter",
+    "🌩️" to "lightning cloud storm",
+    "🌦️" to "sun rain cloud",
+    "🪐" to "planet saturn ring space",
+    "🌕" to "full moon night",
+    "🌝" to "full moon face night",
     // Symbols
     "✅" to "check yes correct",
     "❌" to "cross no wrong x",
@@ -481,6 +835,51 @@ val EMOJI_KEYWORDS: Map<String, String> = mapOf(
     "⛔" to "no entry prohibited",
     "⚠️" to "warning caution alert",
     "🚫" to "prohibited no banned",
+    "➕" to "plus add math",
+    "➖" to "minus subtract math",
+    "✖️" to "multiply x math",
+    "♾️" to "infinity forever",
+    "©️" to "copyright",
+    "®️" to "registered",
+    "™️" to "trademark tm",
+    "🔱" to "trident",
+    "⚜️" to "fleur de lis",
+    "♻️" to "recycle green",
+    "✳️" to "asterisk star",
+    "❇️" to "sparkle star",
+    // Flags
+    "🇺🇸" to "flag usa america united states",
+    "🇬🇧" to "flag uk britain england united kingdom",
+    "🇨🇦" to "flag canada",
+    "🇫🇷" to "flag france french",
+    "🇩🇪" to "flag germany german",
+    "🇪🇸" to "flag spain spanish",
+    "🇮🇹" to "flag italy italian",
+    "🇲🇽" to "flag mexico mexican",
+    "🇧🇷" to "flag brazil brazilian",
+    "🇯🇵" to "flag japan japanese",
+    "🇰🇷" to "flag korea korean south",
+    "🇨🇳" to "flag china chinese",
+    "🇮🇳" to "flag india indian",
+    "🇦🇺" to "flag australia australian",
+    "🇳🇱" to "flag netherlands dutch holland",
+    "🇸🇪" to "flag sweden swedish",
+    "🇳🇴" to "flag norway norwegian",
+    "🇩🇰" to "flag denmark danish",
+    "🇫🇮" to "flag finland finnish",
+    "🇨🇭" to "flag switzerland swiss",
+    "🇦🇹" to "flag austria austrian",
+    "🇧🇪" to "flag belgium belgian",
+    "🇮🇪" to "flag ireland irish",
+    "🇵🇹" to "flag portugal portuguese",
+    "🇬🇷" to "flag greece greek",
+    "🇵🇱" to "flag poland polish",
+    "🇺🇦" to "flag ukraine ukrainian",
+    "🇿🇦" to "flag south africa african",
+    "🇳🇿" to "flag new zealand",
+    "🇦🇷" to "flag argentina argentinian",
+    "🏳️‍🌈" to "flag rainbow pride lgbt",
+    "🏴‍☠️" to "flag pirate skull",
 )
 
 /**
@@ -498,18 +897,26 @@ fun emojiMatchesQuery(emoji: String, query: String): Boolean {
 /** Variation selector stripped from Twemoji filenames (see above). */
 private const val VARIATION_SELECTOR_16 = 0xFE0F
 
-/** Twemoji asset filename for [unicode], e.g. "1f602" for 😂, "2764" for ❤️. */
+/**
+ * Twemoji asset filename for [unicode], e.g. "1f602" for 😂, "2764" for ❤️.
+ * Round 14 — U+FE0F is stripped ONLY for a single-codepoint emoji; a
+ * multi-codepoint sequence keeps it (the fork's files do: man health
+ * worker is `1f468-200d-2695-fe0f.svg`, rainbow flag is
+ * `1f3f3-fe0f-200d-1f308.svg`). Stripping it for sequences was the round-14
+ * expansion's first bug: every FE0F-bearing ZWJ file 404'd.
+ */
 fun twemojiFileName(unicode: String): String {
-    val parts = ArrayList<String>()
+    val codePoints = ArrayList<Int>()
     var index = 0
     while (index < unicode.length) {
         val codePoint = unicode.codePointAt(index)
-        if (codePoint != VARIATION_SELECTOR_16) {
-            parts.add(codePoint.toString(16))
-        }
+        codePoints.add(codePoint)
         index += Character.charCount(codePoint)
     }
-    return parts.joinToString("-")
+    val single = codePoints.count { it != VARIATION_SELECTOR_16 } == 1
+    return codePoints
+        .filter { !single || it != VARIATION_SELECTOR_16 }
+        .joinToString("-") { it.toString(16) }
 }
 
 /** `file:///android_asset/` URI of the bundled SVG for [unicode]. */

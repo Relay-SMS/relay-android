@@ -111,6 +111,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -374,6 +375,10 @@ fun ThreadScreen(
     )
     var emojiPickerOpen by remember { mutableStateOf(false) }
     var emojiPickerTab by remember { mutableStateOf(EmojiPickerTab.EMOJI) }
+    // Round 14 — height (px) of everything stacked above the picker (reply chip,
+    // attachments bar, composer), measured live: the panel takes its resting
+    // heights from the space below it.
+    var abovePanelHeightPx by remember { mutableStateOf(0) }
     val onPickerTabSelected: (EmojiPickerTab) -> Unit = { tab ->
         emojiPickerTab = tab
         scope.launch { pickerTabStore.setTab(tab) }
@@ -383,6 +388,12 @@ fun ThreadScreen(
         keyboardController?.hide()
         focusManager.clearFocus()
         emojiPickerOpen = true
+    }
+    // Round 14 — the composer icon toggles the panel now that the composer stays
+    // visible above it: a second tap closes it again (no shrink animation on
+    // this path, same as the sticker/GIF close — only the back arrow animates).
+    val toggleEmojiPicker: () -> Unit = {
+        if (emojiPickerOpen) emojiPickerOpen = false else openEmojiPicker()
     }
     // Round 4 — the camera icon opens the camera DIRECTLY instead of the attachment
     // sheet. The capture file lives in `cacheDir/mms_outgoing/`, one of the
@@ -917,71 +928,40 @@ fun ThreadScreen(
         },
         bottomBar = {
             Column {
-                // #8 contextual reply chip — renders above the composer when a reply is armed.
-                // Cancelling drops the target without sending; sending the message clears it
-                // automatically through `ThreadViewModel.doSend`.
-                state.replyingTo?.let { target ->
-                    ComposerReplyChip(
-                        preview = previewOf(target),
-                        onCancel = viewModel::cancelReply,
-                    )
-                }
-                // v1.3.4 — bande staging des pièces jointes empilées (image / vidéo /
-                // fichier). Affichée si non vide. Chaque chip a un X pour retirer la
-                // PJ + supprimer son fichier cache. Tap sur Envoyer dans le composer
-                // ci-dessous = 1 MMS multipart (texte + toutes les PJ).
-                if (state.pendingAttachments.isNotEmpty()) {
-                    com.filestech.sms.ui.components.PendingAttachmentsBar(
-                        pending = state.pendingAttachments.map { p ->
-                            com.filestech.sms.ui.components.PendingAttachmentChipData(
-                                id = p.file.absolutePath, // String stable (M4)
-                                file = p.file,
-                                mimeType = p.mimeType,
-                                displayName = p.displayName,
-                            )
-                        },
-                        onRemove = { id -> viewModel.removePendingAttachment(id) },
-                    )
-                }
-                // Round 13 — emoji/GIF/sticker picker: it takes the composer's
-                // place in the bottom bar while open, so the message list shrinks
-                // above it instead of being covered. An emoji tap appends to the
-                // draft (the draft is a plain String — no cursor is tracked, so
-                // insert-at-cursor is not available) and leaves the panel open for
-                // more picks. A sticker or GIF tap stages the file through the
-                // existing attachment path (`onAttachmentPicked`, the same one the
-                // attach button uses) and closes the panel — the staged chip sits
-                // in the composer bar above, and Send dispatches it as one MMS.
-                // The sticker URI comes from `stickerSendUri`, not
-                // `stickerAssetUri`: the latter is a `file:///android_asset/`
-                // URI the send path cannot read, while the former copies the PNG
-                // into the outgoing-MMS cache and returns a FileProvider
-                // `content://` URI (correct `image/png` MIME, too).
-                if (emojiPickerOpen) {
-                    EmojiPickerPanel(
-                        selectedTab = emojiPickerTab,
-                        onTabSelected = onPickerTabSelected,
-                        onClose = { emojiPickerOpen = false },
-                        onEmojiSelected = { emoji ->
-                            onPickerTabSelected(EmojiPickerTab.EMOJI)
-                            viewModel.updateDraft(state.draft + emoji)
-                        },
-                        onStickerSelected = { unicode ->
-                            onPickerTabSelected(EmojiPickerTab.STICKER)
-                            scope.launch {
-                                stickerSendUri(context, unicode)?.let { uri ->
-                                    viewModel.onAttachmentPicked(uri, AttachmentKind.PHOTO)
-                                }
-                            }
-                            emojiPickerOpen = false
-                        },
-                        onGifSelected = { uri ->
-                            onPickerTabSelected(EmojiPickerTab.GIF)
-                            viewModel.onAttachmentPicked(Uri.parse(uri), AttachmentKind.PHOTO)
-                            emojiPickerOpen = false
-                        },
-                    )
-                } else {
+                // Round 14 — the composer stays visible ABOVE the picker
+                // (Kristin's screenshot): picked emojis land in the draft box
+                // the user can see, instead of a hidden draft. The reply chip,
+                // attachments bar and composer are measured together — the
+                // panel takes its resting heights from the space below them.
+                Column(
+                    modifier = Modifier.onSizeChanged { abovePanelHeightPx = it.height },
+                ) {
+                    // #8 contextual reply chip — renders above the composer when a reply is armed.
+                    // Cancelling drops the target without sending; sending the message clears it
+                    // automatically through `ThreadViewModel.doSend`.
+                    state.replyingTo?.let { target ->
+                        ComposerReplyChip(
+                            preview = previewOf(target),
+                            onCancel = viewModel::cancelReply,
+                        )
+                    }
+                    // v1.3.4 — bande staging des pièces jointes empilées (image / vidéo /
+                    // fichier). Affichée si non vide. Chaque chip a un X pour retirer la
+                    // PJ + supprimer son fichier cache. Tap sur Envoyer dans le composer
+                    // ci-dessous = 1 MMS multipart (texte + toutes les PJ).
+                    if (state.pendingAttachments.isNotEmpty()) {
+                        com.filestech.sms.ui.components.PendingAttachmentsBar(
+                            pending = state.pendingAttachments.map { p ->
+                                com.filestech.sms.ui.components.PendingAttachmentChipData(
+                                    id = p.file.absolutePath, // String stable (M4)
+                                    file = p.file,
+                                    mimeType = p.mimeType,
+                                    displayName = p.displayName,
+                                )
+                            },
+                            onRemove = { id -> viewModel.removePendingAttachment(id) },
+                        )
+                    }
                     ComposerBar(
                         voice = state.voice,
                         playback = playbackState,
@@ -1022,15 +1002,22 @@ fun ThreadScreen(
                             onCameraClick = onCameraClick,
                         ),
                         // Round 13 — the composer icon shows the last-used picker tab
-                        // and opens the panel to it.
+                        // and opens the panel to it. Round 14 — it toggles now that
+                        // the composer stays visible above the panel.
                         emojiPickerButton = EmojiPickerButton(
                             iconRes = when (lastPickerTab) {
                                 EmojiPickerTab.EMOJI -> R.drawable.ic_emoji_happy_outline
                                 EmojiPickerTab.GIF -> R.drawable.ic_gif
                                 EmojiPickerTab.STICKER -> R.drawable.ic_sticker
                             },
-                            onClick = openEmojiPicker,
+                            onClick = toggleEmojiPicker,
                         ),
+                        // Round 14 — the panel is below the composer now: tapping
+                        // the text field (keyboard coming up) closes it, and the
+                        // composer drops its own navigation-bar padding while the
+                        // panel is open — the panel carries it.
+                        pickerOpen = emojiPickerOpen,
+                        onTextFieldFocused = { if (emojiPickerOpen) emojiPickerOpen = false },
                         onMicPermissionDenied = {
                             // v1.3.7 — refus de permission = erreur utilisateur visible → rouge.
                             scope.launch {
@@ -1039,6 +1026,46 @@ fun ThreadScreen(
                                 )
                             }
                         },
+                    )
+                }
+                // Round 13 — emoji/GIF/sticker picker: it sits BELOW the composer
+                // while open, so the message list shrinks above it instead of
+                // being covered. An emoji tap appends to the draft (visible in
+                // the box above — the draft is a plain String, no cursor is
+                // tracked, so insert-at-cursor is not available) and leaves the
+                // panel open for more picks. A sticker or GIF tap stages the file
+                // through the existing attachment path (`onAttachmentPicked`, the
+                // same one the attach button uses) and closes the panel — the
+                // staged chip sits in the composer bar above, and Send dispatches
+                // it as one MMS. The sticker URI comes from `stickerSendUri`, not
+                // `stickerAssetUri`: the latter is a `file:///android_asset/`
+                // URI the send path cannot read, while the former copies the PNG
+                // into the outgoing-MMS cache and returns a FileProvider
+                // `content://` URI (correct `image/png` MIME, too).
+                if (emojiPickerOpen) {
+                    EmojiPickerPanel(
+                        selectedTab = emojiPickerTab,
+                        onTabSelected = onPickerTabSelected,
+                        onClose = { emojiPickerOpen = false },
+                        onEmojiSelected = { emoji ->
+                            onPickerTabSelected(EmojiPickerTab.EMOJI)
+                            viewModel.updateDraft(state.draft + emoji)
+                        },
+                        onStickerSelected = { unicode ->
+                            onPickerTabSelected(EmojiPickerTab.STICKER)
+                            scope.launch {
+                                stickerSendUri(context, unicode)?.let { uri ->
+                                    viewModel.onAttachmentPicked(uri, AttachmentKind.PHOTO)
+                                }
+                            }
+                            emojiPickerOpen = false
+                        },
+                        onGifSelected = { uri ->
+                            onPickerTabSelected(EmojiPickerTab.GIF)
+                            viewModel.onAttachmentPicked(Uri.parse(uri), AttachmentKind.PHOTO)
+                            emojiPickerOpen = false
+                        },
+                        reservedTopPx = abovePanelHeightPx.toFloat(),
                     )
                 }
             }
@@ -2463,6 +2490,7 @@ private data class ComposerAttachmentActions(
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
+@Suppress("LongParameterList")
 @Composable
 private fun ComposerBar(
     voice: ThreadViewModel.VoiceState,
@@ -2488,6 +2516,11 @@ private fun ComposerBar(
     attachmentActions: ComposerAttachmentActions,
     /** Round 13 — picker: the composer button (last-used tab icon + tap). */
     emojiPickerButton: EmojiPickerButton,
+    /** Round 14 — the picker is open below the composer: the composer drops its own
+     * navigation-bar padding (the panel carries it) and the text field closing the
+     * panel on focus is wired through [onTextFieldFocused]. */
+    pickerOpen: Boolean,
+    onTextFieldFocused: () -> Unit,
     onMicPermissionDenied: () -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -2499,7 +2532,11 @@ private fun ComposerBar(
     }
     val permissionGranted = micPermission.status == PermissionStatus.Granted
 
-    Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .then(if (pickerOpen) Modifier else Modifier.navigationBarsPadding())
+            .imePadding(),
+    ) {
         when (voice) {
             // Idle and Recording share the same row layout — switching between them must NOT
             // remove the mic button from the composition tree, otherwise its pointer-input
@@ -2531,6 +2568,7 @@ private fun ComposerBar(
                 onCameraClick = attachmentActions.onCameraClick,
                 emojiButtonIconRes = emojiPickerButton.iconRes,
                 onEmojiButtonClick = emojiPickerButton.onClick,
+                onTextFieldFocused = onTextFieldFocused,
             )
 
             is ThreadViewModel.VoiceState.Reviewing -> ReviewingMode(
@@ -2566,6 +2604,7 @@ private fun ComposerBar(
  * and the mic did not match the pill height.
  */
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("LongParameterList")
 @Composable
 private fun ComposingRow(
     isRecording: Boolean,
@@ -2594,6 +2633,9 @@ private fun ComposingRow(
     emojiButtonIconRes: Int,
     /** Round 13 — picker: tapping the composer icon opens the panel. */
     onEmojiButtonClick: () -> Unit,
+    /** Round 14 — the text field gained focus (keyboard coming up): the caller
+     * closes the picker so the two never stack. */
+    onTextFieldFocused: () -> Unit,
 ) {
     // v1.3.4 M1 — afficher le Mic seulement si pas de PJ stagées ; sinon l'utilisateur
     // doit pouvoir envoyer les PJ via le bouton Send même sans texte.
@@ -2637,7 +2679,8 @@ private fun ComposingRow(
                             onValueChange = onDraftChanged,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 48.dp),
+                                .heightIn(min = 48.dp)
+                                .onFocusChanged { if (it.hasFocus) onTextFieldFocused() },
                             placeholder = stringResource(R.string.thread_compose_placeholder),
                             maxLines = 5,
                             keyboardOptions = KeyboardOptions(
