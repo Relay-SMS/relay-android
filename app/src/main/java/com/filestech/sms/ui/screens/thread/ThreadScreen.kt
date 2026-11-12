@@ -192,6 +192,7 @@ import com.filestech.sms.ui.util.rememberSimLabeler
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Date
@@ -548,6 +549,24 @@ fun ThreadScreen(
         androidx.compose.runtime.derivedStateOf {
             val li = listState.layoutInfo.visibleItemsInfo.lastOrNull()
             li == null || li.index >= bottomItemIndex - 1
+        }
+    }
+    // Round 13 fix (2026-11-11) — when the emoji/GIF/sticker picker opens,
+    // the viewport shrinks from the bottom as the panel grows (300ms enter
+    // animation). The list keeps its scroll position, so the newest messages
+    // slide below the viewport, behind the panel — it looks like the panel
+    // covers the conversation. If the user was at the tail when the picker
+    // opened, scroll to the bottom once the panel has finished growing so
+    // the newest messages stay visible in the shrunken viewport. The
+    // at-bottom snapshot is taken when the picker opens (before the shrink
+    // pushes the tail out of view, which would flip `isAtBottom` false).
+    // A user scrolled up reading older messages is left alone.
+    LaunchedEffect(emojiPickerOpen) {
+        if (!emojiPickerOpen) return@LaunchedEffect
+        val wasAtBottom = isAtBottom
+        delay(320)
+        if (wasAtBottom && state.messages.isNotEmpty()) {
+            listState.animateScrollToItem(bottomItemIndex)
         }
     }
     // Audit R4 (v1.14.8) — Compteur de messages non-vus apparus pendant que l'user était

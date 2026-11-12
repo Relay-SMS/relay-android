@@ -286,6 +286,46 @@ internal fun settingsBlockColor(scheme: ColorScheme): Color {
 }
 
 /**
+ * Fond du panneau emoji/GIF/sticker ([com.filestech.sms.ui.components
+ * .EmojiPickerPanel]) en thème sombre : `#353535`, la teinte que Kristin a
+ * relevée sur sa capture — plus claire que le `surfaceContainerHigh`
+ * neutre dérivé par Material, pour que le panneau se détache du fond de
+ * page sombre. Le thème clair garde `surfaceContainerHigh`.
+ */
+internal val PickerPanelDark = Color(0xFF353535)
+
+/**
+ * Fond du panneau emoji/GIF/sticker, choisi selon la luminance de la surface
+ * du thème (comme [bubbleIncomingColor]).
+ */
+internal fun pickerPanelColor(scheme: ColorScheme): Color {
+    val s = scheme.surface
+    val luma = 0.2126f * s.red + 0.7152f * s.green + 0.0722f * s.blue
+    return if (luma < 0.5f) PickerPanelDark else scheme.surfaceContainerHigh
+}
+
+/**
+ * Fond de l'onglet actif du panneau emoji/GIF/sticker (la pastille derrière
+ * l'icône sélectionnée) en thème sombre : `#4A4A4A`. La barre de recherche
+ * du panneau reprend le fond du champ de saisie des messages
+ * (`surfaceVariant`, `#2A2A2A` en sombre), sur lequel le
+ * `surfaceContainerHighest` neutre dérivé par Material (`#36343B`) ne se
+ * distingue presque plus ; cette teinte garde l'onglet actif lisible. Le
+ * thème clair garde `surfaceContainerHighest`.
+ */
+internal val PickerTabIndicatorDark = Color(0xFF4A4A4A)
+
+/**
+ * Fond de l'onglet actif du panneau emoji/GIF/sticker, choisi selon la
+ * luminance de la surface du thème (comme [bubbleIncomingColor]).
+ */
+internal fun pickerTabIndicatorColor(scheme: ColorScheme): Color {
+    val s = scheme.surface
+    val luma = 0.2126f * s.red + 0.7152f * s.green + 0.0722f * s.blue
+    return if (luma < 0.5f) PickerTabIndicatorDark else scheme.surfaceContainerHighest
+}
+
+/**
  * Or de l'étoile « favori » active, choisi selon la luminance de la surface du thème (comme
  * [bubbleIncomingColor]) pour couvrir les thèmes clair et sombre.
  */

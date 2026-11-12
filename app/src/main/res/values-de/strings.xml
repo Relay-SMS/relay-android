@@ -1122,4 +1122,13 @@
     <string name="settings_klipy_key_set">Festgelegt</string>
     <string name="settings_klipy_key_not_set">Nicht festgelegt</string>
     <string name="settings_klipy_key_hint">Klipy-API-Schlüssel einfügen</string>
+    <string name="emoji_section_smileys">Smileys</string>
+    <string name="emoji_section_hands">Hände</string>
+    <string name="emoji_section_hearts">Herzen</string>
+    <string name="emoji_section_animals">Tiere</string>
+    <string name="emoji_section_food">Essen</string>
+    <string name="emoji_section_activities">Aktivitäten</string>
+    <string name="emoji_section_objects">Objekte</string>
+    <string name="emoji_section_nature">Natur</string>
+    <string name="emoji_section_symbols">Symbole</string>
 </resources>

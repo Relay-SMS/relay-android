@@ -54,6 +54,16 @@
 -keep class androidx.compose.runtime.** { *; }
 -dontwarn androidx.compose.**
 
+# ----- Coil / SVG (Twemoji) ---------------------------------------------------------------------
+# Round 13 fix (2026-11-11) — the emoji/sticker grids load bundled Twemoji SVGs
+# through Coil's SvgDecoder (AndroidSVG). The release build minifies (R8), and
+# without these keeps the decoder/parser is stripped, so the grids render empty
+# (invisible cells) in release while debug (no minification) works fine.
+-keep class coil.decode.SvgDecoder { *; }
+-keep class coil.decode.SvgDecoder$Factory { *; }
+-keep class com.caverock.androidsvg.** { *; }
+-dontwarn com.caverock.androidsvg.**
+
 # ----- Timber ----------------------------------------------------------------------------------
 -dontwarn org.jetbrains.annotations.**
 

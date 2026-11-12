@@ -60,6 +60,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.filestech.sms.R
+import com.filestech.sms.ui.theme.pickerPanelColor
+import com.filestech.sms.ui.theme.pickerTabIndicatorColor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -233,7 +235,7 @@ fun EmojiPickerPanel(
             )
             .height(with(density) { heightPx.toDp() })
             .clip(RoundedCornerShape(PANEL_CORNER_DP.dp))
-            .background(cs.surfaceContainerHigh),
+            .background(pickerPanelColor(cs)),
     ) {
         PickerDragHandle(dragModifier)
         PickerSearchBar(
@@ -251,6 +253,7 @@ fun EmojiPickerPanel(
         )
         PickerContent(
             selectedTab = selectedTab,
+            query = searchQuery,
             onEmojiSelected = onEmojiSelected,
             onStickerSelected = onStickerSelected,
             onGifSelected = onGifSelected,
@@ -306,8 +309,10 @@ private fun PickerSearchBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .background(cs.surfaceContainerLowest, RoundedCornerShape(24.dp))
+            .height(SEARCH_BAR_HEIGHT_DP.dp)
+            // Same fill as the message input box (RelayTextField): the search
+            // field is an input box too, so it reads as one.
+            .background(cs.surfaceVariant, RoundedCornerShape(24.dp))
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -359,7 +364,11 @@ private fun PickerSearchBar(
 
 /**
  * The three tab icons, with a rounded box behind the active one that SLIDES to
- * whichever tab is tapped (animated offset, one tab width per step).
+ * whichever tab is tapped (animated offset, one tab width per step). The
+ * indicator spans the FULL tab slot ([TAB_SIZE_DP] wide) and nearly the full
+ * bar height ([TAB_INDICATOR_HEIGHT_DP], centred vertically): the earlier
+ * 36dp box sat top-aligned and short in the 48dp bar, and read as shifted
+ * right behind the icon.
  */
 @Composable
 private fun PickerTabs(
@@ -369,22 +378,28 @@ private fun PickerTabs(
 ) {
     val cs = MaterialTheme.colorScheme
     val indicatorOffset by animateDpAsState(
-        targetValue = (selectedTab.ordinal * TAB_SIZE_DP + 2).dp,
+        targetValue = (selectedTab.ordinal * TAB_SIZE_DP).dp,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "pickerTabIndicator",
     )
     Box(
         modifier = modifier
             .width((EmojiPickerTab.entries.size * TAB_SIZE_DP).dp)
-            .height(TAB_SIZE_DP.dp),
+            .height(SEARCH_BAR_HEIGHT_DP.dp),
     ) {
         Box(
             modifier = Modifier
+                .align(Alignment.CenterStart)
                 .offset(x = indicatorOffset)
-                .size((TAB_SIZE_DP - 4).dp)
-                .background(cs.surfaceContainerHighest, RoundedCornerShape(10.dp)),
+                .size(width = TAB_SIZE_DP.dp, height = TAB_INDICATOR_HEIGHT_DP.dp)
+                .background(
+                    pickerTabIndicatorColor(cs),
+                    RoundedCornerShape(TAB_INDICATOR_CORNER_DP.dp),
+                ),
         )
-        Row {
+        Row(
+            modifier = Modifier.align(Alignment.Center),
+        ) {
             EmojiPickerTab.entries.forEach { tab ->
                 PickerTabButton(
                     tab = tab,
@@ -423,10 +438,16 @@ private fun PickerTabButton(
     }
 }
 
-/** Content area: the grid for the active tab, filling the rest of the panel. */
+/**
+ * Content area: the grid for the active tab, filling the rest of the panel.
+ * The search query filters the emoji and sticker grids LIVE as it is typed
+ * (local data, no API cost); the GIF grid ignores it and searches only on
+ * submit, via [GifSearchQuery].
+ */
 @Composable
 private fun PickerContent(
     selectedTab: EmojiPickerTab,
+    query: String,
     onEmojiSelected: (String) -> Unit,
     onStickerSelected: (String) -> Unit,
     onGifSelected: (String) -> Unit,
@@ -440,6 +461,7 @@ private fun PickerContent(
         when (selectedTab) {
             EmojiPickerTab.EMOJI -> EmojiGrid(
                 modifier = Modifier.fillMaxSize(),
+                query = query,
                 onEmojiSelected = onEmojiSelected,
             )
             EmojiPickerTab.GIF -> GifGrid(
@@ -448,6 +470,7 @@ private fun PickerContent(
             )
             EmojiPickerTab.STICKER -> StickerGrid(
                 modifier = Modifier.fillMaxSize(),
+                query = query,
                 onStickerSelected = onStickerSelected,
             )
         }
@@ -456,6 +479,15 @@ private fun PickerContent(
 
 /** One tab button, square. */
 private const val TAB_SIZE_DP = 40
+
+/** Search bar height — the tab cluster fills it so the indicator centres. */
+private const val SEARCH_BAR_HEIGHT_DP = 48
+
+/** Active-tab indicator height: nearly the full bar, 2dp margins. */
+private const val TAB_INDICATOR_HEIGHT_DP = 44
+
+/** Active-tab indicator corner radius, for the taller box. */
+private const val TAB_INDICATOR_CORNER_DP = 12
 
 /** Panel corner radius — fully rounded, like the rest of the app. */
 private const val PANEL_CORNER_DP = 28
