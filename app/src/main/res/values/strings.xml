@@ -1132,4 +1132,8 @@
     </plurals>
     <string name="duration_days_hours">%1$d d %2$d h</string>
     <string name="gif_search_unavailable">GIF search isn\'t available right now. Please try again later.</string>
+    <string name="settings_klipy_key_title">Klipy API key</string>
+    <string name="settings_klipy_key_set">Set</string>
+    <string name="settings_klipy_key_not_set">Not set</string>
+    <string name="settings_klipy_key_hint">Paste your Klipy API key</string>
 </resources>

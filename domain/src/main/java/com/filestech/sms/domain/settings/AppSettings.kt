@@ -605,4 +605,15 @@ data class AdvancedSettings(
      * réglages OS si l'utilisateur la trouve gênante.
      */
     val keepAliveService: Boolean = false,
+    /**
+     * Round 13 fix (2026-11-11) — Klipy API key, pasted by the user in
+     * Settings → Advanced (temporary testing field). The CI-built APK has
+     * NO key baked in (the key lives only in `local.properties` on the
+     * build machine, never in the repo), so GIF search returns nothing
+     * until a key is entered here. Stored in DataStore (app-private),
+     * never in a string resource or a committed file. Blank = no key.
+     * [com.filestech.sms.data.klipy.KlipyClient] reads this first and
+     * falls back to the BuildConfig key when it is blank.
+     */
+    val klipyApiKey: String = "",
 )

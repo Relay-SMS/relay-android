@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material.icons.outlined.Sync
@@ -29,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -265,6 +267,19 @@ fun AdvancedScreen(
                         infoText = stringResource(R.string.settings_keep_alive_desc),
                     )
                 }
+                // Round 13 fix (2026-11-11) — Klipy API key, pasted here for
+                // testing. The CI-built APK has no key baked in, so GIF search
+                // returns nothing until a key is entered. Stored in DataStore
+                // (app-private); the row only shows Set / Not set, never the
+                // key itself.
+                item {
+                    KlipyKeyRow(
+                        current = state.advanced.klipyApiKey,
+                        onChange = { v ->
+                            viewModel.update { it.copy(advanced = it.advanced.copy(klipyApiKey = v)) }
+                        },
+                    )
+                }
                 // v1.8.0 — dialog de confirmation (les préférences reviennent
                 // aux defaults, mais les conversations restent intactes).
                 //
@@ -459,4 +474,71 @@ fun AdvancedScreen(
             },
         )
     }
+}
+
+/**
+ * Round 13 fix (2026-11-11) — Klipy API key input (temporary testing
+ * field). A row that opens a dialog with a single text field; pasting a key
+ * saves it to DataStore (app-private) via [onChange]. The row subtitle only
+ * ever shows Set / Not set — the key itself is never displayed.
+ */
+@Composable
+private fun KlipyKeyRow(current: String, onChange: (String) -> Unit) {
+    var dialogOpen by remember { mutableStateOf(false) }
+    RelaySettingRow(
+        icon = Icons.Outlined.Key,
+        title = stringResource(R.string.settings_klipy_key_title),
+        subtitle = if (current.isBlank()) {
+            stringResource(R.string.settings_klipy_key_not_set)
+        } else {
+            stringResource(R.string.settings_klipy_key_set)
+        },
+        chevron = true,
+        onClick = { dialogOpen = true },
+    )
+    if (dialogOpen) {
+        KlipyKeyDialog(
+            initial = current,
+            onDismiss = { dialogOpen = false },
+            onConfirm = { value ->
+                dialogOpen = false
+                onChange(value.trim())
+            },
+        )
+    }
+}
+
+@Composable
+private fun KlipyKeyDialog(
+    initial: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var value by remember { mutableStateOf(initial) }
+    RelayDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(R.string.settings_klipy_key_title),
+        content = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                label = { Text(stringResource(R.string.settings_klipy_key_hint)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            RelayTextButton(
+                text = stringResource(R.string.action_confirm),
+                onClick = { onConfirm(value) },
+                confirm = true,
+            )
+        },
+        dismissButton = {
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
+        },
+    )
 }

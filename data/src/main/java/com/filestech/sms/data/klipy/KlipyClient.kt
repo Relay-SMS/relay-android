@@ -3,15 +3,18 @@ package com.filestech.sms.data.klipy
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.BuildConfig
+import com.filestech.sms.data.local.datastore.dataStore
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.gif.GifItem
 import com.filestech.sms.domain.gif.GifProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -139,13 +142,33 @@ open class KlipyClient @Inject constructor(
         get() = apiKey.isNotBlank() && apiKey != API_KEY_PLACEHOLDER
 
     /**
+     * Round 13 fix (2026-11-11) — the effective key for this call. The
+     * Settings → Advanced field ([AdvancedSettings.klipyApiKey], pasted by
+     * the user for testing) wins when non-blank; otherwise the BuildConfig
+     * key ([apiKey]) is used. Read from the same DataStore file
+     * [SettingsRepository] writes (`sms_tech_settings`); any read failure
+     * falls back to the BuildConfig key instead of failing the request.
+     * The key is a path segment, so the resolved value is never logged.
+     */
+    private suspend fun resolveApiKey(): String {
+        val fromSettings = runCatching {
+            context.dataStore.data.firstOrNull()?.get(SETTINGS_KLIPY_KEY)?.trim()
+        }.getOrNull().orEmpty()
+        return fromSettings.ifBlank { apiKey }
+    }
+
+    private fun hasKey(key: String): Boolean =
+        key.isNotBlank() && key != API_KEY_PLACEHOLDER
+
+    /**
      * Trending GIFs, fetched fresh every time — no cache (Klipy does not permit
      * a partner-operated media cache). No key yet → an empty list, no network
      * attempt.
      */
     override suspend fun trending(): Outcome<List<GifItem>> = withContext(io) {
-        if (!hasApiKey) return@withContext Outcome.Success(emptyList())
-        when (val result = fetchGifs(trendingUrl(DEFAULT_LIMIT))) {
+        val key = resolveApiKey()
+        if (!hasKey(key)) return@withContext Outcome.Success(emptyList())
+        when (val result = fetchGifs(trendingUrl(DEFAULT_LIMIT, key))) {
             is Outcome.Success -> Outcome.Success(result.value.map { it.toGifItem() })
             is Outcome.Failure -> result
         }
@@ -158,8 +181,9 @@ open class KlipyClient @Inject constructor(
      * no network attempt.
      */
     override suspend fun search(query: String): Outcome<List<GifItem>> = withContext(io) {
-        if (!hasApiKey || query.isBlank()) return@withContext Outcome.Success(emptyList())
-        when (val result = fetchGifs(searchUrl(query, DEFAULT_LIMIT))) {
+        val key = resolveApiKey()
+        if (!hasKey(key) || query.isBlank()) return@withContext Outcome.Success(emptyList())
+        when (val result = fetchGifs(searchUrl(query, DEFAULT_LIMIT, key))) {
             is Outcome.Success -> Outcome.Success(result.value.map { it.toGifItem() })
             is Outcome.Failure -> result
         }
@@ -203,19 +227,19 @@ open class KlipyClient @Inject constructor(
         )
     }
 
-    internal fun trendingUrl(limit: Int): String =
-        "${baseUrl()}/gifs/trending?per_page=$limit&content_filter=$CONTENT_FILTER"
+    internal fun trendingUrl(limit: Int, key: String = apiKey): String =
+        "${baseUrl(key)}/gifs/trending?per_page=$limit&content_filter=$CONTENT_FILTER"
 
-    internal fun searchUrl(query: String, limit: Int): String =
-        "${baseUrl()}/gifs/search" +
+    internal fun searchUrl(query: String, limit: Int, key: String = apiKey): String =
+        "${baseUrl(key)}/gifs/search" +
             "?q=${URLEncoder.encode(query, "UTF-8")}&per_page=$limit&content_filter=$CONTENT_FILTER"
 
     /**
      * The API root with the key as a path segment. The key is a secret and the
      * full URL therefore is too — callers must never log a URL built from this.
      */
-    private fun baseUrl(): String =
-        "$BASE_URL/${URLEncoder.encode(apiKey, "UTF-8")}"
+    private fun baseUrl(key: String = apiKey): String =
+        "$BASE_URL/${URLEncoder.encode(key, "UTF-8")}"
 
     private fun fetchGifs(url: String): Outcome<List<KlipyGif>> {
         val body = runCatching { httpGet(url) }
@@ -396,6 +420,11 @@ private const val HTTP_TOO_MANY_REQUESTS = 429
 // `data/build.gradle.kts`: the client treats that value as "no key yet".
 private const val API_KEY_PLACEHOLDER = "YOUR_KLIPY_API_KEY"
 private const val DEFAULT_LIMIT = 25
+
+// Round 13 fix (2026-11-11) — must match the DataStore key in
+// `SettingsRepository.K.klipyApiKey` (`advanced.klipyApiKey`), the
+// Settings → Advanced field where the user pastes a key for testing.
+private val SETTINGS_KLIPY_KEY = stringPreferencesKey("advanced.klipyApiKey")
 
 // Strictest content filter (Klipy: off/low/medium/high) — the equivalent of
 // Giphy's rating=g: general audiences only.

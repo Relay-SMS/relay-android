@@ -14,6 +14,7 @@ import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.sms.DefaultSmsAppManager
 import com.filestech.sms.data.sync.TelephonySyncManager
+import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.categories.MessageClassifier
@@ -28,6 +29,7 @@ import com.filestech.sms.domain.usecase.ToggleConversationStateUseCase
 import com.filestech.sms.security.AppLockManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -99,6 +101,12 @@ class ConversationsViewModel @Inject constructor(
     // dépendances directes du VM. La logique "tout marquer comme lu" est désormais dans
     // [ConversationRepository.markAllRead]. Le VM respecte data → domain → presentation.
     @IoDispatcher private val io: CoroutineDispatcher,
+    // Round 13 fix — the application scope (outlives this ViewModel) for the
+    // category-choice write in [selectCategory]: `viewModelScope` is cancelled
+    // when the screen/app closes, which could drop the write if the user shut
+    // the app right after tapping a tab. The app scope is not cancelled, so the
+    // DataStore write flushes even if the ViewModel is cleared immediately.
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     private val archivedFlag: Boolean = savedStateHandle.get<Boolean>("archived") ?: false
@@ -145,6 +153,20 @@ class ConversationsViewModel @Inject constructor(
      * process. The durable gate is `AdvancedSettings.reactionReparseDone`.
      */
     private var reactionReparseStarted = false
+
+    /**
+     * Round 11 — the selected category tab (`null` = All). Folded into
+     * the packed combine arm below so the outer combine keeps its 5-arg
+     * typed shape.
+     *
+     * Declared BEFORE the first `init` block (not beside the other
+     * `combine` inputs below): the init block launches a coroutine that
+     * seeds this flow from the persisted choice, and on a reopen the
+     * DataStore flow can emit synchronously — if this were declared after
+     * the init block, the coroutine could read it before its initializer
+     * ran and crash with an NPE (round-13 test feedback, 2026-11-11).
+     */
+    private val selectedCategoryFlow = MutableStateFlow<MessageCategory?>(null)
 
     init {
         // Backfill contact names for conversations that existed before READ_CONTACTS was granted
@@ -270,13 +292,6 @@ class ConversationsViewModel @Inject constructor(
      * pour conserver le 5-arg cap typé de kotlinx-coroutines.
      */
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
-
-    /**
-     * Round 11 — the selected category tab (`null` = All). Folded into
-     * the packed combine arm below so the outer combine keeps its 5-arg
-     * typed shape.
-     */
-    private val selectedCategoryFlow = MutableStateFlow<MessageCategory?>(null)
 
     val state: StateFlow<UiState> = combine(
         repo.observeAll(includeArchived = archivedFlag),
@@ -583,7 +598,11 @@ class ConversationsViewModel @Inject constructor(
             if (current == category || category == null) null else category
         }
         val next = selectedCategoryFlow.value
-        viewModelScope.launch {
+        // Round 13 fix — persisted on the application scope, not
+        // `viewModelScope`: the ViewModel is cleared when the screen/app
+        // closes, and a `viewModelScope` write could be cancelled before
+        // the DataStore flush landed, losing the choice on reopen.
+        appScope.launch {
             runCatching {
                 settings.update {
                     it.copy(conversations = it.conversations.copy(selectedCategory = next))
