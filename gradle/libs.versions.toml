@@ -34,6 +34,11 @@ hilt-navigation-compose = "1.4.0"
 
 # Coil
 coil = "2.7.0"
+# AndroidSVG — same 1.4 coil-svg 2.7.0 brings in, but coil-svg declares it
+# runtime-only, so TwemojiAssets (which imports com.caverock.androidsvg.SVG
+# directly to render stickers) needs this direct dependency on the compile
+# classpath. Without it CI fails at :app:compileDebugKotlin.
+androidsvg = "1.4"
 
 # Accompanist
 accompanist = "0.37.3"
@@ -137,6 +142,8 @@ coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 coil-video = { module = "io.coil-kt:coil-video", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt:coil-svg", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt:coil-gif", version.ref = "coil" }
+# Direct: see the version note above — coil-svg's copy is runtime-only.
+androidsvg = { module = "com.caverock:androidsvg-aar", version.ref = "androidsvg" }
 
 # Accompanist
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanist" }

@@ -319,6 +319,10 @@ dependencies {
     implementation(libs.coil.video)
     implementation(libs.coil.svg)
     implementation(libs.coil.gif)
+    // AndroidSVG — direct: TwemojiAssets imports com.caverock.androidsvg.SVG
+    // to render sticker SVGs at 512px. coil-svg only brings it in as a
+    // runtime dependency, so without this line CI fails to compile.
+    implementation(libs.androidsvg)
 
     // Accompanist
     implementation(libs.accompanist.permissions)
