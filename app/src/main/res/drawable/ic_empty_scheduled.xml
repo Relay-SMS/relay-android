@@ -1,0 +1,15 @@
+<!-- Kristin's own icon (clock-icon.svg, 67x67 viewBox): a clock face with the hands cut out of it, for the Scheduled messages empty state. The SVG path
+     data is copied verbatim (M/C/L/Z only — all valid VectorDrawable
+     commands). fillType evenOdd cuts the hands out of the disc regardless of subpath winding. The grey fill in the source becomes black and
+     the tint is applied at the Icon() call site from the theme (same
+     pattern as ic_close_drawer), so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="67dp"
+    android:height="67dp"
+    android:viewportWidth="67"
+    android:viewportHeight="67">
+    <path
+        android:fillColor="@android:color/black"
+        android:fillType="evenOdd"
+        android:pathData="M33.5 0C14.9993 0 0 14.9993 0 33.5C0 52.0007 14.9993 67 33.5 67C52.0007 67 67 52.0007 67 33.5C67 14.9993 52.0007 0 33.5 0ZM48.9615 38.6538H33.5C32.8166 38.6538 32.1611 38.3824 31.6778 37.8991C31.1946 37.4158 30.9231 36.7604 30.9231 36.0769V12.8846C30.9231 12.2012 31.1946 11.5457 31.6778 11.0625C32.1611 10.5792 32.8166 10.3077 33.5 10.3077C34.1834 10.3077 34.8389 10.5792 35.3222 11.0625C35.8054 11.5457 36.0769 12.2012 36.0769 12.8846V33.5H48.9615C49.645 33.5 50.3004 33.7715 50.7837 34.2548C51.267 34.738 51.5385 35.3935 51.5385 36.0769C51.5385 36.7604 51.267 37.4158 50.7837 37.8991C50.3004 38.3824 49.645 38.6538 48.9615 38.6538Z" />
+</vector>

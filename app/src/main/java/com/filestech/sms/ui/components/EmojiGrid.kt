@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -286,10 +288,16 @@ private fun TwemojiImage(
     imageLoader: coil.ImageLoader,
 ) {
     val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
     var loadFailed by remember(emoji) { mutableStateOf(false) }
     if (loadFailed) {
         Text(text = emoji, fontSize = 28.sp)
     } else {
+        // Round 17 — the near-black glyphs in [DARK_GLYPH_EMOJIS] vanish on
+        // the dark panel, so in dark mode they get a light tint (the shape
+        // is kept, only the colour is replaced). In light mode they render
+        // as-is. Dark is the surface-luminance split the app uses elsewhere.
+        val darkGlyph = cs.surface.luminance() < 0.5f && emoji in DARK_GLYPH_EMOJIS
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(twemojiSvgAssetUri(emoji))
@@ -297,6 +305,7 @@ private fun TwemojiImage(
                 .build(),
             imageLoader = imageLoader,
             contentDescription = emoji,
+            colorFilter = if (darkGlyph) ColorFilter.tint(cs.onSurface) else null,
             onError = { loadFailed = true },
             modifier = Modifier.size(EMOJI_IMAGE_SIZE_DP.dp),
         )

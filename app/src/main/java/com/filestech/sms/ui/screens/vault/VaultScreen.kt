@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -677,9 +676,12 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.Center,
                         ) {
+                            // Round 17 — Kristin's own vault icon (bubbles
+                            // + padlock) and the encryption explainer body.
                             RelayEmptyState(
-                                icon = Icons.Outlined.Lock,
+                                iconRes = R.drawable.ic_vault,
                                 headline = stringResource(R.string.vault_empty),
+                                body = stringResource(R.string.vault_empty_body),
                             )
                         }
                     } else {

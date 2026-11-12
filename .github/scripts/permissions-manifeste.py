@@ -5,8 +5,10 @@
 Ce que ce controle protege
 --------------------------
 Round 13 (2026-11-11) - INTERNET est de retour dans le manifeste, pour la
-recherche de GIF via Giphy uniquement (voir PERMISSIONS.md et
-`data/.../giphy/GiphyClient.kt`). Historique : en v1.28.13 (MR F-Droid !38458,
+recherche de GIF via Klipy et, depuis le round 17, les apercus de liens
+(voir PERMISSIONS.md, `data/.../klipy/KlipyClient.kt` et
+`data/.../linkpreview/LinkPreviewFetcher.kt`). Historique : en v1.28.13
+(MR F-Droid !38458,
 relecture de mezinster), INTERNET avait ete retiree - elle etait declaree
 « pour le transport MMS », alors que l'application n'ouvre aucune connexion :
 le service MMS d'Android, dans son propre processus, parle au MMSC de
@@ -97,9 +99,10 @@ AUTORISEES = {
     "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
     "android.permission.RECEIVE_BOOT_COMPLETED",
-    # Round 13 — INTERNET, pour la recherche de GIF via Giphy uniquement (et,
-    # plus tard, l'appariement wifi/cloud avec l'app desktop). Documentee dans
-    # PERMISSIONS.md ; aucune autre utilisation reseau n'est autorisee.
+    # Round 13 + 17 — INTERNET, pour la recherche de GIF via Klipy et les
+    # apercus de liens (et, plus tard, l'appariement wifi/cloud avec l'app
+    # desktop). Documentee dans PERMISSIONS.md ; aucune autre utilisation
+    # reseau n'est autorisee.
     "android.permission.INTERNET",
     # Transitives : androidx.biometric (Android 8) et androidx.work.
     "android.permission.USE_FINGERPRINT",

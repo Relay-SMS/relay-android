@@ -352,6 +352,10 @@ fun ThreadScreen(
     // v1.28.3 — nommer le groupe (menu du fil).
     var renameOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
+    // Round 17 — unpin confirmation: non-null = the "Remove the pin?"
+    // dialog is open for this message (menu Unpin + banner X both land
+    // here, so a stray tap can never drop the pin).
+    var pendingUnpin by remember { mutableStateOf<Message?>(null) }
     var askBlock by remember { mutableStateOf(false) }
     // v1.3.0 — état des dialogs/sheets de réaction emoji.
     //   `pickingReactionFor` non-null = bottom-sheet quick-pick affiché pour ce message.
@@ -379,6 +383,9 @@ fun ThreadScreen(
     // attachments bar, composer), measured live: the panel takes its resting
     // heights from the space below it.
     var abovePanelHeightPx by remember { mutableStateOf(0) }
+    // Round 17 — height (px) of the top header, measured live: the panel's
+    // full height stops at its bottom edge instead of overlapping it.
+    var topBarHeightPx by remember { mutableStateOf(0) }
     val onPickerTabSelected: (EmojiPickerTab) -> Unit = { tab ->
         emojiPickerTab = tab
         scope.launch { pickerTabStore.setTab(tab) }
@@ -805,7 +812,8 @@ fun ThreadScreen(
             // and the search pill, like the conversations list search (round 4):
             // the pill slides in from the right over the header and slides back
             // out when it closes; the header just fades.
-            Box {
+            // Round 17 — measured so the picker panel can stop at its bottom.
+            Box(modifier = Modifier.onSizeChanged { topBarHeightPx = it.height }) {
                 AnimatedVisibility(
                     visible = !threadSearchOpen,
                     enter = fadeIn(),
@@ -1066,6 +1074,7 @@ fun ThreadScreen(
                             emojiPickerOpen = false
                         },
                         reservedTopPx = abovePanelHeightPx.toFloat(),
+                        reservedHeaderPx = topBarHeightPx.toFloat(),
                     )
                 }
             }
@@ -1139,8 +1148,9 @@ fun ThreadScreen(
             }
         }
         // v1.18.0 — Bundle de callbacks stable réutilisé par chaque item. Capture les setters
-        // `var by remember` (pendingDelete, pickingReactionFor, forwardingMessage,
-        // pendingRetryWatchdog) + les références ViewModel + les lambdas locales. Recréé
+        // `var by remember` (pendingDelete, pendingUnpin, pickingReactionFor,
+        // forwardingMessage, pendingRetryWatchdog) + les références ViewModel + les lambdas
+        // locales. Recréé
         // uniquement si viewModel change (singleton scope ViewModel — donc 1 fois par
         // composition de ThreadScreen). Référence stable → Compose peut skipper la
         // recomposition des items dont le `msg` n'a pas changé.
@@ -1170,8 +1180,16 @@ fun ThreadScreen(
                 // v1.26.1 (audit F2) — bascule sur l'état courant du message.
                 onToggleStar = { msg -> viewModel.toggleMessageStarred(msg.id, !msg.starred) },
                 // Feedback round 5 — épingler / désépingler (la VM compare à
-                // l'épingle courante du fil).
-                onTogglePin = { msg -> viewModel.togglePin(msg.id) },
+                // l'épingle courante du fil). Round 17 — unpinning asks
+                // first (a stray tap on "Unpin" drops the pin); pinning
+                // goes straight through.
+                onTogglePin = { msg ->
+                    if (msg.id == state.conversation?.pinnedMessageId) {
+                        pendingUnpin = msg
+                    } else {
+                        viewModel.togglePin(msg.id)
+                    }
+                },
                 onPhoneClick = onPhoneClick,
             )
         }
@@ -1315,7 +1333,9 @@ fun ThreadScreen(
                 formatters = formatters,
                 canUnpin = !state.isPanicDecoy,
                 onJump = { viewModel.jumpToPinnedMessage(pinned.first.id) },
-                onUnpin = { viewModel.togglePin(pinned.first.id) },
+                // Round 17 — the banner X asks first too (same dialog as
+                // the menu Unpin).
+                onUnpin = { pendingUnpin = pinned.first },
                 // Feedback round 7 — measured so the sticky date pill can
                 // sit just below the banner (see [pinnedBannerHeightPx]).
                 modifier = Modifier.onSizeChanged { pinnedBannerHeightPx = it.height },
@@ -1605,6 +1625,22 @@ fun ThreadScreen(
                 pendingDelete = null
             },
             onDismiss = { pendingDelete = null },
+        )
+    }
+    // Round 17 — unpin confirmation (menu Unpin + banner X): a stray tap
+    // must not drop the pin. Orange, not red — unpinning undoes with one
+    // tap (re-pin), like blocking.
+    pendingUnpin?.let { msg ->
+        DestructiveConfirmDialog(
+            title = stringResource(R.string.action_unpin),
+            message = stringResource(R.string.thread_confirm_unpin_message),
+            confirmLabel = stringResource(R.string.action_unpin),
+            confirmColor = com.filestech.sms.ui.theme.BrandBlocked,
+            onConfirm = {
+                viewModel.togglePin(msg.id)
+                pendingUnpin = null
+            },
+            onDismiss = { pendingUnpin = null },
         )
     }
 

@@ -260,6 +260,118 @@ val EMOJI_SECTIONS: List<EmojiSection> = listOf(
 /** Flat view of [EMOJI_SECTIONS], for callers that do not need sections. */
 val EMOJI_GRID_EMOJIS: List<String> = EMOJI_SECTIONS.flatMap { it.emojis }
 
+/**
+ * Round 17 — the grid emojis whose Twemoji SVG is drawn entirely in
+ * near-black (`#31373D`, or black by default): on the dark picker panel they
+ * vanish. A scan of all 487 grid SVGs found 8 such files; only these 6 are
+ * text symbols whose colour carries no meaning, so only these get a light
+ * tint in dark mode (see `TwemojiImage`). 🖤 and 🕶️ are dark by design and
+ * stay untouched — tinting them would change what they are.
+ */
+val DARK_GLYPH_EMOJIS: Set<String> = setOf(
+    "➕",
+    "➖",
+    "✖️",
+    "©️",
+    "®️",
+    "™️",
+)
+
+/**
+ * Round 17 — true when the text is only emoji, up to [maxEmojis] of them
+ * (default 3): a message that gets the big-emoji treatment in its bubble
+ * (no background, enlarged glyph). A hand-rolled code-point scan, not
+ * `BreakIterator`: the JDK one splits ZWJ sequences and skin tones, so a
+ * detector built on it would disagree between local tests and the device
+ * (see `dropLastGrapheme`). Counts grapheme clusters: a ZWJ chain, a
+ * skin tone, VS16, a flag pair and a keycap each count as ONE emoji. Any
+ * other character — letter, digit without its keycap mark, space inside
+ * the text, punctuation — makes it not emoji-only.
+ */
+internal fun String.isEmojiOnlyMessage(maxEmojis: Int = 3): Boolean {
+    val text = trim()
+    if (text.isEmpty()) return false
+    var count = 0
+    var index = 0
+    var valid = true
+    var expectSecondRegional = false
+    var justSawJoiner = false
+    while (valid && index < text.length) {
+        val codePoint = text.codePointAt(index)
+        val charCount = Character.charCount(codePoint)
+        when {
+            codePoint == EMOJI_ZERO_WIDTH_JOINER -> justSawJoiner = true
+            codePoint == EMOJI_VARIATION_SELECTOR ||
+                codePoint in EMOJI_SKIN_TONES ||
+                codePoint == EMOJI_KEYCAP_MARK -> {
+                // Continuation of the current emoji: no count.
+            }
+            codePoint in EMOJI_REGIONAL_INDICATORS -> {
+                // Flags are RI pairs; a pair counts as one emoji.
+                if (expectSecondRegional) {
+                    expectSecondRegional = false
+                } else if (justSawJoiner) {
+                    valid = false
+                } else {
+                    count++
+                    expectSecondRegional = true
+                }
+                justSawJoiner = false
+            }
+            isKeycapBase(codePoint) -> {
+                // A digit, # or * only counts with its keycap mark after
+                // it — with an optional VS16 in between ("1" + VS16 +
+                // U+20E3 is the usual form; VS16 is BMP, so one char).
+                val afterBase = index + charCount
+                val next = if (afterBase < text.length) text.codePointAt(afterBase) else -1
+                val vs16Keycap = next == EMOJI_VARIATION_SELECTOR &&
+                    afterBase + 1 < text.length &&
+                    text.codePointAt(afterBase + 1) == EMOJI_KEYCAP_MARK
+                val marked = next == EMOJI_KEYCAP_MARK || vs16Keycap
+                if (marked && !justSawJoiner && !expectSecondRegional) {
+                    count++
+                } else {
+                    valid = false
+                }
+                justSawJoiner = false
+            }
+            isEmojiBase(codePoint) -> {
+                if (expectSecondRegional) {
+                    valid = false
+                } else if (!justSawJoiner) {
+                    count++
+                }
+                justSawJoiner = false
+            }
+            else -> valid = false
+        }
+        if (count > maxEmojis) valid = false
+        index += charCount
+    }
+    return valid && !expectSecondRegional && count in 1..maxEmojis
+}
+
+private fun isKeycapBase(codePoint: Int): Boolean =
+    codePoint in '0'.code..'9'.code || codePoint == '#'.code || codePoint == '*'.code
+
+/** Code points that can START an emoji (Unicode emoji-data ranges, pragmatic subset). */
+private fun isEmojiBase(codePoint: Int): Boolean = when (codePoint) {
+    0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139 -> true
+    in 0x2194..0x21AA, in 0x231A..0x231B, 0x2328, 0x2388, 0x23CF,
+    in 0x23E9..0x23F3, in 0x23F8..0x23FA, 0x24C2,
+    in 0x25AA..0x25AB, 0x25B6, 0x25C0, in 0x25FB..0x25FE,
+    in 0x2600..0x27BF, in 0x2934..0x2935, in 0x2B05..0x2B07,
+    in 0x2B1B..0x2B1C, 0x2B50, 0x2B55, 0x3030, 0x303D, 0x3297, 0x3299,
+    in 0x1F000..0x1FAFF -> true
+    else -> false
+}
+
+private const val EMOJI_ZERO_WIDTH_JOINER = 0x200D
+private const val EMOJI_VARIATION_SELECTOR = 0xFE0F
+private const val EMOJI_KEYCAP_MARK = 0x20E3
+private val EMOJI_SKIN_TONES = 0x1F3FB..0x1F3FF
+private val EMOJI_REGIONAL_INDICATORS = 0x1F1E6..0x1F1FF
+
 val STICKER_EMOJIS: List<String> = listOf(
     "😂",
     "🤣",

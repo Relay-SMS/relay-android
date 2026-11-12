@@ -144,6 +144,7 @@
     <string name="conversations_empty_title">Noch keine Unterhaltungen</string>
     <string name="conversations_empty_body">Sobald Sie eine Nachricht empfangen oder senden, erscheint sie hier.</string>
     <string name="conversations_archived_empty">Keine archivierten Unterhaltungen.</string>
+    <string name="conversations_archived_empty_body">Halten Sie Ihren Posteingang aufgeräumt, indem Sie Unterhaltungen aus der Hauptliste verschieben, ohne sie zu löschen. Sie können jederzeit im Archiv darauf zugreifen.</string>
     <string name="conversations_importing_title">Ihre Nachrichten werden importiert</string>
     <string name="conversations_importing_body">Ihre vorhandenen SMS werden gelesen — das geschieht nur einmal.</string>
     <string name="conversations_importing_count">%1$d Nachrichten importiert…</string>
@@ -170,6 +171,7 @@
     <string name="date_this_month">Diesen Monat</string>
     <string name="date_older">Älter</string>
     <string name="thread_confirm_delete_message">Diese Nachricht löschen? Das lässt sich nicht rückgängig machen.</string>
+    <string name="thread_confirm_unpin_message">Diese Nachricht loslösen?</string>
     <string name="thread_export_success">PDF gespeichert (%1$d Seiten)</string>
 
     <!-- Voice MMS composer -->
@@ -204,6 +206,7 @@
     <!-- Vault -->
     <string name="vault_title">Sicherer Tresor</string>
     <string name="vault_empty">Der Tresor ist leer.</string>
+    <string name="vault_empty_body">Tresor-Nachrichten sind durch AES-256-Verschlüsselung mit SQLCipher geschützt, der Schlüssel wird sicher im Android Keystore gespeichert. Greifen Sie mit Ihrer PIN, Ihrem Passwort oder Ihren biometrischen Daten auf Ihren Tresor zu.</string>
     <string name="vault_move_in">In den Tresor verschieben</string>
     <string name="vault_move_out">Aus dem Tresor verschieben</string>
     <!-- v1.11.0 — feedback snackbar (Vault polish) -->
@@ -389,7 +392,7 @@
     <string name="about_easter_egg">✨ Danke an alle, denen ihre Privatsphäre wichtig ist. ✨</string>
 
     <!-- Lock screen -->
-    <string name="lock_title">SMS Relay ist gesperrt</string>
+    <string name="lock_title">Relay ist gesperrt</string>
     <string name="lock_pin_hint">Geben Sie Ihre PIN ein</string>
     <string name="lock_lockout_message">Zu viele Versuche. Versuchen Sie es in %1$d s erneut.</string>
 
@@ -423,6 +426,7 @@
     <string name="settings_section_conversations">Unterhaltungen</string>
     <string name="settings_show_avatars">Kontaktbilder anzeigen</string>
     <string name="settings_show_categories">Kategorien anzeigen</string>
+    <string name="settings_show_categories_subtitle">Wenn deaktiviert, ist auch die Filterung deaktiviert und alle Unterhaltungen werden in einer Liste angezeigt.</string>
     <string name="settings_signature">Automatische Signatur</string>
 
     <string name="settings_section_sending">Senden</string>
@@ -878,7 +882,7 @@
     <string name="scheduled_empty">Keine geplanten Nachrichten</string>
     <!-- v1.15.1 — Inline how-to shown alongside the empty state, so the user discovers
          the entry point even before reading AboutScreen. -->
-    <string name="scheduled_empty_explainer">So planen Sie eine SMS: öffnen Sie eine Unterhaltung, schreiben Sie Ihre Nachricht, dann ⋮ → „Planen…“ → Datum und Uhrzeit wählen. Die SMS wird zu diesem Zeitpunkt automatisch gesendet, auch wenn die App geschlossen ist.</string>
+    <string name="scheduled_empty_explainer">So planen Sie eine SMS: schreiben Sie Ihre Nachricht, dann ⋮ → Planen, oder drücken Sie lange auf ➤. Die SMS wird zu diesem Zeitpunkt automatisch gesendet, auch wenn die App geschlossen ist.</string>
     <string name="scheduled_to">An: %1$s</string>
     <string name="scheduled_when">Geplant für: %1$s</string>
     <string name="scheduled_cancel_confirm_title">Diese geplante Nachricht abbrechen?</string>

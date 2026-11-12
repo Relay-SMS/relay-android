@@ -57,17 +57,22 @@
          révocation potentielle Android 14+. Aucun usage de AlarmManager.setExact*
          vérifié par grep avant retrait. -->
 
-    <!-- Round 13 — INTERNET is back, for ONE purpose only: GIF search via Klipy
-         (see data/.../klipy/KlipyClient.kt). The picker sends the typed search
-         words to api.klipy.com and downloads the chosen GIF; Coil fetches the
-         GIF thumbnails from Klipy the same way. Nothing else in the app opens a
-         network connection: no analytics, no crash reporter, no update check.
+    <!-- Round 13 + 17 — INTERNET is back, for TWO purposes: GIF search via
+         Klipy (see data/.../klipy/KlipyClient.kt) and link previews (see
+         data/.../linkpreview/LinkPreviewFetcher.kt). The picker sends the typed
+         search words to api.klipy.com and downloads the chosen GIF; Coil fetches
+         the GIF thumbnails from Klipy the same way. A message containing a URL
+         shows a preview card: Relay fetches that page once, on the device, and
+         reads its Open Graph title and image for display only — the image is
+         never sent as an attachment. Nothing else in the app opens a network
+         connection: no analytics, no crash reporter, no update check.
          MMS still work exactly as before — Android's own MMS service, in its own
          process, talks to the carrier's MMSC (SmsManager.sendMultimediaMessage /
          downloadMultimediaMessage), so MMS never needed this permission and still
          don't use it. Later, this same permission will also cover wifi/cloud
          pairing with the desktop app. If the permission is blocked, the app
-         still works fully — GIF search just returns nothing.
+         still works fully — GIF search just returns nothing, and links show no
+         preview.
          History: INTERNET was removed in v1.28.13 (it had been declared "for MMS
          transport", which was never true); it returns here deliberately, reviewed
          in PERMISSIONS.md and allowed by .github/scripts/permissions-manifeste.py.

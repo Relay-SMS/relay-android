@@ -203,10 +203,12 @@ open class KlipyClient @Inject constructor(
      * larger than the carrier MMS cap (~280 KB), and a GIF cannot be shrunk
      * at send time: JPEG re-encoding would keep only the first frame and
      * kill the animation. When the downloaded file does not fit the cap,
-     * the SMALL rendition (the thumbnail URL, the same GIF at ~220 px) is
-     * downloaded instead and used when it is smaller. If that download
-     * fails, the MEDIUM file stays and the staging cap check refuses it
-     * honestly.
+     * the smaller renditions are tried in turn — SMALL (the thumbnail URL,
+     * ~220 px), then EXTRA-SMALL (~90 px tall) — and each replaces the
+     * current file when it is smaller, until one fits. Round 17: a long GIF
+     * can exceed the cap even at SMALL, which is why the EXTRA-SMALL step
+     * exists. If every rendition is still too big, the smallest file stays
+     * and the staging cap check refuses it honestly.
      */
     override suspend fun download(item: GifItem): Outcome<Uri> = withContext(io) {
         val safeId = item.id.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
@@ -225,22 +227,27 @@ open class KlipyClient @Inject constructor(
             file.delete()
             return@withContext Outcome.Failure(AppError.Network())
         }
-        // Round 16 — MEDIUM too big for MMS: try the SMALL rendition. Same
-        // scheme guard as above: the thumbnail URL comes from the same API
-        // response, and a `file://` URL must never reach `downloadToFile`.
-        if (file.length() > MmsConstants.CARRIER_PAYLOAD_CAP_BYTES &&
-            item.thumbnailUrl != item.downloadUrl &&
-            isHttpUrl(item.thumbnailUrl)
-        ) {
-            val smallFile = File(file.parentFile, "klipy-$safeId-small.gif")
-            val smallDownloaded = runCatching { downloadToFile(item.thumbnailUrl, smallFile) }
-                .onFailure { Timber.w(it, "GIF small-rendition download failed") }
-                .getOrDefault(false)
-            if (smallDownloaded && smallFile.length() < file.length()) {
-                file.delete()
-                smallFile.renameTo(file)
-            } else {
-                smallFile.delete()
+        // Round 17 — MEDIUM too big for MMS: walk down the smaller
+        // renditions (SMALL, then EXTRA-SMALL) until one fits the cap. A
+        // long GIF can exceed the cap even at SMALL (~220 px); EXTRA-SMALL
+        // (~90 px tall) almost always fits. Same scheme guard as above on
+        // each URL: they come from the same API response, and a `file://`
+        // URL must never reach `downloadToFile`.
+        val fallbacks = listOf("small" to item.thumbnailUrl, "xsmall" to item.extraSmallUrl)
+            .distinctBy { it.second }
+        for ((suffix, url) in fallbacks) {
+            if (file.length() <= MmsConstants.CARRIER_PAYLOAD_CAP_BYTES) break
+            if (url.isNotBlank() && url != item.downloadUrl && isHttpUrl(url)) {
+                val tempFile = File(file.parentFile, "klipy-$safeId-$suffix.gif")
+                val tempDownloaded = runCatching { downloadToFile(url, tempFile) }
+                    .onFailure { Timber.w(it, "GIF $suffix-rendition download failed") }
+                    .getOrDefault(false)
+                if (tempDownloaded && tempFile.length() < file.length()) {
+                    file.delete()
+                    tempFile.renameTo(file)
+                } else {
+                    tempFile.delete()
+                }
             }
         }
         runCatching {
@@ -344,7 +351,12 @@ open class KlipyClient @Inject constructor(
     }
 }
 
-/** One GIF from the Klipy API: a grid thumbnail and the file to download on tap. */
+/**
+ * One GIF from the Klipy API: a grid thumbnail and the file to download on
+ * tap. Round 17 — [extraSmallUrl] is the `xs` tier URL (blank when the item
+ * has no `xs` tier): the download falls back to it when MEDIUM and SMALL
+ * both exceed the carrier MMS cap.
+ */
 data class KlipyGif(
     val id: String,
     val title: String,
@@ -352,6 +364,7 @@ data class KlipyGif(
     val downloadUrl: String,
     val width: Int,
     val height: Int,
+    val extraSmallUrl: String = "",
 )
 
 internal fun KlipyGif.toGifItem(): GifItem = GifItem(
@@ -361,6 +374,7 @@ internal fun KlipyGif.toGifItem(): GifItem = GifItem(
     downloadUrl = downloadUrl,
     width = width,
     height = height,
+    extraSmallUrl = extraSmallUrl,
 )
 
 @Serializable
@@ -449,6 +463,7 @@ private fun KlipyGifDto.toKlipyGif(): KlipyGif? {
                 downloadUrl = download.url,
                 width = download.width,
                 height = download.height,
+                extraSmallUrl = file.gifAt(file.xs)?.url ?: "",
             )
         }
     }

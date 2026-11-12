@@ -1,5 +1,6 @@
 package com.filestech.sms.ui.components
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -8,6 +9,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.filestech.sms.ui.theme.BrandDanger
 
 /**
@@ -69,13 +71,19 @@ suspend fun SnackbarHostState.showError(message: String) {
  *
  * À substituer dans tous les `Scaffold` à la place du `SnackbarHost(
  * hostState)` standard.
+ *
+ * Round 17 — the bar is rounded ([SNACKBAR_CORNER_DP]), like the rest of
+ * the UI, instead of the near-square Material default.
  */
+private const val SNACKBAR_CORNER_DP = 16
+
 @Composable
 fun SmsTechSnackbarHost(hostState: SnackbarHostState) {
     SnackbarHost(hostState = hostState) { data ->
         val isError = (data.visuals as? SmsTechSnackbarVisuals)?.isError == true
         Snackbar(
             snackbarData = data,
+            shape = RoundedCornerShape(SNACKBAR_CORNER_DP.dp),
             containerColor = if (isError) BrandDanger
                 else MaterialTheme.colorScheme.inverseSurface,
             contentColor = if (isError) Color.White

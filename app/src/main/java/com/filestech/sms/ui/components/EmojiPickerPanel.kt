@@ -140,7 +140,9 @@ private val Context.emojiPickerDataStore by preferencesDataStore(name = "emoji_p
  * Drag is FREE: the handle can be dragged to any height between [MIN_HEIGHT_DP]
  * and full; on release the panel snaps to the nearest of the two resting heights
  * (midway = half the space below the composer, as in Kristin's screenshot;
- * full = 85% of it). Dragging never closes the panel — only the back arrow does.
+ * full = up to the bottom of the top header, round 17 — the old 85% guess
+ * overlapped the header on her phone). Dragging never closes the panel —
+ * only the back arrow does.
  */
 @Composable
 fun EmojiPickerPanel(
@@ -157,6 +159,12 @@ fun EmojiPickerPanel(
      * exceed the screen. `0f` keeps the old full-screen fractions.
      */
     reservedTopPx: Float = 0f,
+    /**
+     * Round 17 — height (px) of the top header: the FULL height stops at its
+     * bottom edge, so a fully-dragged panel never overlaps the header.
+     * `0f` (not measured yet) falls back to the old 85% fraction.
+     */
+    reservedHeaderPx: Float = 0f,
 ) {
     val cs = MaterialTheme.colorScheme
     val density = LocalDensity.current
@@ -166,7 +174,14 @@ fun EmojiPickerPanel(
     val minPx = with(density) { MIN_HEIGHT_DP.dp.toPx() }
     val availablePx = (screenHeightPx - reservedTopPx).coerceAtLeast(minPx)
     val midwayPx = (availablePx * MIDWAY_FRACTION).coerceAtLeast(minPx)
-    val fullPx = (availablePx * FULL_FRACTION).coerceAtLeast(minPx)
+    // Round 17 — full is the space between the header's bottom edge and the
+    // composer, so the dragged panel stops exactly at the header instead of
+    // overlapping it; the 85% fraction is only the pre-measure fallback.
+    val fullPx = if (reservedHeaderPx > 0f) {
+        (availablePx - reservedHeaderPx).coerceAtLeast(minPx)
+    } else {
+        (availablePx * FULL_FRACTION).coerceAtLeast(minPx)
+    }
     var heightPx by remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     var panelAnimation by remember { mutableStateOf<Job?>(null) }
@@ -538,8 +553,10 @@ private const val PANEL_BOTTOM_MARGIN_DP = 8
 /** Shortest the panel can be dragged (a search bar plus a sliver of grid). */
 private const val MIN_HEIGHT_DP = 240
 
-/** Resting heights: midway is half the screen, full leaves the header visible. */
+/** Resting heights: midway is half the space below the composer. */
 private const val MIDWAY_FRACTION = 0.5f
+
+/** Full-height fallback before the header is measured (round 17). */
 private const val FULL_FRACTION = 0.85f
 
 /** Panel grow / snap / shrink durations. */

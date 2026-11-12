@@ -13,8 +13,9 @@ import com.filestech.sms.domain.otp.OtpCodeDetector
  * Priority, first match wins:
  * 1. **OTP** — [OtpCodeDetector] finds a login code in the body.
  * 2. **Transactions** — bank / payment / delivery / appointment content.
- * 3. **Promotional** — marketing, deals or political content, or a sender
- *    that is a short code or an alphanumeric label.
+ * 3. **Promotional** — marketing, deals or political content, a cold sales
+ *    pitch from a stranger, or a sender that is a short code or an
+ *    alphanumeric label.
  * 4. **Personal** — a contact, a group, or a regular phone number. A number
  *    that is not in contacts yet is still a real person, so a new friend is
  *    never hidden in an off-screen tab.
@@ -219,6 +220,42 @@ object MessageClassifier {
     )
 
     /**
+     * Round 17 — the cold-pitch offer markers and home-service nouns.
+     * Bare "free" is deliberately NOT in [PROMOTIONAL_KEYWORDS] ("the
+     * concert was free"), but in a pair with a service noun, from a
+     * stranger, it is the lead-gen pitch ("free estimate", "no-cost roof
+     * inspection") — the same pair logic as [isPoliticalVote]. The nouns
+     * are home services because that is the cold-text family: roofing,
+     * solar, HVAC, duct cleaning, windows. "quote"/"estimate" are in the
+     * list knowingly: a stranger's first text reporting a free quote is
+     * far rarer than a pitch using the phrase, and classification follows
+     * the latest message, so a real person's next normal text re-files
+     * the conversation as Personal.
+     */
+    private val COLD_PITCH_OFFER_MARKERS = listOf("no cost", "free", "complimentary")
+    private val COLD_PITCH_SERVICE_NOUNS = listOf(
+        "roof", "roofing", "solar", "inspection", "inspections",
+        "estimate", "estimates", "quote", "quotes", "consultation",
+        "hvac", "duct", "ducts", "gutter", "gutters", "siding",
+        "plumbing", "remodel", "remodeling", "driveway", "paving",
+        "window", "windows",
+    )
+
+    /**
+     * Round 17 — a business self-introduction in the folded body: "it's
+     * Maria with Roofing Pros", "this is Tom with Bright Solar". The word
+     * after "with" must not be a determiner or pronoun, so "it's Sarah
+     * with the kids" and "it's Frank with my brother" do not match. "from"
+     * never matches either, so "Hi, it's Frank from the gym" stays
+     * Personal. Two-word first names ("Mary Jane") do not match — the
+     * offer half of [isColdSalesPitch] still catches those pitches.
+     */
+    private val BUSINESS_INTRO_REGEX = Regex(
+        " (?:it s|this is) [a-z]+ with " +
+            "(?!the |my |a |an |our |your |his |her |me |us |them |him )[a-z]+ ",
+    )
+
+    /**
      * Classifies one message. [sender] is the sender's address (`null` for
      * a group message or an unknown sender); [isContact] is true when the
      * sender is in contacts; [isGroup] is true for a group conversation.
@@ -238,19 +275,54 @@ object MessageClassifier {
             isOtp -> MessageCategory.OTP
             containsAny(paddedBody, TRANSACTION_KEYWORDS) -> MessageCategory.TRANSACTIONS
             containsAny(paddedBody, PROMOTIONAL_KEYWORDS) ||
-                // Round 13 — political talk is only promotional from a
-                // stranger. A contact (or a group) talking about voting and
-                // saying "republican"/"democrat" stays Personal — real people
-                // talk politics. This covers both the political phrases
-                // ([POLITICAL_KEYWORDS], e.g. "vote for") and the vote+party
-                // pair ([isPoliticalVote]); without the guard either one
-                // caught any contact's political chat.
-                (!isContact && !isGroup && (containsAny(paddedBody, POLITICAL_KEYWORDS) || isPoliticalVote(paddedBody))) ||
+                isStrangerOnlyPromo(paddedBody, isContact, isGroup) ||
                 isShortCode(digits) || isAlphanumericSender(sender) -> MessageCategory.PROMOTIONAL
             isContact || isGroup || isRegularNumber(digits) -> MessageCategory.PERSONAL
             else -> MessageCategory.OTHER
         }
     }
+
+    /**
+     * Round 13 + 17 — promotional signals that only count from a stranger.
+     * Political talk and cold sales pitches are ordinary language in a
+     * personal chat ("Did you vote for the Democrat?", "Hi, it's Frank"),
+     * so a contact or a group stays Personal and only a stranger's
+     * message can match. This covers the political phrases
+     * ([POLITICAL_KEYWORDS], e.g. "vote for"), the vote+party pair
+     * ([isPoliticalVote]) and the cold-pitch pair ([isColdSalesPitch]);
+     * without the guard any of them caught a contact's chat.
+     */
+    private fun isStrangerOnlyPromo(
+        paddedBody: String,
+        isContact: Boolean,
+        isGroup: Boolean,
+    ): Boolean {
+        if (isContact || isGroup) return false
+        return containsAny(paddedBody, POLITICAL_KEYWORDS) || isPoliticalVote(paddedBody) ||
+            isColdSalesPitch(paddedBody)
+    }
+
+    /**
+     * Round 17 — a cold sales pitch: the lead-gen template ("Hey Kristin,
+     * it's Maria with Roofing Pros. We're doing no-cost roof inspections
+     * in Springfield"). Either half alone is ordinary personal language —
+     * "Hi, it's Frank", "it's Sarah with the kids", "I got a free quote",
+     * "the concert was free" — so only a combination counts. Two of them:
+     * an offer marker together with a home-service noun (the pitch with
+     * or without an introduction), or a business introduction together
+     * with an offer marker or a service noun (the pitch whose offer is
+     * worded without "free"/"no cost"). English only for now — this is
+     * the US lead-gen template; other locales are a later addition.
+     */
+    private fun isColdSalesPitch(paddedBody: String): Boolean {
+        val hasOffer = containsAny(paddedBody, COLD_PITCH_OFFER_MARKERS)
+        val hasService = containsAny(paddedBody, COLD_PITCH_SERVICE_NOUNS)
+        if (hasOffer && hasService) return true
+        return hasBusinessIntro(paddedBody) && (hasOffer || hasService)
+    }
+
+    private fun hasBusinessIntro(paddedBody: String): Boolean =
+        BUSINESS_INTRO_REGEX.containsMatchIn(paddedBody)
 
     /**
      * A political text: a vote word ("vote", "voted", "voting", "votes")

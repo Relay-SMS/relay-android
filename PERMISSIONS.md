@@ -22,7 +22,7 @@ permissions "just in case", and degrades gracefully if any of them is refused.
 | `VIBRATE`                                    | Optional vibration on new messages.                                             |
 | `RECORD_AUDIO`                               | Record audio clips attached to outgoing MMS (mic only while the user is actively recording).|
 | `HIDE_OVERLAY_WINDOWS` (API 31+)             | Hide other apps' overlays while you type a PIN or passphrase, so a malicious window cannot harvest your keystrokes. Grants **no** access to any data — it only asks that third-party overlays be hidden above **our own** windows. Protection level `normal`: granted at install, no prompt. |
-| `INTERNET`                                   | GIF search only: the GIF tab sends the words you type to Klipy (`api.klipy.com`), shows GIF thumbnails from Klipy, and downloads the GIF you tap. That is the only network use in the app — no analytics, no crash reporter, no update check. Later, the same permission will also cover wifi/cloud pairing with the desktop app. If it is blocked, everything else still works; GIF search just returns nothing. |
+| `INTERNET`                                   | Two uses. (1) GIF search: the GIF tab sends the words you type to Klipy (`api.klipy.com`), shows GIF thumbnails from Klipy, and downloads the GIF you tap. (2) Link previews: a message containing a URL shows a preview card — Relay fetches that page once, on the device, and reads its Open Graph title and image for display only; the image is never sent as an attachment. That is the only network use in the app — no analytics, no crash reporter, no update check. Later, the same permission will also cover wifi/cloud pairing with the desktop app. If it is blocked, everything else still works; GIF search just returns nothing and links show no preview. |
 
 Three more permissions are declared by AndroidX libraries, not by SMS Relay's own manifest: `WAKE_LOCK`
 (WorkManager, to finish a background job), `ACCESS_NETWORK_STATE` (WorkManager, which can read
@@ -31,8 +31,8 @@ Android 8). All are install-time permissions that give access to no data.
 
 ## What we do **not** request
 
-- **No other network use.** `INTERNET` is held only for GIF search via Klipy (see the table
-  above) — and, later, for wifi/cloud desktop pairing. Nothing else in the app opens a network
+- **No other network use.** `INTERNET` is held only for GIF search via Klipy and link previews
+  (see the table above) — and, later, for wifi/cloud desktop pairing. Nothing else in the app opens a network
   connection. MMS still work without it: Android's own MMS service, in its own process, talks to
   your carrier's MMSC when Relay asks it to send or download one. A CI check
   (`.github/scripts/permissions-manifeste.py`) fails the build if any permission outside the

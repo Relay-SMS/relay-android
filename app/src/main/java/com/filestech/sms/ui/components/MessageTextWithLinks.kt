@@ -234,6 +234,22 @@ internal fun buildLinkifiedText(
 }
 
 /**
+ * Round 17 — the first fetchable URL in [text], for the link preview card
+ * ([LinkPreviewCard]). Reuses the same hits the linkify pass finds
+ * ([collectLinkHits] / [LinkHitCache]), so the preview always matches a
+ * link the bubble renders clickable. `null` when there is no URL, the body
+ * exceeds [LINKIFY_INPUT_CAP] (no linkify there either), or the first URL
+ * has an exotic scheme (see [String.toSafeHttpsTargetOrNull]).
+ */
+internal fun firstPreviewUrl(text: String, messageId: Long = -1L): String? {
+    if (text.isEmpty() || text.length > LINKIFY_INPUT_CAP) return null
+    val hits = if (messageId >= 0L) LinkHitCache.hitsFor(messageId, text) else collectLinkHits(text)
+    val first = hits.firstOrNull { it.kind == HitKind.Url } ?: return null
+    val raw = text.substring(first.start, first.end)
+    return raw.trimEnd(*URL_TRAILING_PUNCTUATION).toSafeHttpsTargetOrNull()
+}
+
+/**
  * Feedback round 5 — thread search highlight, as a span style on top of the
  * built text. Black text on a solid yellow block reads on both bubble
  * colours (white text on blue outgoing, dark text on grey incoming); the

@@ -84,6 +84,7 @@ class KlipyClientTest {
 
         assertThat(gifs).hasSize(3)
         // Thumbnail = small gif, download = medium gif, dimensions from medium.
+        // Round 17 — the extra-small URL rides along for the MMS cap fallback.
         assertThat(gifs[0]).isEqualTo(
             KlipyGif(
                 id = "happy-cat",
@@ -92,6 +93,7 @@ class KlipyClientTest {
                 downloadUrl = "https://static.klipy.com/ii/abc/1/md-happy-cat.gif",
                 width = 640,
                 height = 480,
+                extraSmallUrl = "https://static.klipy.com/ii/abc/1/xs-happy-cat.gif",
             ),
         )
         // One tier only: both URLs fall back to it.
@@ -100,6 +102,8 @@ class KlipyClientTest {
         assertThat(gifs[1].downloadUrl).isEqualTo("https://static.klipy.com/ii/def/2/sm-only.gif")
         assertThat(gifs[1].width).isEqualTo(220)
         assertThat(gifs[1].height).isEqualTo(165)
+        // No `xs` tier on these two: the fallback URL is blank, not absent.
+        assertThat(gifs[1].extraSmallUrl).isEmpty()
         assertThat(gifs[2].id).isEqualTo("hd-only")
         assertThat(gifs[2].thumbnailUrl).isEqualTo("https://static.klipy.com/ii/ghi/3/hd-only.gif")
         assertThat(gifs[2].downloadUrl).isEqualTo("https://static.klipy.com/ii/ghi/3/hd-only.gif")
@@ -216,6 +220,7 @@ class KlipyClientTest {
         assertThat(items[0].id).isEqualTo("happy-cat")
         assertThat(items[0].thumbnailUrl).isEqualTo("https://static.klipy.com/ii/abc/1/sm-happy-cat.gif")
         assertThat(items[0].downloadUrl).isEqualTo("https://static.klipy.com/ii/abc/1/md-happy-cat.gif")
+        assertThat(items[0].extraSmallUrl).isEqualTo("https://static.klipy.com/ii/abc/1/xs-happy-cat.gif")
         assertThat(other).isEqualTo(first)
         // No cache (Klipy does not permit one): a repeat search costs a call, like any other.
         assertThat(fake.calls).isEqualTo(3)

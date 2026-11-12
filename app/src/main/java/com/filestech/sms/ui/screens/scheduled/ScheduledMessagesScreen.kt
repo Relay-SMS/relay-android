@@ -11,13 +11,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -49,6 +47,7 @@ import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayEmptyState
 import com.filestech.sms.ui.components.RelayTextButton
+import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.theme.RelayText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -161,7 +160,9 @@ fun ScheduledMessagesScreen(
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHost) },
+        // Round 17 — the shared host: rounded bar + red for errors, like
+        // every other screen (the plain host rendered square and blue).
+        snackbarHost = { SmsTechSnackbarHost(snackbarHost) },
     ) { padding ->
         if (pending.isEmpty() && failed.isEmpty()) {
             // v1.15.1 — Empty state enrichi : icône + titre + mode d'emploi détaillé.
@@ -174,8 +175,9 @@ fun ScheduledMessagesScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                // Round 17 — Kristin's own clock icon for the empty state.
                 RelayEmptyState(
-                    icon = Icons.Outlined.Schedule,
+                    iconRes = R.drawable.ic_empty_scheduled,
                     headline = stringResource(R.string.scheduled_empty),
                     body = stringResource(R.string.scheduled_empty_explainer),
                 )

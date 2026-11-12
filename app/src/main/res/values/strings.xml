@@ -144,6 +144,7 @@
     <string name="conversations_empty_title">No conversations yet</string>
     <string name="conversations_empty_body">Once you receive or send a message, it will appear here.</string>
     <string name="conversations_archived_empty">No archived conversations.</string>
+    <string name="conversations_archived_empty_body">Keep your inbox tidy by moving conversations out of the main list without deleting them. Access them anytime in Archive.</string>
     <string name="conversations_importing_title">Importing your messages</string>
     <string name="conversations_importing_body">Reading your existing SMS — this happens only once.</string>
     <string name="conversations_importing_count">%1$d messages imported…</string>
@@ -170,6 +171,7 @@
     <string name="date_this_month">This month</string>
     <string name="date_older">Older</string>
     <string name="thread_confirm_delete_message">Delete this message? This cannot be undone.</string>
+    <string name="thread_confirm_unpin_message">Remove the pin from this message?</string>
     <string name="thread_export_success">PDF saved (%1$d pages)</string>
 
     <!-- Voice MMS composer -->
@@ -204,6 +206,7 @@
     <!-- Vault -->
     <string name="vault_title">Secure vault</string>
     <string name="vault_empty">The vault is empty.</string>
+    <string name="vault_empty_body">Vault messages are protected by AES-256 encryption using SQLCipher, with the encryption key securely stored in Android Keystore. Access your Vault with your PIN, password or biometrics.</string>
     <string name="vault_move_in">Move to vault</string>
     <string name="vault_move_out">Move out of vault</string>
     <!-- v1.11.0 — feedback snackbar (Vault polish) -->
@@ -388,7 +391,7 @@
     <string name="about_easter_egg">✨ Thanks to those who care about their privacy. ✨</string>
 
     <!-- Lock screen -->
-    <string name="lock_title">SMS Relay is locked</string>
+    <string name="lock_title">Relay is locked</string>
     <string name="lock_pin_hint">Enter your PIN</string>
     <string name="lock_lockout_message">Too many attempts. Try again in %1$d s.</string>
 
@@ -422,6 +425,7 @@
     <string name="settings_section_conversations">Conversations</string>
     <string name="settings_show_avatars">Show avatars</string>
     <string name="settings_show_categories">Show categories</string>
+    <string name="settings_show_categories_subtitle">When off, filtering is off too and all conversations show in one list.</string>
     <string name="settings_signature">Automatic signature</string>
 
     <string name="settings_section_sending">Sending</string>
@@ -874,7 +878,7 @@
     <string name="scheduled_empty">No scheduled messages</string>
     <!-- v1.15.1 — Inline how-to shown alongside the empty state, so the user discovers
          the entry point even before reading AboutScreen. -->
-    <string name="scheduled_empty_explainer">To schedule an SMS: open a conversation, type your message, then ⋮ → "Schedule…" → pick a date and time. The SMS will be sent automatically at that time, even if the app is closed.</string>
+    <string name="scheduled_empty_explainer">To schedule an SMS: type your message, then ⋮ → Schedule, or long press ➤. The SMS will be sent automatically at that time, even if the app is closed.</string>
     <string name="scheduled_to">To: %1$s</string>
     <string name="scheduled_when">Scheduled for: %1$s</string>
     <string name="scheduled_cancel_confirm_title">Cancel this scheduled message?</string>

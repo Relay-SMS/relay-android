@@ -2069,38 +2069,34 @@ private fun ImportingPlaceholder(count: Int) {
 /**
  * Empty state of the conversations list, on the shared [RelayEmptyState]: a centred glyph,
  * one headline, one body line, and a primary "new message" action — only on the plain empty
- * list. A filtered search or the archived view shows just the headline.
+ * list. A filtered search shows just the headline. Round 17 — the archived view has
+ * Kristin's own archive icon and an explainer body now, like the other empty screens.
  */
 @Composable
 private fun ConversationsEmptyState(archived: Boolean, filtered: Boolean, onCompose: () -> Unit) {
-    val emblemIcon = when {
-        filtered -> Icons.Outlined.SearchOff
-        archived -> Icons.Outlined.Inventory2
-        else -> Icons.Outlined.ChatBubbleOutline
-    }
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        RelayEmptyState(
-            icon = emblemIcon,
-            headline = when {
-                filtered -> stringResource(R.string.conversations_no_match)
-                archived -> stringResource(R.string.conversations_archived_empty)
-                else -> stringResource(R.string.conversations_empty_title)
-            },
-            body = if (!archived && !filtered) {
-                stringResource(R.string.conversations_empty_body)
-            } else {
-                null
-            },
-            buttonText = if (!archived && !filtered) {
-                stringResource(R.string.action_new_message)
-            } else {
-                null
-            },
-            onButtonClick = if (!archived && !filtered) onCompose else null,
-        )
+        if (archived) {
+            RelayEmptyState(
+                iconRes = R.drawable.ic_empty_archive,
+                headline = stringResource(R.string.conversations_archived_empty),
+                body = stringResource(R.string.conversations_archived_empty_body),
+            )
+        } else {
+            RelayEmptyState(
+                icon = if (filtered) Icons.Outlined.SearchOff else Icons.Outlined.ChatBubbleOutline,
+                headline = if (filtered) {
+                    stringResource(R.string.conversations_no_match)
+                } else {
+                    stringResource(R.string.conversations_empty_title)
+                },
+                body = if (filtered) null else stringResource(R.string.conversations_empty_body),
+                buttonText = if (filtered) null else stringResource(R.string.action_new_message),
+                onButtonClick = if (filtered) null else onCompose,
+            )
+        }
     }
 }
 

@@ -46,7 +46,12 @@ interface GifProvider {
 /**
  * One GIF, provider-neutral: a grid thumbnail and the file to download on tap.
  * The provider maps its own API model onto this; the picker never sees the
- * provider's types or its media URLs beyond these two fields.
+ * provider's types or its media URLs beyond these fields.
+ *
+ * Round 17 — [extraSmallUrl] is the smallest rendition the provider offers
+ * (Klipy's `xs` tier, ~90 px tall): the download falls back to it when the
+ * MEDIUM and SMALL renditions both exceed the carrier MMS cap. Blank when
+ * the provider has no smaller rendition.
  */
 data class GifItem(
     val id: String,
@@ -55,4 +60,5 @@ data class GifItem(
     val downloadUrl: String,
     val width: Int,
     val height: Int,
+    val extraSmallUrl: String = "",
 )

@@ -1299,10 +1299,11 @@ class ThreadViewModel @Inject constructor(
             }
             // Round 16 — a GIF is never JPEG-compressed: re-encoding it to JPEG
             // would keep only the first frame and kill the animation. GIFs
-            // arrive already sized for MMS (the Klipy download falls back to
-            // the SMALL rendition when MEDIUM exceeds the carrier cap), and
-            // the projected-total check below still refuses an over-cap GIF
-            // honestly instead of silently flattening it.
+            // arrive already sized for MMS (the Klipy download walks down
+            // the SMALL then EXTRA-SMALL renditions when MEDIUM exceeds the
+            // carrier cap), and the projected-total check below still
+            // refuses an over-cap GIF honestly instead of silently
+            // flattening it.
             val estGif = mime.equals("image/gif", ignoreCase = true)
             val finalFile =
                 if (estImage && !estGif && file.length() > part) compressImage(file, part) ?: file else file

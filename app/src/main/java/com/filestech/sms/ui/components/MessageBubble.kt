@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.otp.OtpCodeDetector
@@ -154,6 +155,12 @@ fun MessageBubble(
         if (isOut) null else OtpCodeCache.detectFor(message.id, message.body)
     }
 
+    // Round 17 — a message that is only emoji (1–3) renders big with no
+    // bubble background; the timestamp stays where it is, below the emoji.
+    // The text colour follows: with no blue bubble behind it, an outgoing
+    // big emoji (and its time) reads in the surface colour, not white.
+    val bigEmoji = remember(message.body) { message.body.isEmojiOnlyMessage() }
+
     // Outgoing bubbles use a subtle vertical gradient on top of the primary color — gives the
     // bubble depth without committing to a hard shadow or a custom drawable. Incoming bubbles
     // stay flat surfaceContainerHigh so reading them remains restful.
@@ -177,7 +184,19 @@ fun MessageBubble(
     // Texte blanc forcé sur toute bulle sortante : BrandBlue et chaque couleur de
     // [BubbleColorPalette] sont calibrées WCAG AA ≥ 4.5:1 contre le blanc. On ne
     // dépend plus de `cs.onPrimary` (qui pouvait dériver avec le scheme dynamique).
-    val textColor = if (isOut) androidx.compose.ui.graphics.Color.White else cs.onSurface
+    // Round 17 — sauf le gros emoji : sans fond de bulle, le blanc serait
+    // invisible en thème clair, donc il lit la couleur de surface.
+    val textColor = if (isOut && !bigEmoji) {
+        androidx.compose.ui.graphics.Color.White
+    } else {
+        cs.onSurface
+    }
+    // Round 17 — le gros emoji : 64sp au lieu du corps de texte (16sp).
+    val textStyle = if (bigEmoji) {
+        MaterialTheme.typography.bodyLarge.copy(fontSize = BIG_EMOJI_FONT_SIZE_SP.sp)
+    } else {
+        MaterialTheme.typography.bodyLarge
+    }
 
     // Feedback round 6 — remembered like the gradient above: a new
     // `RoundedCornerShape` per composition for a value that only depends on
@@ -233,7 +252,9 @@ fun MessageBubble(
             BubbleReactionOverlay(
                 reactionEmoji = message.reactionEmoji,
                 isOutgoing = isOut,
-                bubbleColor = if (isOut) {
+                // Round 17 — le gros emoji n'a pas de fond : son badge de
+                // réaction prend la couleur neutre, pas le bleu sortant.
+                bubbleColor = if (isOut && !bigEmoji) {
                     outgoingBaseColor
                 } else {
                     com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
@@ -249,9 +270,15 @@ fun MessageBubble(
                         // the clip and the content all sink 2dp together.
                         .graphicsLayer { translationY = pressOffsetY }
                         .clip(shape)
+                        // Round 17 — le gros emoji n'a pas de fond de bulle.
                         .then(
-                            if (isOut) Modifier.drawBehind { drawRect(outgoingBrush) }
-                            else Modifier.background(com.filestech.sms.ui.theme.bubbleIncomingColor(cs)),
+                            when {
+                                bigEmoji -> Modifier
+                                isOut -> Modifier.drawBehind { drawRect(outgoingBrush) }
+                                else -> Modifier.background(
+                                    com.filestech.sms.ui.theme.bubbleIncomingColor(cs),
+                                )
+                            },
                         )
                         // Relay — tap opens the bubble menu ([BubbleMenu]) ; tap on a
                         // FAILED message still retries ([onTap]). Round 12 — tap on
@@ -309,10 +336,21 @@ fun MessageBubble(
                                 modifier = Modifier.padding(bottom = 2.dp),
                             )
                         }
+                        // Round 17 — link preview: the first URL in the body
+                        // gets its Open Graph card above the text. Skipped on
+                        // FAILED messages — the card tap would fight the
+                        // tap-to-retry, the same reason the linkify is off
+                        // there (see the Y6 note below).
+                        if (message.status != com.filestech.sms.domain.model.Message.Status.FAILED) {
+                            LinkPreviewCard(
+                                body = message.body,
+                                messageId = message.id,
+                            )
+                        }
                         if (message.status == com.filestech.sms.domain.model.Message.Status.FAILED) {
                             Text(
                                 text = message.body,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = textStyle,
                                 color = textColor,
                             )
                         } else if (message.estUnMmsSansContenu()) {
@@ -331,7 +369,7 @@ fun MessageBubble(
                             MessageTextWithLinks(
                                 text = message.body,
                                 messageId = message.id,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = textStyle,
                                 color = textColor,
                                 onPhoneClick = onPhoneClick,
                                 searchHighlight = searchHighlight,
@@ -531,6 +569,9 @@ private object OtpCodeCache {
         return code
     }
 }
+
+/** Round 17 — font size of a big-emoji message (body text is 16sp). */
+private const val BIG_EMOJI_FONT_SIZE_SP = 64
 
 /**
  * Builds the rounded-corner shape that matches the bubble's position in a burst. Solo and first

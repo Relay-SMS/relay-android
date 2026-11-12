@@ -197,6 +197,126 @@ class MessageClassifierTest {
         ).isEqualTo(MessageCategory.PROMOTIONAL)
     }
 
+    // ──────────────── Cold sales pitch (round 17) ────────────────
+
+    @Test fun `roofing cold pitch is promotional`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hey Kristin it's Maria with Roofing Pros. We're doing no-cost " +
+                    "roof inspections in Springfield. Do you have any roof issues " +
+                    "at 123 Main St?",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PROMOTIONAL)
+    }
+
+    @Test fun `offer only pitch is promotional`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "We're doing no-cost roof inspections in your area this week. " +
+                    "Reply YES to book.",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PROMOTIONAL)
+    }
+
+    @Test fun `business intro plus service is promotional`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hi, it's Tom with Bright Solar. We're offering panel installs " +
+                    "in your neighborhood this month. Interested?",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PROMOTIONAL)
+    }
+
+    @Test fun `free estimate pitch is promotional`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Free estimates on all window replacements this month! Call now.",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PROMOTIONAL)
+    }
+
+    @Test fun `friend introducing himself stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hi, it's Frank",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `friend from the gym stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hi, it's Frank from the gym",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `with the kids stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hi, it's Sarah with the kids, we're at the park",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `roofer recommendation stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hi, it's Frank from the gym, do you know a good roofer?",
+                sender = regularNumber,
+                isContact = false,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `contact sending a pitch stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hey Kristin it's Maria with Roofing Pros. We're doing no-cost " +
+                    "roof inspections in Springfield. Do you have any roof issues " +
+                    "at 123 Main St?",
+                sender = regularNumber,
+                isContact = true,
+                isGroup = false,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
+    @Test fun `group pitch stays personal`() {
+        assertThat(
+            MessageClassifier.classify(
+                body = "Hey Kristin it's Maria with Roofing Pros. We're doing no-cost " +
+                    "roof inspections in Springfield. Do you have any roof issues " +
+                    "at 123 Main St?",
+                sender = null,
+                isContact = false,
+                isGroup = true,
+            ),
+        ).isEqualTo(MessageCategory.PERSONAL)
+    }
+
     // ──────────────── Personal ────────────────
 
     @Test fun `contact is personal`() {

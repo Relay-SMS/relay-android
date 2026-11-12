@@ -458,7 +458,13 @@ fun AppRoot() {
             )
         }
         // v1.15.1 — Liste + annulation des messages programmés.
-        composable<ScheduledMessages> {
+        // Round 17 — Scheduled Messages slides in from the right like the
+        // thread and Settings (300 ms), instead of the NavHost-level 80 ms
+        // fade that read as a snap in and out.
+        composable<ScheduledMessages>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
             com.filestech.sms.ui.screens.scheduled.ScheduledMessagesScreen(
                 onBack = { nav.popBackStack() },
             )
@@ -773,8 +779,11 @@ private fun isSlideReturnRoute(route: String?): Boolean {
     // the left too.
     // Feedback round 10 — the Vault slides in from the right too, so
     // popping back from it slides the list back in from the left as well.
+    // Round 17 — Scheduled Messages slides in now, so the return mirrors
+    // it too.
     return route?.contains("Thread") == true || route?.contains("Settings") == true ||
-        route?.contains("Compose") == true || route?.contains("Vault") == true
+        route?.contains("Compose") == true || route?.contains("Vault") == true ||
+        route?.contains("ScheduledMessages") == true
 }
 
 /**
@@ -804,9 +813,10 @@ private fun listEnterTransition(
 
 /**
  * A pop-enter transition: slide back in from the left when returning from a
- * screen that slid in (thread, Settings, Compose, Vault, Archived), else
- * fade. Top-level helper so the branch does not push [AppRoot] over the
- * Detekt complexity threshold. Shared by the list and the Vault.
+ * screen that slid in (thread, Settings, Compose, Vault, Archived,
+ * Scheduled Messages), else fade. Top-level helper so the branch does not
+ * push [AppRoot] over the Detekt complexity threshold. Shared by the list
+ * and the Vault.
  */
 private fun slideBackInTransition(
     popped: NavBackStackEntry,

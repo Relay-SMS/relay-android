@@ -145,6 +145,7 @@
     <string name="conversations_empty_title">Todavía no hay conversaciones</string>
     <string name="conversations_empty_body">En cuanto reciba o envíe un mensaje, aparecerá aquí.</string>
     <string name="conversations_archived_empty">No hay conversaciones archivadas.</string>
+    <string name="conversations_archived_empty_body">Mantén tu bandeja de entrada ordenada moviendo conversaciones fuera de la lista principal sin eliminarlas. Accede a ellas cuando quieras en Archivo.</string>
     <string name="conversations_importing_title">Importando sus mensajes</string>
     <string name="conversations_importing_body">Leyendo los SMS que ya tiene: esto ocurre una sola vez.</string>
     <string name="conversations_importing_count">%1$d mensajes importados…</string>
@@ -171,6 +172,7 @@
     <string name="date_this_month">Este mes</string>
     <string name="date_older">Anteriores</string>
     <string name="thread_confirm_delete_message">¿Eliminar este mensaje? Esta acción no se puede deshacer.</string>
+    <string name="thread_confirm_unpin_message">¿Dejar de fijar este mensaje?</string>
     <string name="thread_export_success">PDF guardado (%1$d páginas)</string>
 
     <!-- Voice MMS composer -->
@@ -205,6 +207,7 @@
     <!-- Vault -->
     <string name="vault_title">Caja fuerte segura</string>
     <string name="vault_empty">La caja fuerte está vacía.</string>
+    <string name="vault_empty_body">Los mensajes de la caja fuerte están protegidos con cifrado AES-256 mediante SQLCipher, con la clave de cifrado almacenada de forma segura en Android Keystore. Acceda a su caja fuerte con su PIN, contraseña o datos biométricos.</string>
     <string name="vault_move_in">Mover a la caja fuerte</string>
     <string name="vault_move_out">Sacar de la caja fuerte</string>
     <!-- v1.11.0 — feedback snackbar (Vault polish) -->
@@ -389,7 +392,7 @@
     <string name="about_easter_egg">✨ Gracias a quienes cuidan su privacidad. ✨</string>
 
     <!-- Lock screen -->
-    <string name="lock_title">SMS Relay está bloqueada</string>
+    <string name="lock_title">Relay está bloqueada</string>
     <string name="lock_pin_hint">Introduzca su PIN</string>
     <string name="lock_lockout_message">Demasiados intentos. Vuelva a intentarlo en %1$d s.</string>
 
@@ -423,6 +426,7 @@
     <string name="settings_section_conversations">Conversaciones</string>
     <string name="settings_show_avatars">Mostrar los avatares</string>
     <string name="settings_show_categories">Mostrar categorías</string>
+    <string name="settings_show_categories_subtitle">Si está desactivado, el filtrado también se desactiva y todas las conversaciones se muestran en una lista.</string>
     <string name="settings_signature">Firma automática</string>
 
     <string name="settings_section_sending">Envío</string>
@@ -880,7 +884,7 @@
     <string name="scheduled_empty">No hay mensajes programados</string>
     <!-- v1.15.1 — Inline how-to shown alongside the empty state, so the user discovers
          the entry point even before reading AboutScreen. -->
-    <string name="scheduled_empty_explainer">Para programar un SMS: abra una conversación, escriba su mensaje y luego ⋮ → «Programar…» → elija fecha y hora. El SMS se enviará automáticamente en ese momento, aunque la app esté cerrada.</string>
+    <string name="scheduled_empty_explainer">Para programar un SMS: escriba su mensaje y luego ⋮ → Programar, o mantenga pulsado ➤. El SMS se enviará automáticamente en ese momento, aunque la app esté cerrada.</string>
     <string name="scheduled_to">Para: %1$s</string>
     <string name="scheduled_when">Programado para: %1$s</string>
     <string name="scheduled_cancel_confirm_title">¿Cancelar este mensaje programado?</string>

@@ -407,10 +407,15 @@ fun SettingsScreen(
                     )
                 }
                 // Round 12 — hide the category tab row on the main screen.
+                // Round 17 — the subtitle says the quiet part: hiding the
+                // tabs also turns the filtering off (the ViewModel returns
+                // the full list unfiltered), so the toggle never reads as
+                // display-only.
                 item {
                     RelaySwitchRow(
                         icon = Icons.Outlined.Category,
                         title = stringResource(R.string.settings_show_categories),
+                        subtitle = stringResource(R.string.settings_show_categories_subtitle),
                         checked = state.conversations.showCategories,
                         onCheckedChange = { v ->
                             viewModel.update { it.copy(conversations = it.conversations.copy(showCategories = v)) }

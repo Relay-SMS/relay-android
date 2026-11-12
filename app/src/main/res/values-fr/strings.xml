@@ -140,6 +140,7 @@
     <string name="conversations_empty_title">Aucune conversation</string>
     <string name="conversations_empty_body">Dès qu\'un message arrive ou est envoyé, il s\'affichera ici.</string>
     <string name="conversations_archived_empty">Aucune conversation archivée.</string>
+    <string name="conversations_archived_empty_body">Gardez votre boîte de réception bien rangée en déplaçant les conversations hors de la liste principale sans les supprimer. Retrouvez-les à tout moment dans les archives.</string>
     <string name="conversations_importing_title">Importation de vos messages</string>
     <string name="conversations_importing_body">Lecture de vos SMS existants — opération unique.</string>
     <string name="conversations_importing_count">%1$d messages importés…</string>
@@ -165,6 +166,7 @@
     <string name="date_this_month">Ce mois-ci</string>
     <string name="date_older">Plus anciens</string>
     <string name="thread_confirm_delete_message">Supprimer ce message ? Action irréversible.</string>
+    <string name="thread_confirm_unpin_message">Désépingler ce message ?</string>
     <string name="thread_export_success">PDF enregistré (%1$d pages)</string>
 
     <!-- Composeur de message vocal MMS -->
@@ -196,6 +198,7 @@
 
     <string name="vault_title">Coffre-fort</string>
     <string name="vault_empty">Le coffre est vide.</string>
+    <string name="vault_empty_body">Les messages du coffre sont protégés par un chiffrement AES-256 via SQLCipher, avec la clé de chiffrement stockée en sécurité dans Android Keystore. Accédez à votre coffre avec votre PIN, votre mot de passe ou la biométrie.</string>
     <string name="vault_move_in">Déplacer dans le coffre</string>
     <string name="vault_move_out">Sortir du coffre</string>
     <!-- v1.11.0 — feedback snackbar (Coffre polish) -->
@@ -379,7 +382,7 @@
     <!-- About -->
     <string name="about_easter_egg">✨ Merci à toutes celles et ceux qui prennent soin de leur vie privée. ✨</string>
 
-    <string name="lock_title">SMS Relay est verrouillée</string>
+    <string name="lock_title">Relay est verrouillée</string>
     <string name="lock_pin_hint">Saisir votre code PIN</string>
     <string name="lock_lockout_message">Trop d\'essais. Nouvelle tentative dans %1$d s.</string>
 
@@ -412,6 +415,7 @@
     <string name="settings_section_conversations">Conversations</string>
     <string name="settings_show_avatars">Afficher les avatars</string>
     <string name="settings_show_categories">Afficher les catégories</string>
+    <string name="settings_show_categories_subtitle">Si désactivé, le filtrage est aussi désactivé et toutes les conversations apparaissent dans une seule liste.</string>
     <string name="settings_signature">Signature automatique</string>
 
     <string name="settings_section_sending">Envoi</string>
@@ -865,7 +869,7 @@
     <string name="scheduled_empty">Aucun message programmé</string>
     <!-- v1.15.1 — Mode d'emploi inline affiché à côté de l'empty state, pour que l'user
          découvre le point d'entrée même sans avoir lu AboutScreen. -->
-    <string name="scheduled_empty_explainer">Pour programmer un SMS : ouvrez une conversation, tapez votre message, puis ⋮ → "Programmer…" → choisissez une date et une heure. Le SMS sera envoyé automatiquement à l\'heure prévue, même si l\'app est fermée.</string>
+    <string name="scheduled_empty_explainer">Pour programmer un SMS : tapez votre message, puis ⋮ → Programmer, ou appuyez longuement sur ➤. Le SMS sera envoyé automatiquement à l\'heure prévue, même si l\'app est fermée.</string>
     <string name="scheduled_to">À : %1$s</string>
     <string name="scheduled_when">Programmé pour : %1$s</string>
     <string name="scheduled_cancel_confirm_title">Annuler ce message programmé ?</string>
