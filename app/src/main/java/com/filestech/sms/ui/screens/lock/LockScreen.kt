@@ -68,8 +68,8 @@ import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.ui.components.RelayPrimaryButton
 import com.filestech.sms.ui.security.ProtectSecretInput
 import com.filestech.sms.ui.security.StrongBiometrics
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -405,13 +405,13 @@ fun LockScreen(
                     onClick = { fallbackToPin = false },
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = RelayColors.Blue,
+                        contentColor = brandBlue(),
                     ),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Fingerprint,
                         contentDescription = null,
-                        tint = RelayColors.Blue,
+                        tint = brandBlue(),
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.size(8.dp))

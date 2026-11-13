@@ -1,11 +1,116 @@
 package com.filestech.sms.ui.theme
 
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
 internal val BrandBlue = Color(0xFF1E4FD8)
+
+/**
+ * Round 20 — whether the dynamic (Material You) palette is active right now.
+ * Provided by [SmsTechTheme] from the same `useDynamic` flag that picks the
+ * scheme (toggle on AND Android 12+). The [brandBlue] family reads it to
+ * decide between the fixed brand colours and the wallpaper-derived scheme.
+ */
+internal val LocalUseDynamicColors = compositionLocalOf { false }
+
+/**
+ * Round 20 — the brand blue, dynamic-aware. When dynamic colours are on, the
+ * brand surfaces (outgoing bubbles, primary buttons, FAB, send circles,
+ * pinned banner, progress bars, radio accents) follow the wallpaper palette
+ * via the scheme `primary` — Kristin's call, 2026-11-12: "our blue etc can
+ * all be dynamic, i think better". When dynamic colours are off, the fixed
+ * `#1E4FD8` renders exactly as before, including in dark mode (the dark
+ * scheme's lightened `#7AA0F5` stays reserved for text/icons). A user-chosen
+ * custom accent still wins over the wallpaper: it overrides `primary` in the
+ * scheme, so it flows through here too.
+ *
+ * This supersedes the v1.19.0 / Phase 8 rule that kept the brand blue fixed
+ * ("the bubble must stay dark blue under Material You"). Every call site
+ * that paints a brand surface must read this instead of [RelayColors.Blue]
+ * or [BrandBlue] directly, and pair it with [onBrandBlue] for the content
+ * on top — a light wallpaper primary with the old hardcoded white text
+ * would be unreadable.
+ */
+@Composable
+internal fun brandBlue(): Color =
+    if (LocalUseDynamicColors.current) MaterialTheme.colorScheme.primary else RelayColors.Blue
+
+/**
+ * Round 20 — the content colour on a [brandBlue] surface: the scheme
+ * `onPrimary` under dynamic colours (the pair Material You generates, so
+ * the contrast holds on any wallpaper), plain white on the fixed brand
+ * blue. Every white-on-blue foreground — bubble text, button labels, send
+ * arrows, pinned-banner text — must read this, never hardcode white.
+ */
+@Composable
+internal fun onBrandBlue(): Color =
+    if (LocalUseDynamicColors.current) MaterialTheme.colorScheme.onPrimary else Color.White
+
+/** Round 20 — how far the pressed brand darkens toward black (matches the fixed `#1740A8`). */
+private const val BRAND_PRESSED_DARKEN = 0.2f
+
+/**
+ * Round 20 — the pressed state of a [brandBlue] surface: the dynamic
+ * primary darkened toward black, or the fixed `#1740A8` when dynamic
+ * colours are off.
+ */
+@Composable
+internal fun brandBluePressed(): Color =
+    if (LocalUseDynamicColors.current) {
+        lerp(MaterialTheme.colorScheme.primary, Color.Black, BRAND_PRESSED_DARKEN)
+    } else {
+        RelayColors.BluePressed
+    }
+
+/**
+ * Round 20 — the light brand tint (avatar backgrounds): the scheme
+ * `primaryContainer` under dynamic colours, the fixed `#E4EBFD` when off.
+ * Always paired with [onBrandBlueTint] — the two are a generated pair under
+ * dynamic colours, and the fixed pair off it.
+ */
+@Composable
+internal fun brandBlueTint(): Color =
+    if (LocalUseDynamicColors.current) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        RelayColors.BlueTint
+    }
+
+/**
+ * Round 20 — the content colour on a [brandBlueTint] surface (avatar
+ * initials, group glyph): the scheme `onPrimaryContainer` under dynamic
+ * colours, the fixed dark navy `#001A40` when off.
+ */
+@Composable
+internal fun onBrandBlueTint(): Color =
+    if (LocalUseDynamicColors.current) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        Color(0xFF001A40)
+    }
+
+/** Round 20 — how far the quote stripe darkens toward black (matches the fixed `#0D2B54`). */
+private const val BRAND_STRIPE_DARKEN = 0.55f
+
+/**
+ * Round 20 — the dark accent stripe on an outgoing reply-quote card: the
+ * dynamic primary darkened toward black, or the fixed `#0D2B54` when
+ * dynamic colours are off. The stripe must stay visibly darker than the
+ * [brandBlue] card behind it in both modes.
+ */
+@Composable
+internal fun brandBlueStripe(): Color =
+    if (LocalUseDynamicColors.current) {
+        lerp(MaterialTheme.colorScheme.primary, Color.Black, BRAND_STRIPE_DARKEN)
+    } else {
+        ReplyStripeOutgoing
+    }
 
 /**
  * Relay design-system tokens. Canvas, surface, text, brand and semantic colours for the

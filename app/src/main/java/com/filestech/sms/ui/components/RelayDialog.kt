@@ -25,8 +25,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.filestech.sms.R
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
 
 /**
  * Dialog shell of the Relay design system: 28dp corners, flat canvas background, title in
@@ -151,7 +151,7 @@ private fun RelayPickerOptionRow(option: RelayPickerOption) {
         RadioButton(
             selected = option.selected,
             onClick = option.onClick,
-            colors = RadioButtonDefaults.colors(selectedColor = RelayColors.Blue),
+            colors = RadioButtonDefaults.colors(selectedColor = brandBlue()),
         )
         Spacer(modifier = Modifier.size(8.dp))
         Column(modifier = Modifier.weight(1f)) {

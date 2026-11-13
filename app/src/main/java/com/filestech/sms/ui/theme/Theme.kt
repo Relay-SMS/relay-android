@@ -33,9 +33,10 @@ fun SmsTechTheme(
     // Round 19 — dynamic colours (Material You, Android 12+): when the
     // toggle is on, the scheme is derived from the wallpaper instead of
     // the two fixed palettes. Off by default; below Android 12 the toggle
-    // does nothing and the fixed palettes apply. The fixed Relay blue
-    // still shows where the app paints it directly (bubbles, primary
-    // buttons) — only the scheme accents follow the wallpaper.
+    // does nothing and the fixed palettes apply. Round 20 — the brand
+    // surfaces follow the wallpaper too ([brandBlue] and family, driven by
+    // the [LocalUseDynamicColors] provided below), per Kristin's call:
+    // "our blue etc can all be dynamic, i think better".
     val context = LocalContext.current
     val useDynamic = appearance.dynamicColors &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -94,7 +95,14 @@ fun SmsTechTheme(
 
     // La typographie de l'appli reste AppTypography ; le coefficient n'agit que dans les
     // périmètres [MessageTextSize] (messages, saisie, listes de conversations).
-    CompositionLocalProvider(LocalMessageTextFactor provides appearance.textScale.factor()) {
+    CompositionLocalProvider(
+        LocalMessageTextFactor provides appearance.textScale.factor(),
+        // Round 20 — the brand-blue accessors ([brandBlue] and family) read
+        // this to decide between the fixed brand colours and the wallpaper
+        // palette. Same flag as the scheme choice above, so the two can
+        // never disagree.
+        LocalUseDynamicColors provides useDynamic,
+    ) {
         MaterialTheme(colorScheme = scheme, typography = AppTypography, shapes = AppShapes, content = content)
     }
 }

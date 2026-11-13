@@ -20,13 +20,19 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
+import com.filestech.sms.ui.theme.brandBluePressed
+import com.filestech.sms.ui.theme.onBrandBlue
 
 /**
  * Primary action button of the Relay design system: full-width, brand blue with white
  * 16sp regular text, fully rounded (pill), 14dp vertical padding. Pressed state darkens
- * to [RelayColors.BluePressed] and scales to 0.99.
+ * to [brandBluePressed] and scales to 0.99.
+ *
+ * Round 20 — the blue is dynamic-aware ([brandBlue] / [onBrandBlue]): the fixed
+ * brand blue when dynamic colours are off, the wallpaper `primary` / `onPrimary`
+ * when they are on.
  *
  * Feedback round 7 — large full-width buttons are pill-shaped with a non-bold
  * font, app-wide: the shape went from 10dp corners to a pill and the label
@@ -54,10 +60,10 @@ fun RelayPrimaryButton(
         interactionSource = interactionSource,
         shape = RoundedCornerShape(50),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (pressed) RelayColors.BluePressed else RelayColors.Blue,
-            contentColor = Color.White,
-            disabledContainerColor = RelayColors.Blue.copy(alpha = 0.38f),
-            disabledContentColor = Color.White.copy(alpha = 0.6f),
+            containerColor = if (pressed) brandBluePressed() else brandBlue(),
+            contentColor = onBrandBlue(),
+            disabledContainerColor = brandBlue().copy(alpha = 0.38f),
+            disabledContentColor = onBrandBlue().copy(alpha = 0.6f),
         ),
         contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp),
     ) {

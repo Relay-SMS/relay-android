@@ -20,10 +20,12 @@ import androidx.compose.ui.graphics.Color
  *
  * **Note d'UX** : la première entrée [BRAND_BLUE] est la valeur par défaut
  * Sélectionner cette valeur équivaut à un reset (`bubbleColorArgb = null`).
- * Le rendu d'une bulle `null` utilise désormais [BrandBlue] **fixe** (et non
- * `cs.primary`) : sous Material You / One UI, `cs.primary` suit le fond d'écran
- * et dérivait vers un bleu clair — la bulle par défaut doit rester le bleu de
- * marque foncé, en cohérence avec la bulle entrante (elle aussi couleur fixe).
+ * Round 20 — le rendu d'une bulle `null` utilise [brandBlue] : le bleu de
+ * marque fixe quand les couleurs dynamiques sont éteintes, le `primary` du
+ * fond d'écran quand elles sont actives (demande de Kristin). Cela remplace
+ * la règle v1.19.0 qui figeait le défaut sur [BrandBlue] parce que
+ * `cs.primary` « virait au bleu clair » sous Material You — c'est désormais
+ * le comportement voulu.
  */
 internal object BubbleColorPalette {
 

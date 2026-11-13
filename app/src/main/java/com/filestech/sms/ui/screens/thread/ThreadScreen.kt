@@ -187,9 +187,11 @@ import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.BrandDanger
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.MessageTextSize
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.blockedTextColor
+import com.filestech.sms.ui.theme.brandBlue
+import com.filestech.sms.ui.theme.brandBluePressed
+import com.filestech.sms.ui.theme.onBrandBlue
 import com.filestech.sms.ui.util.daySeparatorLabel
 import com.filestech.sms.ui.util.rememberChatFormatters
 import com.filestech.sms.ui.util.rememberSimLabeler
@@ -998,7 +1000,15 @@ fun ThreadScreen(
             SmsTechSnackbarHost(snackbarHost)
         },
         bottomBar = {
-            Column {
+            // Round 20 — the keyboard padding lives on the WHOLE bottom bar
+            // (composer + picker), not on the composer alone: with it on the
+            // composer, tapping the picker search field shoved the composer
+            // to the top of the screen, left a keyboard-sized dead gap, and
+            // pushed the panel down behind the keyboard. As one unit, the
+            // composer stays glued above the picker and the picker above the
+            // keyboard. The window does not resize for the IME (edge-to-edge),
+            // so this padding is what lifts the bar at all — load-bearing.
+            Column(modifier = Modifier.imePadding()) {
                 // Round 14 — the composer stays visible ABOVE the picker
                 // (Kristin's screenshot): picked emojis land in the draft box
                 // the user can see, instead of a hidden draft. The reply chip,
@@ -1138,6 +1148,7 @@ fun ThreadScreen(
                         },
                         reservedTopPx = abovePanelHeightPx.toFloat(),
                         reservedHeaderPx = topBarHeightPx.toFloat(),
+                        reservedBottomPx = imeBottomPx.toFloat(),
                     )
                 }
             }
@@ -1930,12 +1941,16 @@ private fun PinnedMessageBanner(
     onUnpin: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Round 20 — the banner is a [brandBlue] surface with [onBrandBlue]
+    // content: fixed brand blue + white, or the wallpaper pair when
+    // dynamic colours are on.
+    val bannerContent = onBrandBlue()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(RelayColors.Blue)
+            .background(brandBlue())
             .clickable(onClick = onJump)
             .semantics { role = Role.Button }
             // Feedback round 7 — more air below the message text and date:
@@ -1961,7 +1976,7 @@ private fun PinnedMessageBanner(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                     ),
-                    color = Color.White,
+                    color = bannerContent,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -1981,7 +1996,7 @@ private fun PinnedMessageBanner(
                         Icon(
                             painter = painterResource(R.drawable.ic_close_circle_outline),
                             contentDescription = stringResource(R.string.action_unpin),
-                            tint = Color.White,
+                            tint = bannerContent,
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -1998,7 +2013,7 @@ private fun PinnedMessageBanner(
                         fileLabel = stringResource(R.string.thread_pinned_attachment),
                     ),
                     style = RelayText.MessageBody.copy(fontSize = 15.sp),
-                    color = Color.White,
+                    color = bannerContent,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -2017,7 +2032,7 @@ private fun PinnedMessageBanner(
                             formatters.time.format(Date(pinnedAt)),
                         ),
                         style = RelayText.BubbleMeta,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = bannerContent.copy(alpha = 0.7f),
                         maxLines = 1,
                     )
                 }
@@ -2631,10 +2646,13 @@ private fun ComposerBar(
     }
     val permissionGranted = micPermission.status == PermissionStatus.Granted
 
+    // Round 20 — no `imePadding` here: it lives on the bottom-bar Column
+    // in `ThreadScreen` so the keyboard lifts composer + picker as one
+    // unit (on the composer alone it shoved the composer to the top of the
+    // screen and pushed the panel behind the keyboard).
     Column(
         modifier = Modifier.fillMaxWidth()
-            .then(if (pickerOpen) Modifier else Modifier.navigationBarsPadding())
-            .imePadding(),
+            .then(if (pickerOpen) Modifier else Modifier.navigationBarsPadding()),
     ) {
         when (voice) {
             // Idle and Recording share the same row layout — switching between them must NOT
@@ -3071,7 +3089,7 @@ private fun SendCircleButton(
             .alpha(if (enabled) 1f else 0.38f)
             .scale(pressScale)
             .clip(CircleShape)
-            .background(if (pressed) RelayColors.BluePressed else RelayColors.Blue)
+            .background(if (pressed) brandBluePressed() else brandBlue())
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -3091,7 +3109,7 @@ private fun SendCircleButton(
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.Send,
             contentDescription = stringResource(R.string.action_send),
-            tint = Color.White,
+            tint = onBrandBlue(),
             modifier = Modifier.size(24.dp),
         )
     }
@@ -3196,15 +3214,15 @@ private fun MicButton(
     val cancelThresholdPx = with(density) { CANCEL_THRESHOLD_DP.toPx() }
     val danger = BrandDanger
 
-    // Filled surfaces keep the fixed brand blue in both themes: the dark scheme's
-    // lightened primary (#7AA0F5) is for text/icons, not for filled tiles. White on
-    // the brand blue is 6.63:1, white on the recording red 4.96:1.
+    // Round 20 — the idle tile is [brandBlue] (fixed brand blue, or the
+    // wallpaper `primary` when dynamic colours are on) with [onBrandBlue]
+    // content; the recording/cancel states stay the danger red with white.
     val containerColor = when {
         cancelHinted -> danger
         isRecording -> danger
-        else -> RelayColors.Blue
+        else -> brandBlue()
     }
-    val contentColor = Color.White
+    val contentColor = if (cancelHinted || isRecording) Color.White else onBrandBlue()
 
     val pushToTalk = Modifier.pointerInput(permissionGranted) {
         awaitEachGesture {
@@ -3455,14 +3473,14 @@ private fun ReviewingMode(
             // ([SendCircleButton]): `cs.primary` is the LIGHTENED `#7AA0F5`
             // in the dark scheme, so the tile rendered pale blue with a
             // dark-navy arrow instead of the brand blue with a white arrow
-            // Kristin asked for. Filled buttons keep the fixed brand blue
-            // in both themes (see [Color.kt], DarkPalette comment) — only
-            // text, icons, switches and pills use the lightened accent.
+            // Kristin asked for. Round 20 — [brandBlue] / [onBrandBlue] keep
+            // that fixed pair when dynamic colours are off, and follow the
+            // wallpaper pair when they are on.
             FilledIconButton(
                 onClick = onSend,
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = RelayColors.Blue,
-                    contentColor = Color.White,
+                    containerColor = brandBlue(),
+                    contentColor = onBrandBlue(),
                 ),
             ) {
                 Icon(

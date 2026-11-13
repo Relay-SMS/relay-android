@@ -49,8 +49,9 @@ import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
-import com.filestech.sms.ui.theme.BrandBlue
+import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.bubbleIncomingColor
+import com.filestech.sms.ui.theme.onBrandBlue
 import timber.log.Timber
 import java.io.File
 
@@ -131,11 +132,11 @@ fun MediaAttachmentBubble(
     val context = LocalContext.current
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
-    // Outgoing : bleu de marque fixe (cohérent avec [MessageBubble] et
-    // [AudioMessageBubble]). Phase 8 — pas le `primary` du thème, qui s'éclaircit en
-    // sombre : les bulles sortantes gardent un seul bleu dans les deux thèmes, et le
-    // texte sortant reste blanc (voir ci-dessous).
-    val bgColor = if (isOut) BrandBlue else bubbleIncomingColor(cs)
+    // Outgoing : [brandBlue] (cohérent avec [MessageBubble] et
+    // [AudioMessageBubble]) — bleu de marque fixe hors couleurs dynamiques,
+    // `primary` du fond d'écran quand elles sont actives (round 20). Le
+    // texte sortant suit avec [onBrandBlue] (voir ci-dessous).
+    val bgColor = if (isOut) brandBlue() else bubbleIncomingColor(cs)
     // Feedback round 9 — same rounder bubble language as the text bubbles
     // (24dp corners; was 18dp).
     val shape = RoundedCornerShape(24.dp)
@@ -252,9 +253,10 @@ fun MediaAttachmentBubble(
                         text = message.body,
                         messageId = message.id,
                         style = MaterialTheme.typography.bodyLarge,
-                        // Phase 8 — blanc fixe sur le bleu de marque fixe sortant : `onPrimary`
-                        // devient bleu nuit en sombre et serait illisible sur [BrandBlue].
-                        color = if (isOut) Color.White else cs.onSurface,
+                        // Round 20 — [onBrandBlue] sur le fond sortant : blanc
+                        // sur le bleu fixe, `onPrimary` du scheme dynamique
+                        // quand les couleurs dynamiques sont actives.
+                        color = if (isOut) onBrandBlue() else cs.onSurface,
                         onPhoneClick = onPhoneClick,
                         searchHighlight = searchHighlight,
                     )
@@ -262,7 +264,7 @@ fun MediaAttachmentBubble(
                         message = message,
                         showTimestamp = showTimestamp,
                         showStatus = showStatus,
-                        textColor = if (isOut) Color.White else cs.onSurface,
+                        textColor = if (isOut) onBrandBlue() else cs.onSurface,
                         // Feedback round 5 — 12dp above the timestamp (was 2dp):
                         // the time sat too close under the caption.
                         modifier = Modifier.padding(top = 12.dp).align(Alignment.End),
@@ -452,7 +454,7 @@ private fun VideoPreview(
             Icon(
                 imageVector = Icons.Outlined.PlayCircleOutline,
                 contentDescription = null,
-                tint = if (isOutgoing) Color.White else cs.onSurface,
+                tint = if (isOutgoing) onBrandBlue() else cs.onSurface,
                 modifier = Modifier.size(48.dp),
             )
             // v1.3.10 (P5) — same 480px decode cap as [ImagePreview] so a
@@ -587,15 +589,16 @@ private fun IconAttachment(
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    // Phase 8 — blanc fixe sur le bleu de marque fixe sortant (voir [bgColor] plus haut) :
-    // `onPrimary` devient bleu nuit en sombre.
-    val textColor = if (isOutgoing) Color.White else cs.onSurface
+    // Round 20 — [onBrandBlue] sur le fond sortant (voir [bgColor] plus haut) :
+    // blanc sur le bleu fixe, `onPrimary` du scheme dynamique quand les
+    // couleurs dynamiques sont actives.
+    val textColor = if (isOutgoing) onBrandBlue() else cs.onSurface
     // v1.3.10 — fill the bubble for BOTH directions. Before, outgoing got only a 1.5 dp
     // border around a transparent interior; that pattern relied on the body placeholder text
     // ("📎 filename.pdf") underneath to fill the visual space. With the v1.3.10 body /
     // previewLabel decoupling, outgoing files without a user caption have body = "" → the
-    // bordered shell looks like a hollow white blob. Filling with the fixed brand blue
-    // (text in fixed white, see above) keeps all outgoing bubble types coherent.
+    // bordered shell looks like a hollow white blob. Filling with the brand blue
+    // (text in [onBrandBlue], see above) keeps all outgoing bubble types coherent.
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier

@@ -24,14 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
-import com.filestech.sms.ui.theme.RelayColors
-import com.filestech.sms.ui.theme.ReplyStripeOutgoing
+import com.filestech.sms.ui.theme.brandBlue
+import com.filestech.sms.ui.theme.brandBlueStripe
+import com.filestech.sms.ui.theme.onBrandBlue
 
 /**
  * Compact preview of the message a reply is targeting (#8). Captured at the moment the user
@@ -72,20 +72,27 @@ fun ReplyQuoteCard(
     // v1.2.3 audit U17: alpha 0.78f on primary + onPrimary body alpha 0.82f composited to
     // ~5.5:1, right at the WCAG AA edge. Bumping container alpha to 0.88f gets us cleanly above
     // the 4.5:1 threshold for body text on outgoing bubbles.
-    // Phase 8 — le fond sortant est le bleu de marque FIXE (et le texte blanc fixe), comme
-    // la bulle hôte : le `primary` du thème s'éclaircit en sombre, et une carte bleu clair
-    // sur une bulle bleu foncé ne lirait plus comme une seule structure. En clair, le
-    // `primary` vaut déjà ce bleu fixe : rien ne change.
+    // Round 20 — le fond sortant suit la bulle hôte ([brandBlue] : bleu de
+    // marque fixe hors couleurs dynamiques, `primary` du fond d'écran sinon),
+    // et le texte suit avec [onBrandBlue]. Cela remplace la règle Phase 8 qui
+    // figeait la carte sur le bleu de marque parce que le `primary` du thème
+    // s'éclaircissait en sombre — avec les couleurs dynamiques actives, la
+    // carte doit lire comme une seule structure avec sa bulle, comme avant.
     val containerColor = if (isOutgoingHost) {
-        RelayColors.Blue.copy(alpha = 0.88f)
+        brandBlue().copy(alpha = 0.88f)
     } else {
         cs.surfaceContainerHighest
     }
-    // Liseré d'accent gauche : bleu foncé côté SORTANT (le fond de bulle garde son bleu par
-    // défaut), couleur primary INCHANGÉE côté ENTRANT.
-    val stripeColor = if (isOutgoingHost) ReplyStripeOutgoing else cs.primary
-    val labelColor = if (isOutgoingHost) Color.White else cs.onSurface
-    val bodyColor = if (isOutgoingHost) Color.White.copy(alpha = 0.9f) else cs.onSurfaceVariant
+    // Liseré d'accent gauche : [brandBlueStripe] côté SORTANT (bleu foncé sur
+    // le bleu fixe, primary assombri en dynamique), couleur primary
+    // INCHANGÉE côté ENTRANT.
+    val stripeColor = if (isOutgoingHost) brandBlueStripe() else cs.primary
+    val labelColor = if (isOutgoingHost) onBrandBlue() else cs.onSurface
+    val bodyColor = if (isOutgoingHost) {
+        onBrandBlue().copy(alpha = 0.9f)
+    } else {
+        cs.onSurfaceVariant
+    }
 
     val stripeWidth = 4.dp
     Row(

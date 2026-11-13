@@ -63,8 +63,8 @@ import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.security.StrongBiometrics
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -839,7 +839,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                         Icon(
                             imageVector = Icons.Outlined.LockOpen,
                             contentDescription = null,
-                            tint = RelayColors.Blue,
+                            tint = brandBlue(),
                             modifier = Modifier.size(22.dp),
                         )
                     },
@@ -854,7 +854,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                         Icon(
                             imageVector = Icons.Outlined.Check,
                             contentDescription = null,
-                            tint = RelayColors.Blue,
+                            tint = brandBlue(),
                             modifier = Modifier.size(22.dp),
                         )
                     },

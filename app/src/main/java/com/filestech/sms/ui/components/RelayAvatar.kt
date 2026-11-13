@@ -21,18 +21,21 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.avatarInitials
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlueTint
+import com.filestech.sms.ui.theme.onBrandBlueTint
 import com.filestech.sms.ui.theme.scaledBy
 
 /**
  * Circular avatar of the Relay design system: 48dp by default (32dp in the thread header),
- * initials on the fixed light-blue tint (`RelayColors.BlueTint` — `#E4EBFD`) in both themes
- * instead of the theme `primaryContainer` (dark navy `#004788` in dark mode). The initials
- * and the group glyph are the fixed dark navy `#001A40` on that tint (14.41:1) in both
- * themes — the dark theme's pale `onPrimaryContainer` would be unreadable (1.08:1) on it.
- * A caller-supplied photo keeps priority over the initials, and groups show the group
- * glyph on the same tint.
+ * initials on the light-blue tint ([brandBlueTint] — `#E4EBFD` when dynamic colours are
+ * off) in both themes instead of the theme `primaryContainer` (dark navy `#004788` in dark
+ * mode). The initials and the group glyph are the dark navy `#001A40` on that tint
+ * (14.41:1) in both themes — the dark theme's pale `onPrimaryContainer` would be
+ * unreadable (1.08:1) on it. Round 20 — when dynamic colours are on, the tint and its
+ * foreground follow the wallpaper pair (`primaryContainer` / `onPrimaryContainer`), which
+ * are generated together and stay legible. A caller-supplied photo keeps priority over
+ * the initials, and groups show the group glyph on the same tint.
  */
 @Composable
 fun RelayAvatar(
@@ -54,9 +57,10 @@ fun RelayAvatar(
 ) {
     val cs = MaterialTheme.colorScheme
     val initials = remember(label) { label.avatarInitials() }
-    // Fixed light-blue tint + dark-navy foreground in both themes (see KDoc).
-    val avatarBackground = RelayColors.BlueTint
-    val avatarForeground = Color(0xFF001A40)
+    // Light-blue tint + dark-navy foreground in both themes (see KDoc);
+    // round 20 — the pair follows the wallpaper when dynamic colours are on.
+    val avatarBackground = brandBlueTint()
+    val avatarForeground = onBrandBlueTint()
     // Feedback round 10 — unknown-contact grey, light `#E6E6E6` / dark
     // `#424242`, from the surface luminance.
     val surface = cs.surface

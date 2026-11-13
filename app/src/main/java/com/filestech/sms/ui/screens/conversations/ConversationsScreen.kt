@@ -107,8 +107,9 @@ import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
+import com.filestech.sms.ui.theme.onBrandBlue
 import com.filestech.sms.ui.util.rememberChatFormatters
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -602,15 +603,15 @@ fun ConversationsScreen(
             // or shape modifier at all, so it rendered the Material 3 default — 56dp
             // with FloatingActionButtonDefaults.shape (baseline token CornerLarge,
             // i.e. the theme's Shapes.large, 18dp here). That default is restored
-            // exactly, instead of a hardcoded radius. The brand blue is kept: filled
-            // surfaces keep it, the dark scheme's lightened primary (#7AA0F5) is for
-            // text and icons, not for filled tiles. White pencil on it is 6.63:1.
+            // exactly, instead of a hardcoded radius. Round 20 — the fill is
+            // [brandBlue] with [onBrandBlue] content: the fixed brand blue +
+            // white when dynamic colours are off, the wallpaper pair when on.
             FloatingActionButton(
                 onClick = onCompose,
                 modifier = Modifier.size(56.dp),
                 shape = FloatingActionButtonDefaults.shape,
-                containerColor = RelayColors.Blue,
-                contentColor = Color.White,
+                containerColor = brandBlue(),
+                contentColor = onBrandBlue(),
             ) {
                 Icon(
                     Icons.Outlined.Edit,

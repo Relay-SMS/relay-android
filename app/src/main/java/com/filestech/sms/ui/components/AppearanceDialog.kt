@@ -52,8 +52,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.filestech.sms.R
-import com.filestech.sms.ui.theme.BrandBlue
 import com.filestech.sms.ui.theme.BubbleColorPalette
+import com.filestech.sms.ui.theme.brandBlue
+import com.filestech.sms.ui.theme.onBrandBlue
 import timber.log.Timber
 
 /**
@@ -166,8 +167,16 @@ fun AppearanceDialog(
                     palette.forEach { option ->
                         val name = stringResource(option.nameRes)
                         val isSelected = option.color.toArgb() == pickedArgb
+                        // Round 20 — the BRAND_BLUE chip means "default", and
+                        // the default bubble is dynamic when dynamic colours
+                        // are on, so the chip previews [brandBlue] (with its
+                        // [onBrandBlue] check) instead of the fixed `#1E4FD8`.
+                        // The pick itself still stores BRAND_BLUE, which the
+                        // save below maps back to `null` (reset to default).
+                        val isBrandDefault = option.color == BubbleColorPalette.BRAND_BLUE
                         ColorChip(
-                            color = option.color,
+                            color = if (isBrandDefault) brandBlue() else option.color,
+                            checkTint = if (isBrandDefault) onBrandBlue() else Color.White,
                             selected = isSelected,
                             contentName = name,
                             onClick = { pickedColor = option.color },
@@ -241,8 +250,8 @@ fun AppearanceDialog(
                 },
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = BrandBlue,
-                    contentColor = Color.White,
+                    containerColor = brandBlue(),
+                    contentColor = onBrandBlue(),
                 ),
             ) {
                 Text(
@@ -265,6 +274,13 @@ private fun ColorChip(
     selected: Boolean,
     contentName: String,
     onClick: () -> Unit,
+    /**
+     * Round 20 — tint of the check on a selected chip. White by default
+     * (every palette colour is calibrated against white); the caller passes
+     * [onBrandBlue] for the BRAND_BLUE chip, whose fill is the dynamic
+     * primary when dynamic colours are on.
+     */
+    checkTint: Color = Color.White,
 ) {
     val borderColor = MaterialTheme.colorScheme.onSurface
     // v1.11.0 audit U1 — a11y TalkBack : un Box cliquable sans nom n'est pas
@@ -299,7 +315,7 @@ private fun ColorChip(
             Icon(
                 imageVector = Icons.Outlined.Check,
                 contentDescription = null,
-                tint = Color.White,
+                tint = checkTint,
                 modifier = Modifier.size(20.dp),
             )
         }

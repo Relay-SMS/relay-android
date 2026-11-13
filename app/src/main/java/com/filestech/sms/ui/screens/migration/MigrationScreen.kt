@@ -33,8 +33,8 @@ import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.sms.TelephonyReader
 import com.filestech.sms.ui.components.RelayPrimaryButton
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -186,7 +186,7 @@ fun MigrationScreen(onBack: () -> Unit, viewModel: MigrationViewModel = hiltView
                 if (state.isRunning) {
                     LinearProgressIndicator(
                         modifier = Modifier.padding(vertical = 8.dp),
-                        color = RelayColors.Blue,
+                        color = brandBlue(),
                     )
                 }
                 Text(

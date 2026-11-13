@@ -14,9 +14,11 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -37,6 +39,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -165,6 +168,13 @@ fun EmojiPickerPanel(
      * `0f` (not measured yet) falls back to the old 85% fraction.
      */
     reservedHeaderPx: Float = 0f,
+    /**
+     * Round 20 — height (px) of the open keyboard: the resting heights are
+     * fractions of the space above it, so opening the keyboard while the
+     * panel is tall shrinks the panel instead of pushing the composer off
+     * the top of the screen. `0f` when the keyboard is closed.
+     */
+    reservedBottomPx: Float = 0f,
 ) {
     val cs = MaterialTheme.colorScheme
     val density = LocalDensity.current
@@ -172,16 +182,29 @@ fun EmojiPickerPanel(
         LocalConfiguration.current.screenHeightDp.dp.toPx()
     }
     val minPx = with(density) { MIN_HEIGHT_DP.dp.toPx() }
-    val availablePx = (screenHeightPx - reservedTopPx).coerceAtLeast(minPx)
+    val availablePx = (screenHeightPx - reservedTopPx - reservedBottomPx).coerceAtLeast(minPx)
     val midwayPx = (availablePx * MIDWAY_FRACTION).coerceAtLeast(minPx)
     // Round 17 — full is the space between the header's bottom edge and the
     // composer, so the dragged panel stops exactly at the header instead of
     // overlapping it; the 85% fraction is only the pre-measure fallback.
+    // Round 20 — the panel's own chrome (navigation-bar padding + the 8dp
+    // bottom margin) sits OUTSIDE `heightPx` but INSIDE the bottom bar, so
+    // the old ceiling let the stack overlap the header by exactly that
+    // much. Subtract it and the fully-dragged panel stops dead on the
+    // header's bottom edge.
+    val navBarPx = WindowInsets.navigationBars.getBottom(density).toFloat()
+    val panelChromePx = navBarPx + with(density) { PANEL_BOTTOM_MARGIN_DP.dp.toPx() }
     val fullPx = if (reservedHeaderPx > 0f) {
-        (availablePx - reservedHeaderPx).coerceAtLeast(minPx)
+        (availablePx - reservedHeaderPx - panelChromePx).coerceAtLeast(minPx)
     } else {
-        (availablePx * FULL_FRACTION).coerceAtLeast(minPx)
+        (availablePx * FULL_FRACTION - panelChromePx).coerceAtLeast(minPx)
     }
+    // Round 20 — the drag handler is a `pointerInput(Unit)` block, created
+    // once: it would keep the FIRST composition's ceiling forever, so a
+    // keyboard opening mid-session (or a reply chip arming) would leave the
+    // drag clamping to a stale, taller ceiling. Read the live values.
+    val latestFullPx by rememberUpdatedState(fullPx)
+    val latestMidwayPx by rememberUpdatedState(midwayPx)
     var heightPx by remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     var panelAnimation by remember { mutableStateOf<Job?>(null) }
@@ -222,7 +245,11 @@ fun EmojiPickerPanel(
 
     fun snapToNearest() {
         if (closing) return
-        val target = if (heightPx < (midwayPx + fullPx) / 2f) midwayPx else fullPx
+        val target = if (heightPx < (latestMidwayPx + latestFullPx) / 2f) {
+            latestMidwayPx
+        } else {
+            latestFullPx
+        }
         animateHeightTo(target, SNAP_DURATION_MS)
     }
 
@@ -252,7 +279,7 @@ fun EmojiPickerPanel(
         detectVerticalDragGestures(
             onVerticalDrag = { _, dragAmount ->
                 panelAnimation?.cancel()
-                heightPx = (heightPx - dragAmount).coerceIn(minPx, fullPx)
+                heightPx = (heightPx - dragAmount).coerceIn(minPx, latestFullPx)
             },
             onDragEnd = { snapToNearest() },
             onDragCancel = { snapToNearest() },

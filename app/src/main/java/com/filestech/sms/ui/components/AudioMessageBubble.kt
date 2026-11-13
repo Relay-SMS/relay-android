@@ -48,9 +48,10 @@ import com.filestech.sms.R
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
-import com.filestech.sms.ui.theme.BrandBlue
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
+import com.filestech.sms.ui.theme.onBrandBlue
 
 /**
  * Audio bubble for an MMS voice message. Renders a compact mini-player inside a chat bubble
@@ -117,23 +118,26 @@ fun AudioMessageBubble(
     val cs = MaterialTheme.colorScheme
     // Feedback round 5 — the voice bubble is a SOLID fill like the text bubbles
     // (the Figma thread shows a solid blue outgoing bubble, not the old
-    // border-only one). Incoming keeps the neutral grey.
-    val bgColor = if (isOut) BrandBlue else com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
-    // Feedback round 5 — disc + waveform colour: white on the blue outgoing
-    // bubble; Kristin's dark `#353535` on the light incoming bubble, white in
+    // border-only one). Incoming keeps the neutral grey. Round 20 — the
+    // outgoing fill is [brandBlue]: fixed brand blue, or the wallpaper
+    // `primary` when dynamic colours are on.
+    val bgColor = if (isOut) brandBlue() else com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
+    // Feedback round 5 — disc + waveform colour: [onBrandBlue] on the outgoing
+    // bubble (white on the fixed brand blue, `onPrimary` on the dynamic one);
+    // Kristin's dark `#353535` on the light incoming bubble, white in
     // dark mode where `#353535` would vanish on the dark grey bubble. Picked
     // from the surface luminance, like [com.filestech.sms.ui.theme.textFieldCursorColor].
     val surfaceLuma = 0.2126f * cs.surface.red + 0.7152f * cs.surface.green + 0.0722f * cs.surface.blue
     val controlColor = if (isOut) {
-        Color.White
+        onBrandBlue()
     } else if (surfaceLuma < 0.5f) {
         Color.White
     } else {
         voiceDark
     }
-    // Duration + timestamp sit ON the solid fill now: white outgoing, on-surface
+    // Duration + timestamp sit ON the solid fill now: [onBrandBlue] outgoing, on-surface
     // incoming (the old outgoing `onSurfaceVariant` assumed a transparent bubble).
-    val labelColor = if (isOut) Color.White else cs.onSurface
+    val labelColor = if (isOut) onBrandBlue() else cs.onSurface
 
     // `derivedStateOf` blocks recomposition unless the *projected* slice changes — so a tick
     // that only moves `positionMs` on a non-active bubble emits the same `LocalPlayback.None`
@@ -248,7 +252,7 @@ fun AudioMessageBubble(
                         Text(
                             text = senderLabel,
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (isOut) Color.White else cs.onSurface,
+                            color = if (isOut) onBrandBlue() else cs.onSurface,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                             modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 2.dp),
                         )

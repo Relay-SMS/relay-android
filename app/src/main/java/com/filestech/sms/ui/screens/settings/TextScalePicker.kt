@@ -26,8 +26,8 @@ import com.filestech.sms.R
 import com.filestech.sms.domain.settings.TextScale
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayTextButton
-import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.factor
 import com.filestech.sms.ui.theme.scaledBy
 
@@ -90,7 +90,7 @@ private fun TextScaleOption(label: String, style: TextStyle, selected: Boolean, 
         RadioButton(
             selected = selected,
             onClick = null,
-            colors = RadioButtonDefaults.colors(selectedColor = RelayColors.Blue),
+            colors = RadioButtonDefaults.colors(selectedColor = brandBlue()),
         )
         Spacer(Modifier.size(8.dp))
         Text(label, style = style)

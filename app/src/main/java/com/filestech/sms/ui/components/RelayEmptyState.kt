@@ -1,7 +1,6 @@
 package com.filestech.sms.ui.components
 
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -94,7 +93,6 @@ private fun RelayEmptyStateContent(
             .fillMaxWidth()
             .padding(horizontal = 32.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Icon(
             painter = painter,
@@ -102,6 +100,11 @@ private fun RelayEmptyStateContent(
             tint = cs.onSurfaceVariant,
             modifier = Modifier.size(iconSize),
         )
+        // Round 20 — the gap below the icon is 32dp, like Kristin's
+        // mockups (her Scheduled/Archived/Vault references all measure
+        // ~32px from glyph to headline); the old shared 12dp read as
+        // cramped under the big icons. The headline-to-body gap stays 12dp.
+        Spacer(modifier = Modifier.height(32.dp))
         Text(
             text = headline,
             style = RelayText.ConvoName,
@@ -109,6 +112,7 @@ private fun RelayEmptyStateContent(
             textAlign = TextAlign.Center,
         )
         if (body != null) {
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = body,
                 style = RelayText.Preview,
@@ -117,7 +121,7 @@ private fun RelayEmptyStateContent(
             )
         }
         if (buttonText != null && onButtonClick != null) {
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             RelayPrimaryButton(
                 text = buttonText,
                 onClick = onButtonClick,

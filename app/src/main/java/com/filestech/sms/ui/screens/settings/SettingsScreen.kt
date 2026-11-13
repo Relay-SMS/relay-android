@@ -118,6 +118,7 @@ import com.filestech.sms.ui.screens.conversations.categoryLabel
 import com.filestech.sms.ui.security.ProtectSecretInput
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.util.daySeparatorLabel
 import com.filestech.sms.ui.util.libelleDeDuree
 import com.filestech.sms.ui.util.rememberChatFormatters
@@ -2137,7 +2138,7 @@ private fun AutoDeleteDialog(
                             selected = current == value,
                             onClick = { onSelect(value) },
                             colors = androidx.compose.material3.RadioButtonDefaults.colors(
-                                selectedColor = RelayColors.Blue,
+                                selectedColor = brandBlue(),
                             ),
                         )
                         Spacer(Modifier.size(8.dp))

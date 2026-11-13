@@ -10,9 +10,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Image
@@ -126,12 +126,15 @@ fun GifGrid(modifier: Modifier = Modifier, onGifSelected: (String) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(GIF_COLUMNS),
+            // Round 20 — masonry, like Klipy's own mobile site: two columns,
+            // each tile half the width and as tall as its GIF's own aspect
+            // ratio, instead of three square-cropped columns.
+            LazyVerticalStaggeredGrid(
+                columns = StaggeredGridCells.Fixed(GIF_COLUMNS),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(GIF_GRID_GAP),
                 horizontalArrangement = Arrangement.spacedBy(GIF_GRID_GAP),
-                verticalArrangement = Arrangement.spacedBy(GIF_GRID_GAP),
+                verticalItemSpacing = GIF_GRID_GAP,
             ) {
                 items(gifs, key = { it.id }) { gif ->
                     GifTile(
@@ -170,12 +173,15 @@ fun GifGrid(modifier: Modifier = Modifier, onGifSelected: (String) -> Unit) {
 }
 
 /**
- * One grid cell: the GIF thumbnail, square-cropped, animated through
- * Coil's `GifDecoder` (`io.coil-kt:coil-gif`). The downloaded file is the
- * real animated GIF, and it stays animated when sent as an MMS attachment:
- * the send path never JPEG-compresses a GIF, and an oversized MEDIUM
- * rendition falls back to the SMALL one at download time (see the
- * provider's [GifProvider.download]).
+ * One grid cell: the GIF thumbnail, animated through Coil's `GifDecoder`
+ * (`io.coil-kt:coil-gif`). The tile is as tall as the GIF itself — half the
+ * grid wide, height from the GIF's own aspect ratio (the same ratio in every
+ * tier, so the MEDIUM dimensions describe the SMALL thumbnail too; missing
+ * dimensions fall back to square). The downloaded file is the real animated
+ * GIF, and it stays animated when sent as an MMS attachment: the send path
+ * never JPEG-compresses a GIF, and an oversized MEDIUM rendition falls back
+ * to the SMALL one at download time (see the provider's
+ * [GifProvider.download]).
  *
  * The thumbnail request disables Coil's disk cache on purpose: Klipy's terms
  * prohibit a partner-operated media cache, so no thumbnail is ever written
@@ -186,9 +192,15 @@ fun GifGrid(modifier: Modifier = Modifier, onGifSelected: (String) -> Unit) {
 private fun GifTile(gif: GifItem, enabled: Boolean, onClick: () -> Unit) {
     val context = LocalContext.current
     val gifImageLoader = rememberGifImageLoader()
+    val tileRatio = if (gif.width > 0 && gif.height > 0) {
+        gif.width.toFloat() / gif.height.toFloat()
+    } else {
+        1f
+    }
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
+            .fillMaxWidth()
+            .aspectRatio(tileRatio)
             .clip(RoundedCornerShape(GIF_TILE_CORNER))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(enabled = enabled, onClick = onClick),
@@ -208,6 +220,6 @@ private fun GifTile(gif: GifItem, enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-private const val GIF_COLUMNS = 3
+private const val GIF_COLUMNS = 2
 private val GIF_GRID_GAP = 4.dp
 private val GIF_TILE_CORNER = 12.dp

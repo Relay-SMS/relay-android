@@ -72,6 +72,7 @@ import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.security.ProtectSecretInput
 import com.filestech.sms.ui.theme.RelayColors
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.brandBlue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -433,7 +434,7 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(2.dp),
-                            color = RelayColors.Blue,
+                            color = brandBlue(),
                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         )
                     }
