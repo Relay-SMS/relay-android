@@ -487,6 +487,9 @@ private fun features(isPanicDecoy: Boolean): List<Feature> = listOf(
     // trackers", same style as the other features.
     Feature(Icons.Outlined.Security, stringResource(R.string.about_badge_no_collection)),
     Feature(Icons.Outlined.PrivacyTip, stringResource(R.string.about_badge_no_sharing)),
+    // Round 21 — the no-tracking rule, stated plainly next to the other
+    // privacy badges: no Google services anywhere in the app.
+    Feature(Icons.Outlined.Shield, stringResource(R.string.about_badge_no_google)),
 ).filterNot { isPanicDecoy && it.sensitive }
 
 /**

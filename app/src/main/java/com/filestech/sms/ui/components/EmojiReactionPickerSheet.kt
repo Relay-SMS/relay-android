@@ -54,6 +54,12 @@ import com.filestech.sms.core.ext.splitGraphemeClusters
  * message d'origine le pré-sélectionne automatiquement (déduit du paramètre
  * [currentReaction]) pour permettre un ajout incrémental sans perdre le contexte.
  *
+ * Round 21 — deselecting every emoji and confirming REMOVES the reaction:
+ * when the sheet opened on an existing reaction and the selection is empty,
+ * the confirm button reads "Remove reaction" and calls [onRemove] instead
+ * of [onPicked]. Before this, the button was disabled with an empty
+ * selection, so a reaction could be swapped but never cleared from here.
+ *
  * Le bouton "Autre emoji" reste un raccourci direct vers le clavier système (cas d'usage
  * "je veux un emoji rare") — il commit immédiatement la sélection multi en plus de
  * l'emoji custom au passage.
@@ -65,6 +71,12 @@ fun EmojiReactionPickerSheet(
     onPicked: (String) -> Unit,
     onOpenCustom: () -> Unit,
     onDismiss: () -> Unit,
+    /**
+     * Round 21 — called when the user confirms with an empty selection on a
+     * message that already has a reaction: removes it. `null` = no removal
+     * path (the button stays disabled on an empty selection, as before).
+     */
+    onRemove: (() -> Unit)? = null,
     /**
      * v1.5.0 — réaction actuellement posée sur le message (ou `null` si aucune). Lorsque
      * non-null, ses emojis (un ou plusieurs) sont pré-sélectionnés dans la grille pour
@@ -193,20 +205,29 @@ fun EmojiReactionPickerSheet(
 
                 // v1.5.0 — bouton "Valider" : commit la sélection multi. Désactivé tant
                 // qu'aucun emoji n'est sélectionné (sinon click no-op étrange).
+                // Round 21 — sauf quand le sheet s'est ouvert sur une réaction
+                // existante et que l'utilisateur a tout désélectionné : le
+                // bouton passe en "Remove reaction" et retire la réaction.
+                val canRemove = currentReaction != null &&
+                    selected.isEmpty() && onRemove != null
                 RelayPrimaryButton(
-                    text = if (selected.isEmpty()) {
-                        stringResource(R.string.reaction_picker_validate_empty)
-                    } else {
-                        stringResource(
+                    text = when {
+                        selected.isNotEmpty() -> stringResource(
                             R.string.reaction_picker_validate_count,
                             selected.joinToString(separator = ""),
                         )
+                        canRemove -> stringResource(R.string.reaction_badge_remove_action)
+                        else -> stringResource(R.string.reaction_picker_validate_empty)
                     },
                     onClick = {
-                        onPicked(selected.joinToString(separator = ""))
+                        if (canRemove) {
+                            onRemove?.invoke()
+                        } else {
+                            onPicked(selected.joinToString(separator = ""))
+                        }
                         onDismiss()
                     },
-                    enabled = selected.isNotEmpty(),
+                    enabled = selected.isNotEmpty() || canRemove,
                 )
             }
         }

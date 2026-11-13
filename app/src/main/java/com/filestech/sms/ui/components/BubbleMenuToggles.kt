@@ -7,9 +7,15 @@ package com.filestech.sms.ui.components
  * 20-parameter limit, and the pin toggle alone would trip it. The pin
  * state is read from the conversation (one pinned message per thread),
  * the star state from the message itself (see `starred` on [BubbleMenu]).
+ *
+ * Round 21 — [onRemoveReaction] rides the same bundle for the same
+ * reason: the badge tap removes the reaction, and the text bubble has no
+ * parameter slot left for a fourth callback.
  */
 data class BubbleMenuToggles(
     val onToggleStar: () -> Unit,
     val isPinned: Boolean,
     val onTogglePin: () -> Unit,
+    /** Round 21 — badge tap removes the reaction (`setReaction(id, null)`). */
+    val onRemoveReaction: () -> Unit,
 )

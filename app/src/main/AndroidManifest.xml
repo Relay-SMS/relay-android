@@ -32,6 +32,15 @@
     <!-- Voice MMS (audio recording attached to outgoing MMS) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Slice 1 — QR pairing only: the Linked devices screen scans the
+         pairing code a computer shows, on-device, with CameraX + ZXing
+         core (no Play Services). Requested at runtime, at the moment
+         the user opens the scanner — never earlier. No photo is taken
+         or stored; the frames are decoded in memory and dropped.
+         Documented in PERMISSIONS.md and allowed by
+         .github/scripts/permissions-manifeste.py. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <!-- v1.10.0 — Mode urgence : géoloc pour SMS d'urgence (single-fix uniquement,
          pas de tracking continu). ACCESS_COARSE_LOCATION en filet pour devices/OEM
          où FINE est durci. Permission opt-in : si refusée par l'user, le SMS d'urgence
@@ -64,15 +73,17 @@
          the GIF thumbnails from Klipy the same way. A message containing a URL
          shows a preview card: Relay fetches that page once, on the device, and
          reads its Open Graph title and image for display only — the image is
-         never sent as an attachment. Nothing else in the app opens a network
-         connection: no analytics, no crash reporter, no update check.
+         never sent as an attachment. Slice 1 adds a THIRD purpose, local only:
+         the LAN server (see sync/SyncServer.kt) listens on the local network
+         so a linked computer can connect — no cloud, no Relay server, the
+         traffic never leaves the Wi-Fi network. Nothing else in the app opens
+         a network connection: no analytics, no crash reporter, no update check.
          MMS still work exactly as before — Android's own MMS service, in its own
          process, talks to the carrier's MMSC (SmsManager.sendMultimediaMessage /
          downloadMultimediaMessage), so MMS never needed this permission and still
-         don't use it. Later, this same permission will also cover wifi/cloud
-         pairing with the desktop app. If the permission is blocked, the app
-         still works fully — GIF search just returns nothing, and links show no
-         preview.
+         don't use it. If the permission is blocked, the app still works fully —
+         GIF search just returns nothing, links show no preview, and no computer
+         can link.
          History: INTERNET was removed in v1.28.13 (it had been declared "for MMS
          transport", which was never true); it returns here deliberately, reviewed
          in PERMISSIONS.md and allowed by .github/scripts/permissions-manifeste.py.
@@ -111,6 +122,12 @@
     <!-- Telephony features (not strictly required - app works on tablets without SIM for reading backups) -->
     <uses-feature
         android:name="android.hardware.telephony"
+        android:required="false" />
+
+    <!-- Slice 1 — the camera is only used for QR pairing; the app works
+         fully on devices without one. -->
+    <uses-feature
+        android:name="android.hardware.camera"
         android:required="false" />
 
     <!-- Queries (Android 11+ package visibility) -->
@@ -394,6 +411,28 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="keep_process_alive_on_oem_roms_that_kill_the_default_sms_app" />
+        </service>
+
+        <!-- 7-ter) Slice 1 — the LAN server (SYNC_PROTOCOL.md): Ktor over
+             TLS on port 47831, advertising `_relay._tcp.` via mDNS, so a
+             linked computer can connect while the app is in the
+             background. Started by MainApplication / BootReceiver when
+             the server toggle is on; stopped when it goes off.
+             `specialUse`, for the same reason as KeepAliveService above:
+             under targetSdk 35 a `dataSync` service is capped at 6 h
+             cumulative per 24 h and cannot start from BOOT_COMPLETED —
+             both fatal to a server that must listen permanently. The
+             subtype property is required by the platform for this type.
+             android:exported="false": no IPC surface, started only
+             internally via [SyncService.start]. -->
+        <service
+            android:name=".sync.SyncService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="lan_server_for_linked_devices_tls_websocket" />
         </service>
 
         <!-- 8) WorkManager init — let Hilt take over -->

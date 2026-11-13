@@ -270,6 +270,10 @@ fun MessageBubble(
                 } else {
                     com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
                 },
+                // Round 21 — badge tap removes the reaction. The callback
+                // rides [BubbleMenuToggles]: the bubble is at the Detekt
+                // 20-parameter limit, so it has no slot of its own.
+                onRemoveReaction = toggles?.onRemoveReaction ?: {},
             ) {
                 Box(
                     modifier = Modifier

@@ -664,6 +664,7 @@
     <string name="reaction_picker_validate_count">Enviar la reacción %1$s</string>
     <!-- v1.6.0 — a11y reaction badge (TalkBack) -->
     <string name="reaction_badge_content_description">Reacción %1$s</string>
+    <string name="reaction_badge_remove_action">Quitar la reacción</string>
     <!-- v1.6.1 — body of the system notification fired when someone reacts to our message -->
     <string name="reaction_notif_body_with_preview">Ha reaccionado %1$s a: %2$s</string>
     <string name="reaction_notif_body_no_preview">Ha reaccionado %1$s a su mensaje</string>
@@ -1163,4 +1164,41 @@
     <string name="emoji_section_nature">Naturaleza</string>
     <string name="emoji_section_symbols">Símbolos</string>
     <string name="emoji_section_flags">Banderas</string>
+    <!-- Slice 1 — Linked devices (LAN server + QR pairing) -->
+    <string name="about_badge_no_google">Sin servicios de Google</string>
+    <string name="linked_devices_title">Dispositivos vinculados</string>
+    <string name="settings_section_linked_devices">Dispositivos vinculados</string>
+    <string name="linked_devices_section_server">Servidor</string>
+    <string name="linked_devices_section_devices">Dispositivos</string>
+    <string name="linked_devices_server_title">Servidor de vinculación</string>
+    <string name="linked_devices_server_hint">Cuando está activado, su ordenador puede encontrar este teléfono en la red local y vincularse a él. Nada sale de su red Wi-Fi.</string>
+    <string name="linked_devices_link_action">Vincular un dispositivo</string>
+    <string name="linked_devices_empty_title">Aún no hay dispositivos vinculados</string>
+    <string name="linked_devices_empty_body">Vincule su ordenador desde aquí escaneando su código de vinculación.</string>
+    <string name="linked_devices_kind_desktop">Ordenador</string>
+    <string name="linked_devices_kind_phone">Teléfono</string>
+    <string name="linked_devices_kind_tablet">Tableta</string>
+    <string name="linked_devices_connected">Conectado ahora</string>
+    <string name="linked_devices_linked_on">Vinculado el %1$s</string>
+    <string name="linked_devices_confirm_title">¿Vincular este dispositivo?</string>
+    <string name="linked_devices_confirm_body">¿Vincular %1$s (%2$s) a este teléfono? Podrá conectarse cuando ambos estén en la misma red Wi-Fi.</string>
+    <string name="linked_devices_confirm_action">Vincular</string>
+    <string name="linked_devices_remove_title">¿Quitar %1$s?</string>
+    <string name="linked_devices_remove_body">Este dispositivo ya no podrá conectarse a este teléfono. Puede volver a vincularlo más tarde.</string>
+    <string name="linked_devices_remove_action">Quitar</string>
+    <string name="linked_devices_remove_content_desc">Quitar dispositivo</string>
+    <string name="linked_devices_linked">%1$s vinculado</string>
+    <string name="linked_devices_removed">%1$s eliminado</string>
+    <string name="linked_devices_scan_title">Escanee el código de vinculación</string>
+    <string name="linked_devices_scan_hint">Apunte la cámara al código QR que se muestra en el otro dispositivo.</string>
+    <string name="linked_devices_scan_camera_needed">Se necesita acceso a la cámara para escanear el código de vinculación.</string>
+    <string name="linked_devices_scan_allow_camera">Permitir cámara</string>
+    <string name="linked_devices_scan_camera_error">No se pudo abrir la cámara. Inténtelo de nuevo.</string>
+    <string name="linked_devices_scan_invalid">Este código QR no es un código de vinculación de Relay.</string>
+    <string name="linked_devices_scan_unsupported">Este código de vinculación necesita una versión más reciente de Relay.</string>
+    <string name="linked_devices_scan_damaged">Este código de vinculación está incompleto o dañado. Muéstrelo de nuevo en el otro dispositivo.</string>
+    <string name="sync_channel_label">Dispositivos vinculados</string>
+    <string name="sync_channel_desc">Se muestra mientras el teléfono es accesible para los dispositivos vinculados en la red local.</string>
+    <string name="sync_notification_title">SMS Relay</string>
+    <string name="sync_notification_text">Listo para dispositivos vinculados en esta red Wi-Fi.</string>
 </resources>

@@ -1,6 +1,6 @@
 # Política de privacidad — SMS Relay
 
-_Última actualización: 26 de octubre de 2026_ · 🇬🇧 [English](PRIVACY.md) · 🇫🇷 [Français](PRIVACY.fr.md) · 🇩🇪 [Deutsch](PRIVACY.de.md) · 🇮🇹 [Italiano](PRIVACY.it.md)
+_Última actualización: 13 de noviembre de 2026_ · 🇬🇧 [English](PRIVACY.md) · 🇫🇷 [Français](PRIVACY.fr.md) · 🇩🇪 [Deutsch](PRIVACY.de.md) · 🇮🇹 [Italiano](PRIVACY.it.md)
 
 > **Traducción.** Esta traducción al español se facilita a título informativo. Solo las versiones
 > [inglesa](PRIVACY.md) y [francesa](PRIVACY.fr.md) de esta política hacen fe; en caso de
@@ -11,7 +11,14 @@ Haltaya**. Véanse también las [condiciones de uso](TERMS.es.md).
 
 ## Lo que recopilamos
 
-**Nada.** SMS Relay no recopila, no transmite ni agrega ningún dato personal.
+**Nada.** SMS Relay no recopila, no transmite ni agrega ningún dato personal — con dos
+excepciones, ambas iniciadas por usted: cuando busca un GIF, las palabras que escribe se envían a
+Klipy para que devuelva GIF coincidentes, y cuando un mensaje contiene un enlace, Relay descarga
+esa página una vez para mostrar una tarjeta de vista previa (véase [Red](#red) más abajo). Relay
+no conserva nada de esos intercambios más allá del GIF que usted elige enviar y de la vista
+previa que le muestra. Vincular un ordenador no cambia nada de esto: el teléfono y el ordenador
+se comunican directamente entre sí en su red Wi-Fi local — ningún servidor Relay, ninguna nube,
+nada sale de la red.
 
 Ningún SDK de analítica, ningún notificador de fallos, ningún endpoint de telemetría, ningún
 identificador publicitario, ninguna biblioteca de fingerprinting. El binario no contiene ningún
@@ -28,6 +35,12 @@ código de rastreo de terceros.
 - Los archivos adjuntos MMS que pueda haber, en `<files>/mms_attachments/`.
 - Los PDF de conversación que se hayan generado localmente, en `<files>/exports/`.
 - Si los configura, sus contactos de emergencia y los ajustes del modo emergencia y de Safety call.
+- Si vincula un dispositivo, su ficha: identificador del dispositivo, tipo (ordenador, teléfono
+  o tableta), nombre visible, clave pública y fecha de vinculación. La clave privada
+  correspondiente nunca sale del dispositivo vinculado, y la ficha se elimina cuando usted quita
+  el dispositivo. El teléfono conserva además su propio identificador de hub y el certificado TLS
+  y la clave privada que el servidor local presenta a los dispositivos vinculados (la clave
+  privada reside en el AndroidKeyStore).
 
 Como toda aplicación de SMS predeterminada, SMS Relay también escribe sus mensajes en el almacén de
 mensajes del sistema de Android, que los conserva con independencia de la aplicación.
@@ -37,10 +50,31 @@ Google Drive ni en una transferencia de dispositivo sin su consentimiento explí
 
 ## Red
 
-SMS Relay no realiza ninguna solicitud de red. Desde la 1.28.13, ni siquiera tiene ya el permiso
-`INTERNET`: su proceso no puede abrir ninguna conexión de red. Los MMS se encaminan a través del
-servicio MMS de Android, que se comunica con el MMSC de su operador cuando usted envía o recibe uno.
-Ninguna comprobación de actualizaciones, ninguna configuración remota, ningún ping analítico.
+SMS Relay tiene el permiso `INTERNET` para tres usos. (1) Búsqueda de GIF: cuando abre la pestaña
+de GIF y escribe una búsqueda, las palabras que escribe se envían a Klipy (`api.klipy.com`), que
+devuelve GIF coincidentes; tocar uno lo descarga de Klipy, y las miniaturas de la cuadrícula
+también provienen de Klipy. Klipy ve sus palabras de búsqueda y su dirección IP, como cualquier
+servicio al que usted se conecta. (2) Vistas previas de enlaces: cuando un mensaje contiene una
+URL, Relay descarga esa página una vez, en el dispositivo, y lee su título e imagen Open Graph
+solo para mostrarlos — el sitio enlazado ve la solicitud y su dirección IP, como en cualquier
+visita; la imagen de vista previa nunca se envía como archivo adjunto. (3) Dispositivos
+vinculados: el teléfono ejecuta un servidor TLS en la red local (puerto 47831, anunciado por
+mDNS como `_relay._tcp.`) para que un ordenador que usted haya vinculado pueda encontrarlo y
+conectarse. El servidor solo acepta dispositivos cuya clave pública usted guardó escaneando su
+código de vinculación, y solo después de que demuestren poseer la clave privada correspondiente;
+el tráfico nunca sale de su red Wi-Fi y no interviene ningún servidor Relay ni ninguna cuenta en
+la nube. El servidor puede desactivarse en Ajustes → Dispositivos vinculados; la aplicación
+funciona entonces plenamente por sí sola. Este es el único uso de red de la aplicación: ninguna
+comprobación de actualizaciones, ninguna configuración remota, ningún ping analítico, ningún
+informe de fallos. Si el permiso está bloqueado, la aplicación sigue funcionando — la búsqueda de
+GIF simplemente no devuelve nada, los enlaces no muestran vista previa y ningún ordenador puede
+vincularse. (El permiso se retiró en la 1.28.13, cuando la aplicación no realizaba ninguna
+solicitud de red; volvió para la búsqueda de GIF, luego para las vistas previas de enlaces y
+ahora para los dispositivos vinculados.)
+
+Los MMS se encaminan a través del servicio MMS de Android, que se comunica con el MMSC de su
+operador cuando usted envía o recibe uno. Los MMS nunca necesitaron el permiso `INTERNET` y
+siguen sin usarlo.
 
 Los mensajes que usted envía pasan por la red de su operador, como con cualquier aplicación de SMS.
 El desarrollador nunca los recibe.

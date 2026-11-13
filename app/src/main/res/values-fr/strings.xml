@@ -654,6 +654,7 @@
     <string name="reaction_picker_validate_count">Envoyer la réaction %1$s</string>
     <!-- v1.6.0 — a11y badge réaction (TalkBack) -->
     <string name="reaction_badge_content_description">Réaction %1$s</string>
+    <string name="reaction_badge_remove_action">Retirer la réaction</string>
     <!-- v1.6.1 — corps de la notification système quand quelqu'un réagit à notre message -->
     <string name="reaction_notif_body_with_preview">A réagi %1$s à : %2$s</string>
     <string name="reaction_notif_body_no_preview">A réagi %1$s à votre message</string>
@@ -1138,4 +1139,41 @@
     <string name="emoji_section_nature">Nature</string>
     <string name="emoji_section_symbols">Symboles</string>
     <string name="emoji_section_flags">Drapeaux</string>
+    <!-- Slice 1 — Linked devices (LAN server + QR pairing) -->
+    <string name="about_badge_no_google">Aucun service Google</string>
+    <string name="linked_devices_title">Appareils liés</string>
+    <string name="settings_section_linked_devices">Appareils liés</string>
+    <string name="linked_devices_section_server">Serveur</string>
+    <string name="linked_devices_section_devices">Appareils</string>
+    <string name="linked_devices_server_title">Serveur d\'appariement</string>
+    <string name="linked_devices_server_hint">Quand c\'est activé, votre ordinateur peut trouver ce téléphone sur le réseau local et s\'y lier. Rien ne quitte votre réseau Wi-Fi.</string>
+    <string name="linked_devices_link_action">Lier un appareil</string>
+    <string name="linked_devices_empty_title">Aucun appareil lié pour le moment</string>
+    <string name="linked_devices_empty_body">Liez votre ordinateur d\'ici en scannant son code d\'appariement.</string>
+    <string name="linked_devices_kind_desktop">Ordinateur</string>
+    <string name="linked_devices_kind_phone">Téléphone</string>
+    <string name="linked_devices_kind_tablet">Tablette</string>
+    <string name="linked_devices_connected">Connecté</string>
+    <string name="linked_devices_linked_on">Lié le %1$s</string>
+    <string name="linked_devices_confirm_title">Lier cet appareil ?</string>
+    <string name="linked_devices_confirm_body">Lier %1$s (%2$s) à ce téléphone ? Il pourra se connecter dès que les deux seront sur le même réseau Wi-Fi.</string>
+    <string name="linked_devices_confirm_action">Lier</string>
+    <string name="linked_devices_remove_title">Retirer %1$s ?</string>
+    <string name="linked_devices_remove_body">Cet appareil ne pourra plus se connecter à ce téléphone. Vous pourrez le lier à nouveau plus tard.</string>
+    <string name="linked_devices_remove_action">Retirer</string>
+    <string name="linked_devices_remove_content_desc">Retirer l\'appareil</string>
+    <string name="linked_devices_linked">%1$s lié</string>
+    <string name="linked_devices_removed">%1$s retiré</string>
+    <string name="linked_devices_scan_title">Scannez le code d\'appariement</string>
+    <string name="linked_devices_scan_hint">Pointez l\'appareil photo vers le code QR affiché sur l\'autre appareil.</string>
+    <string name="linked_devices_scan_camera_needed">L\'accès à l\'appareil photo est nécessaire pour scanner le code d\'appariement.</string>
+    <string name="linked_devices_scan_allow_camera">Autoriser l\'appareil photo</string>
+    <string name="linked_devices_scan_camera_error">Impossible d\'ouvrir l\'appareil photo. Réessayez.</string>
+    <string name="linked_devices_scan_invalid">Ce code QR n\'est pas un code d\'appariement Relay.</string>
+    <string name="linked_devices_scan_unsupported">Ce code d\'appariement exige une version plus récente de Relay.</string>
+    <string name="linked_devices_scan_damaged">Ce code d\'appariement est incomplet ou endommagé. Affichez-le à nouveau sur l\'autre appareil.</string>
+    <string name="sync_channel_label">Appareils liés</string>
+    <string name="sync_channel_desc">Affiché tant que le téléphone est joignable par les appareils liés sur le réseau local.</string>
+    <string name="sync_notification_title">SMS Relay</string>
+    <string name="sync_notification_text">Prêt pour les appareils liés sur ce réseau Wi-Fi.</string>
 </resources>

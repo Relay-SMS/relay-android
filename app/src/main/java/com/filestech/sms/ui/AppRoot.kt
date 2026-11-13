@@ -38,6 +38,7 @@ import com.filestech.sms.ui.navigation.Emergency
 import com.filestech.sms.ui.navigation.EmergencySetup
 import com.filestech.sms.ui.navigation.Help
 import com.filestech.sms.ui.navigation.License
+import com.filestech.sms.ui.navigation.LinkedDevices
 import com.filestech.sms.ui.navigation.Lock
 import com.filestech.sms.ui.navigation.MediaGallery
 import com.filestech.sms.ui.navigation.Migration
@@ -52,6 +53,7 @@ import com.filestech.sms.ui.screens.backup.BackupScreen
 import com.filestech.sms.ui.screens.blocked.BlockedNumbersScreen
 import com.filestech.sms.ui.screens.compose.ComposeScreen
 import com.filestech.sms.ui.screens.conversations.ConversationsScreen
+import com.filestech.sms.ui.screens.linkeddevices.LinkedDevicesScreen
 import com.filestech.sms.ui.screens.lock.LockScreen
 import com.filestech.sms.ui.screens.media.MediaGalleryScreen
 import com.filestech.sms.ui.screens.migration.MigrationScreen
@@ -133,6 +135,11 @@ fun AppRoot() {
                 nav.popBackStack(route = EmergencySetup, inclusive = true)
             route.contains("Emergency") ->
                 nav.popBackStack(route = Emergency, inclusive = true)
+            // Slice 1 — same guard for Linked devices: the screen names
+            // the user's other devices, which a decoy session must not
+            // reveal (Settings hides the entry with the same guard).
+            route.contains("LinkedDevices") ->
+                nav.popBackStack(route = LinkedDevices, inclusive = true)
         }
     }
 
@@ -455,7 +462,18 @@ fun AppRoot() {
                 onOpenSafetyCall = { nav.navigate(SafetyCallSetup) },
                 onOpenEmergency = { nav.navigate(Emergency) },
                 onOpenEmergencySetup = { nav.navigate(EmergencySetup) },
+                // Slice 1 — Linked devices (LAN server + QR pairing).
+                onOpenLinkedDevices = { nav.navigate(LinkedDevices) },
             )
+        }
+        // Slice 1 — Linked devices slides in from the right like the
+        // other Settings sub-screens (300 ms), instead of the NavHost
+        // default fade.
+        composable<LinkedDevices>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            LinkedDevicesScreen(onBack = { nav.popBackStack() })
         }
         // v1.15.1 — Liste + annulation des messages programmés.
         // Round 17 — Scheduled Messages slides in from the right like the

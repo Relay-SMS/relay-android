@@ -45,3 +45,7 @@ import kotlinx.serialization.Serializable
 
 // v1.15.1 — Écran liste des messages programmés (accessible depuis Settings).
 @Serializable data object ScheduledMessages : Route
+
+// Slice 1 — Linked devices screen (LAN server toggle, linked devices,
+// QR pairing), reached from Settings.
+@Serializable data object LinkedDevices : Route

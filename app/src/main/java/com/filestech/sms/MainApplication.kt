@@ -14,6 +14,8 @@ import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.safetycall.SafetyCallNotice
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.AutoLockObserver
+import com.filestech.sms.sync.LinkedDeviceStore
+import com.filestech.sms.sync.SyncService
 import com.filestech.sms.system.notifications.NotificationChannelInitializer
 import com.filestech.sms.system.scheduler.SafetyCallAlarmScheduler
 import com.filestech.sms.system.scheduler.SafetyCallWorker
@@ -47,6 +49,9 @@ class MainApplication : Application(), Configuration.Provider {
     @Inject lateinit var blockedNumbersImporterLazy: dagger.Lazy<BlockedNumbersImporter>
 
     @Inject lateinit var settingsRepository: SettingsRepository
+
+    /** Slice 1 — the linked-device store; its server toggle drives [SyncService]. */
+    @Inject lateinit var linkedDeviceStore: LinkedDeviceStore
 
     /**
      * v1.28.12 — le rôle d'application SMS par défaut, relu à chaque réconciliation du Safety
@@ -439,6 +444,26 @@ class MainApplication : Application(), Configuration.Provider {
                         KeepAliveService.start(this@MainApplication)
                     } else {
                         KeepAliveService.stop(this@MainApplication)
+                    }
+                }
+                .collect()
+        }
+
+        // Slice 1 — same pattern for the LAN server: observe the toggle
+        // in the linked-device store and start / stop the foreground
+        // [SyncService] in consequence. The toggle defaults ON, so a
+        // fresh install starts the server at first launch; turning it
+        // off on the Linked devices screen stops the service (and its
+        // notification) immediately, and the app works fully standalone.
+        // Boot is covered by BootReceiver, complementarily.
+        appScope.launch {
+            linkedDeviceStore.serverEnabled
+                .distinctUntilChanged()
+                .onEach { enabled ->
+                    if (enabled) {
+                        SyncService.start(this@MainApplication)
+                    } else {
+                        SyncService.stop(this@MainApplication)
                     }
                 }
                 .collect()

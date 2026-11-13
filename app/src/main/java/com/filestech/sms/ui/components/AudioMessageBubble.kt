@@ -230,6 +230,9 @@ fun AudioMessageBubble(
                 reactionEmoji = message.reactionEmoji,
                 isOutgoing = isOut,
                 bubbleColor = bgColor,
+                // Round 21 — badge tap removes the reaction; the callback
+                // rides [BubbleMenuToggles] (see [MessageBubble]).
+                onRemoveReaction = toggles?.onRemoveReaction ?: {},
             ) {
                 Box(
                     modifier = Modifier

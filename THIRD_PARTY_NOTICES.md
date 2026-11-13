@@ -67,6 +67,10 @@ the library publishes — not from memory.
 | Twemoji graphics (emoji / sticker artwork) | Unicode 17, jdecked/twemoji fork | Twitter, Inc. and contributors | **CC-BY 4.0** — attribution below |
 | OkHttp, Okio (pulled in by Coil) | 4.12.0 / 3.9.1 | Square | Apache 2.0 |
 | Timber | 5.0.1 | Jake Wharton | Apache 2.0 |
+| Ktor server (`server-core`, `server-cio`, `server-websockets`) | 3.6.1 | JetBrains | Apache 2.0 |
+| CameraX (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`) | 1.6.2 | Google / AOSP | Apache 2.0 |
+| ZXing core (`com.google.zxing:core`) | 3.5.4 | ZXing authors | Apache 2.0 |
+| BouncyCastle (`bcprov-jdk18on`, `bcpkix-jdk18on`) | 1.87 | Legion of the Bouncy Castle Inc. | MIT |
 | **SQLCipher for Android** | 4.19.0 | Zetetic LLC | **BSD-3-Clause** — full text below |
 
 OkHttp is present because Coil depends on it. SMS Relay uses Coil to display contact photos and
@@ -79,6 +83,13 @@ by Coil; the Twemoji code is not used, only the graphics. The bundled set is a c
 
 SQLCipher bundles **SQLite** and **LibTomCrypt**, both released into the public domain by their
 authors.
+
+Ktor, CameraX, ZXing core and BouncyCastle are new in Slice 1, for linked devices: Ktor serves the
+TLS WebSocket server on the local network, CameraX shows the camera preview for QR pairing, ZXing
+decodes the pairing code on-device, and BouncyCastle verifies Ed25519 signatures and builds the
+fallback TLS certificate. None of them contacts any server or collects usage data; CameraX is a
+local camera wrapper, not a service, and ZXing is used instead of ML Kit precisely because it
+needs no Play Services.
 
 ## Licence texts
 

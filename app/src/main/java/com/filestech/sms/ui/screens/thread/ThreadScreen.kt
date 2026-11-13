@@ -1246,8 +1246,12 @@ fun ThreadScreen(
                 onReact = { msgId -> pickingReactionFor = msgId },
                 // Round 12 — quick-reaction bar: sends the emoji immediately
                 // (same path as the picker); recording the recent happens in
-                // the ViewModel's setReaction.
+                // the ViewModel's setReaction. Round 21 — `null` removes the
+                // reaction (the bar toggles the applied emoji off).
                 onQuickReact = { msgId, emoji -> viewModel.setReaction(msgId, emoji) },
+                // Round 21 — badge tap removes the reaction, single tap, no
+                // confirmation (restores the pre-refresh behaviour).
+                onRemoveReaction = { msgId -> viewModel.setReaction(msgId, null) },
                 onForward = { msg -> forwardingMessage = msg },
                 onTranslate = { msg -> translateMessageExternal(msg) },
                 onCopy = { msg -> copyMessageBody(msg) },
@@ -1661,6 +1665,9 @@ fun ThreadScreen(
                 viewModel.setReaction(msgId, emoji)
                 pickingReactionFor = null
             },
+            // Round 21 — deselecting every emoji and confirming removes the
+            // reaction (the sheet's empty-selection button).
+            onRemove = { viewModel.setReaction(msgId, null) },
             onOpenCustom = {
                 pickingReactionFor = null
                 customReactionFor = msgId
@@ -3751,7 +3758,9 @@ private class ThreadMessageItemActions(
     val onReply: (Message) -> Unit,
     val onReact: (Long) -> Unit,
     /** Round 12 — quick-reaction bar: sends [String] emoji for [Long] message id at once. */
-    val onQuickReact: (Long, String) -> Unit,
+    val onQuickReact: (Long, String?) -> Unit,
+    /** Round 21 — badge tap: removes the reaction (`setReaction(id, null)`). */
+    val onRemoveReaction: (Long) -> Unit,
     val onForward: (Message) -> Unit,
     val onTranslate: (Message) -> Unit,
     val onCopy: (Message) -> Unit,
@@ -3873,11 +3882,21 @@ private fun ThreadMessageItem(
         // Round 12 — quick-reaction bar on tap, incoming messages only
         // (same condition as [onReact]): recents + the send path, bundled
         // in one parameter for [MessageBubble] (Detekt parameter limit).
+        // Round 21 — tapping the emoji already applied removes the reaction
+        // (toggle): the bar passes `null` for it, which the repo maps to
+        // `SetReactionResult.Removed`. A multi-emoji reaction only matches
+        // when the whole string is tapped — a single emoji from it swaps
+        // the reaction instead, as before.
         val quickReactions = remember(msg, actions, recentReactions) {
             if (msg.isIncoming) {
                 com.filestech.sms.ui.components.QuickReactionConfig(
                     recentEmojis = recentReactions,
-                    onSelect = { emoji -> actions.onQuickReact(msg.id, emoji) },
+                    onSelect = { emoji ->
+                        actions.onQuickReact(
+                            msg.id,
+                            if (emoji == msg.reactionEmoji) null else emoji,
+                        )
+                    },
                 )
             } else {
                 null
@@ -3911,6 +3930,12 @@ private fun ThreadMessageItem(
                 onToggleStar = { actions.onToggleStar(msg) },
                 isPinned = isPinnedMessage,
                 onTogglePin = { actions.onTogglePin(msg) },
+                // Round 21 — badge tap removes the reaction. Unlike the
+                // React entry this is NOT gated to incoming messages: a
+                // badge can sit on an outgoing message too (the other
+                // side's Tapback), and tapping it clears the local badge
+                // — same as the original wiring.
+                onRemoveReaction = { actions.onRemoveReaction(msg.id) },
             )
         }
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à

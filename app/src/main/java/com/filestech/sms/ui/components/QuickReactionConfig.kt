@@ -8,6 +8,10 @@ package com.filestech.sms.ui.components
 data class QuickReactionConfig(
     /** Most recently used reaction emojis, most recent first. */
     val recentEmojis: List<String>,
-    /** Called with the tapped emoji; the caller sends the reaction. */
-    val onSelect: (String) -> Unit,
+    /**
+     * Called with the tapped emoji; the caller sends the reaction.
+     * Round 21 — `null` removes the reaction: the caller passes `null`
+     * when the tapped emoji is the one already applied (toggle).
+     */
+    val onSelect: (String?) -> Unit,
 )

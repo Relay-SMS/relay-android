@@ -2,6 +2,7 @@ package com.filestech.sms.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -17,7 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,14 +34,17 @@ import com.filestech.sms.R
  * bleu sortant, dans les deux thèmes. (Avant : fond blanc fixe, qui rendait une
  * pastille claire sur les bulles sombres du thème sombre.)
  *
- * Le badge n'est pas cliquable : une réaction envoyée ne se retire plus en la
- * touchant. TalkBack l'annonce comme un simple libellé (« Réaction ❤️ »), pas
- * comme un bouton.
+ * Round 21 — tap = [onClick] (typically: removes the reaction, via
+ * `setReaction(id, null)`). The badge lost its tap handler in the UI
+ * refresh and a sent reaction could no longer be removed at all; this
+ * restores the original single-tap removal. TalkBack announces it as a
+ * button (« Réaction ❤️, double-tap pour retirer »).
  */
 @Composable
 fun EmojiReactionBadge(
     emoji: String,
     bubbleColor: Color,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -54,8 +60,10 @@ fun EmojiReactionBadge(
     // dark mode), so the badge border read as swapped. `outlineVariant` is the
     // subtle same-side grey in both themes, as it was before round 6.
     val shape = RoundedCornerShape(12.dp)
-    // v1.6.0 (audit U2) — a11y : TalkBack annonce "Réaction <emoji>" au lieu d'un Box
-    // muet. Pas de `Role.Button` : le badge n'est pas une action (tap = rien).
+    // v1.6.0 (audit U2) — a11y : TalkBack annonce "Réaction <emoji>, double-tap
+    // pour retirer" au lieu d'un Box muet. `Role.Button` cible explicitement
+    // les services d'a11y, `onClickLabel` qualifie l'action.
+    val removeLabel = stringResource(R.string.reaction_badge_remove_action)
     val badgeContentDescription = stringResource(R.string.reaction_badge_content_description, emoji)
     Box(
         modifier = modifier
@@ -66,7 +74,9 @@ fun EmojiReactionBadge(
             .border(width = 1.dp, color = cs.outlineVariant, shape = shape)
             .semantics {
                 contentDescription = badgeContentDescription
+                role = Role.Button
             }
+            .clickable(onClickLabel = removeLabel, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -85,12 +95,17 @@ fun EmojiReactionBadge(
  * Relay UI refresh : le badge reprend la couleur de fond de la bulle qu'il décore
  * (grise entrante, bleue sortante, dans les deux thèmes) et descend de quelques px
  * pour ne plus couvrir l'horodatage en bas de bulle.
+ *
+ * Round 21 — [onRemoveReaction] restores the badge tap: tapping the badge
+ * removes the reaction (single tap, no confirmation), as it did before
+ * the UI refresh dropped the handler.
  */
 @Composable
 fun BubbleReactionOverlay(
     reactionEmoji: String?,
     isOutgoing: Boolean,
     bubbleColor: Color,
+    onRemoveReaction: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     if (reactionEmoji == null) {
@@ -110,6 +125,7 @@ fun BubbleReactionOverlay(
         EmojiReactionBadge(
             emoji = reactionEmoji,
             bubbleColor = bubbleColor,
+            onClick = onRemoveReaction,
             modifier = Modifier
                 .align(if (isOutgoing) Alignment.BottomStart else Alignment.BottomEnd)
                 // Feedback round 5 — the badge hung 12dp below the edge, so it

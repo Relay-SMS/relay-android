@@ -659,14 +659,16 @@
     <string name="reaction_picker_validate_count">Send reaction %1$s</string>
     <!-- v1.6.0 — a11y reaction badge (TalkBack) -->
     <string name="reaction_badge_content_description">Reaction %1$s</string>
+    <!-- Round 21 — badge tap removes the reaction again (also the picker sheet's empty-selection button) -->
+    <string name="reaction_badge_remove_action">Remove reaction</string>
     <!-- v1.6.1 — body of the system notification fired when someone reacts to our message -->
     <string name="reaction_notif_body_with_preview">Reacted %1$s to: %2$s</string>
     <string name="reaction_notif_body_no_preview">Reacted %1$s to your message</string>
     <!-- v1.6.1 — snackbar shown when PDF export fails (audit QUAL-07 i18n fix) -->
     <string name="snack_pdf_export_failed">PDF export failed</string>
 
-    <!-- v1.8.0 — confirmation dialogs + "Mark all as read" action in overflow menu -->
-    <string name="action_mark_all_read">Mark all as read</string>
+    <!-- v1.8.0 — confirmation dialogs + "Mark all read" action in overflow menu -->
+    <string name="action_mark_all_read">Mark all read</string>
     <string name="mark_all_read_confirm_body">All current unread badges will be cleared. New incoming messages will display badges normally afterwards.</string>
     <string name="settings_resync_confirm_title">Resync from phone?</string>
     <string name="settings_resync_confirm_body">Re-imports messages from the system SMS/MMS provider. Existing messages stay (deduped via unique ID); previously deleted messages may reappear if they still exist in the system database. Continue?</string>
@@ -767,7 +769,7 @@
     <string name="about_perm_notifications">Show new-message notifications.</string>
     <string name="about_perm_biometric">Optional biometric unlock.</string>
     <string name="about_perm_record_audio">Record audio messages attached to outgoing MMS.</string>
-    <string name="about_perm_internet">GIF search only (Klipy). The app works without it.</string>
+    <string name="about_perm_internet">GIF search (Klipy) and link previews only. The app works without it.</string>
     <string name="about_perm_foreground_service">Long-running migration / backup.</string>
     <string name="about_perm_location">Emergency mode only, if you turn it on: one position at the moment of the alert, precise or approximate.</string>
     <string name="about_perm_call_phone">Emergency call tiles: call directly. Refused, they open the dialer instead.</string>
@@ -926,6 +928,7 @@
     <string name="about_badge_no_tracker">No tracker</string>
     <string name="about_badge_no_collection">No data collected</string>
     <string name="about_badge_no_sharing">Zero sharing</string>
+    <string name="about_badge_no_google">No Google services</string>
 
     <!-- Features (15) -->
     <string name="about_feat_sms_label">SMS &amp; MMS</string>
@@ -957,7 +960,7 @@
     <string name="about_feat_ui_label">Smooth UI</string>
     <string name="about_feat_ui_desc">Compose + per-bubble isolated recomposition. Conversation sorting in the 3-dot menu.</string>
     <string name="about_feat_noads_label">Zero ads, zero trackers</string>
-    <string name="about_feat_noads_desc">No analytics. Internet is used only for GIF search (Klipy); MMS are carried by Android\'s own MMS service.</string>
+    <string name="about_feat_noads_desc">No analytics, no Google services. Internet is used only for GIF search (Klipy) and link previews; MMS are carried by Android\'s own MMS service.</string>
 
     <!-- Help recipes (7 titles + steps) -->
     <string name="about_help_default_title">Set as default SMS app</string>
@@ -1151,4 +1154,40 @@
     <string name="emoji_section_nature">Nature</string>
     <string name="emoji_section_symbols">Symbols</string>
     <string name="emoji_section_flags">Flags</string>
+    <!-- Slice 1 — Linked devices (LAN server + QR pairing) -->
+    <string name="linked_devices_title">Linked devices</string>
+    <string name="settings_section_linked_devices">Linked devices</string>
+    <string name="linked_devices_section_server">Server</string>
+    <string name="linked_devices_section_devices">Devices</string>
+    <string name="linked_devices_server_title">Linking server</string>
+    <string name="linked_devices_server_hint">When on, your computer can find this phone on the local network and link to it. Nothing leaves your Wi-Fi network.</string>
+    <string name="linked_devices_link_action">Link a device</string>
+    <string name="linked_devices_empty_title">No linked devices yet</string>
+    <string name="linked_devices_empty_body">Link your computer from here by scanning its pairing code.</string>
+    <string name="linked_devices_kind_desktop">Computer</string>
+    <string name="linked_devices_kind_phone">Phone</string>
+    <string name="linked_devices_kind_tablet">Tablet</string>
+    <string name="linked_devices_connected">Connected now</string>
+    <string name="linked_devices_linked_on">Linked %1$s</string>
+    <string name="linked_devices_confirm_title">Link this device?</string>
+    <string name="linked_devices_confirm_body">Link %1$s (%2$s) to this phone? It will be able to connect whenever both are on the same Wi-Fi network.</string>
+    <string name="linked_devices_confirm_action">Link</string>
+    <string name="linked_devices_remove_title">Remove %1$s?</string>
+    <string name="linked_devices_remove_body">This device will no longer be able to connect to this phone. You can link it again later.</string>
+    <string name="linked_devices_remove_action">Remove</string>
+    <string name="linked_devices_remove_content_desc">Remove device</string>
+    <string name="linked_devices_linked">%1$s linked</string>
+    <string name="linked_devices_removed">%1$s removed</string>
+    <string name="linked_devices_scan_title">Scan the pairing code</string>
+    <string name="linked_devices_scan_hint">Point the camera at the QR code shown on the other device.</string>
+    <string name="linked_devices_scan_camera_needed">Camera access is needed to scan the pairing code.</string>
+    <string name="linked_devices_scan_allow_camera">Allow camera</string>
+    <string name="linked_devices_scan_camera_error">Couldn\'t open the camera. Try again.</string>
+    <string name="linked_devices_scan_invalid">This QR code isn\'t a Relay pairing code.</string>
+    <string name="linked_devices_scan_unsupported">This pairing code needs a newer version of Relay.</string>
+    <string name="linked_devices_scan_damaged">This pairing code is incomplete or damaged. Show it again on the other device.</string>
+    <string name="sync_channel_label">Linked devices</string>
+    <string name="sync_channel_desc">Shows while the phone is reachable by linked devices on the local network.</string>
+    <string name="sync_notification_title">SMS Relay</string>
+    <string name="sync_notification_text">Ready for linked devices on this Wi-Fi network.</string>
 </resources>

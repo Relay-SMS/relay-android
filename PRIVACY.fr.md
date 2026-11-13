@@ -1,6 +1,6 @@
 # Politique de confidentialité — SMS Relay
 
-_Dernière mise à jour : 26 octobre 2026_ · 🇬🇧 [English](PRIVACY.md) · 🇩🇪 [Deutsch](PRIVACY.de.md) · 🇮🇹 [Italiano](PRIVACY.it.md) · 🇪🇸 [Español](PRIVACY.es.md)
+_Dernière mise à jour : 13 novembre 2026_ · 🇬🇧 [English](PRIVACY.md) · 🇩🇪 [Deutsch](PRIVACY.de.md) · 🇮🇹 [Italiano](PRIVACY.it.md) · 🇪🇸 [Español](PRIVACY.es.md)
 
 > **Versions de référence.** Les versions française et anglaise de cette politique font foi. Les
 > traductions allemande, italienne et espagnole sont fournies à titre d'information ; en cas de
@@ -11,10 +11,14 @@ Haltaya**. Voir aussi les [conditions d'utilisation](TERMS.fr.md).
 
 ## Ce que nous collectons
 
-**Rien.** SMS Relay ne collecte, ne transmet ni n'agrège aucune donnée personnelle — avec une
-seule exception : lorsque vous recherchez un GIF, les mots tapés sont envoyés à Klipy pour qu'il
-renvoie des GIF correspondants (voir [Réseau](#réseau) ci-dessous). Relay ne conserve rien de cet
-échange au-delà du GIF que vous choisissez d'envoyer.
+**Rien.** SMS Relay ne collecte, ne transmet ni n'agrège aucune donnée personnelle — avec deux
+exceptions, toutes deux à votre initiative : lorsque vous recherchez un GIF, les mots tapés sont
+envoyés à Klipy pour qu'il renvoie des GIF correspondants, et lorsqu'un message contient un lien,
+Relay récupère cette page une fois pour afficher une carte d'aperçu (voir
+[Réseau](#réseau) ci-dessous). Relay ne conserve rien de ces échanges au-delà du GIF que vous
+choisissez d'envoyer et de l'aperçu qu'il vous montre. Lier un ordinateur ne change rien à cela :
+le téléphone et l'ordinateur se parlent directement sur votre réseau Wi-Fi local — aucun serveur
+Relay, aucun cloud, rien ne quitte le réseau.
 
 Aucun SDK d'analytique, aucun rapporteur de crash, aucun endpoint de télémétrie, aucun identifiant
 publicitaire, aucune bibliothèque de fingerprinting. Le binaire ne contient aucun code de pistage
@@ -31,6 +35,12 @@ tiers.
 - Les pièces jointes MMS éventuelles, dans `<files>/mms_attachments/`.
 - Les éventuels PDF de conversation générés localement, dans `<files>/exports/`.
 - Si vous les configurez, vos contacts d'urgence et les réglages du mode urgence et du Safety call.
+- Si vous liez un appareil, sa fiche : l'identifiant de l'appareil, son type (ordinateur,
+  téléphone ou tablette), son nom affiché, sa clé publique et sa date de liaison. La clé privée
+  correspondante ne quitte jamais l'appareil lié, et la fiche est supprimée quand vous retirez
+  l'appareil. Le téléphone conserve aussi son propre identifiant de hub ainsi que le certificat
+  TLS et la clé privée que le serveur local présente aux appareils liés (la clé privée vit dans
+  l'AndroidKeyStore).
 
 Comme toute application de SMS par défaut, SMS Relay écrit aussi vos messages dans la messagerie
 système d'Android, qui les conserve indépendamment de l'application.
@@ -40,17 +50,27 @@ lors d'un transfert d'appareil sans votre accord explicite.
 
 ## Réseau
 
-SMS Relay détient la permission `INTERNET` pour une seule fonctionnalité : la recherche de GIF.
-Lorsque vous ouvrez l'onglet GIF et tapez une recherche, les mots tapés sont envoyés à Klipy
+SMS Relay détient la permission `INTERNET` pour trois usages. (1) Recherche de GIF : lorsque vous
+ouvrez l'onglet GIF et tapez une recherche, les mots tapés sont envoyés à Klipy
 (`api.klipy.com`), qui renvoie des GIF correspondants ; en toucher un le télécharge depuis Klipy,
 et les vignettes de la grille viennent aussi de Klipy. Klipy voit vos mots de recherche et votre
-adresse IP, comme tout service contacté. C'est la seule utilisation réseau de l'application :
-aucune vérification de mise à jour, aucune configuration distante, aucun ping analytique, aucun
-rapport de plantage. Si la permission est bloquée, l'application fonctionne toujours — la
-recherche de GIF ne renvoie simplement rien. Plus tard, la même permission couvrira aussi
-l'appairage wifi/cloud avec l'application de bureau. (La permission avait été retirée en 1.28.13,
-lorsque l'application n'émettait aucune requête réseau ; elle revient maintenant, délibérément,
-pour la recherche de GIF uniquement.)
+adresse IP, comme tout service contacté. (2) Aperçus de liens : lorsqu'un message contient une
+URL, Relay récupère cette page une fois, sur l'appareil, et lit son titre et son image Open Graph
+pour l'affichage uniquement — le site lié voit la requête et votre adresse IP, comme lors de toute
+visite ; l'image d'aperçu n'est jamais envoyée en pièce jointe. (3) Appareils liés : le téléphone
+fait tourner un serveur TLS sur le réseau local (port 47831, annoncé via mDNS sous
+`_relay._tcp.`) pour qu'un ordinateur que vous avez lié puisse le trouver et se connecter. Le
+serveur n'accepte que les appareils dont vous avez enregistré la clé publique en scannant leur
+code d'appariement, et seulement après qu'ils ont prouvé détenir la clé privée correspondante ;
+le trafic ne quitte jamais votre réseau Wi-Fi, et aucun serveur Relay ni aucun compte cloud
+n'intervient. Le serveur se désactive dans Réglages → Appareils liés ; l'application fonctionne
+alors pleinement seule. C'est la seule utilisation réseau de l'application : aucune vérification
+de mise à jour, aucune configuration distante, aucun ping analytique, aucun rapport de plantage.
+Si la permission est bloquée, l'application fonctionne toujours — la recherche de GIF ne renvoie
+simplement rien, les liens n'affichent pas d'aperçu, et aucun ordinateur ne peut se lier. (La
+permission avait été retirée en 1.28.13, lorsque l'application n'émettait aucune requête réseau ;
+elle est revenue pour la recherche de GIF, puis pour les aperçus de liens, et maintenant pour les
+appareils liés.)
 
 Les messages que vous envoyez passent par le réseau de votre opérateur, comme avec toute application
 de SMS. Le développeur ne les reçoit jamais.

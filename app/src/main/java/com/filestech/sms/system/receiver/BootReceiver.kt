@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.di.ApplicationScope
+import com.filestech.sms.sync.LinkedDeviceStore
+import com.filestech.sms.sync.SyncService
 import com.filestech.sms.system.notifications.EmergencyShortcutNotifier
 import com.filestech.sms.system.scheduler.SafetyCallWorker
 import com.filestech.sms.system.scheduler.ScheduledMessageSchedulerImpl
@@ -26,6 +28,9 @@ class BootReceiver : BroadcastReceiver() {
     @Inject lateinit var schedulerLazy: dagger.Lazy<ScheduledMessageSchedulerImpl>
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var emergencyShortcutNotifier: EmergencyShortcutNotifier
+
+    /** Slice 1 — the linked-device store; its server toggle is read at boot. */
+    @Inject lateinit var linkedDeviceStore: LinkedDeviceStore
     @Inject @ApplicationScope lateinit var scope: CoroutineScope
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -90,6 +95,20 @@ class BootReceiver : BroadcastReceiver() {
                 } ?: false
                 if (enabled) {
                     KeepAliveService.start(context)
+                }
+                // Slice 1 — same for the LAN server: restart it at boot
+                // if its toggle is on, so the desktop can link without
+                // the user opening the app first. `specialUse`, like the
+                // keep-alive service, so the boot start is allowed (a
+                // `dataSync` service could not start from BOOT_COMPLETED
+                // under targetSdk 35). Same 3 s cap as above.
+                val syncEnabled = withTimeoutOrNull(3_000L) {
+                    runCatching {
+                        linkedDeviceStore.serverEnabled.first()
+                    }.getOrDefault(false)
+                } ?: false
+                if (syncEnabled) {
+                    SyncService.start(context)
                 }
                 // v1.12.0 — re-poster la notification persistante du raccourci
                 // urgence si l'user l'a activée. Sans ça, après reboot, la notif

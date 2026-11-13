@@ -71,8 +71,9 @@ MANIFESTE_PAR_DEFAUT = os.path.join(
 
 # Ne doit JAMAIS atteindre l'APK, quoi que dise la liste revue. Vide depuis le
 # round 13 : INTERNET, seule permission reseau, est desormais revue et figure
-# dans AUTORISEES (recherche de GIF uniquement). L'ensemble reste : c'est le
-# crochet ou inscrire une future permission a bannir absolument.
+# dans AUTORISEES (recherche de GIF, apercus de liens et serveur local des
+# appareils lies). L'ensemble reste : c'est le crochet ou inscrire une future
+# permission a bannir absolument.
 INTERDITES = set()
 
 # Tout ce que l'APK revu porte. Chaque entree est documentee dans PERMISSIONS.md.
@@ -99,10 +100,15 @@ AUTORISEES = {
     "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
     "android.permission.RECEIVE_BOOT_COMPLETED",
-    # Round 13 + 17 — INTERNET, pour la recherche de GIF via Klipy et les
-    # apercus de liens (et, plus tard, l'appariement wifi/cloud avec l'app
-    # desktop). Documentee dans PERMISSIONS.md ; aucune autre utilisation
-    # reseau n'est autorisee.
+    # Slice 1 — CAMERA, pour le scan du code QR d'appariement uniquement
+    # (CameraX + ZXing core, en local, aucune photo prise ni stockee).
+    # Documentee dans PERMISSIONS.md ; demandee a l'execution, au moment
+    # ou l'utilisateur ouvre le scanner.
+    "android.permission.CAMERA",
+    # Round 13 + 17, Slice 1 — INTERNET, pour la recherche de GIF via
+    # Klipy, les apercus de liens et le serveur local des appareils lies
+    # (LAN uniquement, aucun cloud). Documentee dans PERMISSIONS.md ;
+    # aucune autre utilisation reseau n'est autorisee.
     "android.permission.INTERNET",
     # Transitives : androidx.biometric (Android 8) et androidx.work.
     "android.permission.USE_FINGERPRINT",
@@ -195,7 +201,7 @@ def verifier(chemin: str, bavard: bool = True) -> int:
         erreur(problemes)
         return 1
     if bavard:
-        print("\nOK : aucune permission hors de la liste revue (INTERNET y figure, recherche de GIF uniquement).")
+        print("\nOK : aucune permission hors de la liste revue (INTERNET y figure, recherche de GIF, apercus de liens et serveur local des appareils lies).")
     return 0
 
 

@@ -662,6 +662,7 @@
     <string name="reaction_picker_validate_count">Reaktion %1$s senden</string>
     <!-- v1.6.0 — a11y reaction badge (TalkBack) -->
     <string name="reaction_badge_content_description">Reaktion %1$s</string>
+    <string name="reaction_badge_remove_action">Reaktion entfernen</string>
     <!-- v1.6.1 — body of the system notification fired when someone reacts to our message -->
     <string name="reaction_notif_body_with_preview">Hat mit %1$s reagiert auf: %2$s</string>
     <string name="reaction_notif_body_no_preview">Hat mit %1$s auf Ihre Nachricht reagiert</string>
@@ -1137,4 +1138,41 @@
     <string name="emoji_section_nature">Natur</string>
     <string name="emoji_section_symbols">Symbole</string>
     <string name="emoji_section_flags">Flaggen</string>
+    <!-- Slice 1 — Linked devices (LAN server + QR pairing) -->
+    <string name="about_badge_no_google">Keine Google-Dienste</string>
+    <string name="linked_devices_title">Verknüpfte Geräte</string>
+    <string name="settings_section_linked_devices">Verknüpfte Geräte</string>
+    <string name="linked_devices_section_server">Server</string>
+    <string name="linked_devices_section_devices">Geräte</string>
+    <string name="linked_devices_server_title">Verknüpfungsserver</string>
+    <string name="linked_devices_server_hint">Wenn aktiviert, kann Ihr Computer dieses Telefon im lokalen Netzwerk finden und sich damit verknüpfen. Nichts verlässt Ihr WLAN.</string>
+    <string name="linked_devices_link_action">Gerät verknüpfen</string>
+    <string name="linked_devices_empty_title">Noch keine verknüpften Geräte</string>
+    <string name="linked_devices_empty_body">Verknüpfen Sie Ihren Computer von hier aus, indem Sie seinen Kopplungscode scannen.</string>
+    <string name="linked_devices_kind_desktop">Computer</string>
+    <string name="linked_devices_kind_phone">Telefon</string>
+    <string name="linked_devices_kind_tablet">Tablet</string>
+    <string name="linked_devices_connected">Jetzt verbunden</string>
+    <string name="linked_devices_linked_on">Verknüpft am %1$s</string>
+    <string name="linked_devices_confirm_title">Dieses Gerät verknüpfen?</string>
+    <string name="linked_devices_confirm_body">%1$s (%2$s) mit diesem Telefon verknüpfen? Es kann sich verbinden, sobald beide im selben WLAN sind.</string>
+    <string name="linked_devices_confirm_action">Verknüpfen</string>
+    <string name="linked_devices_remove_title">%1$s entfernen?</string>
+    <string name="linked_devices_remove_body">Dieses Gerät kann sich dann nicht mehr mit diesem Telefon verbinden. Sie können es später erneut verknüpfen.</string>
+    <string name="linked_devices_remove_action">Entfernen</string>
+    <string name="linked_devices_remove_content_desc">Gerät entfernen</string>
+    <string name="linked_devices_linked">%1$s verknüpft</string>
+    <string name="linked_devices_removed">%1$s entfernt</string>
+    <string name="linked_devices_scan_title">Kopplungscode scannen</string>
+    <string name="linked_devices_scan_hint">Richten Sie die Kamera auf den QR-Code, der auf dem anderen Gerät angezeigt wird.</string>
+    <string name="linked_devices_scan_camera_needed">Kamerazugriff ist zum Scannen des Kopplungscodes erforderlich.</string>
+    <string name="linked_devices_scan_allow_camera">Kamera erlauben</string>
+    <string name="linked_devices_scan_camera_error">Die Kamera konnte nicht geöffnet werden. Bitte erneut versuchen.</string>
+    <string name="linked_devices_scan_invalid">Dieser QR-Code ist kein Relay-Kopplungscode.</string>
+    <string name="linked_devices_scan_unsupported">Dieser Kopplungscode braucht eine neuere Version von Relay.</string>
+    <string name="linked_devices_scan_damaged">Dieser Kopplungscode ist unvollständig oder beschädigt. Zeigen Sie ihn auf dem anderen Gerät erneut an.</string>
+    <string name="sync_channel_label">Verknüpfte Geräte</string>
+    <string name="sync_channel_desc">Wird angezeigt, solange das Telefon für verknüpfte Geräte im lokalen Netzwerk erreichbar ist.</string>
+    <string name="sync_notification_title">SMS Relay</string>
+    <string name="sync_notification_text">Bereit für verknüpfte Geräte in diesem WLAN.</string>
 </resources>

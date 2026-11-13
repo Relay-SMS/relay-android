@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.FormatSize
@@ -143,6 +144,8 @@ fun SettingsScreen(
     onOpenSafetyCall: () -> Unit,
     onOpenEmergency: () -> Unit,
     onOpenEmergencySetup: () -> Unit,
+    // Slice 1 — Linked devices (LAN server toggle, linked devices, QR pairing).
+    onOpenLinkedDevices: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -698,6 +701,24 @@ fun SettingsScreen(
                         RelaySettingRow(
                             icon = Icons.Outlined.SystemUpdate,
                             title = stringResource(R.string.migration_title),
+                            chevron = true,
+                        )
+                    }
+                }
+            }
+
+            // Slice 1 — Linked devices: the LAN server toggle, the linked
+            // devices and QR pairing live on their own screen. Hidden in
+            // a panic-decoy session like Backup: the linked device names
+            // are identifying, and the decoy must read as an ordinary
+            // SMS app.
+            if (!isPanicDecoy) {
+                RelaySectionLabel(stringResource(R.string.settings_section_linked_devices))
+                RelaySettingsGroup {
+                    item(onClick = onOpenLinkedDevices) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Devices,
+                            title = stringResource(R.string.linked_devices_title),
                             chevron = true,
                         )
                     }

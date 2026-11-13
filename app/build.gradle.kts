@@ -340,6 +340,23 @@ dependencies {
     // SQLCipher
     implementation(libs.sqlcipher.android)
 
+    // Slice 1 — phone <-> desktop linking over the local network (see
+    // SYNC_PROTOCOL.md and the `sync` package). Ktor serves the LAN
+    // WebSocket endpoint, CameraX + ZXing core scan the pairing QR code
+    // (no Play Services), BouncyCastle verifies Ed25519 signatures below
+    // API 33 and builds the fallback TLS certificate. All four are local
+    // open-source libraries with no network use and no telemetry.
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.cio)
+    implementation(libs.ktor.server.websockets)
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.zxing.core)
+    implementation(libs.bouncycastle.prov)
+    implementation(libs.bouncycastle.pkix)
+
     // Logging
     implementation(libs.timber)
 
