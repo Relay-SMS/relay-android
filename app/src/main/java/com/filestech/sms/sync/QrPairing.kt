@@ -77,8 +77,11 @@ object QrPairing {
         for (pair in rawQuery.split("&")) {
             val equals = pair.indexOf('=')
             if (equals > 0) {
+                // The (String, Charset) overload needs API 33; the app's
+                // min is 26, so use the (String, String) overload that has
+                // existed since API 1. "UTF-8" is guaranteed present.
                 val value = runCatching {
-                    URLDecoder.decode(pair.substring(equals + 1), Charsets.UTF_8)
+                    URLDecoder.decode(pair.substring(equals + 1), "UTF-8")
                 }.getOrNull()
                 if (value != null) {
                     params.putIfAbsent(pair.substring(0, equals), value)
