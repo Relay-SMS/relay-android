@@ -666,7 +666,16 @@ fun ThreadScreen(
     // messages is never yanked back; reaching the bottom again re-pins.
     // The pin starts false and is only set by actually seeing the bottom
     // item fully visible — merely sitting one item up never pins.
-    LaunchedEffect(listState, bottomItemIndex) {
+    // Round 19 (2026-11-12) — OFF while the picker panel is open: dragging
+    // the panel resizes the viewport on every pixel, and each of those
+    // layout emissions made this effect re-scroll to the bottom — a
+    // scroll + full re-layout per drag pixel, which saturated the main
+    // thread until input timed out (ANR, main thread stuck in the
+    // snapshot drain). The picker-open effect above already re-pins after
+    // the 300ms enter animation; the pin re-engages on the next layout
+    // emission once the panel closes.
+    LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen) {
+        if (emojiPickerOpen) return@LaunchedEffect
         var pinnedToBottom = false
         snapshotFlow { listState.layoutInfo }.collect { info ->
             if (listState.isScrollInProgress) {

@@ -165,10 +165,12 @@ fun AdvancedScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 16.dp),
                     ) {
-                        // Feedback round 5 — the glyph centres on the title line,
-                        // not on the whole row (same nesting as [ToggleRow] and
-                        // [RelayRow]): the icon and the title share an inner row,
-                        // and the description starts under the title text.
+                        // Round 19 — same shape as [RelaySettingRow]: the icon
+                        // badge centres on the whole text block (title +
+                        // description), and the description sits 2dp under
+                        // the title. Before, the badge centred on the title
+                        // line alone, which left a dead band under the title
+                        // (half the 40dp badge) before the description started.
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -187,29 +189,30 @@ fun AdvancedScreen(
                                     modifier = Modifier.size(22.dp),
                                 )
                             }
-                            Text(
-                                text = stringResource(R.string.settings_default_sms_app),
-                                // Round 13 — 14sp like the other row titles: round 12
-                                // changed RelaySettingRow but missed this custom row.
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
-                                color = MaterialTheme.colorScheme.onSurface,
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
                                 modifier = Modifier.weight(1f),
-                            )
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.settings_default_sms_app),
+                                    // Round 13 — 14sp like the other row titles: round 12
+                                    // changed RelaySettingRow but missed this custom row.
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = if (estParDefaut) {
+                                        stringResource(R.string.settings_is_default)
+                                    } else {
+                                        stringResource(R.string.error_not_default_app)
+                                    },
+                                    // Feedback round 6 — M3 supporting text is bodyMedium
+                                    // (14sp/20), not the 13sp/16 timestamp style.
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
-                        Text(
-                            text = if (estParDefaut) {
-                                stringResource(R.string.settings_is_default)
-                            } else {
-                                stringResource(R.string.error_not_default_app)
-                            },
-                            // Feedback round 6 — M3 supporting text is bodyMedium
-                            // (14sp/20), not the 13sp/16 timestamp style.
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            // Feedback round 4 — a little gap between the row title
-                            // and its description line (same 2dp as [RelayRow]).
-                            modifier = Modifier.padding(start = 56.dp, top = 2.dp),
-                        )
                         if (!estParDefaut) {
                             Spacer(Modifier.size(10.dp))
                             RelayPrimaryButton(

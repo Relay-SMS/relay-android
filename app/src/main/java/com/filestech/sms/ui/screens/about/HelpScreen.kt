@@ -120,9 +120,12 @@ private fun HelpRecipeSection(title: String, steps: List<String>) {
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                     }
+                    // Round 19 — the step text is bodyMedium (14sp), one step
+                    // down from bodyLarge: at 16sp the steps read a touch
+                    // too big next to their number badges.
                     Text(
                         text = step,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
                             .weight(1f)

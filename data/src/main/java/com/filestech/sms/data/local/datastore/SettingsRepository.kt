@@ -288,7 +288,7 @@ class SettingsRepository(
         return AppSettings(
             appearance = Appearance(
                 themeMode = enumOr(p, K.themeMode, ThemeMode.SYSTEM, ThemeMode::valueOf),
-                dynamicColors = p[K.dynamicColors] ?: true,
+                dynamicColors = p[K.dynamicColors] ?: false,
                 customAccentArgb = p[K.customAccentArgb],
                 textScale = enumOr(p, K.textScale, TextScale.MEDIUM, TextScale::valueOf),
                 density = enumOr(p, K.density, ListDensity.STANDARD, ListDensity::valueOf),
@@ -587,7 +587,12 @@ class SettingsRepository(
 
     private object K {
         val themeMode = stringPreferencesKey("appearance.themeMode")
-        val dynamicColors = booleanPreferencesKey("appearance.dynamic")
+
+        // Round 19 — new key: the old `appearance.dynamic` key carried the
+        // old default (`true`) on existing installs, from when the toggle
+        // was a no-op. The toggle now defaults to OFF, so the value lives
+        // under a fresh key and the old one joins [CLES_RETIREES] below.
+        val dynamicColors = booleanPreferencesKey("appearance.dynamicColors")
         val customAccentArgb = intPreferencesKey("appearance.customAccent")
         val textScale = stringPreferencesKey("appearance.textScale")
         val density = stringPreferencesKey("appearance.density")
@@ -616,6 +621,9 @@ class SettingsRepository(
             stringPreferencesKey("locale.tag"),
             stringPreferencesKey("locale.firstDay"),
             booleanPreferencesKey("advanced.isDefault"),
+            // Round 19 — superseded by `appearance.dynamicColors` (above):
+            // the old key held the no-op era's `true` default.
+            booleanPreferencesKey("appearance.dynamic"),
         )
 
         val sortMode = stringPreferencesKey("conv.sort")

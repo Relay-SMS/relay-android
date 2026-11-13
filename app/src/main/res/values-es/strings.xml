@@ -144,7 +144,7 @@
     <!-- Conversations list -->
     <string name="conversations_empty_title">Todavía no hay conversaciones</string>
     <string name="conversations_empty_body">En cuanto reciba o envíe un mensaje, aparecerá aquí.</string>
-    <string name="conversations_archived_empty">No hay conversaciones archivadas.</string>
+    <string name="conversations_archived_empty">No hay conversaciones archivadas</string>
     <string name="conversations_archived_empty_body">Mantén tu bandeja de entrada ordenada moviendo conversaciones fuera de la lista principal sin eliminarlas. Accede a ellas cuando quieras en Archivo.</string>
     <string name="conversations_importing_title">Importando sus mensajes</string>
     <string name="conversations_importing_body">Leyendo los SMS que ya tiene: esto ocurre una sola vez.</string>
@@ -206,7 +206,7 @@
 
     <!-- Vault -->
     <string name="vault_title">Caja fuerte segura</string>
-    <string name="vault_empty">La caja fuerte está vacía.</string>
+    <string name="vault_empty">La caja fuerte está vacía</string>
     <string name="vault_empty_body">Los mensajes de la caja fuerte están protegidos con cifrado AES-256 mediante SQLCipher, con la clave de cifrado almacenada de forma segura en Android Keystore. Acceda a su caja fuerte con su PIN, contraseña o datos biométricos.</string>
     <string name="vault_move_in">Mover a la caja fuerte</string>
     <string name="vault_move_out">Sacar de la caja fuerte</string>

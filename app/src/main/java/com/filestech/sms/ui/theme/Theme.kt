@@ -1,13 +1,17 @@
 package com.filestech.sms.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.filestech.sms.domain.settings.Appearance
@@ -19,19 +23,46 @@ fun SmsTechTheme(
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
-    // Two fixed schemes only: Light and one Dark (`#1B1B1B`). The dynamic-colours
-    // toggle and the AMOLED true-black toggle still exist in Settings, but they
-    // resolve onto these two schemes — dynamic colours / true black no longer
-    // re-derive the palette from the wallpaper. The options are kept (and their
-    // stored values untouched) so a later pass can refresh or remove them without
-    // a settings migration. (The DarkTech theme mode was removed in feedback
-    // round 4; a stored `DARK_TECH` value falls back to System at read time.)
+    // (The DarkTech theme mode was removed in feedback round 4; a stored
+    // `DARK_TECH` value falls back to System at read time.)
     val useDark = when (appearance.themeMode) {
         ThemeMode.SYSTEM -> systemDark
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val baseScheme: ColorScheme = if (useDark) darkScheme() else lightScheme()
+    // Round 19 — dynamic colours (Material You, Android 12+): when the
+    // toggle is on, the scheme is derived from the wallpaper instead of
+    // the two fixed palettes. Off by default; below Android 12 the toggle
+    // does nothing and the fixed palettes apply. The fixed Relay blue
+    // still shows where the app paints it directly (bubbles, primary
+    // buttons) — only the scheme accents follow the wallpaper.
+    val context = LocalContext.current
+    val useDynamic = appearance.dynamicColors &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val baseScheme: ColorScheme = when {
+        useDynamic && useDark -> dynamicDarkColorScheme(context)
+        useDynamic -> dynamicLightColorScheme(context)
+        useDark -> darkScheme()
+        else -> lightScheme()
+    }
+    // Round 19 — AMOLED true black: in dark mode, every surface goes
+    // pure black so the pixels switch off. Accents, text and content
+    // colours are untouched. Applies on top of the dynamic scheme too.
+    val amoledScheme = if (useDark && appearance.amoledTrueBlack) {
+        baseScheme.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceVariant = Color.Black,
+            surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = Color.Black,
+            surfaceContainer = Color.Black,
+            surfaceContainerHigh = Color.Black,
+            surfaceContainerHighest = Color.Black,
+            surfaceDim = Color.Black,
+        )
+    } else {
+        baseScheme
+    }
 
     // A user-chosen accent still overrides primary; without one the app uses the
     // fixed Relay blue. The content colour is derived from the accent itself (see
@@ -41,9 +72,9 @@ fun SmsTechTheme(
     val scheme = appearance.customAccentArgb
         ?.let { argb ->
             val accent = Color(argb)
-            baseScheme.copy(primary = accent, onPrimary = onBrandContainer(accent))
+            amoledScheme.copy(primary = accent, onPrimary = onBrandContainer(accent))
         }
-        ?: baseScheme
+        ?: amoledScheme
 
     val view = LocalView.current
     if (!view.isInEditMode) {

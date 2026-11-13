@@ -139,7 +139,7 @@
 
     <string name="conversations_empty_title">Aucune conversation</string>
     <string name="conversations_empty_body">Dès qu\'un message arrive ou est envoyé, il s\'affichera ici.</string>
-    <string name="conversations_archived_empty">Aucune conversation archivée.</string>
+    <string name="conversations_archived_empty">Aucune conversation archivée</string>
     <string name="conversations_archived_empty_body">Gardez votre boîte de réception bien rangée en déplaçant les conversations hors de la liste principale sans les supprimer. Retrouvez-les à tout moment dans les archives.</string>
     <string name="conversations_importing_title">Importation de vos messages</string>
     <string name="conversations_importing_body">Lecture de vos SMS existants — opération unique.</string>
@@ -197,7 +197,7 @@
     <string name="blocked_add">Ajouter un numéro</string>
 
     <string name="vault_title">Coffre-fort</string>
-    <string name="vault_empty">Le coffre est vide.</string>
+    <string name="vault_empty">Le coffre est vide</string>
     <string name="vault_empty_body">Les messages du coffre sont protégés par un chiffrement AES-256 via SQLCipher, avec la clé de chiffrement stockée en sécurité dans Android Keystore. Accédez à votre coffre avec votre PIN, votre mot de passe ou la biométrie.</string>
     <string name="vault_move_in">Déplacer dans le coffre</string>
     <string name="vault_move_out">Sortir du coffre</string>

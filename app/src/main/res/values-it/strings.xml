@@ -143,7 +143,7 @@
     <!-- Conversations list -->
     <string name="conversations_empty_title">Ancora nessuna conversazione</string>
     <string name="conversations_empty_body">Non appena riceverà o invierà un messaggio, comparirà qui.</string>
-    <string name="conversations_archived_empty">Nessuna conversazione archiviata.</string>
+    <string name="conversations_archived_empty">Nessuna conversazione archiviata</string>
     <string name="conversations_archived_empty_body">Tieni ordinata la tua casella di posta spostando le conversazioni fuori dall\'elenco principale senza eliminarle. Puoi accedervi in qualsiasi momento in Archivio.</string>
     <string name="conversations_importing_title">Importazione dei suoi messaggi</string>
     <string name="conversations_importing_body">Lettura degli SMS già presenti — accade una sola volta.</string>
@@ -206,7 +206,7 @@
 
     <!-- Vault -->
     <string name="vault_title">Cassaforte sicura</string>
-    <string name="vault_empty">La cassaforte è vuota.</string>
+    <string name="vault_empty">La cassaforte è vuota</string>
     <string name="vault_empty_body">I messaggi della cassaforte sono protetti dalla crittografia AES-256 tramite SQLCipher, con la chiave di crittografia archiviata in modo sicuro in Android Keystore. Acceda alla sua cassaforte con il PIN, la password o i dati biometrici.</string>
     <string name="vault_move_in">Sposta nella cassaforte</string>
     <string name="vault_move_out">Togli dalla cassaforte</string>

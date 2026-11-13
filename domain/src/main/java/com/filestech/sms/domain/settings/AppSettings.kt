@@ -29,7 +29,11 @@ data class AppSettings(
 
 data class Appearance(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val dynamicColors: Boolean = true,
+    // Round 19 — OFF by default: dynamic colours re-derive the palette from
+    // the wallpaper, so they only apply when the user turns them on. (The old
+    // default was `true`, from when the toggle was a no-op; the stored key
+    // changed with it — see `SettingsRepository.K.dynamicColors`.)
+    val dynamicColors: Boolean = false,
     val customAccentArgb: Int? = null,
     val textScale: TextScale = TextScale.MEDIUM,
     val density: ListDensity = ListDensity.STANDARD,

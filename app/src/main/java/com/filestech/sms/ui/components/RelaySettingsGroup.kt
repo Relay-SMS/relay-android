@@ -3,6 +3,7 @@ package com.filestech.sms.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -204,8 +205,13 @@ fun RelaySettingRow(
                     )
                 }
             }
+            // Round 19 — 2dp between the title and its subtitle: the lines
+            // sat flush against each other (the category mute rows' "Turn
+            // off notifications for this category" read as part of the
+            // title). Single-line rows are unaffected.
             Column(
-                Modifier
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier
                     .weight(1f)
                     .padding(
                         start = if (icon != null) 16.dp else 0.dp,

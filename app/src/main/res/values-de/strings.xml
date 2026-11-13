@@ -143,7 +143,7 @@
     <!-- Conversations list -->
     <string name="conversations_empty_title">Noch keine Unterhaltungen</string>
     <string name="conversations_empty_body">Sobald Sie eine Nachricht empfangen oder senden, erscheint sie hier.</string>
-    <string name="conversations_archived_empty">Keine archivierten Unterhaltungen.</string>
+    <string name="conversations_archived_empty">Keine archivierten Unterhaltungen</string>
     <string name="conversations_archived_empty_body">Halten Sie Ihren Posteingang aufgeräumt, indem Sie Unterhaltungen aus der Hauptliste verschieben, ohne sie zu löschen. Sie können jederzeit im Archiv darauf zugreifen.</string>
     <string name="conversations_importing_title">Ihre Nachrichten werden importiert</string>
     <string name="conversations_importing_body">Ihre vorhandenen SMS werden gelesen — das geschieht nur einmal.</string>
@@ -205,7 +205,7 @@
 
     <!-- Vault -->
     <string name="vault_title">Sicherer Tresor</string>
-    <string name="vault_empty">Der Tresor ist leer.</string>
+    <string name="vault_empty">Der Tresor ist leer</string>
     <string name="vault_empty_body">Tresor-Nachrichten sind durch AES-256-Verschlüsselung mit SQLCipher geschützt, der Schlüssel wird sicher im Android Keystore gespeichert. Greifen Sie mit Ihrer PIN, Ihrem Passwort oder Ihren biometrischen Daten auf Ihren Tresor zu.</string>
     <string name="vault_move_in">In den Tresor verschieben</string>
     <string name="vault_move_out">Aus dem Tresor verschieben</string>
