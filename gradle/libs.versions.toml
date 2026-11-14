@@ -60,6 +60,9 @@ sqlcipher = "4.19.0"
 # analytics — ZXing core is used INSTEAD of ML Kit barcode scanning for
 # exactly that reason (the phone has no Play Services).
 ktor = "3.6.1"
+# Netty version is Ktor 3.6.1's own (see ktor-server-netty's pom) — the
+# -classes- artifacts below must match it exactly.
+netty = "4.2.17.Final"
 camerax = "1.6.2"
 zxing = "3.5.4"
 bouncycastle = "1.87"
@@ -181,7 +184,21 @@ sqlcipher-android = { module = "net.zetetic:sqlcipher-android", version.ref = "s
 # the local harness masks a missing direct dep (a transitive copy compiles
 # locally but CI fails) — see the AndroidSVG note above.
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
-ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
+# Netty, NOT CIO: Ktor 3.x's CIO server engine has no HTTPS support at all —
+# it throws UnsupportedOperationException on any sslConnector (proven on
+# device 2026-11-13: the app crashed the moment the server started). Netty
+# is the engine with TLS + WebSocket support; Apache-2.0, no telemetry.
+ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
+# Netty 4.2 split the native transports: the plain -epoll/-kqueue
+# artifacts are EMPTY shells (their classes live in per-platform
+# classifier jars), and Ktor's engine calls KQueue.isAvailable() /
+# Epoll.isAvailable() directly — without these two, engine start throws
+# NoClassDefFoundError (proven by SyncEngineTlsTest, 2026-11-13). The
+# -classes- artifacts carry the Java API only; isAvailable() is false
+# on Android (no native lib is ever loaded), so the engine falls back
+# to the pure-Java NIO transport, which is what we want.
+netty-transport-classes-epoll = { module = "io.netty:netty-transport-classes-epoll", version.ref = "netty" }
+netty-transport-classes-kqueue = { module = "io.netty:netty-transport-classes-kqueue", version.ref = "netty" }
 ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.ref = "ktor" }
 camerax-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
 camerax-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }

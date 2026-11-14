@@ -84,6 +84,18 @@
 -dontwarn java.lang.management.ManagementFactory
 -dontwarn java.lang.management.RuntimeMXBean
 
+# ----- Netty (Ktor server engine) -----------------------------------------------------------
+# Round 21 fix — the sync server runs on Netty (CIO has no HTTPS support).
+# Netty references optional native pieces that are deliberately absent on
+# Android (OpenSSL/tcnative — we use the JDK SSL provider; epoll/kqueue
+# native transports — we use NIO; QUIC natives — no HTTP/3). R8 treats
+# those missing classes as errors, so silence them. No `-keep` here:
+# everything on our path (NIO transport, JDK SSL, WebSockets) is reached
+# by direct references from Ktor's engine code, so R8 keeps it; the
+# reflective lookups (native-transport detection, logger selection) all
+# degrade gracefully to their pure-Java fallbacks.
+-dontwarn io.netty.**
+
 # ----- Timber ----------------------------------------------------------------------------------
 -dontwarn org.jetbrains.annotations.**
 

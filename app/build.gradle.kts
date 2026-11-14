@@ -347,7 +347,12 @@ dependencies {
     // API 33 and builds the fallback TLS certificate. All four are local
     // open-source libraries with no network use and no telemetry.
     implementation(libs.ktor.server.core)
-    implementation(libs.ktor.server.cio)
+    implementation(libs.ktor.server.netty)
+    // Netty native-transport API classes (see the version-catalog note):
+    // Ktor's engine references KQueue/Epoll directly, and the plain
+    // -epoll/-kqueue artifacts are empty shells in Netty 4.2.
+    implementation(libs.netty.transport.classes.epoll)
+    implementation(libs.netty.transport.classes.kqueue)
     implementation(libs.ktor.server.websockets)
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)

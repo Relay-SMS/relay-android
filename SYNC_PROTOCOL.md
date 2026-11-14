@@ -28,8 +28,11 @@ copy of this spec in `ARCHITECTURE.md` — keep the two in sync.
 
 ## Transport + TLS
 
-- WebSocket over TLS: `wss://<host>:47831/sync`. Server: Ktor (CIO engine,
-  WebSockets plugin), running in a foreground service.
+- WebSocket over TLS: `wss://<host>:47831/sync`. Server: Ktor (Netty
+  engine, WebSockets plugin), running in a foreground service. Netty,
+  not CIO: Ktor 3.x's CIO server engine has no HTTPS support — it throws
+  on any `sslConnector`, which crashed the app on first server start
+  (2026-11-13); `SyncEngineTlsTest` pins the engine+TLS combination.
 - The phone generates a self-signed X.509 certificate on first run
   (CN = hub id, 10-year validity). The client pins its SHA-256 fingerprint
   on first connect (TOFU). A fingerprint mismatch after pinning is a hard

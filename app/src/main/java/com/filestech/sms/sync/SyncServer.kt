@@ -1,11 +1,11 @@
 package com.filestech.sms.sync
 
 import io.ktor.server.application.install
-import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.applicationEnvironment
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.engine.sslConnector
+import io.ktor.server.netty.Netty
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSocketServerSession
 import io.ktor.server.websocket.WebSockets
@@ -32,11 +32,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The phone's LAN server (SYNC_PROTOCOL.md): Ktor on the CIO engine,
+ * The phone's LAN server (SYNC_PROTOCOL.md): Ktor on the Netty engine,
  * TLS only, one WebSocket route (`/sync`). There is deliberately no
  * plain-text connector — `embeddedServer` here takes an environment
  * and a `configure` block, so the only connector is the `sslConnector`
  * below. No unencrypted fallback exists anywhere in this file.
+ *
+ * Netty, not CIO: Ktor 3.x's CIO server engine has no HTTPS support —
+ * it throws UnsupportedOperationException on any `sslConnector`, in
+ * the engine's own start job, so the throw escapes every `runCatching`
+ * around `start()` and crashes the app (observed on device 2026-11-13,
+ * the moment the server started). Netty is the engine with TLS +
+ * WebSocket support. `SyncEngineTlsTest` pins this: it boots the same
+ * wiring and probes the port, so a future engine swap that drops TLS
+ * fails the test instead of the app.
  *
  * Lifecycle is owned by [SyncService] (start/stop follow the server
  * toggle); this class only runs the engine. The auth state machine
@@ -86,7 +95,7 @@ class SyncServer @Inject constructor(
             val hubId = store.hubId()
             val identity = tlsProvider.ensureIdentity(hubId)
             val server = embeddedServer(
-                CIO,
+                Netty,
                 applicationEnvironment { },
                 configure = {
                     sslConnector(
