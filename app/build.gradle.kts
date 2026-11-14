@@ -206,6 +206,15 @@ android {
                 "META-INF/LICENSE*",
                 "META-INF/NOTICE*",
                 "META-INF/DEPENDENCIES",
+                // Round 21 fix — Netty (Ktor server engine) ships 23 jars
+                // that ALL contain META-INF/INDEX.LIST and
+                // META-INF/io.netty.versions.properties, and AGP fails the
+                // build on the duplicates (:app:mergeDebugJavaResource).
+                // Both files are build metadata with no runtime value on
+                // Android (the versions file only feeds Netty's own
+                // version-logging), so exclude them.
+                "META-INF/INDEX.LIST",
+                "META-INF/io.netty.versions.properties",
             )
         }
     }
@@ -347,7 +356,15 @@ dependencies {
     // API 33 and builds the fallback TLS certificate. All four are local
     // open-source libraries with no network use and no telemetry.
     implementation(libs.ktor.server.core)
-    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.netty) {
+        // No HTTP/3: ktor-server-netty pulls netty-codec-http3, which
+        // pulls FIVE platform variants of the QUIC native library
+        // (Linux x86_64 + aarch64, macOS x86_64 + aarch_64, Windows) —
+        // megabytes of native blobs for a protocol the server never
+        // speaks. The Java QUIC API jar stays (harmless); only the
+        // native implementations go.
+        exclude(group = "io.netty", module = "netty-codec-native-quic")
+    }
     // Netty native-transport API classes (see the version-catalog note):
     // Ktor's engine references KQueue/Epoll directly, and the plain
     // -epoll/-kqueue artifacts are empty shells in Netty 4.2.
