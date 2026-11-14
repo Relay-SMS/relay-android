@@ -72,6 +72,18 @@
 -keep class coil.decode.GifDecoder { *; }
 -keep class coil.decode.GifDecoder$Factory { *; }
 
+# ----- Ktor (phone↔desktop sync) --------------------------------------------------------------
+# Round 21 CI fix — the release build failed at :app:minifyReleaseWithR8:
+# Ktor's IntellijIdeaDebugDetector references java.lang.management classes
+# (ManagementFactory, RuntimeMXBean) that exist only on the desktop JVM, not
+# on Android, and R8 treats the missing classes as an error. The detector is
+# a JVM-only "is a debugger attached?" check that never runs on the phone —
+# silencing the two missing classes (exactly what R8's own generated
+# missing_rules.txt suggests) is safe. Debug builds never hit this: minify
+# is off there.
+-dontwarn java.lang.management.ManagementFactory
+-dontwarn java.lang.management.RuntimeMXBean
+
 # ----- Timber ----------------------------------------------------------------------------------
 -dontwarn org.jetbrains.annotations.**
 
