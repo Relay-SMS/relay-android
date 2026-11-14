@@ -15,7 +15,19 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.ByteBuffer
+import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import java.security.spec.ECGenParameterSpec
+import java.util.Base64
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLEngine
+import javax.net.ssl.SSLEngineResult
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 /**
  * Regression test for the 2026-11-13 crash: the sync server ran on
@@ -67,6 +79,122 @@ class SyncEngineTlsTest {
     }
 
     /**
+     * Regression test for the 2026-11-14 link failure: the phone's server
+     * accepted TCP connections but closed every TLS handshake without
+     * sending a byte. The TCP probe above cannot catch that — it only
+     * proves the port is listening. This test builds the exact identity
+     * [TlsCertificateProvider]'s file path uses (software EC key +
+     * [buildSelfSignedCertificate]) and the exact server SSLContext
+     * Netty builds from it (in-memory default-type KeyStore +
+     * KeyManagerFactory + SSLContext.init), then drives a real handshake
+     * between two in-memory engines. No sockets: the point is the SSL
+     * layer, not the network.
+     */
+    @Test fun `the file identity completes a real TLS handshake`() {
+        val keyPair = KeyPairGenerator.getInstance("EC").apply {
+            initialize(ECGenParameterSpec("secp256r1"))
+        }.generateKeyPair()
+        val certificate = buildSelfSignedCertificate(keyPair, "test-hub-id")
+        val password = Base64.getEncoder().encodeToString(
+            ByteArray(16).also { SecureRandom().nextBytes(it) },
+        ).toCharArray()
+        val keyStore = KeyStore.getInstance("PKCS12").apply {
+            load(null, password)
+            setKeyEntry("relay-sync-tls", keyPair.private, password, arrayOf(certificate))
+        }
+        // Netty's SslContext.buildKeyStore + KeyManagerFactory path.
+        val store = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null, null)
+            setKeyEntry("key", keyPair.private, password, arrayOf(certificate))
+        }
+        assertThat(keyStore.getKey("relay-sync-tls", password)).isNotNull()
+        val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply {
+            init(store, password)
+        }
+        val serverCtx = SSLContext.getInstance("TLS").apply {
+            init(kmf.keyManagers, null, SecureRandom())
+        }
+        val trustAll = arrayOf<TrustManager>(object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+        })
+        val clientCtx = SSLContext.getInstance("TLS").apply {
+            init(null, trustAll, SecureRandom())
+        }
+        val serverEngine = serverCtx.createSSLEngine().apply {
+            useClientMode = false
+            enabledProtocols = SyncProtocol.TLS_PROTOCOLS.toTypedArray()
+        }
+        val clientEngine = clientCtx.createSSLEngine("127.0.0.1", 47831).apply {
+            useClientMode = true
+        }
+        pumpHandshake(clientEngine, serverEngine)
+        assertThat(clientEngine.session.protocol).isNotEmpty()
+        assertThat(clientEngine.session.cipherSuite).isNotEmpty()
+        assertThat(serverEngine.session.protocol).isEqualTo(clientEngine.session.protocol)
+    }
+
+    /** Drives two SSLEngines to a completed handshake (or throws). */
+    private fun pumpHandshake(client: SSLEngine, server: SSLEngine) {
+        val c2s = ByteBuffer.allocate(BUFFER_SIZE)
+        val s2c = ByteBuffer.allocate(BUFFER_SIZE)
+        val app = ByteBuffer.allocate(BUFFER_SIZE)
+        var clientDone = false
+        var serverDone = false
+        var guard = 0
+        while ((!clientDone || !serverDone) && guard++ < MAX_PUMP_STEPS) {
+            while (!clientDone) {
+                val result = client.wrap(ByteBuffer.allocate(0), c2s)
+                runDelegated(client)
+                check(result.status != SSLEngineResult.Status.CLOSED) { "client engine closed" }
+                if (result.handshakeStatus == SSLEngineResult.HandshakeStatus.FINISHED) {
+                    clientDone = true
+                }
+                if (result.handshakeStatus != SSLEngineResult.HandshakeStatus.NEED_WRAP) break
+            }
+            c2s.flip()
+            if (c2s.hasRemaining()) {
+                val result = server.unwrap(c2s, app)
+                runDelegated(server)
+                check(result.status != SSLEngineResult.Status.CLOSED) { "server engine closed" }
+                if (result.handshakeStatus == SSLEngineResult.HandshakeStatus.FINISHED) {
+                    serverDone = true
+                }
+            }
+            c2s.compact()
+            while (!serverDone) {
+                val result = server.wrap(ByteBuffer.allocate(0), s2c)
+                runDelegated(server)
+                check(result.status != SSLEngineResult.Status.CLOSED) { "server engine closed" }
+                if (result.handshakeStatus == SSLEngineResult.HandshakeStatus.FINISHED) {
+                    serverDone = true
+                }
+                if (result.handshakeStatus != SSLEngineResult.HandshakeStatus.NEED_WRAP) break
+            }
+            s2c.flip()
+            if (s2c.hasRemaining()) {
+                val result = client.unwrap(s2c, app)
+                runDelegated(client)
+                check(result.status != SSLEngineResult.Status.CLOSED) { "client engine closed" }
+                if (result.handshakeStatus == SSLEngineResult.HandshakeStatus.FINISHED) {
+                    clientDone = true
+                }
+            }
+            s2c.compact()
+        }
+        check(clientDone && serverDone) { "handshake did not finish" }
+    }
+
+    private fun runDelegated(engine: SSLEngine) {
+        var task = engine.delegatedTask
+        while (task != null) {
+            task.run()
+            task = engine.delegatedTask
+        }
+    }
+
+    /**
      * TCP-connect probe: a plain socket handshake proves the engine is
      * listening (no TLS handshake needed — the point is the port, and
      * a failed engine binds nothing). Polls because `start(wait =
@@ -110,5 +238,7 @@ class SyncEngineTlsTest {
         private const val PROBE_TIMEOUT_MS = 5_000L
         private const val PROBE_INTERVAL_MS = 50L
         private const val PROBE_CONNECT_MS = 200
+        private const val BUFFER_SIZE = 32768
+        private const val MAX_PUMP_STEPS = 100
     }
 }

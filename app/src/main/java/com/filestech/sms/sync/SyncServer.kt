@@ -92,6 +92,10 @@ class SyncServer @Inject constructor(
     suspend fun start() {
         startStopMutex.withLock {
             if (engine != null) return
+            // Netty logs through its own factory, which on Android goes
+            // nowhere — route it to Timber first, so a TLS handshake
+            // failure is visible in logcat instead of vanishing silently.
+            installNettyTimberLogging()
             val hubId = store.hubId()
             val identity = tlsProvider.ensureIdentity(hubId)
             val server = embeddedServer(

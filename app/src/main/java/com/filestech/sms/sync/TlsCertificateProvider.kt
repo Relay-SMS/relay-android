@@ -85,6 +85,7 @@ class TlsCertificateProvider @Inject constructor(
             }
         }
         // AndroidKeyStore ignores passwords; Ktor still asks for them.
+        Timber.i("TlsCertificateProvider: using AndroidKeyStore identity")
         TlsIdentity(keyStore, KEY_ALIAS, EMPTY_PASSWORD, EMPTY_PASSWORD)
     }.onFailure { t ->
         Timber.w(t, "TlsCertificateProvider: Keystore path failed, using file fallback")
@@ -125,6 +126,7 @@ class TlsCertificateProvider @Inject constructor(
      * the store itself never touches disk).
      */
     private fun fileIdentity(hubId: String): TlsIdentity {
+        Timber.i("TlsCertificateProvider: using file identity")
         val keyFile = File(context.filesDir, KEY_FILE_NAME)
         val certFile = File(context.filesDir, CERT_FILE_NAME)
         val (privateKey, certificate) = loadFileIdentity(hubId, keyFile, certFile)
