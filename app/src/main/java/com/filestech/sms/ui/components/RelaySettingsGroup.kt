@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -165,7 +166,12 @@ fun RelaySettingsGroup(
  */
 @Composable
 fun RelaySettingRow(
-    icon: ImageVector?,
+    // Round 22 — the icon is either a Material [ImageVector] or a drawable
+    // [Painter] (Kristin's own icons, shared with the desktop app); the
+    // painter wins when both are given. Both default to null so a row
+    // without an icon passes neither.
+    icon: ImageVector? = null,
+    iconPainter: Painter? = null,
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
@@ -189,7 +195,8 @@ fun RelaySettingRow(
                 .weight(1f)
                 .then(if (textOnClick != null) Modifier.clickable(onClick = textOnClick) else Modifier),
         ) {
-            if (icon != null) {
+            val hasIcon = icon != null || iconPainter != null
+            if (hasIcon) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -197,12 +204,21 @@ fun RelaySettingRow(
                         .clip(CircleShape)
                         .background(cs.secondaryContainer),
                 ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = cs.onSecondaryContainer,
-                        modifier = Modifier.size(22.dp),
-                    )
+                    if (iconPainter != null) {
+                        Icon(
+                            iconPainter,
+                            contentDescription = null,
+                            tint = cs.onSecondaryContainer,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    } else if (icon != null) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = cs.onSecondaryContainer,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
             // Round 19 — 2dp between the title and its subtitle: the lines
@@ -214,7 +230,7 @@ fun RelaySettingRow(
                 modifier = Modifier
                     .weight(1f)
                     .padding(
-                        start = if (icon != null) 16.dp else 0.dp,
+                        start = if (hasIcon) 16.dp else 0.dp,
                         end = if (trailing != null || chevron) 16.dp else 0.dp,
                     ),
             ) {
@@ -255,7 +271,8 @@ fun RelaySettingRow(
  */
 @Composable
 fun RelaySwitchRow(
-    icon: ImageVector?,
+    icon: ImageVector? = null,
+    iconPainter: Painter? = null,
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -279,6 +296,7 @@ fun RelaySwitchRow(
     if (infoText == null) {
         RelaySettingRow(
             icon = icon,
+            iconPainter = iconPainter,
             title = title,
             subtitle = subtitle,
             modifier = modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
@@ -304,6 +322,7 @@ fun RelaySwitchRow(
     } else {
         RelaySettingRow(
             icon = icon,
+            iconPainter = iconPainter,
             title = title,
             subtitle = subtitle,
             modifier = modifier,

@@ -23,7 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Computer
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -55,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -84,7 +84,6 @@ import com.google.accompanist.permissions.rememberPermissionState
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
-import com.google.zxing.LuminanceSource
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
@@ -284,7 +283,7 @@ private fun LinkedDevicesList(
                                 trailing = {
                                     IconButton(onClick = { onRemove(ui) }) {
                                         Icon(
-                                            Icons.Outlined.Delete,
+                                            painterResource(R.drawable.ic_trash),
                                             contentDescription = stringResource(
                                                 R.string.linked_devices_remove_content_desc,
                                             ),
@@ -582,6 +581,41 @@ private fun CameraQrPreview(
     }
 }
 
+/** Y-plane bytes plus their dimensions after a rotation. */
+internal data class RotatedYuv(
+    val data: ByteArray,
+    val width: Int,
+    val height: Int,
+)
+
+/**
+ * Rotates compacted Y-plane bytes 90 degrees counter-clockwise.
+ * Returns the rotated bytes with swapped dimensions (new width is the
+ * old height, new height is the old width). Pure function, no Android
+ * APIs — the regression test drives it directly.
+ *
+ * This exists because ZXing's `PlanarYUVLuminanceSource` does not
+ * support `rotateCounterClockwise()`: it inherits the base method,
+ * which unconditionally throws `UnsupportedOperationException` — and
+ * calling it on a portrait frame killed the app on the first frame
+ * (2026-11-13). Never rotate via the source; rotate the bytes.
+ */
+internal fun rotateYuv90CounterClockwise(
+    data: ByteArray,
+    width: Int,
+    height: Int,
+): RotatedYuv {
+    val newWidth = height
+    val rotated = ByteArray(data.size)
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            // Source pixel (x, y) lands at (y, width - 1 - x).
+            rotated[(width - 1 - x) * newWidth + y] = data[y * width + x]
+        }
+    }
+    return RotatedYuv(rotated, newWidth, width)
+}
+
 /**
  * Decodes QR codes from the camera's YUV frames with ZXing core —
  * pure Java, on-device, no Play Services (ML Kit is forbidden here:
@@ -591,7 +625,11 @@ private fun CameraQrPreview(
  * for: the pairing code is the only thing this scanner is for.
  * Frames are rotated back to upright from
  * `imageInfo.rotationDegrees` before decoding, so the code scans in
- * any orientation.
+ * any orientation. The rotation is done on the Y bytes themselves
+ * ([rotateYuv90CounterClockwise]): ZXing's `PlanarYUVLuminanceSource`
+ * does NOT support `rotateCounterClockwise()` — it inherits the base
+ * method, which unconditionally throws — so the source must be built
+ * from already-upright bytes.
  */
 private class QrCodeAnalyzer(
     private val isEnabled: () -> Boolean,
@@ -605,7 +643,12 @@ private class QrCodeAnalyzer(
     override fun analyze(image: ImageProxy) {
         try {
             if (isEnabled()) {
-                decode(image)?.let(onQrText)
+                // A bad frame must never kill the app: the analyzer
+                // runs on a background executor thread, where an
+                // uncaught exception kills the whole process. A
+                // failed frame is just skipped — the next frame
+                // follows in milliseconds.
+                runCatching { decode(image) }.getOrNull()?.let(onQrText)
             }
         } finally {
             // Every frame must be closed, decoded or not — a leaked
@@ -625,7 +668,7 @@ private class QrCodeAnalyzer(
         buffer.get(yuv)
         // The Y plane's rows may be padded (rowStride > width): compact
         // them before handing the bytes to ZXing.
-        val data = if (rowStride == width) {
+        var data = if (rowStride == width) {
             yuv
         } else {
             val compact = ByteArray(width * height)
@@ -634,19 +677,28 @@ private class QrCodeAnalyzer(
             }
             compact
         }
-        var source: LuminanceSource = PlanarYUVLuminanceSource(
+        var frameWidth = width
+        var frameHeight = height
+        // Rotate the Y bytes back to upright BEFORE building the
+        // source: ZXing's PlanarYUVLuminanceSource throws on
+        // rotateCounterClockwise(), so the source must be built from
+        // already-upright bytes.
+        repeat(image.imageInfo.rotationDegrees / 90) {
+            val rotated = rotateYuv90CounterClockwise(data, frameWidth, frameHeight)
+            data = rotated.data
+            frameWidth = rotated.width
+            frameHeight = rotated.height
+        }
+        val source = PlanarYUVLuminanceSource(
             data,
-            width,
-            height,
+            frameWidth,
+            frameHeight,
             0,
             0,
-            width,
-            height,
+            frameWidth,
+            frameHeight,
             false,
         )
-        repeat(image.imageInfo.rotationDegrees / 90) {
-            source = source.rotateCounterClockwise()
-        }
         return runCatching {
             reader.decode(BinaryBitmap(HybridBinarizer(source))).text
         }.getOrNull()

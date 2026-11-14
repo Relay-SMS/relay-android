@@ -60,9 +60,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
@@ -70,11 +68,8 @@ import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonSearch
 import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.PictureAsPdf
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -2369,7 +2364,7 @@ private fun ThreadActionsMenu(
             //  - "Créer un contact"       → fiche vierge pré-remplie (ACTION_INSERT)
             //  - "Mettre à jour un contact" → sélecteur pour rattacher à un existant (INSERT_OR_EDIT)
             DropdownMenuItem(
-                leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_add_contact), contentDescription = null) },
                 text = { Text(stringResource(R.string.thread_create_contact)) },
                 onClick = onCreateContact,
             )
@@ -2383,7 +2378,7 @@ private fun ThreadActionsMenu(
         // (action constructive, contraste avec les actions destructives en bas).
         // Grisé tant qu'il n'y a rien à programmer (draft vide).
         DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_schedule), contentDescription = null) },
             text = { Text(stringResource(R.string.thread_schedule_action)) },
             enabled = canSchedule,
             onClick = onScheduleSend,
@@ -2399,7 +2394,7 @@ private fun ThreadActionsMenu(
             onClick = onMedia,
         )
         DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, contentDescription = null) },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_export_pdf), contentDescription = null) },
             text = { Text(stringResource(R.string.action_export_pdf)) },
             enabled = canExport && !isExporting,
             onClick = onExportPdf,
@@ -2441,7 +2436,7 @@ private fun ThreadActionsMenu(
         DropdownMenuItem(
             leadingIcon = {
                 Icon(
-                    Icons.Outlined.Block,
+                    painterResource(R.drawable.ic_block),
                     contentDescription = null,
                     // v1.25.3 — orange « blocage », distinct du rouge de « Supprimer » juste en
                     // dessous : bloquer se défait, supprimer non.
@@ -2461,7 +2456,7 @@ private fun ThreadActionsMenu(
         DropdownMenuItem(
             leadingIcon = {
                 Icon(
-                    Icons.Outlined.Delete,
+                    painterResource(R.drawable.ic_trash),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error,
                 )
@@ -4009,6 +4004,9 @@ private fun ThreadMessageItem(
                     onDelete = onDelete,
                     onReply = onReply,
                     onReact = if (msg.isIncoming) onReact else null,
+                    // Round 22 — quick-reaction bar on long-press (incoming
+                    // only); tap still opens the viewer.
+                    quickReactions = quickReactions,
                     // v1.3.11 (F3) — copy exposed only when the bubble carries a user-typed caption.
                     onCopy = if (msg.body.isNotBlank()) onCopy else null,
                     onForward = onForward,

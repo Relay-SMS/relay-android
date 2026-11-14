@@ -3,7 +3,6 @@ package com.filestech.sms.ui.components
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -98,6 +97,13 @@ fun MediaAttachmentBubble(
     onReply: () -> Unit,
     onReact: (() -> Unit)?,
     /**
+     * Round 22 — quick-reaction bar on long-press (incoming only, same
+     * condition as [onReact]): the caller passes the same bundle
+     * [MessageBubble] gets. Tap still opens the viewer, so the bar lives
+     * on the long-press instead of the tap.
+     */
+    quickReactions: QuickReactionConfig? = null,
+    /**
      * v1.3.11 (F3) — copy the caption (`message.body`) to the clipboard. Caller passes
      * `null` when the message has no caption to avoid an inert "Copier" menu entry.
      */
@@ -147,10 +153,21 @@ fun MediaAttachmentBubble(
     }
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
-    // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe (le
-    // `clickable` interne consomme le geste avant ce parent) ; l'appui long
-    // ouvre le menu aussi (la sélection libre est supprimée, round 6).
+    // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe ;
+    // l'appui long sur la vignette ouvre la barre de réaction rapide
+    // ([QuickReactionBar], entrant uniquement) ou le menu — avant, le
+    // `clickable` interne consommait le geste et l'appui long ne faisait
+    // rien sur la vignette, donc une image/GIF sans légende n'avait AUCUN
+    // chemin vers le menu ni vers les réactions (round 22).
     var menuExpanded by remember { mutableStateOf(false) }
+    var quickBarExpanded by remember { mutableStateOf(false) }
+    // Round 22 — same choice as [MessageBubble]'s tap, on the long-press:
+    // the quick bar when the caller wired reactions, the full menu
+    // otherwise. Shared by the outer column (caption area) and the
+    // thumbnails below.
+    val onLongPress: () -> Unit = {
+        if (quickReactions != null) quickBarExpanded = true else menuExpanded = true
+    }
 
     Row(
         // Feedback round 5 — `fillMaxWidth` was missing: without it the row
@@ -168,7 +185,7 @@ fun MediaAttachmentBubble(
             horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
             modifier = Modifier.combinedClickable(
                 onClick = { menuExpanded = true },
-                onLongClick = { menuExpanded = true },
+                onLongClick = onLongPress,
             ),
         ) {
             if (repliedToPreview != null) {
@@ -208,13 +225,25 @@ fun MediaAttachmentBubble(
                         // [MessageBubble]).
                         onRemoveReaction = toggles?.onRemoveReaction ?: {},
                     ) {
-                        MediaPreview(attachment, shape, bgColor, isOut) { ouvrir(attachment) }
+                        MediaPreview(
+                            attachment,
+                            shape,
+                            bgColor,
+                            isOut,
+                            onLongClick = onLongPress,
+                        ) { ouvrir(attachment) }
                     }
                     // X-04 — les pièces jointes suivantes, empilées sous la première, chacune avec son
                     // propre tap-to-view. La réaction et la légende restent celles du message.
                     autres.forEach { autre ->
                         Spacer(Modifier.size(4.dp))
-                        MediaPreview(autre, shape, bgColor, isOut) { ouvrir(autre) }
+                        MediaPreview(
+                            autre,
+                            shape,
+                            bgColor,
+                            isOut,
+                            onLongClick = onLongPress,
+                        ) { ouvrir(autre) }
                     }
                 }
                 if (message.body.isBlank()) {
@@ -286,6 +315,24 @@ fun MediaAttachmentBubble(
                 toggles = toggles,
                 onDelete = onDelete,
             )
+            // Round 22 — quick-reaction bar on long-press (incoming only).
+            // The "+" reuses [onReact]: it opens the full emoji picker for
+            // this message, exactly like the menu's "React" item.
+            if (quickReactions != null) {
+                QuickReactionBar(
+                    expanded = quickBarExpanded,
+                    onDismissRequest = { quickBarExpanded = false },
+                    recentEmojis = quickReactions.recentEmojis,
+                    onEmojiSelected = { emoji ->
+                        quickBarExpanded = false
+                        quickReactions.onSelect(emoji)
+                    },
+                    onOpenPicker = {
+                        quickBarExpanded = false
+                        onReact?.invoke()
+                    },
+                )
+            }
         }
     }
 }
@@ -297,6 +344,7 @@ private fun MediaPreview(
     shape: androidx.compose.ui.graphics.Shape,
     bgColor: androidx.compose.ui.graphics.Color,
     isOutgoing: Boolean,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
     when {
@@ -304,6 +352,7 @@ private fun MediaPreview(
             attachment = attachment,
             shape = shape,
             bgColor = bgColor,
+            onLongClick = onLongClick,
             onClick = onClick,
         )
         attachment.mimeType.startsWith("video/", ignoreCase = true) ->
@@ -312,6 +361,7 @@ private fun MediaPreview(
                 shape = shape,
                 bgColor = bgColor,
                 isOutgoing = isOutgoing,
+                onLongClick = onLongClick,
                 onClick = onClick,
             )
         else -> IconAttachment(
@@ -321,13 +371,15 @@ private fun MediaPreview(
             shape = shape,
             bgColor = bgColor,
             isOutgoing = isOutgoing,
+            onLongClick = onLongClick,
             onClick = onClick,
         )
     }
 }
 
 /**
- * Thumbnail image via Coil. Tap = ACTION_VIEW.
+ * Thumbnail image via Coil. Tap = ACTION_VIEW; round 22 — long-press opens
+ * the quick-reaction bar (incoming) or the full menu.
  *
  * Round 16 — the image loads through a local loader with the GIF decoder
  * (`io.coil-kt:coil-gif`), so animated GIFs play in the thread instead of
@@ -340,6 +392,7 @@ private fun ImagePreview(
     attachment: Attachment,
     shape: androidx.compose.ui.graphics.Shape,
     bgColor: androidx.compose.ui.graphics.Color,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -353,7 +406,7 @@ private fun ImagePreview(
             .widthIn(min = 80.dp, max = 240.dp)
             .heightIn(min = 80.dp, max = 320.dp)
             .clip(shape)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         // v1.3.10 (P5) — Coil `.size(px)` cap so multi-megapixel incoming MMS images (2048×1536
         // iPhone shots are routine) are downsampled at decode time instead of decoding the full
@@ -416,6 +469,7 @@ private fun VideoPreview(
     shape: androidx.compose.ui.graphics.Shape,
     bgColor: androidx.compose.ui.graphics.Color,
     isOutgoing: Boolean,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -440,6 +494,7 @@ private fun VideoPreview(
             shape = shape,
             bgColor = bgColor,
             isOutgoing = isOutgoing,
+            onLongClick = onLongClick,
             onClick = onClick,
         )
     } else {
@@ -449,7 +504,7 @@ private fun VideoPreview(
                 .heightIn(min = 80.dp, max = 320.dp)
                 .clip(shape)
                 .background(bgColor)
-                .clickable(onClick = onClick),
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
             contentAlignment = Alignment.Center,
         ) {
             // Underneath: the old video tile's outlined play icon, visible
@@ -581,7 +636,7 @@ private fun com.filestech.sms.domain.model.Attachment.toShareableUri(
     }.getOrNull()
 }
 
-/** Icône + nom + taille pour vidéo / fichier. Tap = ACTION_VIEW. */
+/** Icône + nom + taille pour vidéo / fichier. Tap = ACTION_VIEW ; round 22 — appui long = barre de réaction rapide (entrant) ou menu. */
 @Composable
 private fun IconAttachment(
     attachment: Attachment,
@@ -590,6 +645,7 @@ private fun IconAttachment(
     shape: androidx.compose.ui.graphics.Shape,
     bgColor: androidx.compose.ui.graphics.Color,
     isOutgoing: Boolean,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -609,7 +665,7 @@ private fun IconAttachment(
             .widthIn(min = 160.dp, max = 280.dp)
             .clip(shape)
             .background(bgColor)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Icon(imageVector = icon, contentDescription = stringResource(iconLabelRes), tint = textColor)

@@ -226,7 +226,7 @@ fun ComposeScreen(
                             ContactActionRow(
                                 title = stringResource(R.string.action_create_group),
                                 subtitle = null,
-                                icon = painterResource(R.drawable.ic_group_filled),
+                                icon = painterResource(R.drawable.ic_new_group),
                                 active = groupPicking,
                                 onClick = { groupPicking = !groupPicking },
                             )
@@ -240,7 +240,7 @@ fun ComposeScreen(
                         ContactActionRow(
                             title = stringResource(R.string.compose_add_contact),
                             subtitle = null,
-                            icon = painterResource(R.drawable.ic_contact_add),
+                            icon = painterResource(R.drawable.ic_add_contact),
                             onClick = {
                                 if (!ContactIntents.createContact(context)) {
                                     scope.launch {
@@ -353,8 +353,12 @@ fun ComposeScreen(
  * Section label, same format as the main screen's section headers
  * ("Pinned", "Today", ...): SectionHeader style, sentence case (NOT
  * uppercased — those headers render the text as-is), onSurfaceVariant,
- * 16dp sides, 20dp top, 4dp bottom. Shared by "Select contact" and the
- * "Members" header on the "Name your group" step.
+ * 16dp sides, 20dp top. The bottom is 20dp, not 4dp: on the main screen
+ * the list adds 16dp between items (Arrangement.spacedBy(16.dp)), so a
+ * header there has 4dp + 16dp = 20dp below it — this screen's list has
+ * no item spacing, so the label carries the full 20dp itself. Shared
+ * by "Select contact" and the "Members" header on the "Name your
+ * group" step.
  */
 @Composable
 private fun ComposeSectionLabel(text: String, modifier: Modifier = Modifier) {
@@ -366,7 +370,7 @@ private fun ComposeSectionLabel(text: String, modifier: Modifier = Modifier) {
             start = 16.dp,
             end = 16.dp,
             top = 20.dp,
-            bottom = 4.dp,
+            bottom = 20.dp,
         ),
     )
 }

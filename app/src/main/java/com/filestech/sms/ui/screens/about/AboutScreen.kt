@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Backup
-import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Code
@@ -32,7 +31,6 @@ import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PrivacyTip
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import androidx.compose.material.icons.outlined.Search
@@ -57,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -149,7 +148,7 @@ fun AboutScreen(
             RelaySettingsGroup {
                 features(isPanicDecoy).forEach { f ->
                     item {
-                        RelaySettingRow(icon = f.icon, title = f.label, subtitle = f.desc)
+                        RelaySettingRow(icon = f.icon, iconPainter = f.iconPainter, title = f.label, subtitle = f.desc)
                     }
                 }
             }
@@ -210,7 +209,7 @@ fun AboutScreen(
                     )
                 }
                 item(onClick = {
-                    // Fork: issues go to the SMS Relay repo, not to the upstream author's inbox.
+                    // Fork: issues go to the Relay repo, not to the upstream author's inbox.
                     safeStartActivity(
                         context,
                         Intent(
@@ -393,7 +392,7 @@ private fun safeStartActivity(context: android.content.Context, intent: android.
 private const val REPO_URL = "https://github.com/realquink/relay"
 private const val RELEASES_URL = "https://github.com/realquink/relay/releases/latest"
 
-// SMS Relay has no standalone website yet; the repo is the project page for now.
+// Relay has no standalone website yet; the repo is the project page for now.
 private const val WEBSITE_URL = "https://github.com/realquink/relay"
 private const val LEGAL_BASE_URL = "https://github.com/realquink/relay/blob/main/"
 
@@ -430,12 +429,17 @@ private fun ouvrirTexteJuridique(context: android.content.Context, document: Str
  *   dans une liste d'exclusion tenue ailleurs.
  */
 private data class Feature(
-    val icon: ImageVector,
+    // Round 22 — the icon is either a Material [ImageVector] or a drawable
+    // [Painter] (Kristin's own icons, shared with the desktop app); the
+    // painter wins when both are given. The painter stays last so the
+    // existing positional entries keep working.
+    val icon: ImageVector? = null,
     val label: String,
     // Feedback round 5 — `null` = title-only row (the "No data
     // collected" / "Zero sharing" rows below have no description).
     val desc: String? = null,
     val sensitive: Boolean = false,
+    val iconPainter: Painter? = null,
 )
 
 /**
@@ -475,9 +479,17 @@ private fun features(isPanicDecoy: Boolean): List<Feature> = listOf(
     Feature(Icons.Outlined.Fingerprint, stringResource(R.string.about_feat_biometric_label), stringResource(R.string.about_feat_biometric_desc)),
     Feature(Icons.AutoMirrored.Outlined.Reply, stringResource(R.string.about_feat_reply_label), stringResource(R.string.about_feat_reply_desc)),
     Feature(Icons.Outlined.Translate, stringResource(R.string.about_feat_translate_label), stringResource(R.string.about_feat_translate_desc)),
-    Feature(Icons.Outlined.Block, stringResource(R.string.about_feat_block_label), stringResource(R.string.about_feat_block_desc)),
+    Feature(
+        iconPainter = painterResource(R.drawable.ic_block),
+        label = stringResource(R.string.about_feat_block_label),
+        desc = stringResource(R.string.about_feat_block_desc),
+    ),
     Feature(Icons.Outlined.Search, stringResource(R.string.about_feat_search_label), stringResource(R.string.about_feat_search_desc)),
-    Feature(Icons.Outlined.PictureAsPdf, stringResource(R.string.about_feat_pdf_label), stringResource(R.string.about_feat_pdf_desc)),
+    Feature(
+        iconPainter = painterResource(R.drawable.ic_export_pdf),
+        label = stringResource(R.string.about_feat_pdf_label),
+        desc = stringResource(R.string.about_feat_pdf_desc),
+    ),
     Feature(Icons.Outlined.Backup, stringResource(R.string.about_feat_backup_label), stringResource(R.string.about_feat_backup_desc)),
     Feature(Icons.Outlined.DarkMode, stringResource(R.string.about_feat_themes_label), stringResource(R.string.about_feat_themes_desc)),
     Feature(Icons.Outlined.GraphicEq, stringResource(R.string.about_feat_ui_label), stringResource(R.string.about_feat_ui_desc)),

@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -724,7 +724,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Outlined.Check,
+                                                painter = painterResource(R.drawable.ic_checkmark),
                                                 contentDescription = stringResource(R.string.selected),
                                                 tint = cs.onPrimary,
                                                 modifier = Modifier.size(18.dp),
@@ -852,7 +852,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenThread: (Long) -> Unit, viewModel: Vau
                     },
                     leadingIcon = {
                         Icon(
-                            imageVector = Icons.Outlined.Check,
+                            painter = painterResource(R.drawable.ic_checkmark),
                             contentDescription = null,
                             tint = brandBlue(),
                             modifier = Modifier.size(22.dp),

@@ -37,7 +37,7 @@ import javax.inject.Inject
  *   - d'avoir affiché le dialog de confirmation au premier envoi si nécessaire,
  *   - de passer `isRemoval = true` pour un retrait ([SetReactionResult.Removed]) :
  *     le retrait part comme `Removed a like from "…"` (forme Apple, décodée
- *     côté SMS Relay) — il n'est plus silencieux local uniquement, car Apple
+ *     côté Relay) — il n'est plus silencieux local uniquement, car Apple
  *     et Google ont tous deux une forme de retrait sur le fil.
  *
  * **v1.4.1 — Changed désormais dispatché.** Depuis v1.4.1 le ViewModel propage aussi les

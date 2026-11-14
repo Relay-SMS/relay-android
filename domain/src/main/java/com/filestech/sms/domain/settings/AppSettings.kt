@@ -140,7 +140,7 @@ data class SendingSettings(
      * v1.3.1 — quand `true` (défaut), poser une réaction emoji sur un message reçu envoie
      * automatiquement un SMS au correspondant afin qu'il sache que vous avez réagi
      * (forme textuelle Apple `Liked "…"` par défaut). Quand `false`, la réaction
-     * reste strictement locale (badge visible uniquement dans SMS Relay).
+     * reste strictement locale (badge visible uniquement dans Relay).
      *
      * Le **changement** d'une réaction (A → B) envoie le nouvel emoji et le
      * **retrait** envoie `Removed a like from "…"` : le correspondant voit
@@ -163,7 +163,7 @@ data class SendingSettings(
      *
      *   - [ReactionFormat.IOS_TAPBACK] (défaut) : `Liked "aperçu"`. Forme
      *     textuelle Apple, lisible par tout destinataire et affichée comme
-     *     badge natif par iPhone (texte), Google Messages et SMS Relay.
+     *     badge natif par iPhone (texte), Google Messages et Relay.
      *     Guillemets droits ASCII : contrairement aux `«»` de
      *     [ReactionFormat.EMOJI_WITH_QUOTE], ils survivent aux transcodages
      *     opérateur (les `«»` arrivaient en `<<>>` côté correspondant).
@@ -553,7 +553,7 @@ data class AdvancedSettings(
      * One-shot : ramène UNE FOIS le format `EMOJI_WITH_QUOTE` au défaut
      * [ReactionFormat.IOS_TAPBACK]. Les `«»` de l'ancien format arrivaient
      * déformés en `<<>>` côté correspondant (`👍<<Hi>>`) : le format ne
-     * remplissait plus sa promesse d'être compris hors SMS Relay. Seul
+     * remplissait plus sa promesse d'être compris hors Relay. Seul
      * `EMOJI_WITH_QUOTE` est migré — les choix explicites (`READABLE_FR`,
      * `TAPBACK_EN`, `EMOJI_ONLY`) sont conservés, comme pour la migration
      * v1.28.12. Voir [com.filestech.sms.data.local.datastore.SettingsRepository

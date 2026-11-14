@@ -1,0 +1,30 @@
+<!-- Kristin's icon (add-contact.svg, 15x15 viewBox): person outline with a plus,
+     shared with the desktop app. The SVG clipPath is a no-op 15x15 rect, dropped.
+     The grey strokes in the source become black; the tint is applied at the
+     Icon() call site from the theme, so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="15"
+    android:viewportHeight="15">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M11.0161 4.21875C10.9012 5.76768 9.72701 7.03125 8.43795 7.03125C7.14889 7.03125 5.97262 5.76797 5.85983 4.21875C5.74264 2.60742 6.88522 1.40625 8.43795 1.40625C9.99069 1.40625 11.1333 2.63672 11.0161 4.21875Z"
+        android:strokeWidth="1.25"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M8.43684 8.90625C5.88802 8.90625 3.3011 10.3125 2.82239 12.9668C2.7638 13.2867 2.94573 13.5938 3.28089 13.5938H13.5931C13.9283 13.5938 14.1093 13.2867 14.0516 12.9668C13.5726 10.3125 10.9857 8.90625 8.43684 8.90625Z"
+        android:strokeWidth="1.25"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M2.57812 5.15625V6.79688M2.57812 6.79688V8.4375M2.57812 6.79688H4.21875M2.57812 6.79688H0.9375"
+        android:strokeWidth="0.9375"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

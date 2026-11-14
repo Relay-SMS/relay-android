@@ -20,7 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -44,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -564,7 +564,7 @@ private fun ContactsSection(
                     }
                     IconButton(onClick = { onRemove(index) }) {
                         Icon(
-                            Icons.Outlined.Delete,
+                            painterResource(R.drawable.ic_trash),
                             contentDescription = stringResource(R.string.safety_call_setup_remove_contact),
                             tint = MaterialTheme.colorScheme.error,
                         )

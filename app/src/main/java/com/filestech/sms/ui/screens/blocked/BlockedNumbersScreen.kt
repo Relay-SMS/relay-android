@@ -14,8 +14,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -31,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -117,7 +116,7 @@ fun BlockedNumbersScreen(onBack: () -> Unit, viewModel: BlockedNumbersViewModel 
                 verticalArrangement = Arrangement.Center,
             ) {
                 RelayEmptyState(
-                    icon = Icons.Outlined.Block,
+                    iconRes = R.drawable.ic_block,
                     headline = stringResource(R.string.blocked_empty),
                 )
             }
@@ -211,7 +210,7 @@ private fun BlockedRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Icon(
-            imageVector = Icons.Outlined.Block,
+            painter = painterResource(R.drawable.ic_block),
             contentDescription = null,
             tint = cs.onSurfaceVariant,
             modifier = Modifier.size(22.dp),
@@ -234,7 +233,7 @@ private fun BlockedRow(
         // accidentel remettait en circulation un numéro indésirable, sans
         // annulation possible ni trace de ce qui venait de se produire.
         IconButton(onClick = onUnblock) {
-            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_unblock))
+            Icon(painterResource(R.drawable.ic_trash), contentDescription = stringResource(R.string.action_unblock))
         }
     }
 }

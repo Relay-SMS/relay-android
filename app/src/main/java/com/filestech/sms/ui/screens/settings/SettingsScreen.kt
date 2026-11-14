@@ -22,18 +22,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Backup
-import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
@@ -83,6 +79,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -367,6 +364,24 @@ fun SettingsScreen(
             // is removed: the page starts directly with the first section, whose
             // header already carries the normal 24dp top spacing. `settings_app_subtitle`
             // stays in strings.xml (unused now) — strings are never deleted.
+            // Slice 1 — Linked devices: the LAN server toggle, the linked
+            // devices and QR pairing live on their own screen. Hidden in
+            // a panic-decoy session like Backup: the linked device names
+            // are identifying, and the decoy must read as an ordinary
+            // SMS app. Round 22 — first on the page, above Appearance,
+            // like the desktop Settings.
+            if (!isPanicDecoy) {
+                RelaySectionLabel(stringResource(R.string.settings_section_linked_devices))
+                RelaySettingsGroup {
+                    item(onClick = onOpenLinkedDevices) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Devices,
+                            title = stringResource(R.string.linked_devices_title),
+                            chevron = true,
+                        )
+                    }
+                }
+            }
             RelaySectionLabel(stringResource(R.string.settings_section_appearance))
             RelaySettingsGroup {
                 item {
@@ -451,7 +466,7 @@ fun SettingsScreen(
                 RelaySettingsGroup {
                     item {
                         RelaySwitchRow(
-                            icon = Icons.Outlined.Check,
+                            iconPainter = painterResource(R.drawable.ic_checkmark),
                             title = stringResource(R.string.settings_delivery_reports),
                             checked = state.sending.deliveryReports,
                             onCheckedChange = { v ->
@@ -474,7 +489,7 @@ fun SettingsScreen(
                     // (chevron before the switch); the row stays one-line.
                     item {
                         RelaySwitchRow(
-                            icon = Icons.Outlined.Group,
+                            iconPainter = painterResource(R.drawable.ic_new_group),
                             title = stringResource(R.string.settings_group_mms),
                             checked = state.sending.groupMms,
                             onCheckedChange = { v ->
@@ -701,24 +716,6 @@ fun SettingsScreen(
                         RelaySettingRow(
                             icon = Icons.Outlined.SystemUpdate,
                             title = stringResource(R.string.migration_title),
-                            chevron = true,
-                        )
-                    }
-                }
-            }
-
-            // Slice 1 — Linked devices: the LAN server toggle, the linked
-            // devices and QR pairing live on their own screen. Hidden in
-            // a panic-decoy session like Backup: the linked device names
-            // are identifying, and the decoy must read as an ordinary
-            // SMS app.
-            if (!isPanicDecoy) {
-                RelaySectionLabel(stringResource(R.string.settings_section_linked_devices))
-                RelaySettingsGroup {
-                    item(onClick = onOpenLinkedDevices) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Devices,
-                            title = stringResource(R.string.linked_devices_title),
                             chevron = true,
                         )
                     }
@@ -1691,7 +1688,7 @@ private fun ThemeSwatch(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Outlined.Check,
+                        painterResource(R.drawable.ic_checkmark),
                         contentDescription = null,
                         tint = onAccent,
                         modifier = Modifier.size(10.dp),
@@ -3182,7 +3179,7 @@ private fun SecuritySection(
         // dialog (it already explains the purge); the row stays one-line.
         item(onClick = onOpenPurgeBlockedConfirm) {
             RelaySettingRow(
-                icon = Icons.Outlined.Delete,
+                iconPainter = painterResource(R.drawable.ic_trash),
                 title = stringResource(R.string.settings_purge_blocked),
                 chevron = true,
             )
@@ -3381,7 +3378,7 @@ private fun SecuritySection(
         val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
         item {
             RelaySwitchRow(
-                icon = Icons.Outlined.Block,
+                iconPainter = painterResource(R.drawable.ic_block),
                 title = stringResource(R.string.settings_block_unknown),
                 checked = blocking.blockUnknown,
                 onCheckedChange = { v -> onUpdate { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },

@@ -33,20 +33,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
-import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsOff
-import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -78,6 +71,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -1211,7 +1205,7 @@ private fun ConversationsOverflowMenu(
         // messages dans une autre app SMS et que les badges SMS Tech persistent
         // (cache `messages.read` désynchronisé du système).
         DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.Check, contentDescription = null) },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_checkmark), contentDescription = null) },
             text = { Text(stringResource(R.string.action_mark_all_read)) },
             onClick = {
                 onDismiss()
@@ -1223,7 +1217,7 @@ private fun ConversationsOverflowMenu(
         // app Contacts n'est installée. Partage le helper ContactIntents avec
         // l'écran de composition.
         DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_add_contact), contentDescription = null) },
             text = { Text(stringResource(R.string.action_create_contact)) },
             onClick = {
                 onDismiss()
@@ -1233,7 +1227,7 @@ private fun ConversationsOverflowMenu(
         // v1.28.3 — créer un groupe ouvre le composeur en mode groupe : toucher
         // un contact y ajoute une puce au lieu d'ouvrir le fil.
         DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.Group, contentDescription = null) },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_new_group), contentDescription = null) },
             text = { Text(stringResource(R.string.action_new_group)) },
             onClick = {
                 onDismiss()
@@ -1243,7 +1237,7 @@ private fun ConversationsOverflowMenu(
         // Feedback round 8 — Scheduled messages moved here from Settings: it
         // lives in this menu, under "New group".
         DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_schedule), contentDescription = null) },
             text = { Text(stringResource(R.string.settings_scheduled_messages)) },
             onClick = {
                 onDismiss()
@@ -1272,7 +1266,7 @@ private fun ConversationsOverflowMenu(
             }
             DropdownMenuItem(
                 leadingIcon = {
-                    Icon(Icons.Outlined.Inventory2, contentDescription = null)
+                    Icon(painterResource(R.drawable.ic_archive_outline), contentDescription = null)
                 },
                 text = { Text(stringResource(R.string.tab_archived)) },
                 onClick = {
@@ -1620,13 +1614,19 @@ private fun SwipeableConversationRow(
         backgroundContent = {
             // v1.2.3 audit U6: use the brand/error tokens so swipe backgrounds adapt to the
             // current theme. Hardcoded 0xFFC62828 / 0xFF1565C0 broke on Dark Tech.
+            // Round 22 — the swipe icons are Painters now: the delete side
+            // uses Kristin's trash drawable, the reply side keeps its
+            // Material vector, wrapped once here so the `when` below stays
+            // a plain value selection.
+            val trashPainter = painterResource(R.drawable.ic_trash)
+            val replyPainter = rememberVectorPainter(Icons.AutoMirrored.Outlined.Reply)
             val dir = dismissState.dismissDirection
             val (bg, icon, align) = when (dir) {
                 androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd ->
-                    Triple(com.filestech.sms.ui.theme.BrandDanger, Icons.Outlined.Delete, Alignment.CenterStart)
+                    Triple(com.filestech.sms.ui.theme.BrandDanger, trashPainter, Alignment.CenterStart)
                 androidx.compose.material3.SwipeToDismissBoxValue.EndToStart ->
-                    Triple(cs.primary, Icons.AutoMirrored.Outlined.Reply, Alignment.CenterEnd)
-                else -> Triple(cs.surface, Icons.Outlined.Delete, Alignment.Center)
+                    Triple(cs.primary, replyPainter, Alignment.CenterEnd)
+                else -> Triple(cs.surface, trashPainter, Alignment.Center)
             }
             Box(
                 modifier = Modifier
@@ -1647,7 +1647,7 @@ private fun SwipeableConversationRow(
                         androidx.compose.ui.graphics.Color.White
                     }
                     Icon(
-                        imageVector = icon,
+                        painter = icon,
                         contentDescription = null,
                         tint = iconTint,
                     )
@@ -1693,7 +1693,7 @@ private fun SwipeableConversationRow(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Check,
+                        painter = painterResource(R.drawable.ic_checkmark),
                         contentDescription = stringResource(R.string.selected),
                         tint = cs.onPrimary,
                         modifier = Modifier.size(18.dp),
@@ -1954,7 +1954,7 @@ private fun ConversationActionsSheet(
             if (onToggleArchiveRequested != null) {
                 androidx.compose.material3.ListItem(
                     leadingContent = {
-                        Icon(Icons.Outlined.Inventory2, contentDescription = null)
+                        Icon(painterResource(R.drawable.ic_archive_outline), contentDescription = null)
                     },
                     headlineContent = {
                         Text(
@@ -1984,7 +1984,7 @@ private fun ConversationActionsSheet(
             // v1.13.1 — entrée mode sélection multiple via long-press menu.
             if (onSelectMultipleRequested != null) {
                 androidx.compose.material3.ListItem(
-                    leadingContent = { Icon(Icons.Outlined.Check, contentDescription = null) },
+                    leadingContent = { Icon(painterResource(R.drawable.ic_checkmark), contentDescription = null) },
                     headlineContent = { Text(stringResource(R.string.bulk_select_multiple)) },
                     modifier = Modifier.clickable(onClick = onSelectMultipleRequested),
                 )
@@ -1995,7 +1995,7 @@ private fun ConversationActionsSheet(
             androidx.compose.material3.ListItem(
                 leadingContent = {
                     Icon(
-                        Icons.Outlined.Block,
+                        painterResource(R.drawable.ic_block),
                         contentDescription = null,
                         tint = com.filestech.sms.ui.theme.BrandBlocked,
                     )
@@ -2017,7 +2017,7 @@ private fun ConversationActionsSheet(
             androidx.compose.material3.ListItem(
                 leadingContent = {
                     Icon(
-                        Icons.Outlined.Delete,
+                        painterResource(R.drawable.ic_trash),
                         contentDescription = null,
                         tint = cs.error,
                     )
@@ -2117,7 +2117,7 @@ private fun SortMenuItem(label: String, selected: Boolean, onClick: () -> Unit) 
     DropdownMenuItem(
         leadingIcon = {
             if (selected) {
-                Icon(Icons.Outlined.Check, contentDescription = null)
+                Icon(painterResource(R.drawable.ic_checkmark), contentDescription = null)
             } else {
                 Spacer(Modifier.size(24.dp))
             }

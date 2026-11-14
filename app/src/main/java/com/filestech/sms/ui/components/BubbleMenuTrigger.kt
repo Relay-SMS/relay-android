@@ -6,7 +6,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Star
@@ -20,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
@@ -228,7 +228,7 @@ fun BubbleMenu(
         DropdownMenuItem(
             leadingIcon = {
                 Icon(
-                    imageVector = Icons.Outlined.Delete,
+                    painter = painterResource(R.drawable.ic_trash),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error,
                 )

@@ -12,5 +12,5 @@
   application faute de ce fichier.
 -->
 <resources>
-    <string name="app_name">SMS Relay (debug)</string>
+    <string name="app_name">Relay</string>
 </resources>

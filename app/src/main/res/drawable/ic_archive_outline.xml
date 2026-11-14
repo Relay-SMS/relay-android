@@ -1,0 +1,30 @@
+<!-- Kristin's icon (archive-outline.svg, 17x17 viewBox): archive box with a
+     down-arrow, shared with the desktop app. The grey strokes in the source
+     become black; the tint is applied at the Icon() call site from the theme,
+     so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="17"
+    android:viewportHeight="17">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M2.65625 5.04688V13.5469C2.6573 13.8988 2.79757 14.236 3.04641 14.4848C3.29525 14.7337 3.63246 14.8739 3.98438 14.875H13.0156C13.3675 14.8739 13.7047 14.7337 13.9536 14.4848C14.2024 14.236 14.3427 13.8988 14.3438 13.5469V5.04688"
+        android:strokeWidth="1.125"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M2.52344 2.125H14.4766C14.99 2.125 15.4062 2.54124 15.4062 3.05469V3.85156C15.4062 4.36501 14.99 4.78125 14.4766 4.78125H2.52344C2.00999 4.78125 1.59375 4.36501 1.59375 3.85156V3.05469C1.59375 2.54124 2.00999 2.125 2.52344 2.125Z"
+        android:strokeWidth="1.125"
+        android:strokeColor="#FF000000"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M10.625 10.0938L8.5 12.2188L6.375 10.0938M8.5 11.4846V7.4375"
+        android:strokeWidth="1.125"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

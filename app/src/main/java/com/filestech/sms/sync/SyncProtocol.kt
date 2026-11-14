@@ -30,8 +30,8 @@ object SyncProtocol {
 
     /** mDNS service type, instance name and hub name from the spec. */
     const val SERVICE_TYPE = "_relay._tcp."
-    const val SERVICE_NAME = "SMS Relay"
-    const val HUB_NAME = "SMS Relay"
+    const val SERVICE_NAME = "Relay"
+    const val HUB_NAME = "Relay"
 
     /** Protocol version carried in `hello` and in the mDNS TXT record. */
     const val PROTOCOL_VERSION = 1

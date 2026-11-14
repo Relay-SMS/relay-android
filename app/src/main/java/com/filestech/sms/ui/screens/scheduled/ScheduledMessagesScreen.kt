@@ -3,11 +3,14 @@ package com.filestech.sms.ui.screens.scheduled
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -30,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -43,18 +47,22 @@ import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.usecase.CancelScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.RetryScheduledMessageUseCase
+import com.filestech.sms.ui.components.RelayAvatar
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayEmptyState
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.util.ChatFormatters
+import com.filestech.sms.ui.util.rememberChatFormatters
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.DateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
@@ -135,6 +143,14 @@ fun ScheduledMessagesScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // Day-group labels (Today / Tomorrow / weekday / short date) reuse the
+    // chat formatters, like the conversations list.
+    val formatters = rememberChatFormatters()
+    // Resolved here, not at the call site: the LazyColumn scope block is
+    // not a @Composable context, so stringResource cannot run in it.
+    val todayLabel = stringResource(R.string.date_today)
+    val tomorrowLabel = stringResource(R.string.date_tomorrow)
+
     // Résolue au niveau composable et non via `LocalContext.getString` dans le clic : le
     // `Context` capturé dans une lambda non-composable ne suit pas les changements de
     // configuration (`LocalContextGetResourceValueCall`).
@@ -197,19 +213,18 @@ fun ScheduledMessagesScreen(
                         SectionHeader(title = stringResource(R.string.scheduled_section_pending))
                     }
                 }
-                items(pending, key = { "pending-${it.id}" }) { msg ->
-                    ScheduledRow(
-                        message = msg,
-                        whenLabelRes = R.string.scheduled_when,
-                        whenColor = MaterialTheme.colorScheme.primary,
-                        trailing = {
-                            RelayTextButton(
-                                text = stringResource(R.string.action_cancel),
-                                onClick = { confirmCancelFor = msg },
-                            )
-                        },
-                    )
-                }
+                // Pending rows grouped by send day (Today / Tomorrow / …),
+                // like the conversations list groups by last-message day.
+                // Without failures there is no "Pending" header, so the
+                // first day header opens the list.
+                pendingDayGroups(
+                    pending = pending,
+                    opensList = failed.isEmpty(),
+                    formatters = formatters,
+                    todayLabel = todayLabel,
+                    tomorrowLabel = tomorrowLabel,
+                    onCancelRequest = { confirmCancelFor = it },
+                )
                 if (failed.isNotEmpty()) {
                     // v1.28.3 (F20) — la section accueille désormais deux natures de lignes.
                     // Tant qu'elle n'en contient qu'une, elle s'annonce comme avant ; dès qu'un
@@ -363,8 +378,9 @@ private fun SectionHeader(
  * de date et les actions de fin varient. Factorisée pour qu'une évolution du rendu n'ait pas à
  * être répliquée — donc à terme désynchronisée — entre attente et échec.
  *
- * Géométrie de la ligne de conversation : destinataires en 17sp/500, corps en 15sp secondaire,
- * date en 13sp — les actions (envoyer maintenant / supprimer) sont des boutons texte bleu /
+ * Géométrie de la ligne de conversation : avatar 48dp + 17dp d'air,
+ * destinataires en 17sp/500, corps en 15sp secondaire, date en 13sp —
+ * les actions (envoyer maintenant / supprimer) sont des boutons texte bleu /
  * rouge en fin de ligne.
  */
 @Composable
@@ -385,10 +401,13 @@ private fun ScheduledRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Conversation-row avatar: initials from the recipient text, same
+        // 48dp size and 17dp gap as the conversations list.
+        RelayAvatar(label = recipients)
+        Spacer(Modifier.width(17.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.scheduled_to, recipients),
@@ -410,6 +429,114 @@ private fun ScheduledRow(
                 color = whenColor,
             )
         }
+        Spacer(Modifier.width(12.dp))
         trailing()
+    }
+}
+
+/**
+ * Day-group header for the pending list, in the conversation list's
+ * date-header style: sentence case (unlike the uppercased section
+ * headers above), same text style, colour and paddings.
+ */
+@Composable
+private fun DayHeader(text: String, topPadding: Dp) {
+    Text(
+        text = text,
+        style = RelayText.SectionHeader,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(
+            start = 16.dp,
+            end = 16.dp,
+            top = topPadding,
+            bottom = 4.dp,
+        ),
+    )
+}
+
+/** Midnight starting the day that holds [timestampMillis], same locale as the formatters. */
+private fun startOfDayMillis(timestampMillis: Long, locale: Locale): Long {
+    return Calendar.getInstance(locale).apply {
+        timeInMillis = timestampMillis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+}
+
+/**
+ * Future-facing day label for the pending groups: Today / Tomorrow /
+ * full weekday name within the next six days / short day+month after
+ * that. The conversations list's past-date grouper does not fit —
+ * scheduled sends point forward, not back. Today/Tomorrow are injected
+ * as translated strings, like [ChatFormatters.daySeparatorLabel]. A
+ * past-due pending message (worker not yet run) reads as Today.
+ */
+private fun ChatFormatters.futureDayLabel(
+    dayStartMillis: Long,
+    todayLabel: String,
+    tomorrowLabel: String,
+    now: Calendar = Calendar.getInstance(locale),
+): String {
+    val todayStart = startOfDayMillis(now.timeInMillis, locale)
+    val tomorrowStart = Calendar.getInstance(locale).apply {
+        timeInMillis = todayStart
+        add(Calendar.DATE, 1)
+    }.timeInMillis
+    val weekOut = Calendar.getInstance(locale).apply {
+        timeInMillis = todayStart
+        add(Calendar.DATE, 6)
+    }.timeInMillis
+    return when {
+        dayStartMillis <= todayStart -> todayLabel
+        dayStartMillis == tomorrowStart -> tomorrowLabel
+        dayStartMillis <= weekOut -> weekdayFull.format(Date(dayStartMillis))
+        else -> dateMedium.format(Date(dayStartMillis))
+    }
+}
+
+/**
+ * Emits the pending messages grouped by send day, each group under its
+ * day header. The list is already scheduledAt-sorted, so `groupBy`
+ * keeps the groups earliest-first and the order inside each group. The
+ * first header takes the 16dp top padding when it opens the list, 12dp
+ * when the "Pending" section header sits above it — the conversation
+ * list's rule. Extracted from the screen for the same Detekt reason as
+ * the conversations list's section emitter.
+ */
+private fun LazyListScope.pendingDayGroups(
+    pending: List<ScheduledMessage>,
+    opensList: Boolean,
+    formatters: ChatFormatters,
+    todayLabel: String,
+    tomorrowLabel: String,
+    onCancelRequest: (ScheduledMessage) -> Unit,
+) {
+    val locale = formatters.locale
+    val now = Calendar.getInstance(locale)
+    val grouped = pending.groupBy { startOfDayMillis(it.scheduledAt, locale) }
+    var firstHeader = true
+    for ((dayStart, rows) in grouped) {
+        item(key = "header-day-$dayStart") {
+            DayHeader(
+                text = formatters.futureDayLabel(dayStart, todayLabel, tomorrowLabel, now),
+                topPadding = if (firstHeader && opensList) 16.dp else 12.dp,
+            )
+        }
+        firstHeader = false
+        items(rows, key = { "pending-${it.id}" }) { msg ->
+            ScheduledRow(
+                message = msg,
+                whenLabelRes = R.string.scheduled_when,
+                whenColor = MaterialTheme.colorScheme.primary,
+                trailing = {
+                    RelayTextButton(
+                        text = stringResource(R.string.action_cancel),
+                        onClick = { onCancelRequest(msg) },
+                    )
+                },
+            )
+        }
     }
 }

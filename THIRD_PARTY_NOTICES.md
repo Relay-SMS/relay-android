@@ -65,6 +65,7 @@ the library publishes — not from memory.
 | Coil (image loading) | 2.7.0 | Coil contributors | Apache 2.0 |
 | Coil SVG (`io.coil-kt:coil-svg`, pulls in AndroidSVG) | 2.7.0 | Coil contributors | Apache 2.0 |
 | Twemoji graphics (emoji / sticker artwork) | Unicode 17, jdecked/twemoji fork | Twitter, Inc. and contributors | **CC-BY 4.0** — attribution below |
+| Ionicons icons (including the schedule, trash, block, and contact icons) | — | Ionic | **MIT** — attribution below |
 | OkHttp, Okio (pulled in by Coil) | 4.12.0 / 3.9.1 | Square | Apache 2.0 |
 | Timber | 5.0.1 | Jake Wharton | Apache 2.0 |
 | Ktor server (`server-core`, `server-cio`, `server-websockets`) | 3.6.1 | JetBrains | Apache 2.0 |
@@ -80,6 +81,10 @@ search via Klipy (see [PRIVACY.md](PRIVACY.md)).
 Twemoji graphics are bundled as SVG/PNG assets under `app/src/main/assets/twemoji/` and rendered
 by Coil; the Twemoji code is not used, only the graphics. The bundled set is a curated subset
 (241 emojis as SVG, 38 of them also as 72x72 PNG for sending stickers as MMS attachments).
+
+Several icons in this app (including the schedule, trash, block, and contact icons) are from
+Ionicons, used under the MIT License. The icons are bundled as vector drawables under
+`app/src/main/res/drawable/`; the Ionicons code is not used, only the icon artwork.
 
 SQLCipher bundles **SQLite** and **LibTomCrypt**, both released into the public domain by their
 authors.
@@ -180,6 +185,33 @@ Source: https://github.com/jdecked/twemoji — licence text:
 https://creativecommons.org/licenses/by/4.0/legalcode
 
 Only the graphics are bundled; the Twemoji code (MIT) is not used.
+
+### Ionicons icons — MIT License
+
+Several icons in this app (including the schedule, trash, block, and
+contact icons) are from Ionicons, used under the MIT License.
+
+MIT License
+
+Copyright (c) 2015-present Ionic (http://ionic.io/)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ## Build and test tools (not shipped in the APK)
 

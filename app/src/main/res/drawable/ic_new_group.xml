@@ -1,0 +1,36 @@
+<!-- Kristin's icon (new-group.svg, 20x20 viewBox): two person outlines, shared
+     with the desktop app. The grey strokes in the source become black; the tint
+     is applied at the Icon() call site from the theme, so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="20"
+    android:viewportHeight="20">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M15.7026 6.5625C15.5881 8.15117 14.4096 9.375 13.1244 9.375C11.8393 9.375 10.6588 8.15156 10.5463 6.5625C10.4291 4.90977 11.5764 3.75 13.1244 3.75C14.6725 3.75 15.8198 4.93984 15.7026 6.5625Z"
+        android:strokeWidth="1.25"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M13.1248 11.875C10.5791 11.875 8.1311 13.1395 7.51781 15.602C7.43656 15.9277 7.64086 16.25 7.97563 16.25H18.2745C18.6092 16.25 18.8123 15.9277 18.7323 15.602C18.119 13.1 15.6709 11.875 13.1248 11.875Z"
+        android:strokeWidth="1.25"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M7.81312 7.26328C7.72171 8.53203 6.76937 9.53125 5.7428 9.53125C4.71624 9.53125 3.76234 8.53242 3.67249 7.26328C3.57913 5.94336 4.50609 5 5.7428 5C6.97952 5 7.90648 5.96758 7.81312 7.26328Z"
+        android:strokeWidth="1.25"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M8.04628 11.9531C7.3412 11.6301 6.56464 11.5059 5.74159 11.5059C3.71034 11.5059 1.75331 12.5156 1.26308 14.4824C1.19862 14.7426 1.36191 15 1.62909 15H6.01503"
+        android:strokeWidth="1.25"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10"
+        android:strokeLineCap="round" />
+</vector>

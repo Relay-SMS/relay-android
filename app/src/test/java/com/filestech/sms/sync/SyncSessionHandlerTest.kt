@@ -73,7 +73,7 @@ class SyncSessionHandlerTest {
         val ok = Json.parseToJsonElement(harness.sent.last()).jsonObject
         assertThat(ok["type"]?.jsonPrimitive?.content).isEqualTo("auth_ok")
         assertThat(ok["hub_id"]?.jsonPrimitive?.content).isEqualTo(HUB_ID)
-        assertThat(ok["hub_name"]?.jsonPrimitive?.content).isEqualTo("SMS Relay")
+        assertThat(ok["hub_name"]?.jsonPrimitive?.content).isEqualTo("Relay")
         assertThat(harness.closes).isEmpty()
     }
 

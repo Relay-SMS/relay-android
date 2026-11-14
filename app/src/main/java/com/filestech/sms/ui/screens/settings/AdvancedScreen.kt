@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sms
@@ -44,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -433,15 +433,19 @@ fun AdvancedScreen(
                 },
             ),
             icon = {
-                Icon(
-                    imageVector = if (incomplet) Icons.Outlined.WarningAmber else Icons.Outlined.Check,
-                    contentDescription = null,
-                    tint = if (incomplet) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                )
+                if (incomplet) {
+                    Icon(
+                        imageVector = Icons.Outlined.WarningAmber,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_checkmark),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             },
             titleColor = if (incomplet) MaterialTheme.colorScheme.error else null,
             content = {

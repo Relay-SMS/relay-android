@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -22,7 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
@@ -100,7 +101,7 @@ fun PhoneActionsDialog(
                     },
                 )
                 PhoneActionRow(
-                    icon = Icons.Outlined.PersonAdd,
+                    iconPainter = painterResource(R.drawable.ic_add_contact),
                     labelRes = R.string.phone_action_add_contact,
                     onClick = {
                         runCatching {
@@ -130,7 +131,11 @@ fun PhoneActionsDialog(
 
 @Composable
 private fun PhoneActionRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    // Round 22 — the icon is either a Material [ImageVector] or a drawable
+    // [Painter] (Kristin's own icons, shared with the desktop app); the
+    // painter wins when both are given.
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    iconPainter: Painter? = null,
     labelRes: Int,
     onClick: () -> Unit,
 ) {
@@ -143,7 +148,11 @@ private fun PhoneActionRow(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(icon, contentDescription = null)
+            if (iconPainter != null) {
+                Icon(iconPainter, contentDescription = null)
+            } else if (icon != null) {
+                Icon(icon, contentDescription = null)
+            }
             Text(
                 text = stringResource(labelRes),
                 modifier = Modifier.padding(start = 12.dp),

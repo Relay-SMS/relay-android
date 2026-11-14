@@ -14,9 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.VolumeOff
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -26,10 +23,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.filestech.sms.R
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.ui.theme.BrandBlocked
 import com.filestech.sms.ui.theme.BrandDanger
@@ -155,7 +154,7 @@ fun ConversationRow(
                         )
                         if (conversation.muted) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.VolumeOff,
+                                painter = painterResource(R.drawable.ic_volume_mute),
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
                                 tint = cs.onSurfaceVariant,
@@ -280,7 +279,7 @@ fun ConversationRow(
             if (conversation.blocked && onDelete != null) {
                 IconButton(onClick = onDelete) {
                     Icon(
-                        imageVector = Icons.Outlined.Delete,
+                        painter = painterResource(R.drawable.ic_trash),
                         contentDescription = androidx.compose.ui.res.stringResource(
                             id = com.filestech.sms.R.string.action_delete,
                         ),

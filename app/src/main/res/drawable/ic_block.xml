@@ -1,0 +1,21 @@
+<!-- Kristin's icon (block.svg, 18x18 viewBox): circle with a slash, shared with
+     the desktop app. The grey strokes in the source become black; the tint is
+     applied at the Icon() call site from the theme, so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="18"
+    android:viewportHeight="18">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M16.3125 9C16.3125 13.0386 13.0386 16.3125 9 16.3125C4.96142 16.3125 1.6875 13.0386 1.6875 9C1.6875 4.96142 4.96142 1.6875 9 1.6875C13.0386 1.6875 16.3125 4.96142 16.3125 9Z"
+        android:strokeWidth="1.24342"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M3.8291 3.82935L14.1707 14.1709"
+        android:strokeWidth="1.24342"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+</vector>

@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -23,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -119,7 +118,7 @@ fun ForwardMessageSheet(
             ListItem(
                 headlineContent = { Text(stringResource(R.string.forward_new_contact)) },
                 leadingContent = {
-                    Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                    Icon(painterResource(R.drawable.ic_add_contact), contentDescription = null)
                 },
                 modifier = Modifier
                     .fillMaxWidth()

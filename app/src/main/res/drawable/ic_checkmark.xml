@@ -1,0 +1,16 @@
+<!-- Kristin's icon (checkmark.svg, 21x21 viewBox): a stroke check, shared with
+     the desktop app. The grey stroke in the source becomes black; the tint is
+     applied at the Icon() call site from the theme, so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="21"
+    android:viewportHeight="21">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M17.0625 5.25L7.875 15.75L3.9375 11.8125"
+        android:strokeWidth="1.3125"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

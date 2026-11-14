@@ -35,12 +35,12 @@ class SyncProtocolTest {
 
     @Test fun `auth_ok encodes hub id and name`() {
         val encoded = SyncProtocol.encodeAuthOk(
-            SyncProtocol.AuthOk(hubId = HUB_ID, hubName = "SMS Relay"),
+            SyncProtocol.AuthOk(hubId = HUB_ID, hubName = "Relay"),
         )
         val obj = Json.parseToJsonElement(encoded).jsonObject
         assertThat(obj["type"]?.jsonPrimitive?.content).isEqualTo("auth_ok")
         assertThat(obj["hub_id"]?.jsonPrimitive?.content).isEqualTo(HUB_ID)
-        assertThat(obj["hub_name"]?.jsonPrimitive?.content).isEqualTo("SMS Relay")
+        assertThat(obj["hub_name"]?.jsonPrimitive?.content).isEqualTo("Relay")
     }
 
     @Test fun `auth_failed encodes the reason`() {

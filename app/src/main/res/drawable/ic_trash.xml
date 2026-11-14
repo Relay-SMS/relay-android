@@ -1,0 +1,32 @@
+<!-- Kristin's icon (trash.svg, 19x19 viewBox): trash can, shared with the
+     desktop app. The source's second path is a zero-area fill of the lid line
+     (it renders nothing) and is dropped, like the desktop version. The grey
+     strokes become black; the tint is applied at the Icon() call site from the
+     theme, so it follows light/dark mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="19"
+    android:viewportHeight="19">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M4.15625 4.15625L4.89844 16.0312C4.93369 16.7174 5.43281 17.2188 6.08594 17.2188H12.9141C13.5698 17.2188 14.0596 16.7174 14.1016 16.0312L14.8438 4.15625"
+        android:strokeWidth="1.28125"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M2.96875 4.15625H16.0312"
+        android:strokeWidth="1.28125"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M7.125 4.15625V2.67188C7.12466 2.55482 7.14746 2.43886 7.1921 2.33065C7.23673 2.22244 7.30232 2.12412 7.38509 2.04135C7.46786 1.95858 7.56618 1.89299 7.67439 1.84835C7.7826 1.80371 7.89857 1.78091 8.01562 1.78125H10.9844C11.1014 1.78091 11.2174 1.80371 11.3256 1.84835C11.4338 1.89299 11.5321 1.95858 11.6149 2.04135C11.6977 2.12412 11.7633 2.22244 11.8079 2.33065C11.8525 2.43886 11.8753 2.55482 11.875 2.67188V4.15625M9.5 6.53125V14.8438M6.82812 6.53125L7.125 14.8438M12.1719 6.53125L11.875 14.8438"
+        android:strokeWidth="1.28125"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

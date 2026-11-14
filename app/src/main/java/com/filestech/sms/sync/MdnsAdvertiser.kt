@@ -12,12 +12,12 @@ import javax.inject.Singleton
 /**
  * Advertises the phone on the local network so a linking device can
  * find it without the user typing an address: mDNS service type
- * `_relay._tcp.`, instance `SMS Relay`, port 47831, TXT `v=1` and
+ * `_relay._tcp.`, instance `Relay`, port 47831, TXT `v=1` and
  * `hub=<hub-id>` (SYNC_PROTOCOL.md). Plain `android.net.nsd` — no
  * third-party discovery library, no cloud.
  *
  * If another device on the network already advertises the same
- * instance name, Android renames ours (`SMS Relay (2)`, …) — that is
+ * instance name, Android renames ours (`Relay (2)`, …) — that is
  * logged, not fought: the desktop matches on the service type and the
  * `hub` TXT record, not on the exact instance name.
  */
