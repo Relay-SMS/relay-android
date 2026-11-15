@@ -88,6 +88,7 @@ class ScheduledMessageRepositoryImpl @Inject constructor(
         scheduledAt: Long,
         subId: Int?,
         attachments: List<com.filestech.sms.domain.usecase.SendMediaMmsUseCase.AttachmentPayload>,
+        clientMessageId: String?,
     ): Outcome<Long> = withContext(io) {
         // v1.26.0 — un corps vide est desormais valide s'il y a une piece jointe : un MMS ne
         // portant qu'une image, sans legende, est un envoi parfaitement normal. La regle
@@ -110,10 +111,16 @@ class ScheduledMessageRepositoryImpl @Inject constructor(
                 attachmentsJson = ScheduledAttachmentCodec.encode(attachments),
                 state = ScheduledState.PENDING,
                 createdAt = now,
+                clientMessageId = clientMessageId,
             ),
         )
         Outcome.Success(id)
     }
+
+    override suspend fun findByClientMessageId(clientMessageId: String): ScheduledMessage? =
+        withContext(io) {
+            dao.findByClientMessageId(clientMessageId)?.toDomain()
+        }
 
     override suspend fun cancel(id: Long): Outcome<Boolean> = withContext(io) {
         // v1.26.1 (audit B2) — transition CONDITIONNELLE : on n'annule que si l'envoi est

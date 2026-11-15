@@ -9,6 +9,8 @@ import com.filestech.sms.core.ext.normalizePhone
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.PhoneAddress
 import dagger.hilt.android.qualifiers.ApplicationContext
+import timber.log.Timber
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,11 +18,17 @@ import javax.inject.Singleton
  * Lightweight cache around the system contact provider.
  *
  * We resolve `phoneNumber → displayName` lazily; the cache is invalidated whenever
- * the provider notifies a change (handled in the repository via a ContentObserver).
+ * the provider notifies a change ([invalidate], called from the ContentObserver
+ * `MainApplication` registers at startup).
  *
  * **Thread-safety.** This is a Hilt `@Singleton` consumed concurrently from receiver threads
  * (SmsDeliverReceiver, MmsDownloadedReceiver), Worker threads (TelephonySyncWorker), and
  * viewModelScopes (ConversationsViewModel.refreshContactNames).
+ *
+ * Slice 5 adds the detailed list read ([listAllDetailed]) and the photo
+ * stream ([openPhotoStream]) for contact sync — the snapshot source
+ * and the avatar bytes. Both go through the same provider the UI
+ * already reads; no new permission, no new dependency.
  *
  * **v1.6.1 (audit PERF-07).** Le précédent `ConcurrentHashMap` non-borné laissait le
  * cache grossir indéfiniment : chaque numéro inconnu rencontré (SMS spam, codes 2FA,
@@ -97,6 +105,62 @@ class ContactsReader @Inject constructor(
             }
         }
         return rows.values.toList()
+    }
+
+    /**
+     * Slice 5 — [listAll] plus the photo-staleness version
+     * ([Contact.photoUpdatedAt]) per contact. The timestamp lives on
+     * the Contacts table, not the Phone view, so it cannot be
+     * projected from the [listAll] query: this is a second,
+     * lightweight query on `ContactsContract.Contacts.CONTENT_URI`
+     * for `_ID` + `CONTACT_LAST_UPDATED_TIMESTAMP`, joined in memory
+     * by contact id. The existing [listAll] is untouched — the
+     * compose picker keeps using it.
+     */
+    fun listAllDetailed(): List<Contact> {
+        val timestamps = mutableMapOf<Long, Long>()
+        resolver.query(
+            ContactsContract.Contacts.CONTENT_URI,
+            arrayOf(
+                ContactsContract.Contacts._ID,
+                ContactsContract.Contacts.CONTACT_LAST_UPDATED_TIMESTAMP,
+            ),
+            null,
+            null,
+            null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                timestamps[c.getLong(0)] = c.getLong(1)
+            }
+        }
+        return listAll().map { contact ->
+            val updatedAt = contact.id?.let { timestamps[it] }
+            if (updatedAt == null) contact else contact.copy(photoUpdatedAt = updatedAt)
+        }
+    }
+
+    /**
+     * Slice 5 — opens the thumbnail photo stream for the contact
+     * behind [address], the way the phone's own UI reads it:
+     * [lookupByPhone] (the same lookup, so the desktop's avatar for
+     * a number is the contact the phone would show for it), then
+     * `ContentResolver.openInputStream` on the thumbnail URI. Null
+     * when there is no contact, no photo, or an unreadable stream.
+     * The caller closes the stream.
+     */
+    fun openPhotoStream(address: String): InputStream? {
+        val photoUri = lookupByPhone(address)?.photoUri ?: return null
+        return try {
+            resolver.openInputStream(Uri.parse(photoUri))
+        } catch (e: Exception) {
+            // File gone, URI won't open, permission revoked — the
+            // photo is unreadable, not a crash. The log carries the
+            // exception TYPE only, never its message: a provider
+            // error message can embed the photo URI, and contact
+            // data never reaches the log.
+            Timber.d("ContactsReader: photo stream unreadable (%s)", e.javaClass.simpleName)
+            null
+        }
     }
 
     fun invalidate() {

@@ -2,6 +2,7 @@ package com.filestech.sms.sync
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,7 +10,11 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.InputStream
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -29,6 +34,25 @@ import java.util.concurrent.ConcurrentHashMap
  * the heartbeat, or an in-progress sync stream. The engine itself
  * holds no send state — the dedup lives in the source (§3 of the
  * Slice 3 design), so a dead session loses nothing.
+ *
+ * Slice 4 adds the attachment-byte handlers ([onAttachmentRequest],
+ * [onUploadStart], [onUploadChunk]) in the same shape. The engine
+ * owns the chunking: it reads the download stream in 64 KiB slices
+ * on `Dispatchers.IO`, hashes incrementally, and sends the frames —
+ * the source only opens the stream. A cancelled job (session end)
+ * closes the stream — no leak.
+ *
+ * Phase 2 adds the scheduled-send handler ([onScheduleMessage]) in
+ * the same shape; the runner is file-scope like the Slice 4 ones.
+ * The scheduled-cancel handler ([onCancelScheduled]) follows it.
+ *
+ * Slice 5 adds the contact-sync handlers ([onContactsRequest],
+ * [onAvatarRequest]) in the same shape, plus the contact snapshot
+ * inside [runStream] (read once before `sync_started`, streamed
+ * after it, before the conversations). Contacts failing never fails
+ * message sync: a contacts failure rides as `contacts_error` and
+ * the stream proceeds. Debug logging here is counts only — contact
+ * names and numbers never reach the log.
  *
  * The engine holds no state beyond the session: cursors live on the
  * desktop. The per-conversation "max sent id" tracking exists only
@@ -196,6 +220,151 @@ class SyncEngine(
         }
     }
 
+    // -- Slice 4: attachment bytes --------------------------------------
+    // Same shape as the other handlers: each starts a job and returns
+    // immediately, so a slow download never blocks the frame loop.
+
+    /**
+     * Handles an `attachment_request`: streams the bytes in 64 KiB
+     * chunks, or answers `attachment_error`. Downloads run
+     * concurrently (one job each); chunks for different attachments
+     * interleave on the wire, each tagged with its `attachment_id`.
+     */
+    fun onAttachmentRequest(request: SyncProtocol.AttachmentRequest) {
+        scope.launch {
+            try {
+                runAttachmentRequest(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: attachment request failed")
+                runCatching { send(attachmentErrorInternal(request.attachmentId)) }
+            }
+        }
+    }
+
+    /** Handles an `attachment_upload_start`, answered with `attachment_upload_ready` or `attachment_upload_error`. */
+    fun onUploadStart(request: SyncProtocol.AttachmentUploadStart) {
+        scope.launch {
+            try {
+                runUploadStart(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: upload start failed")
+                runCatching {
+                    send(
+                        uploadError(
+                            request.clientMessageId,
+                            request.index,
+                            SyncProtocol.AttachmentUploadError.INTERNAL,
+                            "This file couldn't be uploaded.",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Handles an `attachment_upload_chunk`: answered with
+     * `attachment_upload_done` on the final chunk, or
+     * `attachment_upload_error`. Non-final chunks get no ack — TCP is
+     * the flow control.
+     */
+    fun onUploadChunk(request: SyncProtocol.AttachmentUploadChunk) {
+        scope.launch {
+            try {
+                runUploadChunk(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: upload chunk failed")
+                runCatching {
+                    send(
+                        uploadError(
+                            request.clientMessageId,
+                            request.index,
+                            SyncProtocol.AttachmentUploadError.INTERNAL,
+                            "This file couldn't be uploaded.",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    // -- Phase 2: scheduled sends --------------------------------------
+    // Same shape as the other handlers: starts a job and returns
+    // immediately, so a slow schedule never blocks the frame loop.
+
+    /** Handles a `schedule_message`: answered with `message_scheduled` or `message_failed`. */
+    fun onScheduleMessage(request: SyncProtocol.ScheduleMessage) {
+        scope.launch {
+            try {
+                runScheduleMessage(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: schedule failed")
+                runCatching { send(scheduleFailedInternal(request)) }
+            }
+        }
+    }
+
+    /** Handles a `cancel_scheduled`: answered with `schedule_cancelled` or `message_failed`. */
+    fun onCancelScheduled(request: SyncProtocol.CancelScheduled) {
+        scope.launch {
+            try {
+                runCancelScheduled(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: cancel scheduled failed")
+                runCatching { send(cancelFailedInternal(request)) }
+            }
+        }
+    }
+
+    // -- Slice 5: contact sync -----------------------------------------
+    // Same shape as the other handlers: each starts a job and returns
+    // immediately, so a slow contacts read never blocks the frame loop.
+
+    /**
+     * Handles a `contacts_request`: re-streams the full snapshot, or
+     * answers `contacts_error`. Never touches messages.
+     */
+    fun onContactsRequest() {
+        scope.launch {
+            try {
+                runContactsRequest(source, send)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: contacts request failed")
+                runCatching { send(contactsErrorInternal()) }
+            }
+        }
+    }
+
+    /**
+     * Handles an `avatar_request`: streams the photo through the
+     * Slice 4 chunk sender under the `avatar:<number>` id, or
+     * answers `attachment_error`.
+     */
+    fun onAvatarRequest(request: SyncProtocol.AvatarRequest) {
+        scope.launch {
+            try {
+                runAvatarRequest(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: avatar request failed")
+                runCatching { send(attachmentErrorInternal(avatarId(request.address))) }
+            }
+        }
+    }
+
     /** Cancels the stream and both collectors. Called when the session ends. */
     fun stop() {
         streamJob?.cancel()
@@ -221,6 +390,14 @@ class SyncEngine(
             }
             Readiness.Ready -> Unit
         }
+        // Slice 5 — contacts are read ONCE, before `sync_started`:
+        // the count feeds `total_contacts`, and the same list is
+        // streamed right after `sync_started`, before the
+        // conversations — no double read. A contacts failure never
+        // fails message sync: it rides as `contacts_error` after
+        // `sync_started` and the stream proceeds regardless.
+        val contactsRead = readContacts(source)
+        val totalContacts = (contactsRead as? ContactsRead.Ok)?.contacts?.size ?: 0
         val sinceId = request.sinceMessageId?.toLongOrNull() ?: 0L
         val conversations = source.conversations()
         val totalMessages = source.totalMessageCount()
@@ -233,10 +410,15 @@ class SyncEngine(
                     totalMessages = totalMessages,
                     cursorMessageId = cursor.toString(),
                     hubIsDefaultSms = source.isDefaultSmsApp(),
+                    totalContacts = totalContacts,
                 ),
             ),
         )
-        streamConversations(conversations)
+        when (contactsRead) {
+            is ContactsRead.Ok -> streamContacts(send, contactsRead.contacts)
+            is ContactsRead.Error -> send(contactsError(contactsRead.code, contactsRead.message))
+        }
+        streamConversations(send, conversations)
         if (request.mode == SyncProtocol.SyncRequest.FULL) {
             if (sinceId > 0L) streamDelta(conversations, sinceId) else streamAllMessages(conversations)
         }
@@ -246,30 +428,6 @@ class SyncEngine(
                 SyncProtocol.SyncComplete(cursorMessageId = endCursor.toString()),
             ),
         )
-    }
-
-    private suspend fun streamConversations(conversations: List<SyncedConversation>) {
-        if (conversations.isEmpty()) {
-            // Even with nothing to sync, the desktop needs the frame:
-            // `has_more: false` is what tells it the list is complete.
-            send(
-                SyncProtocol.encodeConversations(
-                    SyncProtocol.Conversations(conversations = emptyList(), hasMore = false),
-                ),
-            )
-            return
-        }
-        val batches = conversations.chunked(CONVERSATION_BATCH_SIZE)
-        batches.forEachIndexed { index, batch ->
-            send(
-                SyncProtocol.encodeConversations(
-                    SyncProtocol.Conversations(
-                        conversations = batch,
-                        hasMore = index < batches.lastIndex,
-                    ),
-                ),
-            )
-        }
     }
 
     /** Full mode: every conversation's messages, newest first, most-recent conversation first. */
@@ -397,6 +555,7 @@ class SyncEngine(
             conversationId,
             request.body,
             replyToMessageId,
+            request.attachments?.map { it.toInput() },
         )
         when (result) {
             is SendResult.Sent -> send(
@@ -601,57 +760,12 @@ class SyncEngine(
         }
     }
 
-    /** Builds the partial `message_updated` frame: only changed fields are present. */
-    private fun buildMessageUpdated(old: MessageState, new: MessageState): String {
-        val updated = SyncProtocol.MessageUpdated(
-            messageId = new.id.toString(),
-            conversationId = new.conversationId.toString(),
-            status = new.status.takeIf { it != old.status },
-            reaction = new.reaction.takeIf { it != old.reaction },
-            reactionRemoved = old.reaction != null && new.reaction == null,
-            read = new.read.takeIf { it != old.read },
-            starred = new.starred.takeIf { it != old.starred },
-        )
-        return SyncProtocol.encodeMessageUpdated(updated)
-    }
-
-    private fun noSmsAccessError(): String =
-        SyncProtocol.encodeSyncError(
-            SyncProtocol.SyncError(
-                code = SyncProtocol.SyncError.HUB_NO_SMS_ACCESS,
-                message = "Relay on the phone needs SMS permission to sync messages.",
-            ),
-        )
-
-    private fun mirrorEmptyError(): String =
-        SyncProtocol.encodeSyncError(
-            SyncProtocol.SyncError(
-                code = SyncProtocol.SyncError.HUB_MIRROR_EMPTY,
-                message = "Relay on the phone hasn't imported any messages yet.",
-            ),
-        )
-
-    private fun syncErrorInternal(): String =
-        SyncProtocol.encodeSyncError(
-            SyncProtocol.SyncError(
-                code = SyncProtocol.SyncError.INTERNAL,
-                message = "Sync failed on the phone. Try again.",
-            ),
-        )
-
-    private fun sendFailedInternal(request: SyncProtocol.SendMessage): String =
-        SyncProtocol.encodeMessageFailed(
-            SyncProtocol.MessageFailed(
-                clientMessageId = request.clientMessageId,
-                conversationId = request.conversationId,
-                code = SyncProtocol.MessageFailed.INTERNAL,
-                message = "The message could not be sent.",
-            ),
-        )
-
     companion object {
         /** Conversations per `conversations` batch. */
         const val CONVERSATION_BATCH_SIZE = 100
+
+        /** Contacts per `contacts` batch. */
+        const val CONTACT_BATCH_SIZE = 100
 
         /** Messages per `messages_batch` page. */
         const val MESSAGE_BATCH_SIZE = 200
@@ -660,3 +774,589 @@ class SyncEngine(
         const val WATCHED_STATES_LIMIT = 200
     }
 }
+
+/** Wire attachment entry → the source's send input; the fields map 1:1. */
+private fun SyncProtocol.SendAttachment.toInput(): SendAttachmentInput = SendAttachmentInput(
+    uploadIndex = uploadIndex,
+    stickerEmoji = stickerEmoji,
+    mimeType = mimeType,
+    fileName = fileName,
+    width = width,
+    height = height,
+    durationMs = durationMs,
+)
+
+/** Lowercase hex, no separators — the wire's SHA-256 shape. */
+private fun ByteArray.toHex(): String {
+    val digits = "0123456789abcdef"
+    val chars = CharArray(size * 2)
+    forEachIndexed { index, byte ->
+        val value = byte.toInt() and 0xFF
+        chars[index * 2] = digits[value shr 4]
+        chars[index * 2 + 1] = digits[value and 0x0F]
+    }
+    return chars.concatToString()
+}
+
+/**
+ * Streams the conversation snapshot in batches of 100. Even with
+ * nothing to sync, the desktop needs the frame: `has_more: false`
+ * is what tells it the list is complete. File scope, not a class
+ * member: it touches no engine state beyond the send lambda, and
+ * the class is at the Detekt function limit.
+ */
+private suspend fun streamConversations(
+    send: suspend (String) -> Unit,
+    conversations: List<SyncedConversation>,
+) {
+    if (conversations.isEmpty()) {
+        send(
+            SyncProtocol.encodeConversations(
+                SyncProtocol.Conversations(conversations = emptyList(), hasMore = false),
+            ),
+        )
+        return
+    }
+    val batches = conversations.chunked(SyncEngine.CONVERSATION_BATCH_SIZE)
+    batches.forEachIndexed { index, batch ->
+        send(
+            SyncProtocol.encodeConversations(
+                SyncProtocol.Conversations(
+                    conversations = batch,
+                    hasMore = index < batches.lastIndex,
+                ),
+            ),
+        )
+    }
+}
+
+/** Builds the partial `message_updated` frame: only changed fields are present. */
+private fun buildMessageUpdated(old: MessageState, new: MessageState): String {
+    val updated = SyncProtocol.MessageUpdated(
+        messageId = new.id.toString(),
+        conversationId = new.conversationId.toString(),
+        status = new.status.takeIf { it != old.status },
+        reaction = new.reaction.takeIf { it != old.reaction },
+        reactionRemoved = old.reaction != null && new.reaction == null,
+        read = new.read.takeIf { it != old.read },
+        starred = new.starred.takeIf { it != old.starred },
+    )
+    return SyncProtocol.encodeMessageUpdated(updated)
+}
+
+private fun noSmsAccessError(): String =
+    SyncProtocol.encodeSyncError(
+        SyncProtocol.SyncError(
+            code = SyncProtocol.SyncError.HUB_NO_SMS_ACCESS,
+            message = "Relay on the phone needs SMS permission to sync messages.",
+        ),
+    )
+
+private fun mirrorEmptyError(): String =
+    SyncProtocol.encodeSyncError(
+        SyncProtocol.SyncError(
+            code = SyncProtocol.SyncError.HUB_MIRROR_EMPTY,
+            message = "Relay on the phone hasn't imported any messages yet.",
+        ),
+    )
+
+private fun syncErrorInternal(): String =
+    SyncProtocol.encodeSyncError(
+        SyncProtocol.SyncError(
+            code = SyncProtocol.SyncError.INTERNAL,
+            message = "Sync failed on the phone. Try again.",
+        ),
+    )
+
+private fun sendFailedInternal(request: SyncProtocol.SendMessage): String =
+    SyncProtocol.encodeMessageFailed(
+        SyncProtocol.MessageFailed(
+            clientMessageId = request.clientMessageId,
+            conversationId = request.conversationId,
+            code = SyncProtocol.MessageFailed.INTERNAL,
+            message = "The message could not be sent.",
+        ),
+    )
+
+// -- Phase 2: scheduled sends (file scope, like the Slice 4 runners:
+// the runner touches no engine state beyond the source and the send
+// lambda, and the class is at the Detekt function limit) -------------
+
+/** Runs one `schedule_message`: answered with `message_scheduled` or `message_failed`. */
+private suspend fun runScheduleMessage(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.ScheduleMessage,
+) {
+    val conversationId = request.conversationId.toLongOrNull()
+    if (conversationId == null) {
+        send(
+            SyncProtocol.encodeMessageFailed(
+                SyncProtocol.MessageFailed(
+                    clientMessageId = request.clientMessageId,
+                    conversationId = request.conversationId,
+                    code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
+                    message = "Conversation not found.",
+                ),
+            ),
+        )
+        return
+    }
+    when (
+        val result = source.scheduleMessage(
+            request.clientMessageId,
+            conversationId,
+            request.body,
+            request.sendAt,
+        )
+    ) {
+        is ScheduleResult.Scheduled -> send(
+            SyncProtocol.encodeMessageScheduled(
+                SyncProtocol.MessageScheduled(
+                    clientMessageId = request.clientMessageId,
+                    messageId = result.messageId.toString(),
+                    conversationId = request.conversationId,
+                    sendAt = result.sendAt,
+                ),
+            ),
+        )
+        is ScheduleResult.Failed -> send(
+            SyncProtocol.encodeMessageFailed(
+                SyncProtocol.MessageFailed(
+                    clientMessageId = request.clientMessageId,
+                    conversationId = request.conversationId,
+                    code = result.code,
+                    message = result.message,
+                ),
+            ),
+        )
+    }
+}
+
+private fun scheduleFailedInternal(request: SyncProtocol.ScheduleMessage): String =
+    SyncProtocol.encodeMessageFailed(
+        SyncProtocol.MessageFailed(
+            clientMessageId = request.clientMessageId,
+            conversationId = request.conversationId,
+            code = SyncProtocol.MessageFailed.INTERNAL,
+            message = "The message could not be scheduled.",
+        ),
+    )
+
+/** Runs one `cancel_scheduled`: answered with `schedule_cancelled` or `message_failed`. */
+private suspend fun runCancelScheduled(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.CancelScheduled,
+) {
+    when (val result = source.cancelScheduledMessage(request.clientMessageId)) {
+        CancelResult.Cancelled -> send(
+            SyncProtocol.encodeScheduleCancelled(
+                SyncProtocol.ScheduleCancelled(clientMessageId = request.clientMessageId),
+            ),
+        )
+        is CancelResult.Failed -> send(
+            SyncProtocol.encodeMessageFailed(
+                SyncProtocol.MessageFailed(
+                    clientMessageId = request.clientMessageId,
+                    // A cancel carries no conversation — the desktop
+                    // matches a cancel failure by client_message_id.
+                    conversationId = "",
+                    code = result.code,
+                    message = result.message,
+                ),
+            ),
+        )
+    }
+}
+
+private fun cancelFailedInternal(request: SyncProtocol.CancelScheduled): String =
+    SyncProtocol.encodeMessageFailed(
+        SyncProtocol.MessageFailed(
+            clientMessageId = request.clientMessageId,
+            conversationId = "",
+            code = SyncProtocol.MessageFailed.INTERNAL,
+            message = "The scheduled message could not be cancelled.",
+        ),
+    )
+
+// -- Slice 4: attachment bytes (file scope, not class members: these
+// runners touch no engine state beyond the source and the send lambda,
+// and the class is at the Detekt function limit) ----------------------
+
+private suspend fun runAttachmentRequest(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.AttachmentRequest,
+) {
+    val attachmentId = request.attachmentId.toLongOrNull()
+    val messageId = request.messageId.toLongOrNull()
+    if (attachmentId == null || messageId == null) {
+        // An unparseable id is not a known attachment — same
+        // answer as a missing one, so ids can't be probed.
+        send(
+            attachmentError(
+                request.attachmentId,
+                SyncProtocol.AttachmentError.UNKNOWN_ATTACHMENT,
+                "This attachment couldn't be found.",
+            ),
+        )
+        return
+    }
+    when (val opened = source.openAttachment(attachmentId, messageId)) {
+        AttachmentOpenResult.Unknown -> send(
+            attachmentError(
+                request.attachmentId,
+                SyncProtocol.AttachmentError.UNKNOWN_ATTACHMENT,
+                "This attachment couldn't be found.",
+            ),
+        )
+        AttachmentOpenResult.Unreadable -> send(
+            attachmentError(
+                request.attachmentId,
+                SyncProtocol.AttachmentError.ATTACHMENT_UNREADABLE,
+                "This photo couldn't be read on the phone.",
+            ),
+        )
+        is AttachmentOpenResult.Opened ->
+            streamAttachment(request.attachmentId, opened.data, send)
+    }
+}
+
+/**
+ * Streams one attachment in 64 KiB chunks, hashing incrementally
+ * — one read pass, no extra round trip. The final chunk carries
+ * the digest + the actual byte count; the desktop verifies both
+ * before the file enters its cache. A failure mid-stream answers
+ * `attachment_error` (the desktop discards the partial bytes);
+ * the socket stays up. The stream is always closed, including on
+ * cancellation (session end).
+ */
+private suspend fun streamAttachment(
+    attachmentId: String,
+    data: AttachmentData,
+    send: suspend (String) -> Unit,
+) {
+    if (data.sizeBytes > SyncProtocol.MAX_ATTACHMENT_DOWNLOAD_BYTES) {
+        runCatching { data.stream.close() }
+        send(
+            attachmentError(
+                attachmentId,
+                SyncProtocol.AttachmentError.ATTACHMENT_TOO_LARGE,
+                "This file is too big to download.",
+            ),
+        )
+        return
+    }
+    val digest = MessageDigest.getInstance("SHA-256")
+    val buffer = ByteArray(SyncProtocol.ATTACHMENT_CHUNK_BYTES)
+    var offset = 0L
+    try {
+        withContext(Dispatchers.IO) {
+            while (true) {
+                val read = readChunk(data.stream, buffer)
+                // A short read is the end of the stream — and a
+                // file whose size is an exact multiple of the
+                // chunk size ends with one empty final chunk
+                // (the read after the last full chunk returns 0).
+                val isFinal = read < buffer.size
+                if (read > 0) {
+                    digest.update(buffer, 0, read)
+                    offset += read
+                    if (offset > SyncProtocol.MAX_ATTACHMENT_DOWNLOAD_BYTES) {
+                        // The row claimed a small file but the
+                        // stream keeps going — stop, don't stream
+                        // gigabytes. The desktop discards the
+                        // partial bytes on the error frame.
+                        send(
+                            attachmentError(
+                                attachmentId,
+                                SyncProtocol.AttachmentError.ATTACHMENT_TOO_LARGE,
+                                "This file is too big to download.",
+                            ),
+                        )
+                        return@withContext
+                    }
+                }
+                send(
+                    SyncProtocol.encodeAttachmentChunk(
+                        SyncProtocol.AttachmentChunk(
+                            attachmentId = attachmentId,
+                            offset = offset - read,
+                            dataBase64Url = base64Url(buffer, read),
+                            isFinal = isFinal,
+                            sha256 = if (isFinal) digest.digest().toHex() else null,
+                            sizeBytes = if (isFinal) offset else null,
+                        ),
+                    ),
+                )
+                if (isFinal) break
+            }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Timber.w(e, "SyncEngine: attachment stream failed")
+        runCatching {
+            send(
+                attachmentError(
+                    attachmentId,
+                    SyncProtocol.AttachmentError.ATTACHMENT_UNREADABLE,
+                    "This photo couldn't be read on the phone.",
+                ),
+            )
+        }
+    } finally {
+        runCatching { data.stream.close() }
+    }
+}
+
+/** Fills [buffer] from [stream] (one `read` may return short); returns the bytes read, 0 at end of stream. */
+private fun readChunk(stream: InputStream, buffer: ByteArray): Int {
+    var filled = 0
+    while (filled < buffer.size) {
+        val read = stream.read(buffer, filled, buffer.size - filled)
+        if (read == -1) break
+        filled += read
+    }
+    return filled
+}
+
+/** Base64url, no padding — the wire's chunk encoding. Only the first [length] bytes are encoded. */
+private fun base64Url(bytes: ByteArray, length: Int): String =
+    Base64.getUrlEncoder().withoutPadding().encodeToString(bytes.copyOf(length))
+
+private suspend fun runUploadStart(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.AttachmentUploadStart,
+) {
+    when (
+        val result = source.beginUpload(
+            request.clientMessageId,
+            request.index,
+            request.mimeType,
+            request.fileName,
+            request.sizeBytes,
+            request.sha256,
+        )
+    ) {
+        UploadResult.Ok -> send(
+            SyncProtocol.encodeAttachmentUploadReady(
+                SyncProtocol.AttachmentUploadReady(request.clientMessageId, request.index),
+            ),
+        )
+        is UploadResult.Failed -> send(
+            uploadError(request.clientMessageId, request.index, result.code, result.message),
+        )
+    }
+}
+
+private suspend fun runUploadChunk(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.AttachmentUploadChunk,
+) {
+    val bytes = runCatching {
+        Base64.getUrlDecoder().decode(QrPairing.padBase64(request.dataBase64Url))
+    }.getOrNull()
+    if (bytes == null) {
+        send(
+            uploadError(
+                request.clientMessageId,
+                request.index,
+                SyncProtocol.AttachmentUploadError.INTERNAL,
+                "This file couldn't be uploaded.",
+            ),
+        )
+        return
+    }
+    when (
+        val result = source.appendUploadChunk(
+            request.clientMessageId,
+            request.index,
+            request.offset,
+            bytes,
+            request.isFinal,
+        )
+    ) {
+        UploadResult.Ok -> {
+            if (request.isFinal) {
+                send(
+                    SyncProtocol.encodeAttachmentUploadDone(
+                        SyncProtocol.AttachmentUploadDone(request.clientMessageId, request.index),
+                    ),
+                )
+            }
+        }
+        is UploadResult.Failed -> send(
+            uploadError(request.clientMessageId, request.index, result.code, result.message),
+        )
+    }
+}
+
+private fun attachmentError(attachmentId: String, code: String, message: String): String =
+    SyncProtocol.encodeAttachmentError(
+        SyncProtocol.AttachmentError(attachmentId, code, message),
+    )
+
+private fun attachmentErrorInternal(attachmentId: String): String =
+    attachmentError(
+        attachmentId,
+        SyncProtocol.AttachmentError.INTERNAL,
+        "This attachment couldn't be downloaded.",
+    )
+
+private fun uploadError(clientMessageId: String, index: Int, code: String, message: String): String =
+    SyncProtocol.encodeAttachmentUploadError(
+        SyncProtocol.AttachmentUploadError(clientMessageId, index, code, message),
+    )
+
+// -- Slice 5: contact sync (file scope, like the Slice 4 runners:
+// the runners touch no engine state beyond the source and the send
+// lambda, and the class is at the Detekt function limit) -------------
+
+/**
+ * Reads the contact snapshot, or the `contacts_error` that explains
+ * why it can't be read. A contacts failure is never a stream
+ * failure: the caller sends the error frame and proceeds with
+ * message sync. Debug logging here is counts only — contact names
+ * and numbers never reach the log.
+ */
+private suspend fun readContacts(source: SyncMessageSource): ContactsRead {
+    return when (source.contactsReadiness()) {
+        ContactReadiness.NoContactsPermission -> ContactsRead.Error(
+            SyncProtocol.ContactsError.HUB_NO_CONTACTS_ACCESS,
+            NO_CONTACTS_ACCESS_MESSAGE,
+        )
+        ContactReadiness.Ready -> try {
+            ContactsRead.Ok(source.contacts())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SecurityException) {
+            // The permission was revoked between the readiness check
+            // and the read — same answer as never having it.
+            Timber.d(e, "SyncEngine: contacts read refused")
+            ContactsRead.Error(
+                SyncProtocol.ContactsError.HUB_NO_CONTACTS_ACCESS,
+                NO_CONTACTS_ACCESS_MESSAGE,
+            )
+        } catch (t: Throwable) {
+            Timber.w(t, "SyncEngine: contacts read failed")
+            ContactsRead.Error(
+                SyncProtocol.ContactsError.INTERNAL,
+                CONTACTS_INTERNAL_MESSAGE,
+            )
+        }
+    }
+}
+
+/** What [readContacts] found: the snapshot, or the error that replaces it. */
+private sealed interface ContactsRead {
+    data class Ok(val contacts: List<SyncedContact>) : ContactsRead
+    data class Error(val code: String, val message: String) : ContactsRead
+}
+
+/** Runs one `contacts_request`: the full snapshot, or `contacts_error`. */
+private suspend fun runContactsRequest(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+) {
+    when (val read = readContacts(source)) {
+        is ContactsRead.Ok -> streamContacts(send, read.contacts)
+        is ContactsRead.Error -> send(contactsError(read.code, read.message))
+    }
+}
+
+/**
+ * Streams the contact snapshot in batches of 100, display-name
+ * order. The last batch carries `has_more: false` — that is the
+ * desktop's prune signal (it deletes local numbers absent from the
+ * snapshot). An empty snapshot still sends one empty batch, so the
+ * desktop prunes everything and knows the snapshot is complete.
+ */
+private suspend fun streamContacts(
+    send: suspend (String) -> Unit,
+    contacts: List<SyncedContact>,
+) {
+    Timber.d("SyncEngine: streaming %d contacts", contacts.size)
+    if (contacts.isEmpty()) {
+        send(
+            SyncProtocol.encodeContacts(
+                SyncProtocol.Contacts(contacts = emptyList(), hasMore = false),
+            ),
+        )
+        return
+    }
+    val batches = contacts.chunked(SyncEngine.CONTACT_BATCH_SIZE)
+    batches.forEachIndexed { index, batch ->
+        send(
+            SyncProtocol.encodeContacts(
+                SyncProtocol.Contacts(
+                    contacts = batch,
+                    hasMore = index < batches.lastIndex,
+                ),
+            ),
+        )
+    }
+}
+
+/**
+ * Runs one `avatar_request`: the photo streams through the Slice 4
+ * chunk sender under the `avatar:<number>` id — no membership guard
+ * (there is no message and no vault concept for contacts). No
+ * contact, no photo, or an unreadable stream all answer
+ * `unknown_attachment`: one code for all three, and the paired
+ * desktop already knows `has_photo` from the CONTACT payload, so
+ * the error reveals nothing new.
+ */
+private suspend fun runAvatarRequest(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.AvatarRequest,
+) {
+    val id = avatarId(request.address)
+    when (val opened = source.openAvatar(request.address)) {
+        AvatarOpenResult.Unknown -> send(
+            attachmentError(
+                id,
+                SyncProtocol.AttachmentError.UNKNOWN_ATTACHMENT,
+                "This photo couldn't be found.",
+            ),
+        )
+        is AvatarOpenResult.Opened -> streamAttachment(
+            id,
+            AttachmentData(sizeBytes = UNKNOWN_STREAM_SIZE, stream = opened.stream),
+            send,
+        )
+    }
+}
+
+/** The chunk id for an avatar download: `avatar:<normalized-number>`. */
+private fun avatarId(address: String): String = "avatar:$address"
+
+/**
+ * The size of a stream whose length is unknown up front (avatar
+ * photo streams — the provider gives no length). The chunk sender
+ * caps the stream while reading, and the final chunk carries the
+ * actual byte count.
+ */
+private const val UNKNOWN_STREAM_SIZE = -1L
+
+/** The `contacts_error` message when the phone lacks contacts permission (the spec's words). */
+private const val NO_CONTACTS_ACCESS_MESSAGE =
+    "Relay on the phone needs contacts permission to sync names and photos."
+
+/** The `contacts_error` message for anything else — generic, never a stack trace. */
+private const val CONTACTS_INTERNAL_MESSAGE = "Contacts couldn't be synced right now."
+
+private fun contactsError(code: String, message: String): String =
+    SyncProtocol.encodeContactsError(
+        SyncProtocol.ContactsError(code, message),
+    )
+
+private fun contactsErrorInternal(): String =
+    contactsError(
+        SyncProtocol.ContactsError.INTERNAL,
+        CONTACTS_INTERNAL_MESSAGE,
+    )

@@ -339,6 +339,74 @@ class SyncSessionHandlerTest {
         }
     }
 
+    // -- Slice 5: contact frames ----------------------------------------
+
+    @Test fun `an unauthenticated contacts_request fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText("""{"type":"contacts_request"}""")
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `an unauthenticated avatar_request fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText("""{"type":"avatar_request","address":"+15551234567"}""")
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `an authenticated contacts_request reaches the engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.contactsSnapshot = listOf(sampleContact(id = 1L))
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+
+            harness.handler.onText("""{"type":"contacts_request"}""")
+            advanceUntilIdle()
+            assertThat(source.contactsCalls).isEqualTo(1)
+            assertThat(engineSent).hasSize(1)
+            val batch = Json.parseToJsonElement(engineSent.first()).jsonObject
+            assertThat(batch["type"]?.jsonPrimitive?.content).isEqualTo("contacts")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test fun `an authenticated avatar_request reaches the engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.openAvatarResult = AvatarOpenResult.Unknown
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+
+            harness.handler.onText("""{"type":"avatar_request","address":"+15551234567"}""")
+            advanceUntilIdle()
+            assertThat(source.avatarRequests).containsExactly("+15551234567")
+            assertThat(engineSent).hasSize(1)
+            val error = Json.parseToJsonElement(engineSent.first()).jsonObject
+            assertThat(error["type"]?.jsonPrimitive?.content).isEqualTo("attachment_error")
+            assertThat(error["attachment_id"]?.jsonPrimitive?.content)
+                .isEqualTo("avatar:+15551234567")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
     @Test fun `a send frame with no engine answers error and stays open`() = runTest {
         val harness = authenticatedHarness()
         harness.handler.onText(
@@ -348,6 +416,62 @@ class SyncSessionHandlerTest {
         assertThat(error["type"]?.jsonPrimitive?.content).isEqualTo("error")
         assertThat(harness.closes).isEmpty()
         assertThat(harness.handler.isAuthenticated).isTrue()
+    }
+
+    // -- Slice 4: attachment-byte frames need auth ----------------------
+
+    @Test fun `an unauthenticated attachment frame fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText(
+            """{"type":"attachment_request","attachment_id":"12","message_id":"789"}""",
+        )
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+
+        val uploadHarness = Harness(mapOf(DEVICE_ID to device))
+        uploadHarness.handler.onText(
+            """{"type":"attachment_upload_start","client_message_id":"$CLIENT_KEY","index":0,""" +
+                """"mime_type":"image/jpeg","size_bytes":1024,"sha256":"ab12"}""",
+        )
+        assertThat(uploadHarness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(uploadHarness.closes).hasSize(1)
+    }
+
+    @Test fun `authenticated attachment frames reach the engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+
+            harness.handler.onText(
+                """{"type":"attachment_upload_start","client_message_id":"$CLIENT_KEY","index":0,""" +
+                    """"mime_type":"image/jpeg","file_name":"photo.jpg","size_bytes":1024,"sha256":"ab12"}""",
+            )
+            harness.handler.onText(
+                """{"type":"attachment_request","attachment_id":"12","message_id":"789"}""",
+            )
+            advanceUntilIdle()
+            assertThat(source.uploadStarts).containsExactly(
+                UploadStartCall(CLIENT_KEY, 0, "image/jpeg", "photo.jpg", 1024, "ab12"),
+            )
+            assertThat(source.attachmentRequests).containsExactly(12L to 789L)
+            val types = engineSent.map {
+                Json.parseToJsonElement(it).jsonObject["type"]?.jsonPrimitive?.content
+            }
+            // The fake answers `ready` for the upload and `unknown`
+            // for the download (no attachment is staged).
+            assertThat(types).containsExactly("attachment_upload_ready", "attachment_error").inOrder()
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
     }
 
     private fun helloJson(): String = SyncProtocol.encodeHello(

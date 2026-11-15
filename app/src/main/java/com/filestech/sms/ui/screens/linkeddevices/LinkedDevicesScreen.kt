@@ -10,6 +10,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +29,8 @@ import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Tablet
 import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,6 +59,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -259,6 +263,13 @@ private fun LinkedDevicesList(
                 }
             }
             RelayHint(stringResource(R.string.linked_devices_server_hint))
+            val startError = state.lastStartError
+            if (!state.serverRunning && startError != null) {
+                StartErrorCard(
+                    error = startError,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                )
+            }
 
             RelaySectionLabel(stringResource(R.string.linked_devices_section_devices))
             // Keyed on the device list, as the Settings screen keys its
@@ -306,6 +317,46 @@ private fun LinkedDevicesList(
                 )
             }
             Spacer(Modifier.size(32.dp))
+        }
+    }
+}
+
+/**
+ * The start-failure diagnostic card (§6 of the release
+ * investigation): when the server is not running and a start failure
+ * was recorded, the stored error shows here — the release build logs
+ * nothing, so this is the only way the failure is visible at all.
+ * No dismiss button: a successful start clears the stored error and
+ * the card goes away on its own. A BindException gets the
+ * port-conflict hint (two Relay installs cannot share the port).
+ */
+@Composable
+private fun StartErrorCard(error: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.linked_devices_start_error_title),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
+            Text(
+                text = error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if ("BindException" in error) {
+                Text(
+                    text = stringResource(R.string.linked_devices_start_error_bind_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }

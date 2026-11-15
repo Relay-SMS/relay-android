@@ -106,7 +106,17 @@ class ScheduledSendAttempt @Inject constructor(
         // Decodage via le mapper de l'entite : une seule voie de lecture, partagee avec la liste
         // des envois programmes. Le codec lui-meme reste interne au module `data`.
         val attachments = entity.toDomain().attachments
-        val outcome = envoyer.invoke(recipients, entity.body, attachments, entity.subId)
+        // Phase 2 — la clé d'idempotence d'un envoi programmé depuis un appareil lié est
+        // transmise au routeur, qui la tamponne sur la ligne de message produite (une seule
+        // ligne la porte — la même règle que l'envoi immédiat). `null` pour les envois
+        // programmés depuis le téléphone : le comportement est inchangé pour eux.
+        val outcome = envoyer.invoke(
+            recipients,
+            entity.body,
+            attachments,
+            entity.subId,
+            clientMessageId = entity.clientMessageId,
+        )
         return when (outcome) {
             is Outcome.Success -> {
                 // v1.28.3 (F21, troisieme passage) — le rapport est enfin LU.

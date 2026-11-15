@@ -20,6 +20,15 @@ interface AttachmentDao {
     suspend fun findForMessage(messageId: Long): List<AttachmentEntity>
 
     /**
+     * Slice 4 — lookup ponctuel d'une pièce jointe par id, pour le
+     * téléchargement vers un appareil lié. Aucune garde coffre ici :
+     * la colle vérifie l'appartenance (message + conversation
+     * non-coffre) avant d'ouvrir les octets.
+     */
+    @Query("SELECT * FROM attachments WHERE id = :id")
+    suspend fun findById(id: Long): AttachmentEntity?
+
+    /**
      * Feedback round 6 — bulk-fetch attachments for exactly the given
      * messages. Used by
      * [com.filestech.sms.data.repository.ConversationRepositoryImpl.observeMessagesWindow],

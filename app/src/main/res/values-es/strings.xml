@@ -1172,6 +1172,8 @@
     <string name="linked_devices_section_devices">Dispositivos</string>
     <string name="linked_devices_server_title">Servidor de vinculación</string>
     <string name="linked_devices_server_hint">Cuando está activado, su ordenador puede encontrar este teléfono en la red local y vincularse a él. Nada sale de su red Wi-Fi.</string>
+    <string name="linked_devices_start_error_title">El servidor no pudo iniciarse</string>
+    <string name="linked_devices_start_error_bind_hint">Otra app de Relay en este teléfono ya está usando el puerto de vinculación. Detén primero su servidor y vuelve a intentarlo.</string>
     <string name="linked_devices_link_action">Vincular un dispositivo</string>
     <string name="linked_devices_empty_title">Aún no hay dispositivos vinculados</string>
     <string name="linked_devices_empty_body">Vincule su ordenador desde aquí escaneando su código de vinculación.</string>

@@ -28,6 +28,27 @@ import kotlinx.serialization.serializer
  *
  * Slice 3 adds the send + write-back types (`send_message` …
  * `action_result`) in the same envelope; the protocol version stays 1.
+ *
+ * Slice 4 adds the attachment-byte types (`attachment_request` …
+ * `attachment_upload_error`) in the same envelope, and extends
+ * `send_message` with an optional `attachments` array; the protocol
+ * version stays 1.
+ *
+ * Phase 2 adds the scheduled-send types (`schedule_message`,
+ * `message_scheduled`) in the same envelope; failures reuse
+ * `message_failed`. The protocol version stays 1.
+ *
+ * Phase 2 also adds the scheduled-cancel types (`cancel_scheduled`,
+ * `schedule_cancelled`) in the same envelope; failures reuse
+ * `message_failed` with an empty `conversation_id` (a cancel
+ * carries no conversation — the desktop matches by
+ * `client_message_id`). The protocol version stays 1.
+ *
+ * Slice 5 adds the contact-sync types (`contacts_request` …
+ * `contacts_error`) in the same envelope, plus one optional field
+ * on `sync_started` (`total_contacts`); avatars travel through the
+ * Slice 4 chunk frames under the `avatar:<number>` id, with their
+ * own request type (`avatar_request`). The protocol version stays 1.
  */
 object SyncProtocol {
 
@@ -62,6 +83,16 @@ object SyncProtocol {
 
     /** Slice 3 — the largest `send_message` body the server accepts, in UTF-8 bytes. */
     const val MAX_SEND_BODY_BYTES = 64 * 1024
+
+    /** Slice 4 — one attachment chunk carries this many raw bytes (~87 KB as base64url in JSON). */
+    const val ATTACHMENT_CHUNK_BYTES = 64 * 1024
+
+    /**
+     * Slice 4 — the phone refuses a download whose stored size exceeds
+     * this. A guard against a corrupt row claiming gigabytes, not a
+     * limit anyone should hit (real MMS parts are far smaller).
+     */
+    const val MAX_ATTACHMENT_DOWNLOAD_BYTES = 25L * 1024 * 1024
 
     /** Lenient JSON: unknown fields are ignored, so a newer client stays readable. */
     val json = Json {
@@ -165,6 +196,13 @@ object SyncProtocol {
      * is the phone's default SMS app: when it is not, new messages
      * only reach the mirror on app open or the periodic import, so
      * the desktop warns that live sync will lag.
+     *
+     * Slice 5 — [totalContacts] is the contact snapshot size (the
+     * `contacts` batches that follow `sync_started` carry that many
+     * contacts). Optional, default 0: 0 means "no contacts synced"
+     * (none on the phone, or the contacts read failed — the failure
+     * itself rides as `contacts_error`, never as `sync_error`, so
+     * message sync proceeds regardless).
      */
     @Serializable
     data class SyncStarted(
@@ -173,6 +211,7 @@ object SyncProtocol {
         @SerialName("total_messages") val totalMessages: Long,
         @SerialName("cursor_message_id") val cursorMessageId: String,
         @SerialName("hub_is_default_sms") val hubIsDefaultSms: Boolean,
+        @SerialName("total_contacts") val totalContacts: Int = 0,
     )
 
     /** Server → client: one batch of the conversation snapshot (100 per batch). */
@@ -278,6 +317,10 @@ object SyncProtocol {
      * [replyToMessageId] is a phone Room id for a quoted reply, or
      * absent. The phone appends the user's signature, exactly as its
      * own composer does — the desktop sends the body as typed.
+     *
+     * Slice 4 — [attachments] carries the media of the send (upload
+     * references and/or stickers). Absent for a text send, which is
+     * byte-identical to Slice 3.
      */
     @Serializable
     data class SendMessage(
@@ -285,6 +328,7 @@ object SyncProtocol {
         @SerialName("conversation_id") val conversationId: String,
         @SerialName("body") val body: String,
         @SerialName("reply_to_message_id") val replyToMessageId: String? = null,
+        @SerialName("attachments") val attachments: List<SendAttachment>? = null,
     )
 
     /** Client → server: mark one conversation read on the phone. */
@@ -390,6 +434,13 @@ object SyncProtocol {
             /** The radio refused synchronously, or the send could not be retried. */
             const val SEND_FAILED = "send_failed"
 
+            /**
+             * Slice 4 — the staged upload is gone (TTL sweep, cache
+             * clear); the desktop re-uploads, then re-sends with the
+             * same key.
+             */
+            const val UPLOAD_EXPIRED = "upload_expired"
+
             /** Anything else; [MessageFailed.message] stays generic, never a stack trace. */
             const val INTERNAL = "internal"
         }
@@ -418,6 +469,299 @@ object SyncProtocol {
         @SerialName("message") val message: String? = null,
     )
 
+    // -- Slice 4: attachment bytes (SYNC_PROTOCOL.md, Slice 4) --------
+
+    /**
+     * Client → server: fetch one attachment's bytes. [messageId] is
+     * the membership guard: the phone verifies the attachment belongs
+     * to that message and the message to a non-vault conversation — a
+     * stale or malicious client must not pull vault bytes by id.
+     */
+    @Serializable
+    data class AttachmentRequest(
+        @SerialName("attachment_id") val attachmentId: String,
+        @SerialName("message_id") val messageId: String,
+    )
+
+    /**
+     * Server → client: one slice of an attachment's bytes — at most
+     * [ATTACHMENT_CHUNK_BYTES] raw bytes as base64url, [offset] the
+     * raw byte offset (chunks are sequential per attachment, so the
+     * desktop appends in arrival order and checks `offset` against
+     * the bytes accumulated so far). [sha256] (hex) and [sizeBytes]
+     * (actual bytes read) appear only on the final chunk: the phone
+     * hashes while streaming, so the digest is only known at the end.
+     * A file whose size is an exact multiple of the chunk size ends
+     * with one empty final chunk.
+     */
+    @Serializable
+    data class AttachmentChunk(
+        @SerialName("attachment_id") val attachmentId: String,
+        @SerialName("offset") val offset: Long,
+        @SerialName("data_base64url") val dataBase64Url: String,
+        @SerialName("final") val isFinal: Boolean,
+        @SerialName("sha256") val sha256: String? = null,
+        @SerialName("size_bytes") val sizeBytes: Long? = null,
+    )
+
+    /** Server → client: the download failed, instead of chunks. */
+    @Serializable
+    data class AttachmentError(
+        @SerialName("attachment_id") val attachmentId: String,
+        @SerialName("code") val code: String,
+        @SerialName("message") val message: String,
+    ) {
+        companion object {
+            /**
+             * No such row, or it belongs to a different message / a
+             * vault conversation — same answer for all three, so ids
+             * can't be probed.
+             */
+            const val UNKNOWN_ATTACHMENT = "unknown_attachment"
+
+            /** The row exists, but the bytes don't (file gone, part URI won't open). */
+            const val ATTACHMENT_UNREADABLE = "attachment_unreadable"
+
+            /** Over the [MAX_ATTACHMENT_DOWNLOAD_BYTES] cap. */
+            const val ATTACHMENT_TOO_LARGE = "attachment_too_large"
+
+            /** Anything else; [AttachmentError.message] stays generic, never a stack trace. */
+            const val INTERNAL = "internal"
+        }
+    }
+
+    /**
+     * Client → server: begin an upload. [clientMessageId] keys the
+     * whole upload session (one send's attachments share it);
+     * [index] is the attachment's position in the send (0-based).
+     * The phone answers `attachment_upload_ready` or
+     * `attachment_upload_error` — the desktop sends no chunks before
+     * `ready`.
+     */
+    @Serializable
+    data class AttachmentUploadStart(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("index") val index: Int,
+        @SerialName("mime_type") val mimeType: String,
+        @SerialName("file_name") val fileName: String? = null,
+        @SerialName("size_bytes") val sizeBytes: Long,
+        @SerialName("sha256") val sha256: String,
+    )
+
+    /**
+     * Client → server: one upload chunk, streamed — same
+     * [ATTACHMENT_CHUNK_BYTES] chunking and `offset` rule as the
+     * download. No per-chunk ack: chunks stream over TCP; only a
+     * disconnect can lose one, and a disconnect fails the send
+     * anyway.
+     */
+    @Serializable
+    data class AttachmentUploadChunk(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("index") val index: Int,
+        @SerialName("offset") val offset: Long,
+        @SerialName("data_base64url") val dataBase64Url: String,
+        @SerialName("final") val isFinal: Boolean,
+    )
+
+    /** Server → client: the upload was validated and the staging file created. */
+    @Serializable
+    data class AttachmentUploadReady(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("index") val index: Int,
+    )
+
+    /** Server → client: all chunks arrived and size + SHA-256 verified. */
+    @Serializable
+    data class AttachmentUploadDone(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("index") val index: Int,
+    )
+
+    /** Server → client: the upload failed. */
+    @Serializable
+    data class AttachmentUploadError(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("index") val index: Int,
+        @SerialName("code") val code: String,
+        @SerialName("message") val message: String,
+    ) {
+        companion object {
+            /** A single file over the 280 KB MMS cap — it could never be sent anyway. */
+            const val UPLOAD_TOO_LARGE = "upload_too_large"
+
+            /** SHA-256 mismatch at `final` — the partial is deleted. */
+            const val UPLOAD_BAD_CHECKSUM = "upload_bad_checksum"
+
+            /** Anything else; [AttachmentUploadError.message] stays generic, never a stack trace. */
+            const val INTERNAL = "internal"
+        }
+    }
+
+    /**
+     * One entry of `send_message.attachments` (Slice 4): exactly one
+     * of an upload reference ([uploadIndex] + [mimeType] + optional
+     * [fileName], [width], [height], [durationMs]) or a sticker
+     * ([stickerEmoji] — the phone renders it, no bytes cross). One
+     * flat data class with nullable fields, no polymorphic
+     * serializer: an entry with neither or both is a client bug and
+     * the send fails with `message_failed` `internal`.
+     */
+    @Serializable
+    data class SendAttachment(
+        @SerialName("upload_index") val uploadIndex: Int? = null,
+        @SerialName("sticker_emoji") val stickerEmoji: String? = null,
+        @SerialName("mime_type") val mimeType: String? = null,
+        @SerialName("file_name") val fileName: String? = null,
+        @SerialName("width") val width: Int? = null,
+        @SerialName("height") val height: Int? = null,
+        @SerialName("duration_ms") val durationMs: Long? = null,
+    )
+
+    // -- Phase 2: scheduled sends (SYNC_PROTOCOL.md, Phase 2) ----------
+
+    /**
+     * Client → server: schedule a text message in an existing
+     * conversation for [sendAt] (epoch millis). [clientMessageId] is
+     * a UUID v4 generated by the desktop per schedule attempt — a
+     * retry of the same schedule REUSES it, which is what makes the
+     * retry safe (the phone dedups on it; see SyncMessageSource).
+     * The phone resolves the recipients from the conversation, exactly
+     * as for `send_message`, and schedules through its own scheduler.
+     */
+    @Serializable
+    data class ScheduleMessage(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("conversation_id") val conversationId: String,
+        @SerialName("body") val body: String,
+        @SerialName("send_at") val sendAt: Long,
+    )
+
+    /**
+     * Server → client: the phone scheduled the message — the ack to
+     * `schedule_message`, matched by [clientMessageId]. [messageId]
+     * is the phone's scheduled-row id for a fresh or pending
+     * schedule, or the sent message row's id when the key already
+     * fired (the dedup returning the stored row). [sendAt] echoes
+     * the scheduled time in epoch millis. The message itself arrives
+     * later via `message_new`, carrying [clientMessageId] so the
+     * desktop reconciles it with the scheduled row.
+     */
+    @Serializable
+    data class MessageScheduled(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("message_id") val messageId: String,
+        @SerialName("conversation_id") val conversationId: String,
+        @SerialName("send_at") val sendAt: Long,
+    )
+
+    /**
+     * Client → server: cancel the scheduled message keyed by
+     * [clientMessageId]. Idempotent: an unknown key (already
+     * cancelled, deleted, or never scheduled) and a key whose
+     * message already fired both ack as cancelled — the schedule is
+     * gone either way. After a cancel the key is free: a later
+     * `schedule_message` with the same key creates a fresh schedule.
+     */
+    @Serializable
+    data class CancelScheduled(
+        @SerialName("client_message_id") val clientMessageId: String,
+    )
+
+    /**
+     * Server → client: the scheduled message is cancelled — the ack
+     * to `cancel_scheduled`, matched by [clientMessageId]. A genuine
+     * internal failure answers `message_failed` instead, with an
+     * empty `conversation_id` (a cancel carries no conversation).
+     */
+    @Serializable
+    data class ScheduleCancelled(
+        @SerialName("client_message_id") val clientMessageId: String,
+    )
+
+    // -- Slice 5: contact sync (SYNC_PROTOCOL.md, Slice 5) -----------
+
+    /**
+     * Client → server: re-fetch the full contact snapshot without
+     * touching messages (Settings retry, or the engine's repair path
+     * after a `contacts_error`). No payload. The phone answers with
+     * `contacts` batches, or `contacts_error`.
+     */
+    @Serializable
+    data object ContactsRequest
+
+    /**
+     * Client → server: one contact photo. [address] is the normalized
+     * number, exactly as it appears in the CONTACT payload — the
+     * phone resolves it with the same `PhoneLookup` the UI uses. The
+     * answer reuses the Slice 4 frames: `attachment_chunk` ×N under
+     * the `avatar:<number>` id, or `attachment_error`
+     * `unknown_attachment` (one code for no contact / no photo /
+     * unreadable stream — the paired desktop already knows
+     * `has_photo` from the CONTACT payload, so the error reveals
+     * nothing new).
+     */
+    @Serializable
+    data class AvatarRequest(
+        @SerialName("address") val address: String,
+    )
+
+    /**
+     * Server → client: one batch of the contact snapshot (100 per
+     * batch), display-name order. The desktop upserts each batch;
+     * when a batch has `has_more: false` the snapshot is complete
+     * and the desktop prunes local numbers absent from it. An empty
+     * snapshot still sends one empty batch — the prune signal.
+     */
+    @Serializable
+    data class Contacts(
+        @SerialName("contacts") val contacts: List<SyncedContact>,
+        @SerialName("has_more") val hasMore: Boolean,
+    )
+
+    /**
+     * Server → client: one contact changed (live delta) or was
+     * added. Upsert by phones. [removedPhones] appears only when
+     * the contact lost numbers — the desktop deletes those rows, so
+     * a removed number does not linger until the next full snapshot.
+     */
+    @Serializable
+    data class ContactUpdated(
+        @SerialName("contact") val contact: SyncedContact,
+        @SerialName("removed_phones") val removedPhones: List<String>? = null,
+    )
+
+    /**
+     * Server → client: one contact deleted (live delta). [phones]
+     * are the contact's last-known numbers; the desktop deletes
+     * those rows (and their avatar files).
+     */
+    @Serializable
+    data class ContactDeleted(
+        @SerialName("phones") val phones: List<String>,
+    )
+
+    /**
+     * Server → client: the phone cannot sync contacts right now.
+     * Separate from `sync_error` by design — message sync proceeds
+     * regardless. The desktop shows the reason in Settings → Linked
+     * devices with a Retry (which sends `contacts_request`); it does
+     * not touch the SyncDialog state.
+     */
+    @Serializable
+    data class ContactsError(
+        @SerialName("code") val code: String,
+        @SerialName("message") val message: String,
+    ) {
+        companion object {
+            /** READ_CONTACTS missing on the phone. */
+            const val HUB_NO_CONTACTS_ACCESS = "hub_no_contacts_access"
+
+            /** Anything else; [ContactsError.message] stays generic, never a stack trace. */
+            const val INTERNAL = "internal"
+        }
+    }
+
     /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
@@ -438,6 +782,13 @@ object SyncProtocol {
         data class SetMuted(val value: SyncProtocol.SetMuted) : Parsed
         data class SetReaction(val value: SyncProtocol.SetReaction) : Parsed
         data class SetPinnedMessage(val value: SyncProtocol.SetPinnedMessage) : Parsed
+        data class AttachmentRequest(val value: SyncProtocol.AttachmentRequest) : Parsed
+        data class AttachmentUploadStart(val value: SyncProtocol.AttachmentUploadStart) : Parsed
+        data class AttachmentUploadChunk(val value: SyncProtocol.AttachmentUploadChunk) : Parsed
+        data class ScheduleMessage(val value: SyncProtocol.ScheduleMessage) : Parsed
+        data class CancelScheduled(val value: SyncProtocol.CancelScheduled) : Parsed
+        data class ContactsRequest(val value: SyncProtocol.ContactsRequest) : Parsed
+        data class AvatarRequest(val value: SyncProtocol.AvatarRequest) : Parsed
         data class Unknown(val type: String?) : Parsed
         data object Malformed : Parsed
     }
@@ -464,14 +815,34 @@ object SyncProtocol {
             "send_message" -> decode<SendMessage>(obj)?.let(Parsed::SendMessage) ?: Parsed.Malformed
             "mark_read" -> decode<MarkRead>(obj)?.let(Parsed::MarkRead) ?: Parsed.Malformed
             "mark_all_read" -> decode<MarkAllRead>(obj)?.let(Parsed::MarkAllRead) ?: Parsed.Malformed
-            "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
-            "set_archived" -> decode<SetArchived>(obj)?.let(Parsed::SetArchived) ?: Parsed.Malformed
-            "set_muted" -> decode<SetMuted>(obj)?.let(Parsed::SetMuted) ?: Parsed.Malformed
-            "set_reaction" -> decode<SetReaction>(obj)?.let(Parsed::SetReaction) ?: Parsed.Malformed
-            "set_pinned_message" -> decode<SetPinnedMessage>(obj)?.let(Parsed::SetPinnedMessage) ?: Parsed.Malformed
             null -> Parsed.Malformed
-            else -> Parsed.Unknown(type)
+            // The remaining post-auth frames live in [parseRemaining]:
+            // one `when` for all of them pushed `parse` over the
+            // Detekt complexity cap (40).
+            else -> parseRemaining(type, obj)
         }
+    }
+
+    /**
+     * The second half of [parse]: the Slice 3 write-back actions, the
+     * Slice 4 attachment frames, the Phase 2 schedule frames, and the
+     * Slice 5 contact frames. A well-formed message of an unknown type
+     * comes back as [Parsed.Unknown], like in [parse].
+     */
+    private fun parseRemaining(type: String, obj: JsonObject): Parsed = when (type) {
+        "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
+        "set_archived" -> decode<SetArchived>(obj)?.let(Parsed::SetArchived) ?: Parsed.Malformed
+        "set_muted" -> decode<SetMuted>(obj)?.let(Parsed::SetMuted) ?: Parsed.Malformed
+        "set_reaction" -> decode<SetReaction>(obj)?.let(Parsed::SetReaction) ?: Parsed.Malformed
+        "set_pinned_message" -> decode<SetPinnedMessage>(obj)?.let(Parsed::SetPinnedMessage) ?: Parsed.Malformed
+        "attachment_request" -> decode<AttachmentRequest>(obj)?.let(Parsed::AttachmentRequest) ?: Parsed.Malformed
+        "attachment_upload_start" -> decode<AttachmentUploadStart>(obj)?.let(Parsed::AttachmentUploadStart) ?: Parsed.Malformed
+        "attachment_upload_chunk" -> decode<AttachmentUploadChunk>(obj)?.let(Parsed::AttachmentUploadChunk) ?: Parsed.Malformed
+        "schedule_message" -> decode<ScheduleMessage>(obj)?.let(Parsed::ScheduleMessage) ?: Parsed.Malformed
+        "cancel_scheduled" -> decode<CancelScheduled>(obj)?.let(Parsed::CancelScheduled) ?: Parsed.Malformed
+        "contacts_request" -> decode<ContactsRequest>(obj)?.let(Parsed::ContactsRequest) ?: Parsed.Malformed
+        "avatar_request" -> decode<AvatarRequest>(obj)?.let(Parsed::AvatarRequest) ?: Parsed.Malformed
+        else -> Parsed.Unknown(type)
     }
 
     private inline fun <reified T> decode(obj: JsonObject): T? =
@@ -522,6 +893,38 @@ object SyncProtocol {
     fun encodeMessageFailed(value: MessageFailed): String = withType(value, "message_failed").toString()
 
     fun encodeActionResult(value: ActionResult): String = withType(value, "action_result").toString()
+
+    fun encodeAttachmentChunk(value: AttachmentChunk): String =
+        withType(value, "attachment_chunk").toString()
+
+    fun encodeAttachmentError(value: AttachmentError): String =
+        withType(value, "attachment_error").toString()
+
+    fun encodeAttachmentUploadReady(value: AttachmentUploadReady): String =
+        withType(value, "attachment_upload_ready").toString()
+
+    fun encodeAttachmentUploadDone(value: AttachmentUploadDone): String =
+        withType(value, "attachment_upload_done").toString()
+
+    fun encodeAttachmentUploadError(value: AttachmentUploadError): String =
+        withType(value, "attachment_upload_error").toString()
+
+    fun encodeMessageScheduled(value: MessageScheduled): String =
+        withType(value, "message_scheduled").toString()
+
+    fun encodeScheduleCancelled(value: ScheduleCancelled): String =
+        withType(value, "schedule_cancelled").toString()
+
+    fun encodeContacts(value: Contacts): String = withType(value, "contacts").toString()
+
+    fun encodeContactUpdated(value: ContactUpdated): String =
+        withType(value, "contact_updated").toString()
+
+    fun encodeContactDeleted(value: ContactDeleted): String =
+        withType(value, "contact_deleted").toString()
+
+    fun encodeContactsError(value: ContactsError): String =
+        withType(value, "contacts_error").toString()
 
     /**
      * The `type` field is not part of the data classes (it is routing,

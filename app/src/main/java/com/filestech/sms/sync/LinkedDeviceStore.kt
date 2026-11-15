@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import timber.log.Timber
+import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -83,6 +84,21 @@ class LinkedDeviceStore @Inject constructor(
         }
 
     /**
+     * The last server start failure, one line
+     * (`<ISO-8601 time> | <step> | <SimpleName>: <first line>`), or
+     * null when the server last started cleanly. The release build
+     * logs nothing, so this is the only record of a start failure —
+     * the Linked devices screen shows it when the server is not
+     * running. On-device only: never logged, never sent anywhere.
+     */
+    val lastStartError: Flow<String?> = dataStore.data
+        .map { prefs -> prefs[KEY_LAST_START_ERROR] }
+        .catch { t ->
+            Timber.w(t, "LinkedDeviceStore: lastStartError read failed, serving null")
+            emit(null)
+        }
+
+    /**
      * The phone's stable hub id, generated on first read. The
      * check-and-set runs inside one DataStore edit, so two concurrent
      * first reads still produce exactly one id.
@@ -105,6 +121,31 @@ class LinkedDeviceStore @Inject constructor(
             dataStore.edit { prefs -> prefs[KEY_SERVER_ENABLED] = enabled }
         }.onFailure { t ->
             Timber.w(t, "LinkedDeviceStore: setServerEnabled failed")
+        }
+    }
+
+    /**
+     * Records a server start failure (called by [SyncServer.start]
+     * from its catch block, with the step it reached). Itself
+     * `runCatching`, so a persistence failure never masks the
+     * original throw. The stored string is never logged — exception
+     * messages can contain paths, and this is shown on-device only.
+     */
+    suspend fun recordStartError(step: String, throwable: Throwable) {
+        runCatching {
+            val formatted = formatStartError(System.currentTimeMillis(), step, throwable)
+            dataStore.edit { prefs -> prefs[KEY_LAST_START_ERROR] = formatted }
+        }.onFailure { t ->
+            Timber.w(t, "LinkedDeviceStore: recordStartError failed")
+        }
+    }
+
+    /** Clears the recorded start failure — a successful start erases the stale error. */
+    suspend fun clearStartError() {
+        runCatching {
+            dataStore.edit { prefs -> prefs.remove(KEY_LAST_START_ERROR) }
+        }.onFailure { t ->
+            Timber.w(t, "LinkedDeviceStore: clearStartError failed")
         }
     }
 
@@ -191,8 +232,34 @@ class LinkedDeviceStore @Inject constructor(
         private val KEY_HUB_ID = stringPreferencesKey("sync.hub_id")
         private val KEY_SERVER_ENABLED = booleanPreferencesKey("sync.server_enabled")
         private val KEY_DEVICES = stringPreferencesKey("sync.devices_json")
+        private val KEY_LAST_START_ERROR = stringPreferencesKey("sync_last_start_error")
 
         /** Minimum gap between `last_seen` writes for one device. */
         private const val TOUCH_THROTTLE_MS = 60_000L
+    }
+}
+
+/** Maximum characters of an exception message kept in a recorded start error. */
+private const val MAX_START_ERROR_MESSAGE_CHARS = 200
+
+/**
+ * Formats a server start failure for [LinkedDeviceStore.recordStartError]:
+ * `<ISO-8601 time> | <step> | <SimpleName>: <first line of message, max 200 chars>`.
+ * A message-less exception formats without the `: message` part. Pure function,
+ * so the format is unit-testable without a DataStore (which needs an Android
+ * Context). The result is shown on-device only — never logged, never sent.
+ */
+internal fun formatStartError(nowMs: Long, step: String, throwable: Throwable): String {
+    val time = Instant.ofEpochMilli(nowMs).toString()
+    val name = throwable.javaClass.simpleName
+    val firstLine = throwable.message
+        ?.lineSequence()
+        ?.firstOrNull()
+        ?.trim()
+        ?.take(MAX_START_ERROR_MESSAGE_CHARS)
+    return if (firstLine.isNullOrEmpty()) {
+        "$time | $step | $name"
+    } else {
+        "$time | $step | $name: $firstLine"
     }
 }

@@ -24,6 +24,10 @@ interface ScheduledMessageRepository {
     /**
      * v1.26.0 — [attachments] non vide programme un **MMS**. Les fichiers doivent deja etre
      * durables : c'est [com.filestech.sms.domain.usecase.ScheduleMessageUseCase] qui les promeut.
+     *
+     * Phase 2 — [clientMessageId] est la clé d'idempotence d'un envoi programmé depuis un
+     * appareil lié (`null` pour un envoi programmé depuis le téléphone). Elle est stockée sur
+     * la ligne et transmise au routeur à l'échéance.
      */
     suspend fun schedule(
         conversationId: Long?,
@@ -33,7 +37,16 @@ interface ScheduledMessageRepository {
         subId: Int?,
         attachments: List<com.filestech.sms.domain.usecase.SendMediaMmsUseCase.AttachmentPayload> =
             emptyList(),
+        clientMessageId: String? = null,
     ): Outcome<Long>
+
+    /**
+     * Phase 2 — retrouve un envoi programmé par sa clé d'idempotence client, ou `null`.
+     * La déduplication des envois programmés depuis un appareil lié : une seconde
+     * `schedule_message` portant la même clé retrouve la ligne existante au lieu d'en
+     * créer une deuxième.
+     */
+    suspend fun findByClientMessageId(clientMessageId: String): ScheduledMessage?
 
     /**
      * v1.26.1 (audit B2) — rend `true` si l'annulation a REELLEMENT pris, `false` si l'envoi

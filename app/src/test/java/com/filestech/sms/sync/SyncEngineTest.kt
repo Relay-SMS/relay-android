@@ -36,6 +36,11 @@ class SyncEngineTest {
             advanceUntilIdle()
             assertThat(sent.map { it.frameType() }).containsExactly(
                 "sync_started",
+                // Slice 5 — the contact snapshot streams between
+                // `sync_started` and the conversations (empty here:
+                // the fake holds no contacts, but the prune-signal
+                // batch still goes out).
+                "contacts",
                 "conversations",
                 "messages_batch",
                 "messages_batch",
@@ -108,6 +113,9 @@ class SyncEngineTest {
             advanceUntilIdle()
             assertThat(sent.map { it.frameType() }).containsExactly(
                 "sync_started",
+                // Slice 5 — contacts sync in both modes (the mode
+                // choice is about message history).
+                "contacts",
                 "conversations",
                 "sync_complete",
             ).inOrder()
@@ -637,31 +645,31 @@ class SyncEngineTest {
         }
     }
 
-    /**
-     * Builds an engine on the test scope and guarantees it is stopped
-     * afterwards — the live collectors run forever, so a test that
-     * leaks one would hang `runTest` until its timeout.
-     */
-    private suspend fun TestScope.runEngine(
-        source: FakeSyncMessageSource,
-        block: suspend TestScope.(SyncEngine, MutableList<String>) -> Unit,
-    ) {
-        val sent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { sent += it })
-        try {
-            block(engine, sent)
-        } finally {
-            engine.stop()
-            advanceUntilIdle()
-        }
-    }
-
-    private fun String.frameType(): String? =
-        Json.parseToJsonElement(this).jsonObject["type"]?.jsonPrimitive?.content
-
-    private fun String.asObject(): JsonObject = Json.parseToJsonElement(this).jsonObject
-
     companion object {
         private const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
     }
 }
+
+/**
+ * Builds an engine on the test scope and guarantees it is stopped
+ * afterwards — the live collectors run forever, so a test that
+ * leaks one would hang `runTest` until its timeout.
+ */
+internal suspend fun TestScope.runEngine(
+    source: FakeSyncMessageSource,
+    block: suspend TestScope.(SyncEngine, MutableList<String>) -> Unit,
+) {
+    val sent = mutableListOf<String>()
+    val engine = SyncEngine(source, this, send = { sent += it })
+    try {
+        block(engine, sent)
+    } finally {
+        engine.stop()
+        advanceUntilIdle()
+    }
+}
+
+internal fun String.frameType(): String? =
+    Json.parseToJsonElement(this).jsonObject["type"]?.jsonPrimitive?.content
+
+internal fun String.asObject(): JsonObject = Json.parseToJsonElement(this).jsonObject

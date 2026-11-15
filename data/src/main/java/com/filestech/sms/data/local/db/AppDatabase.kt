@@ -110,6 +110,11 @@ abstract class AppDatabase : RoomDatabase() {
         // v16 (2026-11-14, Slice 3): ajoute `messages.client_message_id TEXT` (nullable) +
         //   index UNIQUE — la clé d'idempotence d'un envoi fait depuis un appareil lié.
         //   Strictement additive. Les lignes existantes projettent NULL.
-        const val SCHEMA_VERSION = 16
+        // v17 (2026-11-15, Phase 2): ajoute `scheduled_messages.client_message_id TEXT`
+        //   (nullable) + index UNIQUE — la clé d'idempotence d'un envoi PROGRAMMÉ depuis un
+        //   appareil lié, transmise au routeur à l'échéance pour qu'elle atterrisse sur la
+        //   ligne de message produite. Strictement additive. Les lignes existantes
+        //   projettent NULL.
+        const val SCHEMA_VERSION = 17
     }
 }

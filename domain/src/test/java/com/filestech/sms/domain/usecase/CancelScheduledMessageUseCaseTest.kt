@@ -51,7 +51,10 @@ class CancelScheduledMessageUseCaseTest {
             scheduledAt: Long,
             subId: Int?,
             attachments: List<SendMediaMmsUseCase.AttachmentPayload>,
+            clientMessageId: String?,
         ): Outcome<Long> = Outcome.Success(1L)
+
+        override suspend fun findByClientMessageId(clientMessageId: String): ScheduledMessage? = null
 
         override suspend fun cancel(id: Long): Outcome<Boolean> = cancelResult
         override suspend fun markSent(id: Long) = Unit

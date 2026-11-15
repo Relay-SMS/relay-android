@@ -257,10 +257,414 @@ An unauthenticated send or action frame is a protocol violation
 (the socket closes), like an unauthenticated sync frame.
 
 **Out of Slice 3:** MMS / media sending from the desktop (needs the
-attachment-upload path), deleting conversations or messages, block /
-unblock, mark-unread, starred messages, scheduling, and sending to a
-new conversation (no thread yet). Offline sends are refused, not
-queued — while disconnected the desktop composer is disabled.
+attachment-upload path — done in Slice 4, below), deleting
+conversations or messages, block / unblock, mark-unread, starred
+messages, scheduling (done in Phase 2, below), and sending to a new
+conversation (no thread yet). Offline sends are refused, not queued — while disconnected the
+desktop composer is disabled.
+
+## Slice 4 — attachment bytes (protocol version 1)
+
+Slice 4 moves the bytes behind the metadata Slice 2 synced: the
+desktop downloads photos, videos, voice clips, and files on demand
+(lazy only — opening a thread fetches its attachments, nothing is
+prefetched), and sends photos, GIFs, stickers, and files through the
+phone's MMS sender. Same JSON envelope, same `type` field, same
+rules: the server parses with `ignoreUnknownKeys`, unknown types are
+answered with `error` by the server (after auth) and ignored by the
+client. All ids are decimal strings of the phone's Room ids, except
+`client_message_id` (UUID v4) and upload indices (small integers).
+No protocol bump: every addition is additive, and a Slice 3 desktop
+talking to a Slice 4 phone simply never sends the new types. A
+Slice 4 desktop talking to a Slice 3 phone gets `error` for
+`attachment_request` — the engine treats that as "attachments
+unavailable" and keeps the placeholders.
+
+| Direction | Message | Shape |
+|---|---|---|
+| Client → server | `attachment_request` | `{"type":"attachment_request","attachment_id":"12","message_id":"789"}` |
+| Server → client | `attachment_chunk` | `{"type":"attachment_chunk","attachment_id":"12","offset":0,"data_base64url":"…","final":false}` |
+| Server → client | `attachment_error` | `{"type":"attachment_error","attachment_id":"12","code":"attachment_unreadable","message":"…"}` |
+| Client → server | `attachment_upload_start` | `{"type":"attachment_upload_start","client_message_id":"3f2a…c41d","index":0,"mime_type":"image/jpeg","file_name":"photo.jpg","size_bytes":198402,"sha256":"ab12…"}` |
+| Client → server | `attachment_upload_chunk` | `{"type":"attachment_upload_chunk","client_message_id":"3f2a…c41d","index":0,"offset":0,"data_base64url":"…","final":false}` |
+| Server → client | `attachment_upload_ready` | `{"type":"attachment_upload_ready","client_message_id":"3f2a…c41d","index":0}` |
+| Server → client | `attachment_upload_done` | `{"type":"attachment_upload_done","client_message_id":"3f2a…c41d","index":0}` |
+| Server → client | `attachment_upload_error` | `{"type":"attachment_upload_error","client_message_id":"3f2a…c41d","index":0,"code":"upload_too_large","message":"…"}` |
+| Client → server | `send_message` (extended) | `{"type":"send_message","client_message_id":"3f2a…c41d","conversation_id":"123","body":"Look at this","attachments":[{"upload_index":0,"mime_type":"image/jpeg","file_name":"photo.jpg","width":1600,"height":1200},{"sticker_emoji":"😂"}]}` |
+
+**Download.** `attachment_request` names the attachment and its
+message: `message_id` is the membership guard — the phone verifies
+the attachment belongs to that message and the message to a
+non-vault conversation, so a stale or malicious client cannot pull
+vault bytes by id. The phone answers with `attachment_chunk` frames
+(one per 64 KiB of raw bytes, base64url in JSON — no binary frames,
+no new transport) or one `attachment_error`. `offset` is the raw
+byte offset; chunks are sequential per attachment, so the desktop
+appends in arrival order and checks `offset` against the bytes
+accumulated so far (a gap is a protocol error — fail the download).
+The final chunk carries `sha256` (hex) and `size_bytes` (actual
+bytes read) — the phone hashes while streaming, one read pass — and
+the desktop verifies both before the file enters its cache; a
+mismatch discards the bytes. There is no separate "start" frame:
+the first chunk is the start signal (a stalled download is caught
+by the desktop's 30 s timeout). A file whose size is an exact
+multiple of 64 KiB ends with one empty final chunk. The phone
+refuses a download over 25 MB — a guard against a corrupt row
+claiming gigabytes, not a limit anyone should hit. The desktop runs
+at most 3 downloads at once and queues the rest FIFO; the phone
+serves requests concurrently (one job each), chunks interleaving on
+the wire, each tagged with its `attachment_id`. If the socket drops
+mid-download, the desktop restarts from scratch on reconnect — no
+resume in Slice 4.
+
+`attachment_error` codes: `unknown_attachment` (no such row, or it
+belongs to a different message / a vault conversation — same answer
+for all three, so ids can't be probed), `attachment_unreadable`
+(the row exists, but the bytes don't — file gone, part URI won't
+open), `attachment_too_large` (over the 25 MB cap), `internal`
+(anything else; the message stays generic, never a stack trace).
+
+**Upload + media send.** One upload per attachment, sequential:
+`attachment_upload_start` (validated by the phone — a single file
+over 280 KB is refused, since it could never be sent — then
+`attachment_upload_ready`), `attachment_upload_chunk` ×N (streamed,
+same 64 KiB chunking and `offset` rule, no per-chunk ack — TCP is
+the flow control), then `attachment_upload_done` once all chunks
+arrived and size + SHA-256 verified. The phone stages uploads at
+`cacheDir/sync_uploads/<client_message_id>/` and sweeps staging
+dirs older than 24 h on each new upload; staged file names are
+sanitized (basename only, path separators stripped — a malicious
+client must never pick the path), falling back to
+`attachment-<index>` plus the MIME extension.
+
+`attachment_upload_error` codes: `upload_too_large` (single file
+over 280 KB), `upload_bad_checksum` (SHA-256 mismatch at `final` —
+the partial is deleted), `internal` (anything else; the message
+stays generic, never a stack trace).
+
+`send_message` gains one optional field; a text send is
+byte-identical to Slice 3. Each entry of `attachments` is exactly
+one of an upload reference (`upload_index` + `mime_type` + optional
+`file_name`, `width`, `height`, `duration_ms`) or a sticker
+(`sticker_emoji` — the phone renders it from the emoji, no bytes
+cross at all). An entry with neither or both is a client bug and
+the send fails with `message_failed` `internal`. The phone maps
+the entries to MMS payloads and calls the same send router as a
+text send, with the same `client_message_id` — the router decides
+group MMS vs per-recipient MMS, and the 300 KB payload cap, the
+group paths, and the key-on-one-row rule are all inherited,
+unchanged. `message_failed` gains one code: `upload_expired` (the
+staged upload is gone — the desktop re-uploads, then re-sends with
+the same key). Photos are recompressed to fit the phone's budget
+and GIFs walk their renditions on the desktop before upload; video
+is never transcoded — a video that doesn't fit the remaining budget
+is refused with the phone's own "MMS limit reached" words. The
+desktop mirrors the phone's behavior and limits exactly; there are
+no desktop-only send policies.
+
+**Reply + media.** The router carries `reply_to_message_id` for SMS
+only — the phone's own media sends drop the quote too. The desktop
+sends the reply id if one is staged (harmless — the router ignores
+it for MMS), shows the quote on the optimistic row, and accepts
+that it drops on reconcile. A documented quirk that matches the
+phone's data model, not a bug to fix.
+
+**Idempotency for media sends.** The key is still the whole dedup:
+`client_message_id` is stamped on the message row at insert, before
+the radio dispatch — unchanged — and the upload is keyed by the
+same id, so a retry finds its own bytes. The dedup check runs
+BEFORE any upload validation: row exists → stored result (no
+upload needed, no upload consulted); row missing → the staged
+files are consulted (present → the send proceeds; absent →
+`upload_expired` and the desktop re-uploads, then re-sends, same
+key). The send consumes its staging (the use case *moves* the
+staged files into durable storage during the send), so a completed
+send leaves no staging behind to confuse a later retry — and a
+retry after a completed send hits the row dedup first anyway.
+Crash windows: mid-upload → partial `.part` files, nothing sent,
+the retry re-uploads from scratch; after upload, before
+`send_message` → staged files intact, the retry sends; after the
+row insert, before dispatch → the PENDING row carries the key, the
+retry returns it as `message_sent` (pending); after dispatch,
+before the ack → the retry returns the stored result. Uploads are
+not shared between sends — each send uploads its own bytes, even
+for the same photo twice.
+
+**Out of Slice 4:** prefetch / background attachment sync (lazy
+only), server-side thumbnails, an in-app lightbox (click opens the
+system viewer), in-app voice playback for AMR clips (download +
+system player), video transcoding on either side, voice recording
+from the desktop, cache eviction / storage management UI (wipe
+paths only), upload/download resume, and sending to a new
+conversation / deleting / blocking from the desktop
+(scheduling from the desktop is Phase 2, below; the rest is
+unchanged from Slice 3's out-list). Offline media sends follow
+the Slice 3 rule: refused, not queued.
+
+## Phase 2 — scheduled messages from the desktop (protocol version 1)
+
+Phase 2 lets the desktop schedule a text message through the phone:
+the phone stores it in its own scheduled-message store and sends it
+at the requested time through its own scheduler — the desktop asks
+the phone to schedule, it does not run a second scheduler. Same JSON
+envelope, same `type` field, same rules. No protocol bump: the
+additions are additive, and a Phase 2 desktop talking to a Slice 4
+phone gets `error` for `schedule_message` — the desktop treats that
+as "scheduling unavailable".
+
+| Direction | Message | Shape |
+|---|---|---|
+| Client → server | `schedule_message` | `{"type":"schedule_message","client_message_id":"3f2a…c41d","conversation_id":"123","body":"Happy birthday!","send_at":1800000000000}` |
+| Server → client | `message_scheduled` | `{"type":"message_scheduled","client_message_id":"3f2a…c41d","message_id":"4242","conversation_id":"123","send_at":1800000000000}` |
+| Client → server | `cancel_scheduled` | `{"type":"cancel_scheduled","client_message_id":"3f2a…c41d"}` |
+| Server → client | `schedule_cancelled` | `{"type":"schedule_cancelled","client_message_id":"3f2a…c41d"}` |
+| Server → client | `message_failed` | `{"type":"message_failed","client_message_id":"3f2a…c41d","conversation_id":"123","code":"internal","message":"…"}` |
+
+`schedule_message` schedules a text message in an existing
+conversation for `send_at` (epoch millis) — the phone resolves the
+recipients from the conversation (the desktop never sends
+addresses), and the phone's own scheduler fires it: same store,
+same WorkManager job, same send router as a schedule made on the
+phone, including the retry/backoff cycle on a transient failure.
+`message_scheduled` is the ack, matched by `client_message_id`:
+`message_id` is the phone's scheduled-row id for a fresh or pending
+schedule, or the sent message row's id when the key already fired
+(see Idempotency), and `send_at` echoes the scheduled time. The
+message itself arrives later via `message_new`, carrying
+`client_message_id` so the desktop reconciles it with the scheduled
+row — the key is stored on the scheduled row
+(`scheduled_messages.client_message_id`, unique index, schema v17)
+and stamped on the message row at fire time, exactly as for an
+immediate send from the desktop. A scheduled message also appears
+in the phone's own Scheduled Messages screen, like any schedule
+made on the phone.
+
+Failures reuse `message_failed` with the Slice 3 codes:
+`unknown_conversation` (the conversation is gone, or is a vault
+conversation the desktop must never address), `message_too_long`
+(body over the 64 KB wire cap), `internal` (anything else —
+including a past `send_at` or a blank body; the message stays
+generic, never a stack trace). There is deliberately no
+`hub_not_default_sms` refusal at schedule time: the phone's own
+scheduler accepts a schedule while another app holds the default
+role and only fails at fire time, so the desktop schedule mirrors
+it — the failure surfaces later, on the phone, in its Scheduled
+Messages screen. A refused schedule is never a protocol violation
+— the socket stays up.
+
+**Validation (server-side, all cheap).** A `schedule_message` with
+a missing/blank body, a body over 64 KB, a `send_at` in the past,
+an unknown or vault conversation id, or a missing
+`client_message_id` is refused with `message_failed`. An
+unauthenticated schedule frame is a protocol violation (the socket
+closes), like an unauthenticated send.
+
+**Idempotency.** Scheduling is a charged, real-world action in
+waiting: if the desktop schedules, the phone stores it, and the ack
+is lost (socket drop, phone restart), the desktop's retry — which
+REUSES the same `client_message_id` — must NOT schedule the text a
+second time. The dedup check runs BEFORE anything is created, under
+the same mutex that serializes sends: a scheduled row already
+carrying the key answers with its id (and its stored time — a retry
+asking a different time does not move the schedule), and a key
+whose message already fired is covered by the Slice 3 row dedup
+(same key on the sent row), answering with the sent row's id. The
+key lives on the scheduled row, so the dedup survives a phone
+restart; the phone's own scheduler is what fires it, so a restart
+between scheduling and fire changes nothing.
+
+**Cancel.** `cancel_scheduled` cancels the scheduled message keyed
+by `client_message_id` — without it, cancelling on the desktop
+would only delete the local record while the phone still sent at
+the chosen time. The phone cancels through its own delete path
+(cancel the scheduled work + delete the row, the same path its own
+Scheduled Messages screen deletes with) and answers
+`schedule_cancelled`. The cancel is IDEMPOTENT: an unknown key
+(already cancelled, deleted, or never scheduled) and a key whose
+message already fired both ack as cancelled — the schedule is gone
+either way, and a fired message is already reconciled on the
+desktop via `message_new`. Only a genuine internal failure answers
+`message_failed`, with an empty `conversation_id` (a cancel carries
+no conversation — the desktop matches a cancel failure by
+`client_message_id`). After a cancel the key is free: the row is
+gone, so a later `schedule_message` with the same key creates a
+fresh schedule — no tombstone blocks it. (The desktop generates a
+fresh UUID per new schedule anyway, so reusing a cancelled key is
+an edge case, but the phone does not forbid it.) An unauthenticated
+cancel frame is a protocol violation (the socket closes), like an
+unauthenticated schedule.
+
+**Out of Phase 2:** scheduling a message with attachments (text
+only — the phone's own scheduler supports MMS, but the desktop
+schedule frame carries no attachments yet), editing a scheduled
+message from the desktop, listing scheduled messages on the
+desktop, and sending to a new conversation. Offline schedules
+follow the Slice 3 rule: refused, not queued.
+
+## Slice 5 — contact sync (protocol version 1)
+
+Slice 5 gives the desktop the phone's contacts — display names +
+phone numbers, synced over the existing encrypted LAN channel —
+so group sender names, the detail pane's member list, and the
+thread header's group subtitle show names instead of raw numbers,
+and contact photos (avatars) show in the conversation list (1:1
+rows), the thread header, and the detail pane. It also makes
+`isContact` real: the desktop derives it from the synced
+directory, so the stranger-only classification rules finally work
+(the Slice 3 cold-pitch fix had to assume every sender is a
+stranger because the desktop never knew contact state). Same JSON
+envelope, same `type` field, same rules. No protocol bump: every
+addition is additive. A Slice 4 desktop talking to a Slice 5
+phone receives `contacts` frames it does not know and ignores
+them; a Slice 5 desktop talking to a Slice 4 phone sends
+`contacts_request` and gets `error` — the engine treats that as
+"contacts unavailable" and keeps raw addresses + placeholders
+(mixed-version behavior, documented, not an error state).
+
+| Direction | Message | Shape |
+|---|---|---|
+| Client → server | `contacts_request` | `{"type":"contacts_request"}` |
+| Client → server | `avatar_request` | `{"type":"avatar_request","address":"+15551234567"}` |
+| Server → client | `contacts` | `{"type":"contacts","contacts":[CONTACT, "…"],"has_more":false}` |
+| Server → client | `contact_updated` | `{"type":"contact_updated","contact":CONTACT,"removed_phones":["+15550001111"]}` |
+| Server → client | `contact_deleted` | `{"type":"contact_deleted","phones":["+15551234567"]}` |
+| Server → client | `contacts_error` | `{"type":"contacts_error","code":"hub_no_contacts_access","message":"…"}` |
+| Server → client | `sync_started` (extended) | `{"type":"sync_started","mode":"full","total_conversations":12,"total_messages":3401,"cursor_message_id":"9876","hub_is_default_sms":true,"total_contacts":214}` |
+
+**CONTACT.** `{"display_name":"Marie","phones":["+15551234567"],
+"has_photo":true,"photo_updated_at":1794670000000}` — the name as
+the phone shows it; the numbers, normalized with the phone's own
+`normalizePhone` (the normalized form is the join key on both
+sides — raw forms never cross); whether a photo exists; and the
+photo-staleness version (`CONTACT_LAST_UPDATED_TIMESTAMP`),
+present only when `has_photo` is true, else null. What does NOT
+sync: emails, notes, groups/labels, birthdays, postal addresses,
+custom ringtones, websites — and raw contact ids (they are
+reassigned when contacts merge, split, or are restored from a
+backup, so they are not stable identity; the phone uses them
+internally only, to diff its own snapshots). The wire identity of
+a contact is its set of normalized phone numbers. Contacts with
+no phone number are excluded (they cannot send or receive texts),
+as is the phone's own profile. A multi-number contact is one
+CONTACT frame carrying all its numbers; the desktop stores one
+row per number. Two contacts sharing one number resolve
+last-write-wins in snapshot order (display-name order, the order
+the phone's provider returns).
+
+**Snapshot.** The phone streams the full contact list in batches
+of 100, right after `sync_started` and before the conversation
+snapshot — in BOTH sync modes (the mode choice is about message
+history; a few hundred contacts cost nothing either way). The
+desktop upserts each batch and, on `has_more: false`, prunes
+local numbers absent from the snapshot — deletions included, no
+tombstone feed needed. `sync_started` gains one optional field,
+`total_contacts` (the snapshot size, for progress honesty); the
+phone reads the snapshot once, before `sync_started`, so the
+count and the stream never disagree. The snapshot is also the
+safety net for the delta path: any missed change self-heals at
+the next connect, the same way the message gap-fill heals a
+missed `message_new`.
+
+**Live delta.** The phone watches the contacts provider (a
+ContentObserver, registered at startup) and pushes
+`contact_updated` / `contact_deleted` to every authenticated
+session the moment a contact changes — a rename on the phone
+shows on the desktop within seconds, without reconnecting.
+Provider changes fire in bursts during an account sync/import, so
+the phone debounces 2 s before re-reading and diffing (by
+CONTACT_ID, internal only). A `contact_updated` carries
+`removed_phones` only when the contact lost numbers, so the
+desktop deletes those rows instead of letting them linger until
+the next full snapshot; a `contact_deleted` carries the contact's
+last-known numbers. The server's 30 s watchdog tick also
+re-checks contacts — a missed observer notification converges
+within 30 s. A session that has not synced contacts yet harmlessly
+upserts the delta rows; its `sync_request` snapshot + prune
+reconciles everything anyway, so no per-session tracking is
+needed.
+
+**Avatars.** A separate `avatar_request` type (not
+`attachment_request` with a namespaced id — avatars have no
+message, so there is no `message_id` for the membership guard,
+and sending a fake one would be a lie). The response reuses the
+Slice 4 frames: `attachment_chunk` ×N under the
+`avatar:<normalized-number>` id, or `attachment_error`. The phone
+serves the THUMBNAIL (what it displays itself — plenty sharp at
+48–80 px, one 64 KiB chunk in the common case), resolved with the
+same `PhoneLookup` the UI uses, so the desktop's avatar for a
+number is the contact the phone would show for it. No contact, no
+photo, or an unreadable stream all answer `unknown_attachment` —
+one code for all three, and the paired desktop already knows
+`has_photo` from the CONTACT payload, so the error reveals
+nothing new. The Slice 4 25 MB download cap applies to the shared
+chunk sender — an over-cap avatar fails with
+`attachment_too_large` and degrades to initials. Avatars download
+lazily, on render — the same rule as attachments: a 500-contact
+address book never prefetches 500 photos. A `contact_updated`
+with a newer `photo_updated_at` (any contact edit bumps the
+timestamp, so this is coarse — a name edit also re-downloads the
+photo) deletes the cached file and the next render re-requests;
+a `contact_updated` with `has_photo` flipped false, a
+`contact_deleted`, or a snapshot prune deletes the cached file.
+No orphaned photos for deleted contacts.
+
+**Failure isolation.** Contacts failing must NEVER fail message
+sync. The contact readiness check is separate from the SMS one
+(which stays SMS-only), and a contacts failure surfaces as
+`contacts_error`, not `sync_error`: message sync proceeds
+regardless, and the desktop shows the reason in Settings →
+Linked devices with a Retry (which sends `contacts_request`) —
+it does not touch the SyncDialog state. `contacts_error` codes:
+`hub_no_contacts_access` (READ_CONTACTS missing on the phone),
+`internal` (anything else; the message stays generic, never a
+stack trace). Without the permission, the desktop keeps raw
+addresses and placeholder avatars — which looks like a sync bug
+if you do not know, so the manual grant (Settings → Apps → Relay
+→ Permissions → Contacts → Allow) is called out wherever the
+debug app is set up.
+
+**Matching.** The desktop ports the phone's `normalizePhone`
+exactly and uses it for every lookup. Same number, different
+formats (`+15551234567` vs `5551234567`): after an exact
+normalized match misses, the desktop retries with the 10-digit
+suffix — but only for NANP-shaped numbers (exactly 10 digits, or
+11 digits starting with `1`). Within NANP the 10 digits ARE the
+whole number, so the fallback cannot confuse two different
+people; international numbers never take this path (exact match
+only). Short codes and alphanumeric senders never match a contact
+row and show raw, as today. The phone's conversation title stays
+authoritative for the list and the thread header — the desktop
+does NOT recompute 1:1 titles from its contact list (the phone's
+`PhoneLookup` matching is more lenient than the desktop's join,
+so recomputing could show a raw number where the phone shows a
+name). The desktop uses contact names exactly where the phone
+sends only raw addresses: group sender names, the detail pane
+members, the thread header group subtitle.
+
+**Privacy.** Contacts cross only the existing encrypted LAN
+channel (TLS 1.2+ with the TOFU-pinned certificate, plus the
+Ed25519 device authentication) — the same channel as messages, no
+new endpoint, no new network dependency, no cloud, no Google
+service. A device that is not paired cannot ask; an unpaired
+socket gets nothing (the `withEngine` auth gate applies to
+`contacts_request` / `avatar_request` exactly as to
+`sync_request`). At rest on the desktop, `relay.db` and the avatar
+files are plain files — no encryption at rest, exactly like the
+message cache Slice 2 already stores (the protection is the OS
+user account, same as the messages). Revoking the desktop stops
+all future sync immediately but does not wipe the desktop's cache
+— same as messages. Debug logging must never print contact names
+or numbers: the engine and the server log counts only. Nothing in
+this slice phones home, logs contact data, or adds an analytics
+dependency.
+
+**Out of Slice 5:** editing or creating contacts from the
+desktop; group creation; calling; contact groups/labels; emails,
+notes, birthdays, postal addresses; the phone's own profile;
+per-conversation custom avatars (the phone's `avatarUri` stays
+phone-only, like bubble color — appearance, not contact data); a
+contacts-list UI (the directory exists to resolve names and
+photos in the messaging UI, not as a destination of its own).
 
 ## Key storage (phone)
 
@@ -271,12 +675,14 @@ app-private storage / the AndroidKeyStore.
 ## Slice 1 scope boundary
 
 Slice 1 carried no message content, contacts, or notifications — Slice
-2 (above) adds the sync message types in the same envelope, and Slice
-3 adds sending from the desktop plus desktop→phone write-back (marking
-read on the phone, pin/archive/mute, reactions, pinned message), all
-in the same envelope; the protocol version stays 1 until a breaking
-change needs it. Still out of scope: attachment bytes, contacts,
-deleting from the desktop, and scheduling from the desktop.
+2 (above) adds the sync message types in the same envelope, Slice 3
+adds sending from the desktop plus desktop→phone write-back (marking
+read on the phone, pin/archive/mute, reactions, pinned message),
+Slice 4 adds attachment bytes (download + upload + media sends),
+Phase 2 adds scheduled messages from the desktop, and Slice 5 adds
+contact sync (names + avatars, snapshot + live delta), all in the same
+envelope; the protocol version stays 1 until a breaking change needs
+it. Still out of scope: deleting from the desktop.
 
 ## Glue points (Android)
 
@@ -301,14 +707,19 @@ thin, explicit glue:
    dependency.
 4. **The message-store seam** (`sync/SyncMessageSource.kt`):
    the interface the sync engine calls, plus the wire DTOs
-   (`SyncedConversation` / `SyncedMessage` / `SyncedAttachment`).
-   The implementation (`system/sync/RepositorySyncMessageSource.kt`)
-   lives outside the sync package — it is the one file that knows
-   both the wire DTOs and the app's repositories — and is bound in
-   Hilt (`di/RepositoryModule.kt`) and injected into `SyncServer`,
-   which hands it to one `SyncEngine` per session. The sync package
+   (`SyncedConversation` / `SyncedMessage` / `SyncedAttachment` /
+   `SyncedContact`). The implementation
+   (`system/sync/RepositorySyncMessageSource.kt`) lives outside the
+   sync package — it is the one file that knows both the wire DTOs
+   and the app's repositories — and is bound in Hilt
+   (`di/RepositoryModule.kt`) and injected into `SyncServer`, which
+   hands it to one `SyncEngine` per session. The sync package
    still imports no app code; a future port re-implements this one
-   interface. (Built in Slice 2; listed as "future glue" in Slice 1.)
+   interface. (Built in Slice 2; listed as "future glue" in
+   Slice 1. Slice 5 extends the seam with the contact surface —
+   `contacts()` / `openAvatar()` / `contactsReadiness()` — and
+   `MainApplication` registers the contacts ContentObserver, which
+   lives outside the sync package for exactly this reason.)
 
 A future port re-wires those four points and lifts the `sync` package
 as-is.

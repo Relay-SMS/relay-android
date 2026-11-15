@@ -328,7 +328,40 @@ class ScheduledSendAttemptTest {
         }
     }
 
+    /**
+     * Phase 2 — la clé d'idempotence d'un envoi programmé depuis un appareil lié est transmise
+     * au routeur à l'échéance, qui la tamponne sur la ligne de message produite : c'est elle
+     * qui permet à l'appareil de réconcilier son envoi programmé quand le message arrive en
+     * `message_new`. Sans elle, l'envoi partirait mais l'appareil ne le reconnaîtrait jamais.
+     */
+    @Test
+    fun `l envoi programme transmet au routeur la cle client de la ligne`() = runTest {
+        stubSend(Outcome.Success(rapportComplet()))
+        coEvery { dao.findById(ID) } returns entity().copy(clientMessageId = CLIENT_KEY)
+
+        assertThat(attempt(ID, runAttemptCount = 0)).isEqualTo(ScheduledSendAttempt.Verdict.SENT)
+        coVerify(exactly = 1) {
+            envoyer.invoke(any(), "Bonjour", emptyList(), null, null, CLIENT_KEY)
+        }
+    }
+
+    /**
+     * Phase 2 — contrôle positif : une ligne programmée depuis le téléphone ne porte pas de
+     * clé, et le routeur reçoit `null` comme avant — le comportement est inchangé pour elle.
+     */
+    @Test
+    fun `l envoi programme sans cle transmet null au routeur`() = runTest {
+        stubSend(Outcome.Success(rapportComplet()))
+        coEvery { dao.findById(ID) } returns entity().copy(clientMessageId = null)
+
+        assertThat(attempt(ID, runAttemptCount = 0)).isEqualTo(ScheduledSendAttempt.Verdict.SENT)
+        coVerify(exactly = 1) {
+            envoyer.invoke(any(), "Bonjour", emptyList(), null, null, null)
+        }
+    }
+
     private companion object {
         const val ID = 7L
+        const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
     }
 }

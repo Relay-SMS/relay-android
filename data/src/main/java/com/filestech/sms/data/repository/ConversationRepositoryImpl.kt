@@ -866,6 +866,13 @@ class ConversationRepositoryImpl @Inject constructor(
         entity.toDomain()
     }
 
+    // Slice 4 — thin DAO wrapper; the glue owns the membership +
+    // vault guard (message → conversation), so this stays a plain
+    // lookup.
+    override suspend fun findAttachmentById(id: Long): Attachment? = withContext(io) {
+        attachmentDao.findById(id)?.toDomain()
+    }
+
     // Slice 2 — sync reads. All of them refuse vault conversations
     // UNCONDITIONALLY: vault content never leaves the phone, even in
     // an unlocked session (unlike the UI paths, which unmask once the

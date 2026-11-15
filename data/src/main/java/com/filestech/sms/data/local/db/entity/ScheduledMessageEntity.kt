@@ -8,7 +8,13 @@ import com.filestech.sms.domain.model.ScheduledState
 
 @Entity(
     tableName = "scheduled_messages",
-    indices = [Index(value = ["scheduled_at"])],
+    indices = [
+        Index(value = ["scheduled_at"]),
+        // Phase 2 — la clé d'idempotence d'un envoi programmé depuis un appareil lié : un
+        // seul envoi programmé par clé, comme `messages.client_message_id` (v16). SQLite
+        // admet plusieurs NULL sous un index unique.
+        Index(value = ["client_message_id"], unique = true),
+    ],
 )
 data class ScheduledMessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -38,4 +44,10 @@ data class ScheduledMessageEntity(
      * exécution n'existe plus. C'est ce qui débloque le parc déjà coincé.
      */
     @ColumnInfo(name = "claimed_at") val claimedAt: Long? = null,
+    /**
+     * Phase 2 (schéma v17) — clé d'idempotence d'un envoi programmé depuis un appareil lié
+     * (UUID v4 du client), `null` pour les envois programmés depuis le téléphone. Transmise
+     * au routeur à l'échéance, qui la tamponne sur la ligne de message produite. Index UNIQUE.
+     */
+    @ColumnInfo(name = "client_message_id") val clientMessageId: String? = null,
 )

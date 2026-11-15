@@ -64,6 +64,16 @@ import javax.inject.Singleton
  * the injected [SyncMessageSource]; the engine is cancelled when the
  * session ends.
  *
+ * Slice 5 — the server also owns the live contact delta: it holds
+ * the last-broadcast contact snapshot (keyed by CONTACT_ID, internal
+ * only), re-checks it on a debounced provider-change notification
+ * ([notifyContactsChanged], called from the ContentObserver in
+ * `MainApplication`) and on the watchdog tick, and broadcasts
+ * `contact_updated` / `contact_deleted` to every authenticated
+ * session. A session that has not synced contacts yet harmlessly
+ * upserts the delta rows; its `sync_request` snapshot + prune
+ * reconciles everything anyway.
+ *
  * Own [CoroutineScope] (SupervisorJob + IO) instead of the app's
  * application scope: the sync package imports no app code, so it
  * cannot use the app's DI qualifiers (see the glue-points section at
@@ -99,6 +109,20 @@ class SyncServer @Inject constructor(
     private var lastHubStatus: Boolean? = null
 
     /**
+     * Slice 5 — last-broadcast contact snapshot, keyed by CONTACT_ID
+     * (internal only — ids never cross the wire). Null until the
+     * first re-check seeds it. Guarded by [contactsMutex]: the
+     * debounced notify and the watchdog tick can both re-check.
+     */
+    private var lastContacts: Map<Long, SyncedContact>? = null
+
+    /** Slice 5 — serializes the contact re-checks (debounce + watchdog). */
+    private val contactsMutex = Mutex()
+
+    /** Slice 5 — the pending debounced re-check, replaced on every new notification. */
+    private var contactsDebounceJob: Job? = null
+
+    /**
      * Starts the server: TLS identity, engine, mDNS, silence watchdog.
      * Idempotent — a second call while running is a no-op. Throws if
      * the identity cannot be built or the port cannot be bound; the
@@ -108,30 +132,48 @@ class SyncServer @Inject constructor(
     suspend fun start() {
         startStopMutex.withLock {
             if (engine != null) return
-            // Netty logs through its own factory, which on Android goes
-            // nowhere — route it to Timber first, so a TLS handshake
-            // failure is visible in logcat instead of vanishing silently.
-            installNettyTimberLogging()
-            val hubId = store.hubId()
-            val identity = tlsProvider.ensureIdentity(hubId)
-            val server = embeddedServer(
-                Netty,
-                applicationEnvironment { },
-                configure = { configureEngine(this, identity) },
-            ) {
-                install(WebSockets)
-                routing {
-                    webSocket("/sync") {
-                        handleSession(this, hubId)
+            // The start-failure diagnostic (§6 of the release
+            // investigation): the release build logs nothing, so a
+            // start failure would otherwise be silent. The step is
+            // recorded with the exception and shown on the Linked
+            // devices screen; a successful start clears it.
+            var step = STEP_IDENTITY
+            try {
+                // Netty logs through its own factory, which on Android goes
+                // nowhere — route it to Timber first, so a TLS handshake
+                // failure is visible in logcat instead of vanishing silently.
+                installNettyTimberLogging()
+                val hubId = store.hubId()
+                val identity = tlsProvider.ensureIdentity(hubId)
+                step = STEP_ENGINE
+                val server = embeddedServer(
+                    Netty,
+                    applicationEnvironment { },
+                    configure = { configureEngine(this, identity) },
+                ) {
+                    install(WebSockets)
+                    routing {
+                        webSocket("/sync") {
+                            handleSession(this, hubId)
+                        }
                     }
                 }
+                server.start(wait = false)
+                engine = server
+                step = STEP_MDNS
+                mdnsAdvertiser.start(hubId)
+                startWatchdog()
+                _running.value = true
+                store.clearStartError()
+                Timber.i("SyncServer: listening on port %d (TLS only)", SyncProtocol.PORT)
+            } catch (t: Throwable) {
+                // recordStartError is itself runCatching, so a
+                // persistence failure never masks the original throw —
+                // and the rethrow preserves the service's stopSelf()
+                // behavior in SyncService.
+                store.recordStartError(step, t)
+                throw t
             }
-            server.start(wait = false)
-            engine = server
-            mdnsAdvertiser.start(hubId)
-            startWatchdog()
-            _running.value = true
-            Timber.i("SyncServer: listening on port %d (TLS only)", SyncProtocol.PORT)
         }
     }
 
@@ -140,6 +182,9 @@ class SyncServer @Inject constructor(
         startStopMutex.withLock {
             watchdogJob?.cancel()
             watchdogJob = null
+            contactsDebounceJob?.cancel()
+            contactsDebounceJob = null
+            lastContacts = null
             mdnsAdvertiser.stop()
             engine?.stopSuspend(GRACE_PERIOD_MS, TIMEOUT_MS)
             engine = null
@@ -171,11 +216,102 @@ class SyncServer @Inject constructor(
      * when the role changes; a dead socket just skips.
      */
     suspend fun broadcastHubStatus(isDefaultSms: Boolean) {
-        val frame = SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms))
+        broadcast(SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms)))
+    }
+
+    /**
+     * Slice 5 — the contacts provider changed (called from the
+     * ContentObserver in `MainApplication`, only when the server
+     * toggle is on). A no-op when the server is not running.
+     * Provider changes fire in bursts during an account sync/import,
+     * so the re-check runs 2 s after the last tick, not per
+     * notification. Not suspending: the observer calls it from the
+     * main thread, and the re-check runs in the server scope.
+     */
+    fun notifyContactsChanged() {
+        if (!_running.value) return
+        contactsDebounceJob?.cancel()
+        contactsDebounceJob = scope.launch {
+            delay(CONTACTS_DEBOUNCE_MS)
+            recheckContacts()
+        }
+    }
+
+    /** Sends one frame to every authenticated session; a dead socket just skips. */
+    private suspend fun broadcast(frame: String) {
         for (handler in sessions.keys) {
             if (handler.isAuthenticated) {
                 runCatching { handler.sendText(frame) }
             }
+        }
+    }
+
+    /**
+     * Slice 5 — re-reads the contact snapshot, diffs it against the
+     * last-broadcast one, and pushes `contact_updated` /
+     * `contact_deleted` to every authenticated session. The first
+     * re-check only seeds the snapshot (each session's own
+     * `sync_request` snapshot covers it); a missing permission or a
+     * failed read leaves the snapshot alone — the next re-check
+     * retries, and the next connect re-syncs fully. Called from the
+     * debounced [notifyContactsChanged] and from the watchdog tick
+     * (the safety net for a missed observer notification). Logging
+     * is counts only — contact names and numbers never reach the log.
+     */
+    private suspend fun recheckContacts() {
+        contactsMutex.withLock {
+            if (!_running.value) return
+            val readiness = runCatching { messageSource.contactsReadiness() }.getOrNull()
+            if (readiness != ContactReadiness.Ready) return
+            val fresh = runCatching { messageSource.contacts() }.getOrNull() ?: return
+            // Contacts without an id (never from the reader — it
+            // always sets one) can't be diffed by id; they still
+            // ride the snapshot stream, just not the live delta.
+            val snapshot = fresh.filter { it.contactId != 0L }.associateBy { it.contactId }
+            val previous = lastContacts
+            lastContacts = snapshot
+            if (previous == null) return
+            broadcastContactDiff(previous, snapshot)
+        }
+    }
+
+    /**
+     * Slice 5 — pushes one diff: a deleted id becomes
+     * `contact_deleted` carrying the contact's last-known phones; a
+     * new or changed id becomes `contact_updated`, with
+     * `removed_phones` listing any numbers the contact dropped, so
+     * the desktop deletes those rows instead of letting them linger
+     * until the next full snapshot.
+     */
+    private suspend fun broadcastContactDiff(
+        previous: Map<Long, SyncedContact>,
+        snapshot: Map<Long, SyncedContact>,
+    ) {
+        val deleted = previous.keys - snapshot.keys
+        val updated = snapshot.filter { (id, contact) -> previous[id] != contact }
+        if (deleted.isEmpty() && updated.isEmpty()) return
+        Timber.d(
+            "SyncServer: contacts changed (%d updated, %d deleted)",
+            updated.size,
+            deleted.size,
+        )
+        for (id in deleted) {
+            broadcast(
+                SyncProtocol.encodeContactDeleted(
+                    SyncProtocol.ContactDeleted(phones = previous.getValue(id).phones),
+                ),
+            )
+        }
+        for ((id, contact) in updated) {
+            val removed = previous[id]?.phones.orEmpty().filter { it !in contact.phones }
+            broadcast(
+                SyncProtocol.encodeContactUpdated(
+                    SyncProtocol.ContactUpdated(
+                        contact = contact,
+                        removedPhones = removed.takeIf { it.isNotEmpty() },
+                    ),
+                ),
+            )
         }
     }
 
@@ -196,6 +332,9 @@ class SyncServer @Inject constructor(
                     }
                 }
                 refreshHubStatus()
+                // Slice 5 — the contacts safety net: a missed
+                // observer notification converges within 30 s.
+                recheckContacts()
             }
         }
     }
@@ -281,9 +420,17 @@ class SyncServer @Inject constructor(
     }
 
     companion object {
+        /** Start-failure diagnostic steps (§6 of the release investigation). */
+        private const val STEP_IDENTITY = "identity"
+        private const val STEP_ENGINE = "engine"
+        private const val STEP_MDNS = "mdns"
+
         /** Grace period / hard timeout for the engine's stop. */
         private const val GRACE_PERIOD_MS = 500L
         private const val TIMEOUT_MS = 2_000L
+
+        /** Slice 5 — the contact-change debounce: the re-check runs this long after the last tick. */
+        private const val CONTACTS_DEBOUNCE_MS = 2_000L
 
         /**
          * The engine's configuration, shared by [SyncServer.start] and

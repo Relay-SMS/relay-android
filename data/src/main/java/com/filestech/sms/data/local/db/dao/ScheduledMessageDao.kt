@@ -58,6 +58,13 @@ interface ScheduledMessageDao {
     @Query("SELECT * FROM scheduled_messages WHERE id = :id")
     suspend fun findById(id: Long): ScheduledMessageEntity?
 
+    /**
+     * Phase 2 — retrouve un envoi programmé par sa clé d'idempotence client. L'index UNIQUE
+     * sur `client_message_id` rend cette requête au plus une ligne.
+     */
+    @Query("SELECT * FROM scheduled_messages WHERE client_message_id = :key LIMIT 1")
+    suspend fun findByClientMessageId(key: String): ScheduledMessageEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: ScheduledMessageEntity): Long
 

@@ -671,10 +671,29 @@ fun ThreadScreen(
     // snapshot drain). The picker-open effect above already re-pins after
     // the 300ms enter animation; the pin re-engages on the next layout
     // emission once the panel closes.
+    // Phase 2 (2026-11-15) — the unpin rule is a first-visible-anchor
+    // discriminator, not a last-visible threshold. The round-18 rule
+    // unpinned whenever the last visible item sat more than one position
+    // above the bottom — but a ~300dp image preview card pops in whole
+    // and jumps it 4–6 messages in one layout pass, so the pin disengaged
+    // instead of re-pinning and the thread opened scrolled up onto the
+    // card. Now: if the first visible item (index + offset) moved since
+    // the previous emission, the user moved — keep the old behavior
+    // (pin only when the bottom is fully visible, unpin otherwise). If
+    // the anchor is unchanged but the last visible item moved back, that
+    // is content growth below the anchor, not user movement — keep the
+    // pin and re-scroll, whatever the jump size. The pin-jump guard
+    // survives: tapping the pinned banner jumps the first visible item,
+    // so it still unpins. Widening the threshold instead would be
+    // guesswork — a tall card over short messages can exceed any fixed
+    // count, and several previews stack.
     LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen) {
         if (emojiPickerOpen) return@LaunchedEffect
         var pinnedToBottom = false
+        var prevFirstIndex: Int? = null
+        var prevFirstOffset: Int? = null
         snapshotFlow { listState.layoutInfo }.collect { info ->
+            val first = info.visibleItemsInfo.firstOrNull()
             if (listState.isScrollInProgress) {
                 pinnedToBottom = false
             } else {
@@ -685,11 +704,27 @@ fun ThreadScreen(
                     if (bottomFullyVisible) {
                         pinnedToBottom = true
                     } else {
-                        if (last.index < bottomItemIndex - 1) pinnedToBottom = false
+                        // Anchor moved (or no anchor yet) → the user
+                        // moved: unpin past one position, as before.
+                        // Anchor unchanged → content grew below it:
+                        // keep the pin and re-scroll, any jump size.
+                        val anchorMoved = first == null ||
+                            prevFirstIndex == null ||
+                            first.index != prevFirstIndex ||
+                            first.offset != prevFirstOffset
+                        if (anchorMoved && last.index < bottomItemIndex - 1) {
+                            pinnedToBottom = false
+                        }
                         if (pinnedToBottom) listState.scrollToItem(bottomItemIndex)
                     }
                 }
             }
+            // The anchor is the previous emission's first visible item,
+            // whatever the branch above did — a re-scroll's own next
+            // emission compares against the layout it produced, and a
+            // scroll gesture leaves the anchor at the settled position.
+            prevFirstIndex = first?.index
+            prevFirstOffset = first?.offset
         }
     }
 

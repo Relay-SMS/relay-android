@@ -18,6 +18,16 @@ data class ScheduledMessage(
      */
     val attachments: List<com.filestech.sms.domain.usecase.SendMediaMmsUseCase.AttachmentPayload> =
         emptyList(),
+    /**
+     * Phase 2 — clé d'idempotence d'un envoi programmé depuis un appareil lié (UUID v4 du
+     * client). `null` pour les envois programmés depuis le téléphone lui-même. La clé est
+     * transmise au routeur à l'échéance ([com.filestech.sms.system.scheduler.ScheduledSendAttempt]),
+     * qui la tamponne sur la ligne de message produite — exactement comme un envoi immédiat
+     * depuis un appareil lié — pour que l'appareil réconcilie son envoi programmé quand le
+     * message arrive en `message_new`. Index UNIQUE en base (schéma v17), comme
+     * `messages.client_message_id` en v16.
+     */
+    val clientMessageId: String? = null,
 ) {
     /**
      * v1.28.3 (F20) — [INTERRUPTED] rejoint les quatre états d'origine.

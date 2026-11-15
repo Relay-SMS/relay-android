@@ -20,7 +20,14 @@ import java.util.Base64
  * `mark_read`, `mark_all_read`, `set_pin`, `set_archived`,
  * `set_muted`, `set_reaction`, `set_pinned_message`) are dispatched
  * to the per-session [SyncEngine]; the engine starts its live
- * collectors the moment auth succeeds.
+ * collectors the moment auth succeeds. Slice 4 adds the
+ * attachment-byte frames (`attachment_request`,
+ * `attachment_upload_start`, `attachment_upload_chunk`), dispatched
+ * the same way. Phase 2 adds the scheduled-send frame
+ * (`schedule_message`) and the scheduled-cancel frame
+ * (`cancel_scheduled`), dispatched the same way. Slice 5 adds the
+ * contact frames (`contacts_request`, `avatar_request`), dispatched
+ * the same way.
  *
  * @param send carries one outbound text frame to the client.
  * @param close closes the socket; [reason] is a short human-readable
@@ -69,6 +76,13 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.SetMuted -> onSetMuted(parsed.value)
             is SyncProtocol.Parsed.SetReaction -> onSetReaction(parsed.value)
             is SyncProtocol.Parsed.SetPinnedMessage -> onSetPinnedMessage(parsed.value)
+            is SyncProtocol.Parsed.AttachmentRequest -> onAttachmentRequest(parsed.value)
+            is SyncProtocol.Parsed.AttachmentUploadStart -> onUploadStart(parsed.value)
+            is SyncProtocol.Parsed.AttachmentUploadChunk -> onUploadChunk(parsed.value)
+            is SyncProtocol.Parsed.ScheduleMessage -> onScheduleMessage(parsed.value)
+            is SyncProtocol.Parsed.CancelScheduled -> onCancelScheduled(parsed.value)
+            is SyncProtocol.Parsed.ContactsRequest -> onContactsRequest()
+            is SyncProtocol.Parsed.AvatarRequest -> onAvatarRequest(parsed.value)
             is SyncProtocol.Parsed.Unknown -> onUnknown(parsed.type)
             SyncProtocol.Parsed.Malformed -> onProtocolViolation()
         }
@@ -207,6 +221,57 @@ class SyncSessionHandler(
 
     private suspend fun onSetPinnedMessage(request: SyncProtocol.SetPinnedMessage) {
         withEngine { it.onSetPinnedMessage(request) }
+    }
+
+    /**
+     * Slice 4 — attachment-byte frames need auth too: an
+     * unauthenticated download or upload frame is a protocol
+     * violation, like an unauthenticated send. The engine runs each
+     * in its own job, never on the frame loop.
+     */
+    private suspend fun onAttachmentRequest(request: SyncProtocol.AttachmentRequest) {
+        withEngine { it.onAttachmentRequest(request) }
+    }
+
+    private suspend fun onUploadStart(request: SyncProtocol.AttachmentUploadStart) {
+        withEngine { it.onUploadStart(request) }
+    }
+
+    private suspend fun onUploadChunk(request: SyncProtocol.AttachmentUploadChunk) {
+        withEngine { it.onUploadChunk(request) }
+    }
+
+    /**
+     * Phase 2 — the scheduled-send frame needs auth too: an
+     * unauthenticated schedule frame is a protocol violation, like an
+     * unauthenticated send. The engine runs it in its own job, never
+     * on the frame loop.
+     */
+    private suspend fun onScheduleMessage(request: SyncProtocol.ScheduleMessage) {
+        withEngine { it.onScheduleMessage(request) }
+    }
+
+    /**
+     * Phase 2 — the scheduled-cancel frame needs auth too, like the
+     * schedule frame. The engine runs it in its own job, never on
+     * the frame loop.
+     */
+    private suspend fun onCancelScheduled(request: SyncProtocol.CancelScheduled) {
+        withEngine { it.onCancelScheduled(request) }
+    }
+
+    /**
+     * Slice 5 — the contact frames need auth too: an unauthenticated
+     * contacts or avatar frame is a protocol violation, like an
+     * unauthenticated send. The engine runs each in its own job,
+     * never on the frame loop.
+     */
+    private suspend fun onContactsRequest() {
+        withEngine { it.onContactsRequest() }
+    }
+
+    private suspend fun onAvatarRequest(request: SyncProtocol.AvatarRequest) {
+        withEngine { it.onAvatarRequest(request) }
     }
 
     /**

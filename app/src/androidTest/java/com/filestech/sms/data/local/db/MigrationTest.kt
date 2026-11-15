@@ -752,4 +752,36 @@ class MigrationTest {
         // Contrôle positif : une autre clé passe.
         db.execSQL("UPDATE messages SET mms_transaction_key = 'cle-b' WHERE id = 2")
     }
+
+    @Test
+    fun migrate16To17_ajouteLaCleClient_nulleSurLExistant_etUnique() {
+        helper.createDatabase(TEST_DB, 16).use { db ->
+            for (id in 1..2) {
+                db.execSQL(
+                    """
+                    INSERT INTO scheduled_messages
+                        (id, conversation_id, addresses_csv, body, scheduled_at, sub_id,
+                         attachments_json, state, work_id, created_at, claimed_at)
+                    VALUES ($id, 1, '+33600000001', 'bonne nuit', 1800000000000, NULL,
+                            NULL, 0, NULL, 1700000000000, NULL)
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 17, true, Migrations.MIGRATION_16_17)
+
+        db.query("SELECT COUNT(*) FROM scheduled_messages WHERE client_message_id IS NULL").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(2)
+        }
+        db.execSQL("UPDATE scheduled_messages SET client_message_id = 'cle-a' WHERE id = 1")
+        val doublon = runCatching {
+            db.execSQL("UPDATE scheduled_messages SET client_message_id = 'cle-a' WHERE id = 2")
+        }
+        assertThat(doublon.isFailure).isTrue()
+        assertThat(doublon.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
+        // Contrôle positif : une autre clé passe.
+        db.execSQL("UPDATE scheduled_messages SET client_message_id = 'cle-b' WHERE id = 2")
+    }
 }

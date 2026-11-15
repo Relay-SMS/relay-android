@@ -8,6 +8,7 @@ import com.filestech.sms.sync.LinkedDeviceStore
 import com.filestech.sms.sync.QrPairing
 import com.filestech.sms.sync.SyncServer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -28,6 +29,8 @@ data class LinkedDeviceUi(
 /** Everything the Linked devices screen renders. */
 data class LinkedDevicesState(
     val serverEnabled: Boolean = true,
+    val serverRunning: Boolean = false,
+    val lastStartError: String? = null,
     val devices: List<LinkedDeviceUi> = emptyList(),
     val pendingInvite: QrPairing.Invite? = null,
     val scanError: QrPairing.Failure? = null,
@@ -62,15 +65,38 @@ class LinkedDevicesViewModel @Inject constructor(
      */
     private var lastDismissedAtMs = 0L
 
-    val state: StateFlow<LinkedDevicesState> = combine(
+    /**
+     * The server's state as one flow: the typed `combine` overloads
+     * stop at five inputs (verified in the coroutines 1.11.0 jar —
+     * beyond five only the untyped `Array<Any?>` overload exists), so
+     * the server's three flows combine here and the main combine
+     * stays at five.
+     */
+    private data class ServerUiState(
+        val enabled: Boolean,
+        val running: Boolean,
+        val lastStartError: String?,
+    )
+
+    private val serverUiState: Flow<ServerUiState> = combine(
         store.serverEnabled,
+        server.running,
+        store.lastStartError,
+    ) { enabled, running, startError ->
+        ServerUiState(enabled, running, startError)
+    }
+
+    val state: StateFlow<LinkedDevicesState> = combine(
+        serverUiState,
         store.devices,
         server.connectedDeviceIds,
         pendingInvite,
         scanError,
-    ) { enabled, devices, connected, invite, error ->
+    ) { server, devices, connected, invite, error ->
         LinkedDevicesState(
-            serverEnabled = enabled,
+            serverEnabled = server.enabled,
+            serverRunning = server.running,
+            lastStartError = server.lastStartError,
             devices = devices.sortedByDescending { it.linkedAt }.map { device ->
                 LinkedDeviceUi(device = device, connected = connected.contains(device.deviceId))
             },

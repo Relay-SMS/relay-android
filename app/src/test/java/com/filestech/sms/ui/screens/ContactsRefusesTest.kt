@@ -71,6 +71,13 @@ class ContactsRefusesTest {
             if (refuse) throw SecurityException("Permission Denial: requires android.permission.READ_CONTACTS")
             return listOf(alice)
         }
+
+        override suspend fun listAllDetailed(): List<Contact> = listAll()
+
+        override suspend fun openPhotoStream(address: String): java.io.InputStream? {
+            if (refuse) throw SecurityException("Permission Denial: requires android.permission.READ_CONTACTS")
+            return null
+        }
     }
 
     @BeforeEach
@@ -106,6 +113,8 @@ class ContactsRefusesTest {
         val enPanne = object : ContactRepository {
             override suspend fun lookupByPhone(rawPhone: String): Contact? = null
             override suspend fun listAll(): List<Contact> = error("fournisseur indisponible")
+            override suspend fun listAllDetailed(): List<Contact> = error("fournisseur indisponible")
+            override suspend fun openPhotoStream(address: String): java.io.InputStream? = null
         }
 
         val vm = ComposeViewModel(SavedStateHandle(), enPanne, mockk(relaxed = true), dispatcher)

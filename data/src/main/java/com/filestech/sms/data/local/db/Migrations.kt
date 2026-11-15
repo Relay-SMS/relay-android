@@ -461,6 +461,24 @@ object Migrations {
         }
     }
 
+    /**
+     * Phase 2 — `scheduled_messages.client_message_id TEXT`, nulle sur l'existant, et son
+     * index UNIQUE. Additive, même motif que la v15 → v16 sur `messages` : la clé
+     * d'idempotence d'un envoi programmé depuis un appareil lié. Aucun rattrapage n'est
+     * possible ni utile : la clé n'existe que pour les envois programmés depuis un appareil
+     * lié à partir de cette version, et les lignes existantes n'en ont jamais porté. SQLite
+     * admet plusieurs NULL sous un index unique.
+     */
+    val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `scheduled_messages` ADD COLUMN `client_message_id` TEXT")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_scheduled_messages_client_message_id` " +
+                    "ON `scheduled_messages` (`client_message_id`)",
+            )
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -478,5 +496,6 @@ object Migrations {
         MIGRATION_13_14,
         MIGRATION_14_15,
         MIGRATION_15_16,
+        MIGRATION_16_17,
     )
 }

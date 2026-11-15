@@ -188,6 +188,14 @@ interface ConversationRepository {
     suspend fun findMessageByClientMessageId(key: String): Message?
 
     /**
+     * Slice 4 — lookup ponctuel d'une pièce jointe par id, pour le
+     * téléchargement vers un appareil lié. Aucune garde coffre ici :
+     * la colle vérifie l'appartenance (message + conversation
+     * non-coffre) avant d'ouvrir les octets.
+     */
+    suspend fun findAttachmentById(id: Long): Attachment?
+
+    /**
      * v1.3.1 — pose / change / retire la réaction emoji locale sur [messageId] et retourne
      * le type de transition pour permettre au caller (ViewModel) de décider d'un éventuel
      * envoi SMS en aval. Sémantique :

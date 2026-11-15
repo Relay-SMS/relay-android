@@ -6,6 +6,7 @@ import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.repository.ContactRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,4 +21,12 @@ class ContactRepositoryImpl @Inject constructor(
     }
 
     override suspend fun listAll(): List<Contact> = withContext(io) { reader.listAll() }
+
+    override suspend fun listAllDetailed(): List<Contact> = withContext(io) {
+        reader.listAllDetailed()
+    }
+
+    override suspend fun openPhotoStream(address: String): InputStream? = withContext(io) {
+        reader.openPhotoStream(address)
+    }
 }

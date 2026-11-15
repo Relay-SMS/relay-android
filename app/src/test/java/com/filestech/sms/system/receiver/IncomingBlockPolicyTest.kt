@@ -70,6 +70,8 @@ class IncomingBlockPolicyTest {
             }
         }
         override suspend fun listAll(): List<Contact> = emptyList()
+        override suspend fun listAllDetailed(): List<Contact> = emptyList()
+        override suspend fun openPhotoStream(address: String): java.io.InputStream? = null
     }
 
     private class Reglages(bloquerInconnus: Boolean) : AppSettingsSource {

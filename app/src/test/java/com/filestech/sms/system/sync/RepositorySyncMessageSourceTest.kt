@@ -7,16 +7,21 @@ import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendReport
+import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.repository.SetReactionResult
 import com.filestech.sms.domain.sender.DefaultSmsAppChecker
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
 import com.filestech.sms.domain.usecase.RetrySendUseCase
+import com.filestech.sms.domain.usecase.ScheduleMessageUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
 import com.filestech.sms.sync.ActionResult
 import com.filestech.sms.sync.SendResult
+import com.filestech.sms.sync.SyncMessageSource
 import com.filestech.sms.sync.SyncProtocol
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
@@ -41,8 +46,15 @@ class RepositorySyncMessageSourceTest {
     private val retrySend = mockk<RetrySendUseCase>()
     private val sendReaction = mockk<SendReactionUseCase>()
     private val settings = mockk<AppSettingsSource>()
+    private val scheduledMessages = mockk<ScheduledMessageRepository>()
+    private val scheduleUseCase = mockk<ScheduleMessageUseCase>()
+    private val deleteScheduled = mockk<DeleteScheduledMessageUseCase>()
+    private val contactsRepository = mockk<ContactRepository>()
 
-    private val source = RepositorySyncMessageSource(
+    // Typed as the interface: the 4-arg `sendMessage` calls below
+    // pick up the interface's `attachments = null` default (an
+    // override may not redeclare it).
+    private val source: SyncMessageSource = RepositorySyncMessageSource(
         context = context,
         repository = repository,
         defaultSmsAppChecker = defaultSmsAppChecker,
@@ -50,53 +62,10 @@ class RepositorySyncMessageSourceTest {
         retrySend = retrySend,
         sendReaction = sendReaction,
         settings = settings,
-    )
-
-    private fun conversation(
-        id: Long = 123L,
-        addresses: List<String> = listOf("+15551234567"),
-        inVault: Boolean = false,
-    ) = Conversation(
-        id = id,
-        threadId = null,
-        addresses = addresses.map { PhoneAddress.of(it) },
-        displayName = "Marie",
-        lastMessageAt = 0L,
-        lastMessagePreview = null,
-        unreadCount = 0,
-        pinned = false,
-        archived = false,
-        muted = false,
-        inVault = inVault,
-        draft = null,
-    )
-
-    private fun message(
-        id: Long = 789L,
-        conversationId: Long = 123L,
-        status: Message.Status = Message.Status.PENDING,
-        address: String = "+15551234567",
-        direction: Message.Direction = Message.Direction.OUTGOING,
-        reactionEmoji: String? = null,
-        clientMessageId: String? = CLIENT_KEY,
-    ) = Message(
-        id = id,
-        conversationId = conversationId,
-        address = address,
-        body = "See you at 6",
-        type = Message.Type.SMS,
-        direction = direction,
-        date = 0L,
-        dateSent = null,
-        read = true,
-        starred = false,
-        status = status,
-        errorCode = null,
-        attachmentsCount = 0,
-        subId = null,
-        scheduledAt = null,
-        reactionEmoji = reactionEmoji,
-        clientMessageId = clientMessageId,
+        scheduledMessageRepository = scheduledMessages,
+        scheduleMessageUseCase = scheduleUseCase,
+        deleteScheduledMessage = deleteScheduled,
+        contactsRepository = contactsRepository,
     )
 
     /** The router call the glue makes, with the key passed through. */
@@ -105,17 +74,6 @@ class RepositorySyncMessageSourceTest {
             envoyer.invoke(any(), any(), any(), any(), any(), any())
         } returns result
     }
-
-    private fun report(
-        dispatched: List<Long> = listOf(789L),
-        blocked: List<PhoneAddress> = emptyList(),
-        groupEchoId: Long? = null,
-    ) = SendReport(
-        dispatched = dispatched,
-        failed = emptyList(),
-        blocked = blocked,
-        groupEchoId = groupEchoId,
-    )
 
     // -- send: unseen --------------------------------------------------
 
@@ -550,8 +508,64 @@ class RepositorySyncMessageSourceTest {
         )
         coVerify(exactly = 0) { repository.setPinnedMessage(any(), any(), any()) }
     }
-
-    companion object {
-        private const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
-    }
 }
+
+internal const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
+
+internal fun conversation(
+    id: Long = 123L,
+    addresses: List<String> = listOf("+15551234567"),
+    inVault: Boolean = false,
+) = Conversation(
+    id = id,
+    threadId = null,
+    addresses = addresses.map { PhoneAddress.of(it) },
+    displayName = "Marie",
+    lastMessageAt = 0L,
+    lastMessagePreview = null,
+    unreadCount = 0,
+    pinned = false,
+    archived = false,
+    muted = false,
+    inVault = inVault,
+    draft = null,
+)
+
+internal fun message(
+    id: Long = 789L,
+    conversationId: Long = 123L,
+    status: Message.Status = Message.Status.PENDING,
+    address: String = "+15551234567",
+    direction: Message.Direction = Message.Direction.OUTGOING,
+    reactionEmoji: String? = null,
+    clientMessageId: String? = CLIENT_KEY,
+) = Message(
+    id = id,
+    conversationId = conversationId,
+    address = address,
+    body = "See you at 6",
+    type = Message.Type.SMS,
+    direction = direction,
+    date = 0L,
+    dateSent = null,
+    read = true,
+    starred = false,
+    status = status,
+    errorCode = null,
+    attachmentsCount = 0,
+    subId = null,
+    scheduledAt = null,
+    reactionEmoji = reactionEmoji,
+    clientMessageId = clientMessageId,
+)
+
+internal fun report(
+    dispatched: List<Long> = listOf(789L),
+    blocked: List<PhoneAddress> = emptyList(),
+    groupEchoId: Long? = null,
+) = SendReport(
+    dispatched = dispatched,
+    failed = emptyList(),
+    blocked = blocked,
+    groupEchoId = groupEchoId,
+)

@@ -81,9 +81,10 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         conversationId: Long,
         body: String,
         replyToMessageId: Long?,
+        attachments: List<SendAttachmentInput>?,
     ): SendResult {
         sendError?.let { throw it }
-        sends += SendCall(clientMessageId, conversationId, body, replyToMessageId)
+        sends += SendCall(clientMessageId, conversationId, body, replyToMessageId, attachments)
         return sendResult
     }
 
@@ -135,6 +136,129 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         return actionResult
     }
 
+    // -- Slice 4: attachment bytes --------------------------------------
+    // Same shape as the send surface: each records its call and
+    // answers from a configurable result.
+
+    val attachmentRequests = mutableListOf<Pair<Long, Long>>()
+    var openAttachmentResult: AttachmentOpenResult = AttachmentOpenResult.Unknown
+
+    /** When set, [openAttachment] throws this instead of answering. */
+    var openAttachmentError: Throwable? = null
+
+    override suspend fun openAttachment(
+        attachmentId: Long,
+        messageId: Long,
+    ): AttachmentOpenResult {
+        openAttachmentError?.let { throw it }
+        attachmentRequests += attachmentId to messageId
+        return openAttachmentResult
+    }
+
+    val uploadStarts = mutableListOf<UploadStartCall>()
+    var uploadStartResult: UploadResult = UploadResult.Ok
+
+    /** When set, [beginUpload] throws this instead of answering. */
+    var uploadStartError: Throwable? = null
+
+    override suspend fun beginUpload(
+        clientMessageId: String,
+        index: Int,
+        mimeType: String,
+        fileName: String?,
+        sizeBytes: Long,
+        sha256: String,
+    ): UploadResult {
+        uploadStartError?.let { throw it }
+        uploadStarts += UploadStartCall(clientMessageId, index, mimeType, fileName, sizeBytes, sha256)
+        return uploadStartResult
+    }
+
+    val uploadChunks = mutableListOf<UploadChunkCall>()
+    var uploadChunkResult: UploadResult = UploadResult.Ok
+
+    /** When set, [appendUploadChunk] throws this instead of answering. */
+    var uploadChunkError: Throwable? = null
+
+    override suspend fun appendUploadChunk(
+        clientMessageId: String,
+        index: Int,
+        offset: Long,
+        bytes: ByteArray,
+        final: Boolean,
+    ): UploadResult {
+        uploadChunkError?.let { throw it }
+        uploadChunks += UploadChunkCall(clientMessageId, index, offset, bytes.copyOf(), final)
+        return uploadChunkResult
+    }
+
+    // -- Phase 2: scheduled sends --------------------------------------
+    // Same shape as the send surface: records its call and answers
+    // from a configurable result.
+
+    val schedules = mutableListOf<ScheduleCall>()
+    var scheduleResult: ScheduleResult = ScheduleResult.Scheduled(messageId = 4242, sendAt = 1_800_000_000_000L)
+
+    /** When set, [scheduleMessage] throws this instead of answering. */
+    var scheduleError: Throwable? = null
+
+    override suspend fun scheduleMessage(
+        clientMessageId: String,
+        conversationId: Long,
+        body: String,
+        sendAt: Long,
+    ): ScheduleResult {
+        scheduleError?.let { throw it }
+        schedules += ScheduleCall(clientMessageId, conversationId, body, sendAt)
+        return scheduleResult
+    }
+
+    val cancels = mutableListOf<String>()
+    var cancelResult: CancelResult = CancelResult.Cancelled
+
+    /** When set, [cancelScheduledMessage] throws this instead of answering. */
+    var cancelError: Throwable? = null
+
+    override suspend fun cancelScheduledMessage(clientMessageId: String): CancelResult {
+        cancelError?.let { throw it }
+        cancels += clientMessageId
+        return cancelResult
+    }
+
+    // -- Slice 5: contact sync ----------------------------------------
+    // Same shape as the send surface: the snapshot is a configurable
+    // list, the avatar answers from a configurable result.
+
+    var contactsSnapshot: List<SyncedContact> = emptyList()
+    var contactsReadiness: ContactReadiness = ContactReadiness.Ready
+
+    /** When set, [contacts] throws this instead of answering. */
+    var contactsError: Throwable? = null
+
+    /** How many times [contacts] was called — the no-double-read pin. */
+    var contactsCalls: Int = 0
+        private set
+
+    override suspend fun contacts(): List<SyncedContact> {
+        contactsError?.let { throw it }
+        contactsCalls++
+        return contactsSnapshot
+    }
+
+    val avatarRequests = mutableListOf<String>()
+    var openAvatarResult: AvatarOpenResult = AvatarOpenResult.Unknown
+
+    /** When set, [openAvatar] throws this instead of answering. */
+    var openAvatarError: Throwable? = null
+
+    override suspend fun openAvatar(address: String): AvatarOpenResult {
+        openAvatarError?.let { throw it }
+        avatarRequests += address
+        return openAvatarResult
+    }
+
+    override suspend fun contactsReadiness(): ContactReadiness = contactsReadiness
+
     /** Adds [message] to its conversation's store and advances the max id. */
     fun store(message: SyncedMessage) {
         val list = messagesByConversation.getOrPut(message.conversationId.toLong()) { mutableListOf() }
@@ -149,7 +273,54 @@ internal data class SendCall(
     val conversationId: Long,
     val body: String,
     val replyToMessageId: Long?,
+    val attachments: List<SendAttachmentInput>? = null,
 )
+
+/** One recorded `scheduleMessage` call on the fake. */
+internal data class ScheduleCall(
+    val clientMessageId: String,
+    val conversationId: Long,
+    val body: String,
+    val sendAt: Long,
+)
+
+/** One recorded `beginUpload` call on the fake. */
+internal data class UploadStartCall(
+    val clientMessageId: String,
+    val index: Int,
+    val mimeType: String,
+    val fileName: String?,
+    val sizeBytes: Long,
+    val sha256: String,
+)
+
+/** One recorded `appendUploadChunk` call on the fake. */
+internal data class UploadChunkCall(
+    val clientMessageId: String,
+    val index: Int,
+    val offset: Long,
+    val bytes: ByteArray,
+    val final: Boolean,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is UploadChunkCall) return false
+        return clientMessageId == other.clientMessageId &&
+            index == other.index &&
+            offset == other.offset &&
+            bytes.contentEquals(other.bytes) &&
+            final == other.final
+    }
+
+    override fun hashCode(): Int {
+        var result = clientMessageId.hashCode()
+        result = 31 * result + index
+        result = 31 * result + offset.hashCode()
+        result = 31 * result + bytes.contentHashCode()
+        result = 31 * result + final.hashCode()
+        return result
+    }
+}
 
 /** One recorded action call on the fake. */
 internal data class ActionCall(
@@ -212,4 +383,19 @@ internal fun sampleMessage(
     reaction = null,
     attachments = emptyList(),
     clientMessageId = clientMessageId,
+)
+
+/** A minimal contact for tests; override what the test cares about. */
+internal fun sampleContact(
+    id: Long,
+    displayName: String = "Marie",
+    phones: List<String> = listOf("+15551234567"),
+    hasPhoto: Boolean = false,
+    photoUpdatedAt: Long? = null,
+): SyncedContact = SyncedContact(
+    displayName = displayName,
+    phones = phones,
+    hasPhoto = hasPhoto,
+    photoUpdatedAt = photoUpdatedAt,
+    contactId = id,
 )

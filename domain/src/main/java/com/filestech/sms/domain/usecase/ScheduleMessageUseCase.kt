@@ -45,6 +45,12 @@ class ScheduleMessageUseCase @Inject constructor(
         whenEpochMillis: Long,
         subId: Int?,
         attachments: List<SendMediaMmsUseCase.AttachmentPayload> = emptyList(),
+        /**
+         * Phase 2 — clé d'idempotence d'un envoi programmé depuis un appareil lié. Stockée
+         * sur la ligne, transmise au routeur à l'échéance. `null` pour un envoi programmé
+         * depuis le téléphone.
+         */
+        clientMessageId: String? = null,
     ): Outcome<Long> {
         for (a in attachments) {
             if (!a.file.exists() || a.file.length() == 0L) {
@@ -58,7 +64,15 @@ class ScheduleMessageUseCase @Inject constructor(
 
         val durable = attachments.map { a -> a.copy(file = attachmentStore.promoteToDurable(a.file)) }
 
-        val scheduled = repo.schedule(conversationId, addresses, body, whenEpochMillis, subId, durable)
+        val scheduled = repo.schedule(
+            conversationId,
+            addresses,
+            body,
+            whenEpochMillis,
+            subId,
+            durable,
+            clientMessageId,
+        )
         return when (scheduled) {
             is Outcome.Success -> {
                 scheduler.scheduleAt(scheduled.value, whenEpochMillis)

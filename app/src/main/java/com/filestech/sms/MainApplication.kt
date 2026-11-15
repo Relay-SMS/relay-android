@@ -1,12 +1,17 @@
 package com.filestech.sms
 
 import android.app.Application
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.provider.ContactsContract
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.filestech.sms.core.logging.LineNumberDebugTree
 import com.filestech.sms.core.logging.NoOpReleaseTree
 import com.filestech.sms.data.blocking.BlockedNumbersImporter
+import com.filestech.sms.data.contacts.ContactsReader
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.sync.TelephonySyncManager
@@ -15,6 +20,7 @@ import com.filestech.sms.domain.safetycall.SafetyCallNotice
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.AutoLockObserver
 import com.filestech.sms.sync.LinkedDeviceStore
+import com.filestech.sms.sync.SyncServer
 import com.filestech.sms.sync.SyncService
 import com.filestech.sms.system.notifications.NotificationChannelInitializer
 import com.filestech.sms.system.scheduler.SafetyCallAlarmScheduler
@@ -52,6 +58,23 @@ class MainApplication : Application(), Configuration.Provider {
 
     /** Slice 1 — the linked-device store; its server toggle drives [SyncService]. */
     @Inject lateinit var linkedDeviceStore: LinkedDeviceStore
+
+    /**
+     * Slice 5 — the contacts cache, invalidated when the provider
+     * changes. `dagger.Lazy`, like the other lazies here: resolving
+     * it is cheap, but nothing needs it until the first provider
+     * change. (Also `Lazy` so the eager-injection guard stays
+     * untouched — see `EagerInjectionGuardTest`.)
+     */
+    @Inject lateinit var contactsReaderLazy: dagger.Lazy<ContactsReader>
+
+    /**
+     * Slice 5 — the LAN server, notified of contact changes for the
+     * live delta. `dagger.Lazy` (the established
+     * `telephonySyncManagerLazy` pattern): a contact edit must never
+     * build the server graph when the server is off.
+     */
+    @Inject lateinit var syncServerLazy: dagger.Lazy<SyncServer>
 
     /**
      * v1.28.12 — le rôle d'application SMS par défaut, relu à chaque réconciliation du Safety
@@ -168,6 +191,18 @@ class MainApplication : Application(), Configuration.Provider {
             runCatching { telephonySyncManagerLazy.get().start() }
                 .onFailure { Timber.w(it, "TelephonySyncManager.start failed") }
         }
+        // Slice 5 — watch the contacts provider: a rename, a new or
+        // removed number, a deleted contact, or a changed photo
+        // invalidates the phone's own name cache (which nothing
+        // invalidated before — edits only showed after a process
+        // restart) and tells the LAN server to push a live delta to
+        // connected desktops. The server notify only fires when the
+        // server toggle is on; the notify itself is also a no-op
+        // when the server is not running. When the server is off,
+        // contacts re-sync from the next `sync_request` snapshot
+        // anyway. Registered for the process lifetime, like the
+        // telephony sync above — never unregistered.
+        registerContactsObserver()
         TelephonySyncWorker.schedulePeriodic(this)
         // v1.9.0 — schedule du SafetyCall worker (idempotent KEEP policy).
         // Même si la config deadman est désactivée, le worker tourne en no-op
@@ -562,6 +597,44 @@ class MainApplication : Application(), Configuration.Provider {
                     }
                 }
                 .collect()
+        }
+    }
+
+    /**
+     * Slice 5 — registers the contacts ContentObserver for the
+     * process lifetime. Changes arrive on the main thread (the
+     * observer's handler); the work itself is cheap (cache evict)
+     * or deferred to [appScope] (the server notify).
+     */
+    private fun registerContactsObserver() {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                onContactsChanged()
+            }
+        }
+        contentResolver.registerContentObserver(
+            ContactsContract.Contacts.CONTENT_URI,
+            true,
+            observer,
+        )
+    }
+
+    /**
+     * Slice 5 — one contacts-provider change: invalidate the local
+     * name cache (fixes the phone's own stale names, too), then —
+     * only when the server toggle is on — nudge the server to
+     * re-check and push the live delta. Failures are logged, never
+     * thrown: a contact edit must never crash the app.
+     */
+    private fun onContactsChanged() {
+        runCatching { contactsReaderLazy.get().invalidate() }
+            .onFailure { Timber.w(it, "ContactsReader.invalidate failed") }
+        appScope.launch {
+            runCatching {
+                if (linkedDeviceStore.serverEnabled.first()) {
+                    syncServerLazy.get().notifyContactsChanged()
+                }
+            }.onFailure { Timber.w(it, "SyncServer.notifyContactsChanged failed") }
         }
     }
 }
