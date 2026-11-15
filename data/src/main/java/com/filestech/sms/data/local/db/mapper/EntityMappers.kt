@@ -88,6 +88,7 @@ fun MessageEntity.toDomain(attachments: List<Attachment> = emptyList()): Message
     attachments = attachments,
     replyToMessageId = replyToMessageId,
     reactionEmoji = reactionEmoji,
+    clientMessageId = clientMessageId,
 )
 
 /**

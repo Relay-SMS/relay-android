@@ -43,6 +43,10 @@ import kotlinx.serialization.Serializable
         // même MMS entrant. SQLite admet plusieurs NULL sous un index unique — seuls les MMS entrants
         // portent une clé.
         Index(value = ["mms_transaction_key"], unique = true),
+        // Schema v16 (Slice 3). UNIQUE : la clé de dédup d'un envoi fait depuis un appareil lié.
+        // SQLite admet plusieurs NULL sous un index unique — seuls les messages envoyés depuis
+        // un appareil lié portent une clé, et une seule ligne par envoi (la ligne montrée).
+        Index(value = ["client_message_id"], unique = true),
     ],
 )
 data class MessageEntity(
@@ -147,4 +151,20 @@ data class MessageEntity(
      */
     @kotlinx.serialization.Transient
     @ColumnInfo(name = "mms_transaction_key") val mmsTransactionKey: String? = null,
+    /**
+     * Schema v16 (Slice 3) — **clé d'idempotence d'un envoi fait depuis un appareil lié** :
+     * l'UUID généré par l'appareil pour cet envoi. `null` pour tout le reste.
+     *
+     * Elle est écrite sur la ligne miroir au moment de l'insertion, AVANT la remise au radio,
+     * et l'index UNIQUE est le filet de sécurité : deux insertions concurrentes de la même clé
+     * ne peuvent pas aboutir toutes les deux. Une relance (accusé perdu, reconnexion) retrouve
+     * la ligne et ne renvoie jamais le texte une seconde fois.
+     *
+     * `@Transient` pour la sauvegarde, comme `mms_transaction_key` : la clé ne vaut que pour
+     * l'envoi de CET appareil, et les sauvegardes sérialisent cette entité avec un parseur
+     * strict qui refuse les clés inconnues — une version antérieure ne relirait plus un
+     * fichier qui la porterait. Le format reste identique.
+     */
+    @kotlinx.serialization.Transient
+    @ColumnInfo(name = "client_message_id") val clientMessageId: String? = null,
 )

@@ -151,10 +151,12 @@ class ConversationMirror @Inject constructor(
 
     /**
      * v1.4.1 (SEC-01) — drops a "poison-pill" Room row carrying the system [telephonyUri]
-     * of an incoming SMS that was already folded into a reaction badge by
-     * [applyIncomingReaction]. Without this sentinel, [TelephonySyncManager] would later
-     * re-import the very same `Reacted ❤️ to «…»` body from `content://sms` as a regular
-     * incoming bubble — duplicating the user-visible event (one badge + one phantom text
+     * of an SMS that was already folded into a reaction badge by
+     * [applyIncomingReaction] — an incoming tapback, or our own outgoing
+     * tapback imported from the sent box. Without this sentinel,
+     * [TelephonySyncManager] would later re-import the very same
+     * `Reacted ❤️ to «…»` body from `content://sms` as a regular
+     * bubble — duplicating the user-visible event (one badge + one phantom text
      * bubble).
      *
      * The sentinel is intentionally invisible :
@@ -218,6 +220,11 @@ class ConversationMirror @Inject constructor(
      *     texts, and on iPhone you can react to your own. Match either by body
      *     prefix (when [bodyPrefix] is non-null) or by "most recent message"
      *     (when the remote reacted to a message with no text body, voice / image).
+     *   - Own reactions ([isOwnReaction]) — our own outgoing tapback, imported
+     *     from the sent box or found by the reparse: the target is one of
+     *     THEIR incoming messages, never one of ours (a preview that also
+     *     matches a message we sent must not win), and the conversation is
+     *     never bumped — reacting is our own action, not news.
      *   - [com.filestech.sms.domain.reaction.IncomingReactionDecoder.DecodedReaction
      *     .Kind.EmojiOnly] — bare emoji SMS, ambiguous with a real one-emoji message.
      *     The match requires an outgoing message strictly younger than
@@ -248,6 +255,7 @@ class ConversationMirror @Inject constructor(
      * under "today" instead of being missed (a reaction is activity, not a
      * silent metadata edit). No unread bump — a reaction is not a message
      * waiting to be read. A removal never bumps: clearing a badge is silent.
+     * An own reaction never bumps either (see [isOwnReaction] above).
      */
     /**
      * v1.4.1 — outcome of [applyIncomingReaction]. `null` = no matching
@@ -298,6 +306,15 @@ class ConversationMirror @Inject constructor(
          * yet when it folds.
          */
         excludeMessageId: Long? = null,
+        /**
+         * `true` when the reaction text is OUR OWN outgoing tapback (an
+         * imported sent-box row, or a stored outgoing row the reparse
+         * found) rather than one received from the correspondent. The badge
+         * still lands on the target — one of THEIR incoming messages — but
+         * the conversation is never bumped. The live receiver never passes
+         * this: it only ever sees incoming SMS.
+         */
+        isOwnReaction: Boolean = false,
     ): ReactionApplied? = withContext(io) {
         val addr = PhoneAddress.of(address)
         if (addr.normalized.isEmpty()) return@withContext null
@@ -338,6 +355,7 @@ class ConversationMirror @Inject constructor(
                 wasTruncated = wasTruncated,
                 maxDateMs = maxDateMs,
                 excludeMessageId = excludeMessageId,
+                isOwnReaction = isOwnReaction,
             ) ?: continue
             if (isRemoval) {
                 // Single-emoji storage cannot tell whose reaction the badge
@@ -347,12 +365,16 @@ class ConversationMirror @Inject constructor(
                 }
             } else {
                 messageDao.setReaction(target.id, emoji)
-                touchForReaction(
-                    conversationId = conv.id,
-                    reactorAddress = address,
-                    emoji = emoji,
-                    dateMs = reactionDateMs ?: System.currentTimeMillis(),
-                )
+                // Own reactions never bump: reacting is our own action,
+                // not news — and the live outgoing path never bumps either.
+                if (!isOwnReaction) {
+                    touchForReaction(
+                        conversationId = conv.id,
+                        reactorAddress = address,
+                        emoji = emoji,
+                        dateMs = reactionDateMs ?: System.currentTimeMillis(),
+                    )
+                }
             }
             return@withContext ReactionApplied(
                 conversationId = conv.id,
@@ -400,9 +422,16 @@ class ConversationMirror @Inject constructor(
      * ([upsertReactionSentinel]) so the next sync sweep does not re-import the
      * carrier text as a bubble.
      *
-     * Runs once per install (gated by
-     * `AdvancedSettings.reactionReparseDone`, set by the caller), on IO, in
-     * the background — the user just sees old reaction texts turn into badges.
+     * Runs once per reparse version (gated by
+     * `AdvancedSettings.reactionReparseVersion`, set by the caller), on IO,
+     * in the background — the user just sees old reaction texts turn into
+     * badges. Version 2 added the outgoing fold below, so installs that
+     * already ran version 1 run once more.
+     *
+     * Outgoing rows — our own reactions, imported from the sent box — fold
+     * onto their target too (one of THEIR incoming messages), with no
+     * conversation bump and no notification: the reaction is our own
+     * action, not news. A removal clears our badge the same way.
      *
      * Hard limits (by design, not bugs):
      *   - [Kind.EmojiOnly] is SKIPPED: its 5-minute window is anchored at
@@ -454,6 +483,7 @@ class ConversationMirror @Inject constructor(
                     // would match ITSELF as "most recent message", get a badge,
                     // then be deleted — the reaction lost entirely.
                     excludeMessageId = row.id,
+                    isOwnReaction = row.direction == MessageDirection.OUTGOING,
                 )
             } catch (ce: kotlinx.coroutines.CancellationException) {
                 throw ce
@@ -490,8 +520,11 @@ class ConversationMirror @Inject constructor(
             // messages and wipes the bump [applyIncomingReaction] just wrote
             // — re-apply it AFTER the refresh (adds only; a removal stays
             // silent). The newest-wins guard in [touchConversation] keeps a
-            // newer real message's preview when one exists.
-            if (!decoded.isRemoval) {
+            // newer real message's preview when one exists. Own reactions
+            // never bump (their fold skipped the touch on purpose), so the
+            // re-apply skips them too — otherwise the refresh would be the
+            // only place an own reaction bumped the thread.
+            if (!decoded.isRemoval && row.direction != MessageDirection.OUTGOING) {
                 touchForReaction(
                     conversationId = applied.conversationId,
                     reactorAddress = row.address,
@@ -515,7 +548,9 @@ class ConversationMirror @Inject constructor(
      * recent first. Tapback kinds match ANY message in the thread (incoming
      * or outgoing); the emoji-only path keeps its outgoing-only, 5-minute
      * window rule. Candidates dated after [maxDateMs] are skipped (a
-     * reaction cannot target a message sent after it).
+     * reaction cannot target a message sent after it). For an own reaction
+     * ([isOwnReaction]) the target must be one of THEIR incoming messages
+     * — a preview that also matches one of ours must never win.
      */
     private suspend fun findReactionTarget(
         conversationId: Long,
@@ -524,6 +559,7 @@ class ConversationMirror @Inject constructor(
         wasTruncated: Boolean,
         maxDateMs: Long?,
         excludeMessageId: Long? = null,
+        isOwnReaction: Boolean = false,
     ): MessageEntity? {
         fun withinTolerance(entity: MessageEntity): Boolean =
             maxDateMs == null || entity.date <= maxDateMs
@@ -534,6 +570,10 @@ class ConversationMirror @Inject constructor(
         // nothing: `id != null` is always true.
         fun notExcluded(entity: MessageEntity): Boolean =
             entity.id != excludeMessageId
+
+        // Own tapback: the target is one of THEIR incoming messages.
+        fun directionOk(entity: MessageEntity): Boolean =
+            !isOwnReaction || entity.direction == MessageDirection.INCOMING
         return when (kind) {
             Kind.Tapback -> {
                 if (bodyPrefix != null) {
@@ -551,6 +591,7 @@ class ConversationMirror @Inject constructor(
                         ).firstOrNull { entity ->
                             notExcluded(entity) &&
                                 withinTolerance(entity) &&
+                                directionOk(entity) &&
                                 entity.body.collapseWhitespace() == normalizedPrefix
                         }
                     } else {
@@ -560,31 +601,36 @@ class ConversationMirror @Inject constructor(
                         // whitespace mais pas le DAO).
                         val escaped = escapeForSqlLike(bodyPrefix)
                         messageDao.findMostRecentByBodyPrefix(conversationId, escaped)
-                            ?.takeIf { notExcluded(it) && withinTolerance(it) }
+                            ?.takeIf { notExcluded(it) && withinTolerance(it) && directionOk(it) }
                             ?: messageDao.findRecentForConversation(
                                 conversationId = conversationId,
                                 limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
                             ).firstOrNull { entity ->
                                 notExcluded(entity) &&
                                     withinTolerance(entity) &&
+                                    directionOk(entity) &&
                                     entity.body.collapseWhitespace()
                                         .startsWith(normalizedPrefix)
                             }
                     }
                 } else {
-                    if (excludeMessageId == null) {
-                        messageDao.findMostRecent(conversationId)
-                            ?.takeIf { withinTolerance(it) }
-                    } else {
-                        // Reparse only: `findMostRecent` would return the
+                    if (isOwnReaction || excludeMessageId != null) {
+                        // Own reaction, or the reparse: `findMostRecent`
+                        // could return one of my own messages, or the
                         // reaction row itself when it is the latest message.
-                        // Scan the recent window instead and drop it.
+                        // Scan the recent window instead and let the guards
+                        // pick — the direction guard for an own reaction,
+                        // the exclusion for the reparse.
                         messageDao.findRecentForConversation(
                             conversationId = conversationId,
                             limit = TAPBACK_FALLBACK_LOOKUP_LIMIT,
                         ).firstOrNull { entity ->
-                            notExcluded(entity) && withinTolerance(entity)
+                            notExcluded(entity) && withinTolerance(entity) &&
+                                directionOk(entity)
                         }
+                    } else {
+                        messageDao.findMostRecent(conversationId)
+                            ?.takeIf { withinTolerance(it) }
                     }
                 }
             }
@@ -638,6 +684,9 @@ class ConversationMirror @Inject constructor(
          * Default `null` = mirror the wire body as-is (regular text SMS).
          */
         localMirrorBody: String?,
+        // Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil lié, écrite sur la
+        // ligne AVANT la remise au radio (c'est ce qui rend la dédup durable).
+        clientMessageId: String?,
     ): Long = withContext(io) {
         val mirrorBody = localMirrorBody ?: body
         database.withTransaction {
@@ -659,6 +708,7 @@ class ConversationMirror @Inject constructor(
                 scheduledAt = null,
                 attachmentsCount = 0,
                 replyToMessageId = replyToMessageId,
+                clientMessageId = clientMessageId,
                 // v1.28.4 — la sentinelle de réaction sortante se DÉCLARE, elle n'est plus devinée.
                 hidden = localMirrorBody != null && localMirrorBody.isEmpty(),
             )
@@ -775,6 +825,7 @@ class ConversationMirror @Inject constructor(
         textBody: String,
         date: Long,
         subId: Int?,
+        clientMessageId: String?,
     ): Long = withContext(io) {
         require(attachments.isNotEmpty()) { "upsertOutgoingMediaMms requires at least one attachment" }
         // v1.3.10 — `messages.body` stores the **user caption verbatim** (possibly empty), so
@@ -801,6 +852,7 @@ class ConversationMirror @Inject constructor(
                 subId = subId,
                 scheduledAt = null,
                 attachmentsCount = attachments.size,
+                clientMessageId = clientMessageId,
             )
             val msgId = messageDao.insert(msg)
             for (a in attachments) {
@@ -829,6 +881,7 @@ class ConversationMirror @Inject constructor(
         textBody: String,
         date: Long,
         subId: Int?,
+        clientMessageId: String?,
     ): Long = withContext(io) {
         val corps = textBody.trim()
         require(attachments.isNotEmpty() || corps.isNotEmpty()) { "un MMS de groupe sans contenu" }
@@ -852,6 +905,7 @@ class ConversationMirror @Inject constructor(
                     subId = subId,
                     scheduledAt = null,
                     attachmentsCount = attachments.size,
+                    clientMessageId = clientMessageId,
                 ),
             )
             for (a in attachments) {
@@ -881,6 +935,7 @@ class ConversationMirror @Inject constructor(
         status: MessageStatus,
         replyToMessageId: Long?,
         attachments: List<MediaAttachmentSpec>,
+        clientMessageId: String?,
     ): Long = withContext(io) {
         val corps = body.trim()
         val preview = corps.ifBlank { attachments.firstOrNull()?.let { mediaPreviewLabel(it) }.orEmpty() }
@@ -904,6 +959,7 @@ class ConversationMirror @Inject constructor(
                     scheduledAt = null,
                     attachmentsCount = attachments.size,
                     replyToMessageId = replyToMessageId,
+                    clientMessageId = clientMessageId,
                 ),
             )
             for (a in attachments) {
@@ -1256,6 +1312,10 @@ class ConversationMirror @Inject constructor(
         // folded onto their target (badge + sentinel) instead of importing
         // as a text bubble — the same outcome as the live receiver, for
         // reactions that arrived while another app was the default SMS app.
+        // Outgoing rows fold too: our OWN reactions, imported from the
+        // sent box (the sending app mirrors them with an empty body, but
+        // the provider holds the full text) — badge on their message, no
+        // bump, no unread.
         //
         // The fold runs AFTER the plain insert so a target sitting in the
         // same batch is already in Room (the sweep reads provider ids
@@ -1273,7 +1333,9 @@ class ConversationMirror @Inject constructor(
             // bubble" (caller inserts the row as-is). EmojiOnly is never folded
             // here: its 5-minute window is anchored at "now", so an old
             // bare-emoji row would mis-attach to a message sent minutes ago.
-            // Same rule as [reparseStoredReactions].
+            // Same rule as [reparseStoredReactions]. Outgoing rows (our own
+            // reactions, from the sent box) fold onto their incoming target
+            // with no bump — see [applyIncomingReaction].
             suspend fun foldImportedTapback(row: MessageEntity): Boolean {
                 val decoded = IncomingReactionDecoder.decode(row.body) ?: return false
                 if (decoded.kind == Kind.EmojiOnly) return false
@@ -1286,6 +1348,7 @@ class ConversationMirror @Inject constructor(
                         wasTruncated = decoded.wasTruncated,
                         isRemoval = decoded.isRemoval,
                         reactionDateMs = row.date,
+                        isOwnReaction = row.direction == MessageDirection.OUTGOING,
                     )
                 } catch (ce: kotlinx.coroutines.CancellationException) {
                     throw ce
@@ -1314,7 +1377,11 @@ class ConversationMirror @Inject constructor(
             val tapbackRows = ArrayList<MessageEntity>()
             val plainRows = ArrayList<MessageEntity>(withConv.size)
             for (row in withConv) {
-                if (row.direction == MessageDirection.INCOMING && looksLikeReactionText(row.body)) {
+                // Both directions: an incoming row is their reaction, an
+                // outgoing one is OUR OWN (imported from the sent box —
+                // the sending app mirrors it with an empty body, but the
+                // full text is what the provider holds).
+                if (looksLikeReactionText(row.body)) {
                     tapbackRows += row
                 } else {
                     plainRows += row
@@ -1346,13 +1413,19 @@ class ConversationMirror @Inject constructor(
                     row.telephonyUri?.let { foldedUris += it }
                 } else {
                     val insertedId = messageDao.insert(row)
-                    if (insertedId > 0L && !row.read) unreadDelta++
+                    // Incoming only: an outgoing row that failed to fold is
+                    // our own sent text — never unread, even if the
+                    // provider row carries READ=0.
+                    if (insertedId > 0L && row.direction == MessageDirection.INCOMING && !row.read) {
+                        unreadDelta++
+                    }
                 }
             }
             // The touch must never surface a folded tapback's raw text as the
             // preview: `last` is the newest NON-folded row. When every row in the
-            // group folded, the fold's own touch already set the date and the
-            // emoji preview — nothing left to touch.
+            // group folded, an incoming fold's own touch already set the date
+            // and the emoji preview — and an all-outgoing group needs no touch
+            // at all (our own reactions never bump) — so nothing is left to touch.
             val last = withConv
                 .filter { it.telephonyUri !in foldedUris }
                 .maxByOrNull { it.date }

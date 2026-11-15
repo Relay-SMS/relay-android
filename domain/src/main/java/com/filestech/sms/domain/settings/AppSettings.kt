@@ -518,13 +518,18 @@ data class AdvancedSettings(
      */
     val startupDbMigrationsDone: Boolean = false,
     /**
-     * Feedback round 7 — `true` once the one-time retroactive reaction reparse
+     * Feedback round 7 — version of the retroactive reaction reparse
      * ([com.filestech.sms.data.repository.ConversationMirror
-     * .reparseStoredReactions]) has run after the first post-grant sync, so it
-     * never re-scans on later cold starts. Same one-shot pattern as
-     * [unreadResetV180] / [dedupSameNumberV1230].
+     * .reparseStoredReactions]) this install has run, so it never re-scans
+     * on later cold starts. A versioned gate rather than a boolean: when a
+     * later version folds a new shape (v2 added our OWN outgoing tapbacks,
+     * imported from the sent box), installs that already ran v1 run once
+     * more instead of keeping the old rows as text forever. Compare
+     * against [REACTION_REPARSE_CURRENT_VERSION]; the stored value is
+     * migrated from the legacy `advanced.reactionReparseDone` boolean
+     * (`true` → 1) by `SettingsRepository`.
      */
-    val reactionReparseDone: Boolean = false,
+    val reactionReparseVersion: Int = 0,
     /**
      * v1.24.0 — réparation one-shot des aperçus de conversation périmés par des suppressions de
      * message sous les versions ≤ 1.23.4 (qui ne recalculaient pas la ligne `conversations`).
@@ -614,4 +619,14 @@ data class AdvancedSettings(
     // now bake the key in from the repository secret, so no device-side key
     // entry is needed. A value stored on an existing install under
     // `advanced.klipyApiKey` is simply never read again.
-)
+) {
+    companion object {
+        /**
+         * Current reparse version (see [reactionReparseVersion]): 1 folded
+         * incoming reaction texts; 2 also folds our own outgoing tapbacks.
+         * Bump when the reparse learns a new shape, so existing installs
+         * re-run it exactly once.
+         */
+        const val REACTION_REPARSE_CURRENT_VERSION = 2
+    }
+}

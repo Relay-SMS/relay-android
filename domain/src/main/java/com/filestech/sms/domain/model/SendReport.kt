@@ -31,6 +31,14 @@ data class SendReport(
     val failed: List<PhoneAddress>,
     /** Destinataires écartés parce qu'ils figurent dans la liste de blocage de l'utilisateur. */
     val blocked: List<PhoneAddress>,
+    /**
+     * Slice 3 — l'id Room de la copie gardée dans le fil du groupe, pour un envoi par
+     * destinataire fait depuis un groupe (SMS de diffusion ou MMS par destinataire) ; `null`
+     * sinon. C'est LA ligne que l'appareil lié affiche pour cet envoi — sans elle, l'appelant
+     * n'aurait aucun moyen honnête de la retrouver (une recherche par conversation + date +
+     * corps serait une devinette).
+     */
+    val groupEchoId: Long? = null,
 ) {
     /** Tous les destinataires visés ont été remis à la pile. */
     val isComplete: Boolean get() = failed.isEmpty() && blocked.isEmpty()

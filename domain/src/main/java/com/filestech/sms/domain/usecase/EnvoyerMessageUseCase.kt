@@ -31,13 +31,40 @@ class EnvoyerMessageUseCase @Inject constructor(
         subId: Int? = null,
         /** Cible d'une réponse citée — portée par le SMS seulement, comme avant. */
         replyToMessageId: Long? = null,
+        /**
+         * Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil lié. Transmise telle
+         * quelle aux deux branches : une seule ligne la porte — celle que l'appareil affiche
+         * (la ligne 1-à-1, la ligne de MMS de groupe, ou l'écho de groupe).
+         */
+        clientMessageId: String? = null,
     ): Outcome<SendReport> {
         val groupe = recipients.size > 1
         val mmsDeGroupe = groupe && (settings.hydratedOrNull() ?: AppSettings()).sending.groupMms
         return when {
-            mmsDeGroupe -> sendMediaMms.invoke(recipients, attachments, body, subId, groupMms = true)
-            attachments.isNotEmpty() -> sendMediaMms.invoke(recipients, attachments, body, subId, echoInGroup = groupe)
-            else -> sendSms.invoke(recipients, body, subId, replyToMessageId = replyToMessageId, echoInGroup = groupe)
+            mmsDeGroupe -> sendMediaMms.invoke(
+                recipients,
+                attachments,
+                body,
+                subId,
+                groupMms = true,
+                clientMessageId = clientMessageId,
+            )
+            attachments.isNotEmpty() -> sendMediaMms.invoke(
+                recipients,
+                attachments,
+                body,
+                subId,
+                echoInGroup = groupe,
+                clientMessageId = clientMessageId,
+            )
+            else -> sendSms.invoke(
+                recipients,
+                body,
+                subId,
+                replyToMessageId = replyToMessageId,
+                echoInGroup = groupe,
+                clientMessageId = clientMessageId,
+            )
         }
     }
 }

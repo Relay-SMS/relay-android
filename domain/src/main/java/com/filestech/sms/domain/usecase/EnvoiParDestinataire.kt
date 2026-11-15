@@ -38,7 +38,8 @@ class EnvoiParDestinataire @Inject constructor(
      * @param envoi remet la ligne à la pile ; un [Outcome.Failure] passe la ligne en échec
      *   synchrone, le destinataire est compté dans `failed`.
      * @param echoDeGroupe écrit, s'il est fourni et qu'il y a plus d'un destinataire, la copie
-     *   dans le fil du groupe avec le statut global de l'envoi.
+     *   dans le fil du groupe avec le statut global de l'envoi, et rend son id Room (Slice 3 :
+     *   l'appelant en a besoin pour dire à un appareil lié quelle ligne son envoi a produite).
      * @param sansRemise message de l'erreur rendue quand rien n'est parti sans que tout soit bloqué.
      */
     suspend fun parDestinataire(
@@ -46,7 +47,7 @@ class EnvoiParDestinataire @Inject constructor(
         sansRemise: String,
         miroir: suspend (destinataire: PhoneAddress, bloque: Boolean) -> Long,
         envoi: suspend (localId: Long, destinataire: PhoneAddress) -> Outcome<*>,
-        echoDeGroupe: (suspend (statut: MessageStatus) -> Unit)? = null,
+        echoDeGroupe: (suspend (statut: MessageStatus) -> Long?)? = null,
     ): Outcome<SendReport> {
         val ids = ArrayList<Long>(recipients.size)
         val failed = ArrayList<PhoneAddress>()
@@ -70,10 +71,12 @@ class EnvoiParDestinataire @Inject constructor(
                 }
             }
         }
-        if (echoDeGroupe != null && recipients.size > 1) {
+        val echoId = if (echoDeGroupe != null && recipients.size > 1) {
             echoDeGroupe(if (ids.size == recipients.size) MessageStatus.SENT else MessageStatus.FAILED)
+        } else {
+            null
         }
-        return verdict(recipients, ids, failed, blocked, sansRemise)
+        return verdict(recipients, ids, failed, blocked, sansRemise, echoId)
     }
 
     /**
@@ -115,6 +118,7 @@ class EnvoiParDestinataire @Inject constructor(
         failed: List<PhoneAddress>,
         blocked: List<PhoneAddress>,
         sansRemise: String,
+        groupEchoId: Long? = null,
     ): Outcome<SendReport> {
         if (ids.isEmpty()) {
             return if (blocked.size == recipients.size) {
@@ -123,6 +127,8 @@ class EnvoiParDestinataire @Inject constructor(
                 Outcome.Failure(AppError.Telephony(sansRemise))
             }
         }
-        return Outcome.Success(SendReport(dispatched = ids, failed = failed, blocked = blocked))
+        return Outcome.Success(
+            SendReport(dispatched = ids, failed = failed, blocked = blocked, groupEchoId = groupEchoId),
+        )
     }
 }

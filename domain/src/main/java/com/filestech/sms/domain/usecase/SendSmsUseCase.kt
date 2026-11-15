@@ -87,6 +87,13 @@ class SendSmsUseCase @Inject constructor(
          * sans qu'un « groupe » doive apparaître dans la liste.
          */
         echoInGroup: Boolean = false,
+        /**
+         * Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil lié. Une seule ligne
+         * la porte : l'écho de groupe quand il y en a un, sinon la ligne du destinataire
+         * unique. Jamais sur plusieurs lignes — la colonne porte un index UNIQUE, et deux
+         * lignes avec la même clé feraient échouer l'insertion (IGNORE → id -1).
+         */
+        clientMessageId: String? = null,
     ): Outcome<SendReport> {
         refusPrealable(recipients, body)?.let { return Outcome.Failure(it) }
 
@@ -139,6 +146,11 @@ class SendSmsUseCase @Inject constructor(
         // Si un vrai besoin de contournement apparaît, il se pose sur
         // [EnvoiParDestinataire.parDestinataire], pour que les TROIS voies d'envoi restent
         // alignées par construction — ce que la v1.28.4 cherchait précisément à obtenir.
+        // Slice 3 — la clé ne va que sur UNE ligne : l'écho quand il y en a un, sinon la ligne
+        // du destinataire unique. Un envoi multi-destinataires sans écho (Safety call, mode
+        // urgence) ne porte jamais de clé — ces appelants n'en passent pas.
+        val cleSurLigne = clientMessageId.takeIf { !echoInGroup && recipients.size == 1 }
+        val cleSurEcho = clientMessageId.takeIf { echoInGroup && localMirrorBody != "" }
         return envoi.parDestinataire(
             recipients = recipients,
             sansRemise = "no message dispatched",
@@ -161,6 +173,7 @@ class SendSmsUseCase @Inject constructor(
                     initialStatus = MessageStatus.PENDING,
                     replyToMessageId = replyToMessageId,
                     localMirrorBody = localMirrorBody,
+                    clientMessageId = cleSurLigne,
                 )
             },
             envoi = { localId, r -> sender.send(localId, r.raw, finalBody, effectiveSubId, deliveryReports) },
@@ -175,6 +188,7 @@ class SendSmsUseCase @Inject constructor(
                         subId = effectiveSubId,
                         status = statut,
                         replyToMessageId = replyToMessageId,
+                        clientMessageId = cleSurEcho,
                     )
                 }
             } else {

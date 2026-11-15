@@ -95,10 +95,15 @@ internal class NoopMirror : OutgoingMessageMirror {
         initialStatus: MessageStatus,
         replyToMessageId: Long?,
         localMirrorBody: String?,
+        clientMessageId: String?,
     ): Long {
         lignes += LigneEcrite(address, telephonyUri, initialStatus)
+        cles += clientMessageId
         return prochainId++
     }
+
+    /** Slice 3 — les clés d'idempotence reçues, dans l'ordre, pour mesurer la dédup. */
+    val cles = mutableListOf<String?>()
 
     override suspend fun updateOutgoingStatus(
         localId: Long,
@@ -146,9 +151,11 @@ internal class NoopMirror : OutgoingMessageMirror {
         textBody: String,
         date: Long,
         subId: Int?,
+        clientMessageId: String?,
     ): Long {
         lignes += LigneEcrite(address, telephonyUri = null, statut = MessageStatus.PENDING)
         lignesMms += LigneMms(address, attachments.size)
+        cles += clientMessageId
         return prochainId++
     }
 
@@ -164,8 +171,10 @@ internal class NoopMirror : OutgoingMessageMirror {
         textBody: String,
         date: Long,
         subId: Int?,
+        clientMessageId: String?,
     ): Long {
         lignes += LigneEcrite(addresses.joinToString(";") { it.raw }, telephonyUri = null, statut = MessageStatus.PENDING)
+        cles += clientMessageId
         return prochainId++
     }
 
@@ -177,10 +186,15 @@ internal class NoopMirror : OutgoingMessageMirror {
         status: MessageStatus,
         replyToMessageId: Long?,
         attachments: List<MediaAttachmentSpec>,
+        clientMessageId: String?,
     ): Long {
         echos += Echo(addresses.map { it.raw }, body, status, attachments.size)
+        clesEcho += clientMessageId
         return prochainId++
     }
+
+    /** Slice 3 — les clés reçues par l'écho de groupe, dans l'ordre. */
+    val clesEcho = mutableListOf<String?>()
 }
 
 internal class NeverBlocked : BlockedNumberRepository {

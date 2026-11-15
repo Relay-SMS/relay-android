@@ -264,6 +264,92 @@ class SyncSessionHandlerTest {
         assertThat(harness.handler.lastReceivedAtMs).isAtLeast(before)
     }
 
+    // -- Slice 3: send + write-back frames need auth ------------------
+
+    @Test fun `an unauthenticated send_message fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText(
+            """{"type":"send_message","client_message_id":"$CLIENT_KEY","conversation_id":"123","body":"Hi"}""",
+        )
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+        assertThat(harness.handler.isAuthenticated).isFalse()
+    }
+
+    @Test fun `an unauthenticated action frame fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText("""{"type":"set_pin","conversation_id":"123","value":true}""")
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `an authenticated send_message reaches the engine and answers message_sent`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+
+            harness.handler.onText(
+                """{"type":"send_message","client_message_id":"$CLIENT_KEY","conversation_id":"123","body":"See you at 6"}""",
+            )
+            advanceUntilIdle()
+            assertThat(source.sends).containsExactly(
+                SendCall(CLIENT_KEY, 123L, "See you at 6", null),
+            )
+            assertThat(engineSent).hasSize(1)
+            val ack = Json.parseToJsonElement(engineSent.first()).jsonObject
+            assertThat(ack["type"]?.jsonPrimitive?.content).isEqualTo("message_sent")
+            assertThat(ack["client_message_id"]?.jsonPrimitive?.content).isEqualTo(CLIENT_KEY)
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test fun `an authenticated action frame reaches the engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+
+            harness.handler.onText("""{"type":"mark_read","conversation_id":"123"}""")
+            harness.handler.onText("""{"type":"mark_all_read"}""")
+            harness.handler.onText("""{"type":"set_muted","conversation_id":"456","value":true}""")
+            advanceUntilIdle()
+            assertThat(source.actions).containsExactly(
+                ActionCall("mark_read", 123L),
+                ActionCall("mark_all_read"),
+                ActionCall("set_muted", 456L, value = true),
+            ).inOrder()
+            assertThat(engineSent).hasSize(3)
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test fun `a send frame with no engine answers error and stays open`() = runTest {
+        val harness = authenticatedHarness()
+        harness.handler.onText(
+            """{"type":"send_message","client_message_id":"$CLIENT_KEY","conversation_id":"123","body":"Hi"}""",
+        )
+        val error = Json.parseToJsonElement(harness.sent.last()).jsonObject
+        assertThat(error["type"]?.jsonPrimitive?.content).isEqualTo("error")
+        assertThat(harness.closes).isEmpty()
+        assertThat(harness.handler.isAuthenticated).isTrue()
+    }
+
     private fun helloJson(): String = SyncProtocol.encodeHello(
         SyncProtocol.Hello(
             protocol = SyncProtocol.PROTOCOL_VERSION,
@@ -307,5 +393,6 @@ class SyncSessionHandlerTest {
     companion object {
         private const val DEVICE_ID = "123e4567-e89b-12d3-a456-426614174000"
         private const val HUB_ID = "123e4567-e89b-12d3-a456-426614174099"
+        private const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
     }
 }

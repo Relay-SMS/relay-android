@@ -49,9 +49,9 @@ class ScheduledSendAttemptTest {
         claimedAt = claimedAt,
     )
 
-    /** Cinq `any()` = la signature complete de [EnvoyerMessageUseCase.invoke]. */
+    /** Six `any()` = la signature complete de [EnvoyerMessageUseCase.invoke]. */
     private fun stubSend(result: Outcome<com.filestech.sms.domain.model.SendReport>) {
-        coEvery { envoyer.invoke(any(), any(), any(), any(), any()) } returns result
+        coEvery { envoyer.invoke(any(), any(), any(), any(), any(), any()) } returns result
     }
 
     private fun failure() = Outcome.Failure(AppError.Telephony("no SIM"))
@@ -127,7 +127,7 @@ class ScheduledSendAttemptTest {
         )
         assertThat(verdicts.last()).isEqualTo(ScheduledSendAttempt.Verdict.GAVE_UP)
         coVerify(exactly = ScheduledSendAttempt.MAX_ATTEMPTS) {
-            envoyer.invoke(any(), any(), any(), any(), any())
+            envoyer.invoke(any(), any(), any(), any(), any(), any())
         }
         assertThat(stored.state).isEqualTo(ScheduledState.FAILED)
     }
@@ -142,7 +142,7 @@ class ScheduledSendAttemptTest {
             assertThat(attempt(ID, runAttemptCount = 0))
                 .isEqualTo(ScheduledSendAttempt.Verdict.ALREADY_SETTLED)
         }
-        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { dao.setState(any(), any()) }
     }
 
@@ -151,7 +151,7 @@ class ScheduledSendAttemptTest {
         coEvery { dao.findById(ID) } returns null
 
         assertThat(attempt(ID, runAttemptCount = 0)).isEqualTo(ScheduledSendAttempt.Verdict.UNKNOWN_ID)
-        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any(), any()) }
     }
 
     // ------------------------------------------------------------------------------------------
@@ -175,7 +175,7 @@ class ScheduledSendAttemptTest {
 
         assertThat(attempt(ID, runAttemptCount = 0, now = now))
             .isEqualTo(ScheduledSendAttempt.Verdict.IN_FLIGHT)
-        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { dao.setState(any(), any()) }
     }
 
@@ -206,7 +206,7 @@ class ScheduledSendAttemptTest {
 
         attempt(ID, runAttemptCount = 0, now = 1_000_000_000L)
 
-        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { envoyer.invoke(any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { dao.claimForSending(any(), any()) }
         coVerify(exactly = 0) { dao.setState(ID, ScheduledState.PENDING) }
     }
@@ -263,7 +263,7 @@ class ScheduledSendAttemptTest {
      */
     @Test
     fun `un destinataire bloque n est pas retente et abandonne des la premiere tentative`() = runTest {
-        coEvery { envoyer.invoke(any(), any(), any(), any(), any()) } returns
+        coEvery { envoyer.invoke(any(), any(), any(), any(), any(), any()) } returns
             Outcome.Failure(AppError.RecipientBlocked)
         coEvery { dao.findById(ID) } returns entity()
 
@@ -324,7 +324,7 @@ class ScheduledSendAttemptTest {
 
         assertThat(attempt(ID, runAttemptCount = 0)).isEqualTo(ScheduledSendAttempt.Verdict.SENT)
         coVerify(exactly = 1) {
-            envoyer.invoke(match { it.size == 2 }, "Bonjour", emptyList(), 3, null)
+            envoyer.invoke(match { it.size == 2 }, "Bonjour", emptyList(), 3, null, null)
         }
     }
 

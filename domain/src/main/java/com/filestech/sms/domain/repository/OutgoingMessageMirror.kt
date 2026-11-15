@@ -16,7 +16,13 @@ import java.io.File
  */
 interface OutgoingMessageMirror {
 
-    /** Miroite un SMS sortant. Renvoie l'id Room local. */
+    /**
+     * Miroite un SMS sortant. Renvoie l'id Room local.
+     *
+     * @param clientMessageId Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil
+     * lié, écrite sur la ligne. L'appelant garantit qu'une seule ligne par envoi la porte
+     * (la colonne porte un index UNIQUE).
+     */
     suspend fun upsertOutgoingSms(
         address: String,
         body: String,
@@ -26,6 +32,7 @@ interface OutgoingMessageMirror {
         initialStatus: MessageStatus = MessageStatus.PENDING,
         replyToMessageId: Long? = null,
         localMirrorBody: String? = null,
+        clientMessageId: String? = null,
     ): Long
 
     /**
@@ -96,13 +103,17 @@ interface OutgoingMessageMirror {
         subId: Int? = null,
     ): Long
 
-    /** Miroite un MMS multimédia sortant ([attachments] + [textBody]). Renvoie l'id Room local. */
+    /**
+     * Miroite un MMS multimédia sortant ([attachments] + [textBody]). Renvoie l'id Room local.
+     * @param clientMessageId Slice 3 — cf. [upsertOutgoingSms].
+     */
     suspend fun upsertOutgoingMediaMms(
         address: String,
         attachments: List<MediaAttachmentSpec>,
         textBody: String,
         date: Long,
         subId: Int? = null,
+        clientMessageId: String? = null,
     ): Long
 
     /**
@@ -132,6 +143,7 @@ interface OutgoingMessageMirror {
         textBody: String,
         date: Long,
         subId: Int? = null,
+        clientMessageId: String? = null,
     ): Long
 
     suspend fun upsertGroupEcho(
@@ -142,5 +154,6 @@ interface OutgoingMessageMirror {
         status: MessageStatus,
         replyToMessageId: Long? = null,
         attachments: List<MediaAttachmentSpec> = emptyList(),
+        clientMessageId: String? = null,
     ): Long
 }

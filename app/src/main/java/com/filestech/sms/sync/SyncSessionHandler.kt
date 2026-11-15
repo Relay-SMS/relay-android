@@ -16,8 +16,11 @@ import java.util.Base64
  * check happens at `auth`, against the stored public key.
  *
  * After auth, the sync frames (`sync_request`, `messages_request`)
- * are dispatched to the per-session [SyncEngine]; the engine starts
- * its live collectors the moment auth succeeds.
+ * and the Slice 3 send + write-back frames (`send_message`,
+ * `mark_read`, `mark_all_read`, `set_pin`, `set_archived`,
+ * `set_muted`, `set_reaction`, `set_pinned_message`) are dispatched
+ * to the per-session [SyncEngine]; the engine starts its live
+ * collectors the moment auth succeeds.
  *
  * @param send carries one outbound text frame to the client.
  * @param close closes the socket; [reason] is a short human-readable
@@ -58,6 +61,14 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.Pong -> Unit // the server never pings; a stray pong is harmless
             is SyncProtocol.Parsed.SyncRequest -> onSyncRequest(parsed.value)
             is SyncProtocol.Parsed.MessagesRequest -> onMessagesRequest(parsed.value)
+            is SyncProtocol.Parsed.SendMessage -> onSendMessage(parsed.value)
+            is SyncProtocol.Parsed.MarkRead -> onMarkRead(parsed.value)
+            is SyncProtocol.Parsed.MarkAllRead -> onMarkAllRead()
+            is SyncProtocol.Parsed.SetPin -> onSetPin(parsed.value)
+            is SyncProtocol.Parsed.SetArchived -> onSetArchived(parsed.value)
+            is SyncProtocol.Parsed.SetMuted -> onSetMuted(parsed.value)
+            is SyncProtocol.Parsed.SetReaction -> onSetReaction(parsed.value)
+            is SyncProtocol.Parsed.SetPinnedMessage -> onSetPinnedMessage(parsed.value)
             is SyncProtocol.Parsed.Unknown -> onUnknown(parsed.type)
             SyncProtocol.Parsed.Malformed -> onProtocolViolation()
         }
@@ -153,19 +164,57 @@ class SyncSessionHandler(
      * never on the frame loop.
      */
     private suspend fun onSyncRequest(request: SyncProtocol.SyncRequest) {
-        if (!isAuthenticated) {
-            onProtocolViolation()
-            return
-        }
-        val syncEngine = engine
-        if (syncEngine == null) {
-            send(SyncProtocol.encodeError("sync unavailable"))
-            return
-        }
-        syncEngine.onSyncRequest(request)
+        withEngine { it.onSyncRequest(request) }
     }
 
     private suspend fun onMessagesRequest(request: SyncProtocol.MessagesRequest) {
+        withEngine { it.onMessagesRequest(request) }
+    }
+
+    /**
+     * Slice 3 — send + write-back frames need auth too: an
+     * unauthenticated send frame is a protocol violation, like an
+     * unauthenticated sync frame. The engine runs each in its own
+     * job, never on the frame loop.
+     */
+    private suspend fun onSendMessage(request: SyncProtocol.SendMessage) {
+        withEngine { it.onSendMessage(request) }
+    }
+
+    private suspend fun onMarkRead(request: SyncProtocol.MarkRead) {
+        withEngine { it.onMarkRead(request) }
+    }
+
+    private suspend fun onMarkAllRead() {
+        withEngine { it.onMarkAllRead() }
+    }
+
+    private suspend fun onSetPin(request: SyncProtocol.SetPin) {
+        withEngine { it.onSetPin(request) }
+    }
+
+    private suspend fun onSetArchived(request: SyncProtocol.SetArchived) {
+        withEngine { it.onSetArchived(request) }
+    }
+
+    private suspend fun onSetMuted(request: SyncProtocol.SetMuted) {
+        withEngine { it.onSetMuted(request) }
+    }
+
+    private suspend fun onSetReaction(request: SyncProtocol.SetReaction) {
+        withEngine { it.onSetReaction(request) }
+    }
+
+    private suspend fun onSetPinnedMessage(request: SyncProtocol.SetPinnedMessage) {
+        withEngine { it.onSetPinnedMessage(request) }
+    }
+
+    /**
+     * The shared auth + engine gate for every post-auth frame: unauthenticated
+     * frames are protocol violations; a session without an engine (tests)
+     * answers `error` instead of crashing.
+     */
+    private suspend fun withEngine(block: (SyncEngine) -> Unit) {
         if (!isAuthenticated) {
             onProtocolViolation()
             return
@@ -175,7 +224,7 @@ class SyncSessionHandler(
             send(SyncProtocol.encodeError("sync unavailable"))
             return
         }
-        syncEngine.onMessagesRequest(request)
+        block(syncEngine)
     }
 
     private suspend fun onUnknown(type: String?) {

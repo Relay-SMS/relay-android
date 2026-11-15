@@ -66,6 +66,75 @@ internal class FakeSyncMessageSource : SyncMessageSource {
 
     override suspend fun isDefaultSmsApp(): Boolean = isDefaultSms
 
+    // -- Slice 3: send + write-back -----------------------------------
+    // Each records its call and answers from a configurable result, so
+    // engine tests can pin the routing without the real send path.
+
+    val sends = mutableListOf<SendCall>()
+    var sendResult: SendResult = SendResult.Sent(messageId = 999, status = "pending")
+
+    /** When set, [sendMessage] throws this instead of answering. */
+    var sendError: Throwable? = null
+
+    override suspend fun sendMessage(
+        clientMessageId: String,
+        conversationId: Long,
+        body: String,
+        replyToMessageId: Long?,
+    ): SendResult {
+        sendError?.let { throw it }
+        sends += SendCall(clientMessageId, conversationId, body, replyToMessageId)
+        return sendResult
+    }
+
+    val actions = mutableListOf<ActionCall>()
+    var actionResult: ActionResult = ActionResult(ok = true)
+
+    /** When set, every action throws this instead of answering. */
+    var actionError: Throwable? = null
+
+    override suspend fun markRead(conversationId: Long): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("mark_read", conversationId)
+        return actionResult
+    }
+
+    override suspend fun markAllRead(): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("mark_all_read")
+        return actionResult
+    }
+
+    override suspend fun setPinned(conversationId: Long, pinned: Boolean): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("set_pin", conversationId, value = pinned)
+        return actionResult
+    }
+
+    override suspend fun setArchived(conversationId: Long, archived: Boolean): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("set_archived", conversationId, value = archived)
+        return actionResult
+    }
+
+    override suspend fun setMuted(conversationId: Long, muted: Boolean): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("set_muted", conversationId, value = muted)
+        return actionResult
+    }
+
+    override suspend fun setReaction(conversationId: Long, messageId: Long, emoji: String?): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("set_reaction", conversationId, messageId = messageId, emoji = emoji)
+        return actionResult
+    }
+
+    override suspend fun setPinnedMessage(conversationId: Long, messageId: Long?): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("set_pinned_message", conversationId, messageId = messageId)
+        return actionResult
+    }
+
     /** Adds [message] to its conversation's store and advances the max id. */
     fun store(message: SyncedMessage) {
         val list = messagesByConversation.getOrPut(message.conversationId.toLong()) { mutableListOf() }
@@ -73,6 +142,23 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         maxId = maxOf(maxId, message.id.toLong())
     }
 }
+
+/** One recorded `sendMessage` call on the fake. */
+internal data class SendCall(
+    val clientMessageId: String,
+    val conversationId: Long,
+    val body: String,
+    val replyToMessageId: Long?,
+)
+
+/** One recorded action call on the fake. */
+internal data class ActionCall(
+    val action: String,
+    val conversationId: Long? = null,
+    val messageId: Long? = null,
+    val value: Boolean? = null,
+    val emoji: String? = null,
+)
 
 /** A minimal conversation for tests; override what the test cares about. */
 internal fun sampleConversation(
@@ -108,6 +194,7 @@ internal fun sampleMessage(
     body: String = "msg $id",
     date: Long = 1_700_000_000_000L + id,
     status: String = "received",
+    clientMessageId: String? = null,
 ): SyncedMessage = SyncedMessage(
     id = id.toString(),
     conversationId = conversationId.toString(),
@@ -124,4 +211,5 @@ internal fun sampleMessage(
     replyToMessageId = null,
     reaction = null,
     attachments = emptyList(),
+    clientMessageId = clientMessageId,
 )

@@ -166,6 +166,14 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE telephony_uri = :uri LIMIT 1")
     suspend fun findByTelephonyUri(uri: String): MessageEntity?
 
+    /**
+     * Slice 3 — the idempotency lookup: the one row carrying a linked
+     * device's send key, if any. The unique index on
+     * `client_message_id` makes this at most one row.
+     */
+    @Query("SELECT * FROM messages WHERE client_message_id = :key LIMIT 1")
+    suspend fun findByClientMessageId(key: String): MessageEntity?
+
     /** One-shot suspend snapshot used by deletion paths that need each row's telephony URI. */
     @Query("SELECT * FROM messages WHERE conversation_id = :conversationId")
     suspend fun findByConversation(conversationId: Long): List<MessageEntity>
@@ -494,8 +502,8 @@ interface MessageDao {
     suspend fun findMostRecent(conversationId: Long): MessageEntity?
 
     /**
-     * Feedback round 7 — candidates for the one-time retroactive reaction
-     * reparse ([com.filestech.sms.data.repository.ConversationMirror
+     * Feedback round 7 — candidates for the retroactive reaction reparse
+     * ([com.filestech.sms.data.repository.ConversationMirror
      * .reparseStoredReactions]).
      *
      * The `LIKE` pre-filter is deliberately a SUPERSET of what
@@ -512,15 +520,18 @@ interface MessageDao {
      * (rare) candidates is cheaper than N scans, and the list stays small —
      * reaction texts are a tiny fraction of any history.
      *
-     * Incoming only (`direction = 0`): a reaction text is always received,
-     * never sent. Sentinels (`hidden = 1`) are excluded — their empty body
-     * could never decode anyway.
+     * Both directions: an incoming row is someone reacting to us; an outgoing
+     * row is OUR OWN reaction, sent from this phone — the sending app mirrors
+     * it with an empty body, but the full text sits in the system sent box,
+     * and a second install imports it as a text row. The fold treats the two
+     * cases differently (see [ConversationMirror.applyIncomingReaction]).
+     * Sentinels (`hidden = 1`) are excluded — their empty body could never
+     * decode anyway.
      */
     @Query(
         """
         SELECT * FROM messages
         WHERE hidden = 0
-          AND direction = 0
           AND (
             body LIKE 'Reacted %' OR
             body LIKE 'Loved %' OR

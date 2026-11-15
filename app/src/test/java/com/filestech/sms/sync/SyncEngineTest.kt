@@ -398,6 +398,245 @@ class SyncEngineTest {
         }
     }
 
+    // -- Slice 3: send + write-back -----------------------------------
+
+    @Test fun `send_message routes to the source and answers message_sent`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onSendMessage(
+                SyncProtocol.SendMessage(
+                    clientMessageId = CLIENT_KEY,
+                    conversationId = "123",
+                    body = "See you at 6",
+                ),
+            )
+            advanceUntilIdle()
+            assertThat(source.sends).containsExactly(
+                SendCall(CLIENT_KEY, 123L, "See you at 6", null),
+            )
+            assertThat(sent.map { it.frameType() }).containsExactly("message_sent")
+            val ack = sent.first().asObject()
+            assertThat(ack["client_message_id"]?.jsonPrimitive?.content).isEqualTo(CLIENT_KEY)
+            assertThat(ack["message_id"]?.jsonPrimitive?.content).isEqualTo("999")
+            assertThat(ack["conversation_id"]?.jsonPrimitive?.content).isEqualTo("123")
+            assertThat(ack["status"]?.jsonPrimitive?.content).isEqualTo("pending")
+            assertThat(ack.containsKey("blocked_count")).isFalse()
+        }
+    }
+
+    @Test fun `send_message passes the reply id and the blocked count through`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.sendResult = SendResult.Sent(messageId = 555, status = "sent", blockedCount = 1)
+        runEngine(source) { engine, sent ->
+            engine.onSendMessage(
+                SyncProtocol.SendMessage(
+                    clientMessageId = CLIENT_KEY,
+                    conversationId = "123",
+                    body = "Agreed",
+                    replyToMessageId = "77",
+                ),
+            )
+            advanceUntilIdle()
+            assertThat(source.sends).containsExactly(
+                SendCall(CLIENT_KEY, 123L, "Agreed", 77L),
+            )
+            val ack = sent.first { it.frameType() == "message_sent" }.asObject()
+            assertThat(ack["message_id"]?.jsonPrimitive?.content).isEqualTo("555")
+            assertThat(ack["status"]?.jsonPrimitive?.content).isEqualTo("sent")
+            assertThat(ack["blocked_count"]?.jsonPrimitive?.content).isEqualTo("1")
+        }
+    }
+
+    @Test fun `a refused send answers message_failed with the source code`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.sendResult = SendResult.Failed(
+            code = SyncProtocol.MessageFailed.HUB_NOT_DEFAULT_SMS,
+            message = "Relay on the phone isn't your default messaging app.",
+        )
+        runEngine(source) { engine, sent ->
+            engine.onSendMessage(
+                SyncProtocol.SendMessage(
+                    clientMessageId = CLIENT_KEY,
+                    conversationId = "123",
+                    body = "Hi",
+                ),
+            )
+            advanceUntilIdle()
+            assertThat(sent.map { it.frameType() }).containsExactly("message_failed")
+            val failed = sent.first().asObject()
+            assertThat(failed["client_message_id"]?.jsonPrimitive?.content).isEqualTo(CLIENT_KEY)
+            assertThat(failed["conversation_id"]?.jsonPrimitive?.content).isEqualTo("123")
+            assertThat(failed["code"]?.jsonPrimitive?.content).isEqualTo("hub_not_default_sms")
+        }
+    }
+
+    @Test fun `send_message with an unparseable conversation id never reaches the source`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onSendMessage(
+                SyncProtocol.SendMessage(
+                    clientMessageId = CLIENT_KEY,
+                    conversationId = "not-a-number",
+                    body = "Hi",
+                ),
+            )
+            advanceUntilIdle()
+            assertThat(source.sends).isEmpty()
+            assertThat(sent.map { it.frameType() }).containsExactly("message_failed")
+            val failed = sent.first().asObject()
+            assertThat(failed["code"]?.jsonPrimitive?.content)
+                .isEqualTo(SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION)
+        }
+    }
+
+    @Test fun `a throwing source answers message_failed internal and keeps the socket up`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.sendError = IllegalStateException("boom")
+        runEngine(source) { engine, sent ->
+            engine.onSendMessage(
+                SyncProtocol.SendMessage(
+                    clientMessageId = CLIENT_KEY,
+                    conversationId = "123",
+                    body = "Hi",
+                ),
+            )
+            advanceUntilIdle()
+            assertThat(sent.map { it.frameType() }).containsExactly("message_failed")
+            val failed = sent.first().asObject()
+            assertThat(failed["code"]?.jsonPrimitive?.content)
+                .isEqualTo(SyncProtocol.MessageFailed.INTERNAL)
+            // The message stays generic — never the exception text.
+            assertThat(failed["message"]?.jsonPrimitive?.content).doesNotContain("boom")
+        }
+    }
+
+    @Test fun `mark_read dispatches and answers action_result ok`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onMarkRead(SyncProtocol.MarkRead(conversationId = "123"))
+            advanceUntilIdle()
+            assertThat(source.actions).containsExactly(ActionCall("mark_read", 123L))
+            assertThat(sent.map { it.frameType() }).containsExactly("action_result")
+            val result = sent.first().asObject()
+            assertThat(result["action"]?.jsonPrimitive?.content).isEqualTo("mark_read")
+            assertThat(result["conversation_id"]?.jsonPrimitive?.content).isEqualTo("123")
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+        }
+    }
+
+    @Test fun `mark_all_read dispatches and answers without a conversation id`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onMarkAllRead()
+            advanceUntilIdle()
+            assertThat(source.actions).containsExactly(ActionCall("mark_all_read"))
+            val result = sent.first { it.frameType() == "action_result" }.asObject()
+            assertThat(result["action"]?.jsonPrimitive?.content).isEqualTo("mark_all_read")
+            assertThat(result.containsKey("conversation_id")).isFalse()
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+        }
+    }
+
+    @Test fun `set_pin set_archived and set_muted dispatch with the value`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onSetPin(SyncProtocol.SetPin(conversationId = "123", value = true))
+            engine.onSetArchived(SyncProtocol.SetArchived(conversationId = "123", value = false))
+            engine.onSetMuted(SyncProtocol.SetMuted(conversationId = "456", value = true))
+            advanceUntilIdle()
+            assertThat(source.actions).containsExactly(
+                ActionCall("set_pin", 123L, value = true),
+                ActionCall("set_archived", 123L, value = false),
+                ActionCall("set_muted", 456L, value = true),
+            ).inOrder()
+            val results = sent.filter { it.frameType() == "action_result" }.map { it.asObject() }
+            assertThat(results).hasSize(3)
+            // `containsExactly` alone rend un `Ordered` : en dernière position
+            // d'un `= runTest`, la méthode aurait un retour non-void et JUnit
+            // l'ignorerait — d'où le `inOrder()` (void) en dernier.
+            assertThat(results.map { it["ok"]?.jsonPrimitive?.content })
+                .containsExactly("true", "true", "true")
+            assertThat(results.map { it["action"]?.jsonPrimitive?.content })
+                .containsExactly("set_pin", "set_archived", "set_muted").inOrder()
+        }
+    }
+
+    @Test fun `set_reaction dispatches emoji and answers with the message id`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onSetReaction(
+                SyncProtocol.SetReaction(conversationId = "123", messageId = "789", emoji = "❤️"),
+            )
+            advanceUntilIdle()
+            assertThat(source.actions).containsExactly(
+                ActionCall("set_reaction", 123L, messageId = 789L, emoji = "❤️"),
+            )
+            val result = sent.first { it.frameType() == "action_result" }.asObject()
+            assertThat(result["action"]?.jsonPrimitive?.content).isEqualTo("set_reaction")
+            assertThat(result["message_id"]?.jsonPrimitive?.content).isEqualTo("789")
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+        }
+    }
+
+    @Test fun `set_pinned_message dispatches a null message id for unpin`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onSetPinnedMessage(
+                SyncProtocol.SetPinnedMessage(conversationId = "123", messageId = null),
+            )
+            advanceUntilIdle()
+            assertThat(source.actions).containsExactly(
+                ActionCall("set_pinned_message", 123L, messageId = null),
+            )
+            val result = sent.first { it.frameType() == "action_result" }.asObject()
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+            assertThat(result.containsKey("message_id")).isFalse()
+        }
+    }
+
+    @Test fun `a refused action answers action_result ok false with the code`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.actionResult = ActionResult(
+            ok = false,
+            code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
+            message = "Conversation not found.",
+        )
+        runEngine(source) { engine, sent ->
+            engine.onMarkRead(SyncProtocol.MarkRead(conversationId = "999"))
+            advanceUntilIdle()
+            val result = sent.first { it.frameType() == "action_result" }.asObject()
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("false")
+            assertThat(result["code"]?.jsonPrimitive?.content).isEqualTo("unknown_conversation")
+        }
+    }
+
+    @Test fun `an action with an unparseable conversation id never reaches the source`() = runTest {
+        val source = FakeSyncMessageSource()
+        runEngine(source) { engine, sent ->
+            engine.onSetPin(SyncProtocol.SetPin(conversationId = "nope", value = true))
+            advanceUntilIdle()
+            assertThat(source.actions).isEmpty()
+            val result = sent.first { it.frameType() == "action_result" }.asObject()
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("false")
+            assertThat(result["code"]?.jsonPrimitive?.content)
+                .isEqualTo(SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION)
+        }
+    }
+
+    @Test fun `a throwing action answers action_result ok false internal`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.actionError = IllegalStateException("boom")
+        runEngine(source) { engine, sent ->
+            engine.onMarkRead(SyncProtocol.MarkRead(conversationId = "123"))
+            advanceUntilIdle()
+            val result = sent.first { it.frameType() == "action_result" }.asObject()
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("false")
+            assertThat(result["code"]?.jsonPrimitive?.content)
+                .isEqualTo(SyncProtocol.MessageFailed.INTERNAL)
+            assertThat(result["message"]?.jsonPrimitive?.content).doesNotContain("boom")
+        }
+    }
+
     /**
      * Builds an engine on the test scope and guarantees it is stopped
      * afterwards — the live collectors run forever, so a test that
@@ -421,4 +660,8 @@ class SyncEngineTest {
         Json.parseToJsonElement(this).jsonObject["type"]?.jsonPrimitive?.content
 
     private fun String.asObject(): JsonObject = Json.parseToJsonElement(this).jsonObject
+
+    companion object {
+        private const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
+    }
 }

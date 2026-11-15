@@ -107,6 +107,9 @@ abstract class AppDatabase : RoomDatabase() {
         //   `conversations.pinned_message_at INTEGER` (tous deux nullables) — le message
         //   epingle du fil et la date de l'epinglage (affichee par la banniere).
         //   Strictement additive. Les lignes existantes projettent NULL = rien d'epingle.
-        const val SCHEMA_VERSION = 15
+        // v16 (2026-11-14, Slice 3): ajoute `messages.client_message_id TEXT` (nullable) +
+        //   index UNIQUE — la clé d'idempotence d'un envoi fait depuis un appareil lié.
+        //   Strictement additive. Les lignes existantes projettent NULL.
+        const val SCHEMA_VERSION = 16
     }
 }

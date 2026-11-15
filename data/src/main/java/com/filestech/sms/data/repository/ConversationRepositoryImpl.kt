@@ -856,6 +856,16 @@ class ConversationRepositoryImpl @Inject constructor(
         messageDao.findById(id)?.toDomain()
     }
 
+    // Slice 3 — lookup par clé d'idempotence, AVEC la garde `inVault` inconditionnelle des
+    // lectures de synchronisation : une conversation déplacée au coffre après l'envoi ne doit
+    // plus répondre à sa clé (le chemin d'envoi refuse le coffre avant d'arriver ici, donc un
+    // `null` ici ne peut pas provoquer de double envoi — il provoque un refus).
+    override suspend fun findMessageByClientMessageId(key: String): Message? = withContext(io) {
+        val entity = messageDao.findByClientMessageId(key) ?: return@withContext null
+        if (isVaultConversation(entity.conversationId)) return@withContext null
+        entity.toDomain()
+    }
+
     // Slice 2 — sync reads. All of them refuse vault conversations
     // UNCONDITIONALLY: vault content never leaves the phone, even in
     // an unlocked session (unlike the UI paths, which unmask once the

@@ -29,6 +29,12 @@ data class Message(
      * — purement local pour annoter son propre fil.
      */
     val reactionEmoji: String? = null,
+    /**
+     * Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil lié (UUID généré par
+     * l'appareil pour cet envoi). `null` pour tout le reste. Une seule ligne par envoi la
+     * porte — celle que l'appareil affiche.
+     */
+    val clientMessageId: String? = null,
 ) {
     enum class Type { SMS, MMS }
     enum class Direction { INCOMING, OUTGOING }

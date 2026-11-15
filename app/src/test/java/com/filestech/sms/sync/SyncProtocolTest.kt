@@ -367,8 +367,232 @@ class SyncProtocolTest {
             .isEqualTo("Relay on the phone needs SMS permission to sync messages.")
     }
 
+    // -- Slice 3: send + write-back types -----------------------------
+
+    @Test fun `send_message parses with a reply id`() {
+        val frame = """{"type":"send_message","client_message_id":"$CLIENT_KEY","conversation_id":"123",""" +
+            """"body":"See you at 6","reply_to_message_id":"555"}"""
+        assertThat(SyncProtocol.parse(frame)).isEqualTo(
+            SyncProtocol.Parsed.SendMessage(
+                SyncProtocol.SendMessage(
+                    clientMessageId = CLIENT_KEY,
+                    conversationId = "123",
+                    body = "See you at 6",
+                    replyToMessageId = "555",
+                ),
+            ),
+        )
+    }
+
+    @Test fun `send_message without a reply id parses with null`() {
+        val frame = """{"type":"send_message","client_message_id":"$CLIENT_KEY","conversation_id":"123","body":"Hi"}"""
+        assertThat(SyncProtocol.parse(frame)).isEqualTo(
+            SyncProtocol.Parsed.SendMessage(
+                SyncProtocol.SendMessage(
+                    clientMessageId = CLIENT_KEY,
+                    conversationId = "123",
+                    body = "Hi",
+                    replyToMessageId = null,
+                ),
+            ),
+        )
+    }
+
+    @Test fun `send_message without a client key is malformed`() {
+        assertThat(
+            SyncProtocol.parse("""{"type":"send_message","conversation_id":"123","body":"Hi"}"""),
+        ).isEqualTo(SyncProtocol.Parsed.Malformed)
+    }
+
+    @Test fun `send_message without a body is malformed`() {
+        assertThat(
+            SyncProtocol.parse(
+                """{"type":"send_message","client_message_id":"$CLIENT_KEY","conversation_id":"123"}""",
+            ),
+        ).isEqualTo(SyncProtocol.Parsed.Malformed)
+    }
+
+    @Test fun `mark_read parses`() {
+        assertThat(SyncProtocol.parse("""{"type":"mark_read","conversation_id":"123"}"""))
+            .isEqualTo(
+                SyncProtocol.Parsed.MarkRead(SyncProtocol.MarkRead(conversationId = "123")),
+            )
+    }
+
+    @Test fun `mark_all_read parses with no payload`() {
+        assertThat(SyncProtocol.parse("""{"type":"mark_all_read"}"""))
+            .isEqualTo(SyncProtocol.Parsed.MarkAllRead(SyncProtocol.MarkAllRead))
+    }
+
+    @Test fun `set_pin set_archived and set_muted parse`() {
+        assertThat(SyncProtocol.parse("""{"type":"set_pin","conversation_id":"123","value":true}"""))
+            .isEqualTo(
+                SyncProtocol.Parsed.SetPin(SyncProtocol.SetPin(conversationId = "123", value = true)),
+            )
+        assertThat(SyncProtocol.parse("""{"type":"set_archived","conversation_id":"123","value":false}"""))
+            .isEqualTo(
+                SyncProtocol.Parsed.SetArchived(
+                    SyncProtocol.SetArchived(conversationId = "123", value = false),
+                ),
+            )
+        assertThat(SyncProtocol.parse("""{"type":"set_muted","conversation_id":"123","value":true}"""))
+            .isEqualTo(
+                SyncProtocol.Parsed.SetMuted(SyncProtocol.SetMuted(conversationId = "123", value = true)),
+            )
+    }
+
+    @Test fun `set_pin without a value is malformed`() {
+        assertThat(SyncProtocol.parse("""{"type":"set_pin","conversation_id":"123"}"""))
+            .isEqualTo(SyncProtocol.Parsed.Malformed)
+    }
+
+    @Test fun `set_reaction parses an emoji and a removal`() {
+        assertThat(
+            SyncProtocol.parse(
+                """{"type":"set_reaction","conversation_id":"123","message_id":"789","emoji":"❤️"}""",
+            ),
+        ).isEqualTo(
+            SyncProtocol.Parsed.SetReaction(
+                SyncProtocol.SetReaction(conversationId = "123", messageId = "789", emoji = "❤️"),
+            ),
+        )
+        // Removal: explicit null and absent are the same — both parse to null.
+        assertThat(
+            SyncProtocol.parse(
+                """{"type":"set_reaction","conversation_id":"123","message_id":"789","emoji":null}""",
+            ),
+        ).isEqualTo(
+            SyncProtocol.Parsed.SetReaction(
+                SyncProtocol.SetReaction(conversationId = "123", messageId = "789", emoji = null),
+            ),
+        )
+        assertThat(
+            SyncProtocol.parse("""{"type":"set_reaction","conversation_id":"123","message_id":"789"}"""),
+        ).isEqualTo(
+            SyncProtocol.Parsed.SetReaction(
+                SyncProtocol.SetReaction(conversationId = "123", messageId = "789", emoji = null),
+            ),
+        )
+    }
+
+    @Test fun `set_pinned_message parses a pin and an unpin`() {
+        assertThat(
+            SyncProtocol.parse(
+                """{"type":"set_pinned_message","conversation_id":"123","message_id":"789"}""",
+            ),
+        ).isEqualTo(
+            SyncProtocol.Parsed.SetPinnedMessage(
+                SyncProtocol.SetPinnedMessage(conversationId = "123", messageId = "789"),
+            ),
+        )
+        assertThat(
+            SyncProtocol.parse("""{"type":"set_pinned_message","conversation_id":"123","message_id":null}"""),
+        ).isEqualTo(
+            SyncProtocol.Parsed.SetPinnedMessage(
+                SyncProtocol.SetPinnedMessage(conversationId = "123", messageId = null),
+            ),
+        )
+    }
+
+    @Test fun `message_sent encodes id status and omits a zero blocked count`() {
+        val encoded = SyncProtocol.encodeMessageSent(
+            SyncProtocol.MessageSent(
+                clientMessageId = CLIENT_KEY,
+                messageId = "789",
+                conversationId = "123",
+                status = "pending",
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["type"]?.jsonPrimitive?.content).isEqualTo("message_sent")
+        assertThat(obj["client_message_id"]?.jsonPrimitive?.content).isEqualTo(CLIENT_KEY)
+        assertThat(obj["message_id"]?.jsonPrimitive?.content).isEqualTo("789")
+        assertThat(obj["conversation_id"]?.jsonPrimitive?.content).isEqualTo("123")
+        assertThat(obj["status"]?.jsonPrimitive?.content).isEqualTo("pending")
+        assertThat(obj.containsKey("blocked_count")).isFalse()
+    }
+
+    @Test fun `message_sent carries a nonzero blocked count`() {
+        val encoded = SyncProtocol.encodeMessageSent(
+            SyncProtocol.MessageSent(
+                clientMessageId = CLIENT_KEY,
+                messageId = "789",
+                conversationId = "123",
+                status = "sent",
+                blockedCount = 1,
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["blocked_count"]?.jsonPrimitive?.content).isEqualTo("1")
+    }
+
+    @Test fun `message_failed encodes code and message`() {
+        val encoded = SyncProtocol.encodeMessageFailed(
+            SyncProtocol.MessageFailed(
+                clientMessageId = CLIENT_KEY,
+                conversationId = "123",
+                code = SyncProtocol.MessageFailed.HUB_NOT_DEFAULT_SMS,
+                message = "Relay on the phone isn't your default messaging app.",
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["type"]?.jsonPrimitive?.content).isEqualTo("message_failed")
+        assertThat(obj["client_message_id"]?.jsonPrimitive?.content).isEqualTo(CLIENT_KEY)
+        assertThat(obj["code"]?.jsonPrimitive?.content).isEqualTo("hub_not_default_sms")
+        assertThat(obj["message"]?.jsonPrimitive?.content)
+            .isEqualTo("Relay on the phone isn't your default messaging app.")
+    }
+
+    @Test fun `action_result encodes ok with the action echo`() {
+        val encoded = SyncProtocol.encodeActionResult(
+            SyncProtocol.ActionResult(
+                action = "set_pin",
+                conversationId = "123",
+                ok = true,
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["type"]?.jsonPrimitive?.content).isEqualTo("action_result")
+        assertThat(obj["action"]?.jsonPrimitive?.content).isEqualTo("set_pin")
+        assertThat(obj["conversation_id"]?.jsonPrimitive?.content).isEqualTo("123")
+        assertThat(obj["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+        assertThat(obj.containsKey("code")).isFalse()
+        assertThat(obj.containsKey("message")).isFalse()
+        assertThat(obj.containsKey("message_id")).isFalse()
+    }
+
+    @Test fun `action_result encodes a failure with code and message id`() {
+        val encoded = SyncProtocol.encodeActionResult(
+            SyncProtocol.ActionResult(
+                action = "set_reaction",
+                conversationId = "123",
+                messageId = "789",
+                ok = false,
+                code = SyncProtocol.MessageFailed.SEND_FAILED,
+                message = "The reaction was saved on the phone but could not be sent.",
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["ok"]?.jsonPrimitive?.content).isEqualTo("false")
+        assertThat(obj["code"]?.jsonPrimitive?.content).isEqualTo("send_failed")
+        assertThat(obj["message_id"]?.jsonPrimitive?.content).isEqualTo("789")
+    }
+
+    @Test fun `message_new carries client_message_id only when present`() {
+        val withKey = sampleMessage(id = 789, conversationId = 123, clientMessageId = CLIENT_KEY)
+        val encoded = SyncProtocol.encodeMessageNew(SyncProtocol.MessageNew(withKey))
+        val payload = Json.parseToJsonElement(encoded).jsonObject["message"]!!.jsonObject
+        assertThat(payload["client_message_id"]?.jsonPrimitive?.content).isEqualTo(CLIENT_KEY)
+
+        val withoutKey = sampleMessage(id = 790, conversationId = 123)
+        val encodedPlain = SyncProtocol.encodeMessageNew(SyncProtocol.MessageNew(withoutKey))
+        val plainPayload = Json.parseToJsonElement(encodedPlain).jsonObject["message"]!!.jsonObject
+        assertThat(plainPayload.containsKey("client_message_id")).isFalse()
+    }
+
     companion object {
         private const val DEVICE_ID = "123e4567-e89b-12d3-a456-426614174000"
         private const val HUB_ID = "123e4567-e89b-12d3-a456-426614174099"
+        private const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
     }
 }

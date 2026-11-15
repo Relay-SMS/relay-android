@@ -179,6 +179,15 @@ interface ConversationRepository {
     suspend fun findMessageForResend(id: Long): Message?
 
     /**
+     * Slice 3 — lookup d'un message par sa **clé d'idempotence** (l'UUID qu'un appareil lié
+     * a généré pour cet envoi). `null` si aucune ligne ne porte la clé — envoi jamais vu,
+     * ou message purgé depuis. La garde `inVault` est INCONDITIONNELLE, comme les autres
+     * lectures de synchronisation : le contenu du coffre ne quitte jamais le téléphone, et
+     * une conversation déplacée au coffre après l'envoi ne doit plus répondre à sa clé.
+     */
+    suspend fun findMessageByClientMessageId(key: String): Message?
+
+    /**
      * v1.3.1 — pose / change / retire la réaction emoji locale sur [messageId] et retourne
      * le type de transition pour permettre au caller (ViewModel) de décider d'un éventuel
      * envoi SMS en aval. Sémantique :

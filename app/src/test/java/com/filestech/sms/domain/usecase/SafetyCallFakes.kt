@@ -177,6 +177,7 @@ internal class NoopMirror(
         initialStatus: MessageStatus,
         replyToMessageId: Long?,
         localMirrorBody: String?,
+        clientMessageId: String?,
     ): Long = prochainId++
 
     override suspend fun updateOutgoingStatus(
@@ -205,6 +206,7 @@ internal class NoopMirror(
         textBody: String,
         date: Long,
         subId: Int?,
+        clientMessageId: String?,
     ): Long = error("non utilise")
 
     override suspend fun upsertOutgoingGroupMms(
@@ -213,6 +215,7 @@ internal class NoopMirror(
         textBody: String,
         date: Long,
         subId: Int?,
+        clientMessageId: String?,
     ): Long = 0L
 
     override suspend fun upsertGroupEcho(
@@ -223,6 +226,7 @@ internal class NoopMirror(
         status: MessageStatus,
         replyToMessageId: Long?,
         attachments: List<MediaAttachmentSpec>,
+        clientMessageId: String?,
     ): Long = error("non utilise")
 }
 

@@ -15,6 +15,11 @@ import kotlinx.serialization.Serializable
  * All ids on the wire are decimal strings of the phone's Room ids
  * (the desktop's ids are strings everywhere, and this dodges any JS
  * number-precision concern).
+ *
+ * Slice 3 adds the send + write-back surface below. Reads and writes
+ * hit the same store, the same DAOs, and the same glue file, so one
+ * seam stays enough — a second interface would be more wiring for no
+ * isolation gain.
  */
 interface SyncMessageSource {
     /** One-shot snapshot of every non-vault conversation (archived included), most recent first. */
@@ -54,7 +59,71 @@ interface SyncMessageSource {
      * until the app is made the default.
      */
     suspend fun isDefaultSmsApp(): Boolean
+
+    // -- Slice 3: send + write-back -----------------------------------
+
+    /**
+     * Sends a text message in [conversationId]. [clientMessageId] is
+     * the desktop's UUID key for this send attempt: a retry reuses
+     * the same key, and the implementation MUST dedup on it — a row
+     * already carrying the key is never sent twice (pending / sent /
+     * delivered → return the stored result; failed → re-dispatch the
+     * existing row). The key is stamped on the message row at insert
+     * time, before the radio dispatch, so the dedup survives a phone
+     * restart. The implementation resolves the recipients from the
+     * conversation itself and refuses vault conversations.
+     */
+    suspend fun sendMessage(
+        clientMessageId: String,
+        conversationId: Long,
+        body: String,
+        replyToMessageId: Long?,
+    ): SendResult
+
+    /** Applies one write-back action; returns whether the phone applied it. */
+    suspend fun markRead(conversationId: Long): ActionResult
+    suspend fun markAllRead(): ActionResult
+    suspend fun setPinned(conversationId: Long, pinned: Boolean): ActionResult
+    suspend fun setArchived(conversationId: Long, archived: Boolean): ActionResult
+    suspend fun setMuted(conversationId: Long, muted: Boolean): ActionResult
+
+    /**
+     * Reacts to a message ([emoji] null = remove the reaction). The
+     * local reaction is set first, then the reaction SMS is sent —
+     * the phone's own order; if the SMS fails, the local reaction
+     * stays set and the result carries `send_failed`.
+     */
+    suspend fun setReaction(conversationId: Long, messageId: Long, emoji: String?): ActionResult
+
+    /** Pins a message in its thread ([messageId] null = unpin). */
+    suspend fun setPinnedMessage(conversationId: Long, messageId: Long?): ActionResult
 }
+
+/**
+ * Slice 3 — what a send did: the `message_sent` / `message_failed`
+ * payload. Codes are [SyncProtocol.MessageFailed]'s.
+ */
+sealed interface SendResult {
+    /**
+     * The send was dispatched (or was already dispatched — the dedup
+     * returning the stored row). [messageId] is the phone's Room id
+     * of the row the desktop shows; [status] is the wire status
+     * string at ack time (`"pending"` normally); [blockedCount] is
+     * how many recipients were blocked but others were sent (group
+     * broadcast only).
+     */
+    data class Sent(
+        val messageId: Long,
+        val status: String,
+        val blockedCount: Int = 0,
+    ) : SendResult
+
+    /** The send was refused or failed. [message] is user-facing and generic. */
+    data class Failed(val code: String, val message: String) : SendResult
+}
+
+/** Slice 3 — what an action did: the `action_result` payload. */
+data class ActionResult(val ok: Boolean, val code: String? = null, val message: String? = null)
 
 /**
  * One conversation on the wire (§3.3 CONVERSATION). Plain data — not
@@ -92,6 +161,12 @@ data class SyncedConversation(
  * `"sent"` | `"delivered"` | `"failed"` | `"received"` | `"scheduled"`.
  * [address] is the sender's address (for group messages, the sender,
  * not the group). Attachments are metadata only in Slice 2 — no bytes.
+ *
+ * Slice 3 — [clientMessageId] is the desktop's UUID key for a send,
+ * present only on messages the desktop itself sent (the phone stamps
+ * the key on the row at send time). It is the one field with a
+ * default, so it is OMITTED when null — unlike the other nullable
+ * fields, which encode as explicit nulls.
  */
 @Serializable
 data class SyncedMessage(
@@ -110,6 +185,7 @@ data class SyncedMessage(
     @SerialName("reply_to_message_id") val replyToMessageId: String?,
     @SerialName("reaction") val reaction: String?,
     @SerialName("attachments") val attachments: List<SyncedAttachment>,
+    @SerialName("client_message_id") val clientMessageId: String? = null,
 )
 
 /** One attachment's metadata on the wire (§3.3 ATTACHMENT) — no bytes in Slice 2. */

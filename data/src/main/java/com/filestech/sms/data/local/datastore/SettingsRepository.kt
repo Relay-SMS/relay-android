@@ -444,7 +444,8 @@ class SettingsRepository(
                 unreadResetV180 = p[K.unreadResetV180] ?: false,
                 dedupSameNumberV1230 = p[K.dedupSameNumberV1230] ?: false,
                 attachmentsMovedToFilesDirV147 = p[K.attachmentsMovedToFilesDirV147] ?: false,
-                reactionReparseDone = p[K.reactionReparseDone] ?: false,
+                reactionReparseVersion = p[K.reactionReparseVersion]
+                    ?: if (p[K.reactionReparseDone] == true) 1 else 0,
                 startupDbMigrationsDone = p[K.startupDbMigrationsDone] ?: false,
                 staleConversationPreviewsRepairedV1240 = p[K.staleConversationPreviewsRepairedV1240] ?: false,
                 reactionFormatMigreV12812 = p[K.reactionFormatMigreV12812] ?: false,
@@ -572,7 +573,7 @@ class SettingsRepository(
         this[K.keepAliveService] = s.advanced.keepAliveService
         this[K.unreadResetV180] = s.advanced.unreadResetV180
         this[K.dedupSameNumberV1230] = s.advanced.dedupSameNumberV1230
-        this[K.reactionReparseDone] = s.advanced.reactionReparseDone
+        this[K.reactionReparseVersion] = s.advanced.reactionReparseVersion
         this[K.attachmentsMovedToFilesDirV147] = s.advanced.attachmentsMovedToFilesDirV147
         this[K.startupDbMigrationsDone] = s.advanced.startupDbMigrationsDone
         this[K.staleConversationPreviewsRepairedV1240] = s.advanced.staleConversationPreviewsRepairedV1240
@@ -756,8 +757,17 @@ class SettingsRepository(
         val mmsImportCompleted = booleanPreferencesKey("advanced.mmsImportCompleted")
 
         /**
+         * Versioned gate for the retroactive reaction reparse (v2 folds our
+         * own outgoing tapbacks too). See [com.filestech.sms.domain.settings
+         * .AdvancedSettings.reactionReparseVersion].
+         */
+        val reactionReparseVersion = intPreferencesKey("advanced.reactionReparseVersion")
+
+        /**
          * Feedback round 7 — one-shot flag for the retroactive reaction reparse.
-         * See [com.filestech.sms.domain.settings.AdvancedSettings.reactionReparseDone].
+         * LEGACY: superseded by [reactionReparseVersion]; kept only so the
+         * read can migrate installs that ran v1 (`true` → version 1). Never
+         * written anymore.
          */
         val reactionReparseDone = booleanPreferencesKey("advanced.reactionReparseDone")
         val splashShown = booleanPreferencesKey("advanced.splashShown")

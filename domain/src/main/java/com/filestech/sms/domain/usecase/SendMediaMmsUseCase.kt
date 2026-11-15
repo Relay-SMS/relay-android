@@ -49,6 +49,12 @@ class SendMediaMmsUseCase @Inject constructor(
          * est lu par l'appelant, qui sait aussi si la conversation est un groupe.
          */
         groupMms: Boolean = false,
+        /**
+         * Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil lié, cf.
+         * [SendSmsUseCase.invoke]. Une seule ligne la porte : la ligne de MMS de groupe, l'écho
+         * de groupe, ou la ligne du destinataire unique.
+         */
+        clientMessageId: String? = null,
     ): Outcome<SendReport> {
         refusPrealable(recipients, attachments, textBody)?.let { return Outcome.Failure(it) }
 
@@ -95,9 +101,20 @@ class SendMediaMmsUseCase @Inject constructor(
         }
 
         if (groupMms && recipients.size > 1) {
-            return envoiDeGroupe(recipients, mirrorSpecs, pduAttachments, textBody, effectiveSubId, deliveryReports)
+            return envoiDeGroupe(
+                recipients,
+                mirrorSpecs,
+                pduAttachments,
+                textBody,
+                effectiveSubId,
+                deliveryReports,
+                clientMessageId,
+            )
         }
 
+        // Slice 3 — même règle que côté SMS : la clé ne va que sur UNE ligne.
+        val cleSurLigne = clientMessageId.takeIf { !echoInGroup && recipients.size == 1 }
+        val cleSurEcho = clientMessageId.takeIf { echoInGroup }
         // v1.28.3 (F21, second passage) — le `continue` muet était ici AUSSI : le correctif
         // n'avait été posé que sur `SendSmsUseCase`. v1.28.4 — la boucle n'existe plus qu'une
         // fois, dans [EnvoiParDestinataire] ; ce chemin ne peut plus diverger du SMS.
@@ -111,6 +128,7 @@ class SendMediaMmsUseCase @Inject constructor(
                     textBody = textBody,
                     date = now,
                     subId = effectiveSubId,
+                    clientMessageId = cleSurLigne,
                 )
             },
             envoi = { localId, r ->
@@ -132,6 +150,7 @@ class SendMediaMmsUseCase @Inject constructor(
                         subId = effectiveSubId,
                         status = statut,
                         attachments = mirrorSpecs,
+                        clientMessageId = cleSurEcho,
                     )
                 }
             } else {
@@ -159,6 +178,7 @@ class SendMediaMmsUseCase @Inject constructor(
         textBody: String,
         subId: Int?,
         deliveryReports: Boolean,
+        clientMessageId: String? = null,
     ): Outcome<SendReport> = envoi.enGroupe(
         recipients = recipients,
         sansRemise = "no MMS dispatched",
@@ -170,6 +190,7 @@ class SendMediaMmsUseCase @Inject constructor(
                 textBody = textBody,
                 date = System.currentTimeMillis(),
                 subId = subId,
+                clientMessageId = clientMessageId,
             )
         },
         envoi = { localId, cibles ->

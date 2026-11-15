@@ -22,6 +22,7 @@ import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.MessageSearchHit
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.settings.AdvancedSettings
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.SortMode
 import com.filestech.sms.domain.usecase.BlockNumberUseCase
@@ -148,9 +149,9 @@ class ConversationsViewModel @Inject constructor(
     private val contactPhotoTick = MutableStateFlow(0L)
 
     /**
-     * Feedback round 7 — in-memory guard for the one-time reaction reparse:
-     * prevents two `Idle` emissions from starting it twice in the same
-     * process. The durable gate is `AdvancedSettings.reactionReparseDone`.
+     * Feedback round 7 — in-memory guard for the reaction reparse: prevents
+     * two `Idle` emissions from starting it twice in the same process. The
+     * durable gate is `AdvancedSettings.reactionReparseVersion`.
      */
     private var reactionReparseStarted = false
 
@@ -485,14 +486,16 @@ class ConversationsViewModel @Inject constructor(
     }
 
     /**
-     * Feedback round 7 — one-time retroactive reaction reparse.
+     * Feedback round 7 — retroactive reaction reparse.
      *
      * Old reaction texts (`Reacted ❤️ to «…»`, iOS tapbacks, French readable
      * forms) that arrived before this build — or before Relay became the
      * default app — sit in Room as plain text bubbles. Once the history is in
      * Room, [ConversationMirror.reparseStoredReactions] folds them onto their
-     * target messages; the DataStore flag
-     * `AdvancedSettings.reactionReparseDone` makes it run exactly once.
+     * target messages; the versioned DataStore gate
+     * `AdvancedSettings.reactionReparseVersion` makes each version run
+     * exactly once (v2 re-runs on installs that already ran v1, to fold our
+     * own outgoing tapbacks too).
      *
      * Trigger — a sync completion observed while default:
      *   - fresh install: the first sync after the role grant is the big
@@ -509,7 +512,7 @@ class ConversationsViewModel @Inject constructor(
      * completes before [UiState.isDefaultSmsApp] flips to `true` is still
      * caught when the UiState emission lands.
      *
-     * The flag is set only on success — a failed run (DB error) retries on
+     * The version is set only on success — a failed run (DB error) retries on
      * the next sync completion instead of losing the reactions silently.
      */
     private fun observeSyncForReactionReparse() {
@@ -524,14 +527,20 @@ class ConversationsViewModel @Inject constructor(
                 }
                 if (reactionReparseStarted || !isDefault) return@collect
                 val advanced = settings.state.value.advanced
-                if (advanced.reactionReparseDone) return@collect
+                if (advanced.reactionReparseVersion >= AdvancedSettings.REACTION_REPARSE_CURRENT_VERSION) {
+                    return@collect
+                }
                 if (!sawRunning && advanced.lastSyncedSmsId == 0L) return@collect
                 reactionReparseStarted = true
                 try {
                     val result = mirror.reparseStoredReactions()
                     Timber.i("ConversationsViewModel: reaction reparse done: %s", result)
                     settings.update { s ->
-                        s.copy(advanced = s.advanced.copy(reactionReparseDone = true))
+                        s.copy(
+                            advanced = s.advanced.copy(
+                                reactionReparseVersion = AdvancedSettings.REACTION_REPARSE_CURRENT_VERSION,
+                            ),
+                        )
                     }
                 } catch (ce: kotlinx.coroutines.CancellationException) {
                     throw ce

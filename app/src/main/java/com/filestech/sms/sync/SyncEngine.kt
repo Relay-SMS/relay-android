@@ -23,6 +23,13 @@ import java.util.concurrent.ConcurrentHashMap
  * concurrently with the initial stream — upserts by id make
  * duplicates harmless, so no mode switch is needed.
  *
+ * Slice 3 adds the send + write-back handlers ([onSendMessage] and
+ * the action handlers), in the same shape: each runs in its own job
+ * on the engine scope, so a slow send never blocks the frame loop,
+ * the heartbeat, or an in-progress sync stream. The engine itself
+ * holds no send state — the dedup lives in the source (§3 of the
+ * Slice 3 design), so a dead session loses nothing.
+ *
  * The engine holds no state beyond the session: cursors live on the
  * desktop. The per-conversation "max sent id" tracking exists only
  * to keep the live path from re-pushing whole threads.
@@ -100,6 +107,91 @@ class SyncEngine(
             } catch (t: Throwable) {
                 Timber.w(t, "SyncEngine: messages request failed")
                 runCatching { send(syncErrorInternal()) }
+            }
+        }
+    }
+
+    // -- Slice 3: send + write-back -----------------------------------
+    // Same shape as the read handlers: each starts a job and returns
+    // immediately, so a slow send never blocks the frame loop.
+
+    /** Handles a `send_message`: answered with `message_sent` or `message_failed`. */
+    fun onSendMessage(request: SyncProtocol.SendMessage) {
+        scope.launch {
+            try {
+                runSendMessage(request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: send failed")
+                runCatching { send(sendFailedInternal(request)) }
+            }
+        }
+    }
+
+    /** Handles a `mark_read`, answered with `action_result`. */
+    fun onMarkRead(request: SyncProtocol.MarkRead) {
+        scope.launch {
+            runAction("mark_read", request.conversationId, null) { source.markRead(it) }
+        }
+    }
+
+    /** Handles a `mark_all_read`, answered with `action_result`. */
+    fun onMarkAllRead() {
+        scope.launch {
+            runAction("mark_all_read", null, null) { source.markAllRead() }
+        }
+    }
+
+    /** Handles a `set_pin`, answered with `action_result`. */
+    fun onSetPin(request: SyncProtocol.SetPin) {
+        scope.launch {
+            runAction("set_pin", request.conversationId, null) { source.setPinned(it, request.value) }
+        }
+    }
+
+    /** Handles a `set_archived`, answered with `action_result`. */
+    fun onSetArchived(request: SyncProtocol.SetArchived) {
+        scope.launch {
+            runAction("set_archived", request.conversationId, null) { source.setArchived(it, request.value) }
+        }
+    }
+
+    /** Handles a `set_muted`, answered with `action_result`. */
+    fun onSetMuted(request: SyncProtocol.SetMuted) {
+        scope.launch {
+            runAction("set_muted", request.conversationId, null) { source.setMuted(it, request.value) }
+        }
+    }
+
+    /** Handles a `set_reaction`, answered with `action_result`. */
+    fun onSetReaction(request: SyncProtocol.SetReaction) {
+        scope.launch {
+            runAction("set_reaction", request.conversationId, request.messageId) { conversationId ->
+                val messageId = request.messageId.toLongOrNull()
+                    ?: return@runAction ActionResult(
+                        ok = false,
+                        code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
+                        message = "Message not found.",
+                    )
+                source.setReaction(conversationId, messageId, request.emoji)
+            }
+        }
+    }
+
+    /** Handles a `set_pinned_message`, answered with `action_result`. */
+    fun onSetPinnedMessage(request: SyncProtocol.SetPinnedMessage) {
+        scope.launch {
+            runAction("set_pinned_message", request.conversationId, request.messageId) { conversationId ->
+                val messageId = request.messageId?.toLongOrNull()
+                if (request.messageId != null && messageId == null) {
+                    return@runAction ActionResult(
+                        ok = false,
+                        code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
+                        message = "Message not found.",
+                    )
+                }
+                source.setPinnedMessage(conversationId, messageId)
             }
         }
     }
@@ -281,6 +373,107 @@ class SyncEngine(
         notePushed(conversationId, page)
     }
 
+    private suspend fun runSendMessage(request: SyncProtocol.SendMessage) {
+        val conversationId = request.conversationId.toLongOrNull()
+        if (conversationId == null) {
+            send(
+                SyncProtocol.encodeMessageFailed(
+                    SyncProtocol.MessageFailed(
+                        clientMessageId = request.clientMessageId,
+                        conversationId = request.conversationId,
+                        code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
+                        message = "Conversation not found.",
+                    ),
+                ),
+            )
+            return
+        }
+        // An unparseable reply id is tolerated like a dangling one
+        // (the phone's own send path renders a placeholder quote) —
+        // the reply is dropped, the message still goes out.
+        val replyToMessageId = request.replyToMessageId?.toLongOrNull()
+        val result = source.sendMessage(
+            request.clientMessageId,
+            conversationId,
+            request.body,
+            replyToMessageId,
+        )
+        when (result) {
+            is SendResult.Sent -> send(
+                SyncProtocol.encodeMessageSent(
+                    SyncProtocol.MessageSent(
+                        clientMessageId = request.clientMessageId,
+                        messageId = result.messageId.toString(),
+                        conversationId = request.conversationId,
+                        status = result.status,
+                        blockedCount = result.blockedCount,
+                    ),
+                ),
+            )
+            is SendResult.Failed -> send(
+                SyncProtocol.encodeMessageFailed(
+                    SyncProtocol.MessageFailed(
+                        clientMessageId = request.clientMessageId,
+                        conversationId = request.conversationId,
+                        code = result.code,
+                        message = result.message,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /**
+     * Runs one write-back action and answers `action_result`.
+     * [conversationId] is the raw wire string (parsed here; an
+     * unparseable id answers `unknown_conversation`, never a crash).
+     * `mark_all_read` passes null and its [call] ignores the id. A
+     * thrown error answers `ok: false` with `internal` — the socket
+     * stays up, and the desktop reverts its optimistic change.
+     */
+    private suspend fun runAction(
+        action: String,
+        conversationId: String?,
+        messageId: String?,
+        call: suspend (conversationId: Long) -> ActionResult,
+    ) {
+        val result = try {
+            val id = conversationId?.toLongOrNull()
+            if (conversationId != null && id == null) {
+                ActionResult(
+                    ok = false,
+                    code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
+                    message = "Conversation not found.",
+                )
+            } else {
+                call(id ?: 0L)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            Timber.w(t, "SyncEngine: action $action failed")
+            ActionResult(
+                ok = false,
+                code = SyncProtocol.MessageFailed.INTERNAL,
+                message = "The action could not be applied.",
+            )
+        }
+        runCatching {
+            send(
+                SyncProtocol.encodeActionResult(
+                    SyncProtocol.ActionResult(
+                        action = action,
+                        conversationId = conversationId,
+                        messageId = messageId,
+                        ok = result.ok,
+                        code = result.code,
+                        message = result.message,
+                    ),
+                ),
+            )
+        }
+    }
+
     /**
      * Records pushed messages: advances the live path's
      * per-conversation max id (so the conversation collector never
@@ -443,6 +636,16 @@ class SyncEngine(
             SyncProtocol.SyncError(
                 code = SyncProtocol.SyncError.INTERNAL,
                 message = "Sync failed on the phone. Try again.",
+            ),
+        )
+
+    private fun sendFailedInternal(request: SyncProtocol.SendMessage): String =
+        SyncProtocol.encodeMessageFailed(
+            SyncProtocol.MessageFailed(
+                clientMessageId = request.clientMessageId,
+                conversationId = request.conversationId,
+                code = SyncProtocol.MessageFailed.INTERNAL,
+                message = "The message could not be sent.",
             ),
         )
 
