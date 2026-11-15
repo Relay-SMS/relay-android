@@ -67,6 +67,18 @@ class SyncEngineTest {
         }
     }
 
+    @Test fun `sync_started reports the phone's default-SMS status`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.isDefaultSms = false
+        source.snapshot = listOf(sampleConversation(id = 1, messageCount = 0))
+        runEngine(source) { engine, sent ->
+            engine.onSyncRequest(SyncProtocol.SyncRequest(mode = "full"))
+            advanceUntilIdle()
+            val started = sent.first { it.frameType() == "sync_started" }.asObject()
+            assertThat(started["hub_is_default_sms"]?.jsonPrimitive?.content).isEqualTo("false")
+        }
+    }
+
     @Test fun `full sync pages a long thread at 200`() = runTest {
         val source = FakeSyncMessageSource()
         source.snapshot = listOf(sampleConversation(id = 1, messageCount = 250))

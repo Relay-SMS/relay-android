@@ -140,6 +140,7 @@ class SyncEngine(
                     totalConversations = conversations.size,
                     totalMessages = totalMessages,
                     cursorMessageId = cursor.toString(),
+                    hubIsDefaultSms = source.isDefaultSmsApp(),
                 ),
             ),
         )

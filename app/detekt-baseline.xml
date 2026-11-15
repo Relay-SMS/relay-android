@@ -324,6 +324,7 @@
     <ID>SpreadOperator:MessageTextWithLinks.kt$(*URL_TRAILING_PUNCTUATION)</ID>
     <ID>StringTemplate:SafetyCallSetupScreen.kt$${rem}</ID>
     <ID>StringTemplate:SettingsScreen.kt$${rem}</ID>
+    <ID>TooManyFunctions:SyncProtocol.kt$SyncProtocol</ID>
     <ID>TooManyFunctions:ThreadViewModel.kt$ThreadViewModel : ViewModel</ID>
     <ID>UnusedImports:AppearanceDialog.kt$import androidx.compose.foundation.layout.padding</ID>
     <ID>UnusedImports:AudioMessageBubble.kt$import androidx.compose.foundation.layout.Spacer</ID>

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.map
  */
 internal class FakeSyncMessageSource : SyncMessageSource {
     var readiness: Readiness = Readiness.Ready
+    var isDefaultSms: Boolean = true
     var snapshot: List<SyncedConversation> = emptyList()
     val conversationsFlow = MutableSharedFlow<List<SyncedConversation>>(replay = 1)
     val messagesByConversation = mutableMapOf<Long, MutableList<SyncedMessage>>()
@@ -62,6 +63,8 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         statesFlow.map { states -> ids.mapNotNull { states[it] } }
 
     override suspend fun readiness(): Readiness = readiness
+
+    override suspend fun isDefaultSmsApp(): Boolean = isDefaultSms
 
     /** Adds [message] to its conversation's store and advances the max id. */
     fun store(message: SyncedMessage) {

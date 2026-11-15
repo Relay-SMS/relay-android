@@ -5,13 +5,17 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.provider.Telephony
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.filestech.sms.MainActivity
 import com.filestech.sms.R
@@ -53,6 +57,13 @@ import javax.inject.Inject
  *
  * The notification is plain and neutral — no device names, no counts,
  * nothing a shoulder-surfer could use.
+ *
+ * While it runs, the service also listens for the system's
+ * default-SMS-change broadcast and answers it with an immediate
+ * role re-check, so the desktop's live-sync warning clears the
+ * moment the user switches the default app in Settings instead of
+ * waiting for the server's 30 s watchdog tick (which stays as the
+ * safety net in case the broadcast is ever missed on some device).
  */
 @AndroidEntryPoint
 class SyncService : Service() {
@@ -62,11 +73,32 @@ class SyncService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * Listens for the system broadcast sent to both the old and the
+     * new default package when the phone's default SMS app changes,
+     * so the desktop's warning clears the moment the user switches.
+     * The broadcast is only a trigger: the re-check in
+     * [SyncServer.refreshHubStatus] is the single source of truth —
+     * the broadcast's extra is never trusted as the state itself.
+     */
+    private val defaultSmsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != Telephony.Sms.Intents.ACTION_DEFAULT_SMS_PACKAGE_CHANGED) return
+            scope.launch {
+                runCatching { syncServer.refreshHubStatus() }
+            }
+        }
+    }
+
+    /** Whether [defaultSmsReceiver] is currently registered. */
+    private var defaultSmsReceiverRegistered = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
+        registerDefaultSmsReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -119,9 +151,35 @@ class SyncService : Service() {
     }
 
     override fun onDestroy() {
+        if (defaultSmsReceiverRegistered) {
+            defaultSmsReceiverRegistered = false
+            runCatching { unregisterReceiver(defaultSmsReceiver) }
+        }
         scope.launch {
             runCatching { syncServer.stop() }
             scope.cancel()
+        }
+    }
+
+    /**
+     * Registers [defaultSmsReceiver] for the default-SMS-change
+     * broadcast. RECEIVER_EXPORTED is required on API 33+: the
+     * broadcast comes from the system (another UID), and an
+     * unexported receiver never sees it. `ContextCompat` keeps the
+     * call compiling against minSdk 26. If registration fails, the
+     * server's 30 s watchdog re-check still covers the role change.
+     */
+    private fun registerDefaultSmsReceiver() {
+        runCatching {
+            ContextCompat.registerReceiver(
+                this,
+                defaultSmsReceiver,
+                IntentFilter(Telephony.Sms.Intents.ACTION_DEFAULT_SMS_PACKAGE_CHANGED),
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            defaultSmsReceiverRegistered = true
+        }.onFailure { t ->
+            Timber.w(t, "SyncService: default-SMS receiver not registered — 30 s re-check still applies")
         }
     }
 

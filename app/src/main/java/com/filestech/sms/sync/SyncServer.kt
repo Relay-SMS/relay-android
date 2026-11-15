@@ -95,6 +95,9 @@ class SyncServer @Inject constructor(
     /** Device ids with a live authenticated socket — the "Connected now" state. */
     val connectedDeviceIds: StateFlow<Set<String>> = _connectedDeviceIds.asStateFlow()
 
+    /** Last default-SMS status broadcast (null = never checked). */
+    private var lastHubStatus: Boolean? = null
+
     /**
      * Starts the server: TLS identity, engine, mDNS, silence watchdog.
      * Idempotent — a second call while running is a no-op. Throws if
@@ -161,6 +164,21 @@ class SyncServer @Inject constructor(
         }
     }
 
+    /**
+     * Tells every authenticated session whether this app is the
+     * phone's default SMS app — the desktop shows (or clears) its
+     * live-sync warning from this. Called from [refreshHubStatus]
+     * when the role changes; a dead socket just skips.
+     */
+    suspend fun broadcastHubStatus(isDefaultSms: Boolean) {
+        val frame = SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms))
+        for (handler in sessions.keys) {
+            if (handler.isAuthenticated) {
+                runCatching { handler.sendText(frame) }
+            }
+        }
+    }
+
     private fun startWatchdog() {
         watchdogJob = scope.launch {
             while (isActive) {
@@ -177,7 +195,32 @@ class SyncServer @Inject constructor(
                         runCatching { handler.drop("silent too long") }
                     }
                 }
+                refreshHubStatus()
             }
+        }
+    }
+
+    /**
+     * Re-checks the default-SMS role and pushes `hub_status` when it
+     * changed, so the desktop's warning clears — or appears — as soon
+     * as the user switches the default app in Settings. The instant
+     * path is the system's `ACTION_DEFAULT_SMS_PACKAGE_CHANGED`
+     * broadcast, which [SyncService] listens for while it runs and
+     * answers by calling this; the watchdog's 30 s tick below calls
+     * it too, as a safety net in case the broadcast is ever missed
+     * on some device. A re-check, not a listener on the role itself:
+     * `RoleManager`'s role-change listener is a system API, absent
+     * from the public SDK (verified against the API 36 stubs), so
+     * there is nothing to subscribe to — and the check itself is one
+     * cheap synchronous call. The first check also broadcasts
+     * (lastHubStatus starts null), which establishes the status for
+     * sessions that connected before any sync ran.
+     */
+    suspend fun refreshHubStatus() {
+        val current = runCatching { messageSource.isDefaultSmsApp() }.getOrNull() ?: return
+        if (current != lastHubStatus) {
+            lastHubStatus = current
+            runCatching { broadcastHubStatus(current) }
         }
     }
 

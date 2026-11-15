@@ -81,6 +81,11 @@ class SyncSessionHandler(
         close(reason)
     }
 
+    /** Sends one outbound frame (the server's broadcasts use this). */
+    internal suspend fun sendText(text: String) {
+        send(text)
+    }
+
     private suspend fun onHello(hello: SyncProtocol.Hello) {
         if (isAuthenticated || pendingChallenge != null) {
             // A second hello is a protocol violation, not a re-auth.

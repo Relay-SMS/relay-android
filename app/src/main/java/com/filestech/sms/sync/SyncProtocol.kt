@@ -153,13 +153,20 @@ object SyncProtocol {
         @SerialName("limit") val limit: Int? = null,
     )
 
-    /** Server → client: first reply to `sync_request` — totals + cursor. */
+    /**
+     * Server → client: first reply to `sync_request` — totals +
+     * cursor. [hubIsDefaultSms] tells the desktop whether the hub app
+     * is the phone's default SMS app: when it is not, new messages
+     * only reach the mirror on app open or the periodic import, so
+     * the desktop warns that live sync will lag.
+     */
     @Serializable
     data class SyncStarted(
         @SerialName("mode") val mode: String,
         @SerialName("total_conversations") val totalConversations: Int,
         @SerialName("total_messages") val totalMessages: Long,
         @SerialName("cursor_message_id") val cursorMessageId: String,
+        @SerialName("hub_is_default_sms") val hubIsDefaultSms: Boolean,
     )
 
     /** Server → client: one batch of the conversation snapshot (100 per batch). */
@@ -242,6 +249,20 @@ object SyncProtocol {
     }
 
     /**
+     * Server → client: the hub's default-SMS status changed (the user
+     * switched the default app in Settings). Pushed to every
+     * authenticated session so the desktop's warning clears — or
+     * appears — without waiting for the next sync; the server
+     * re-checks the role every 30 s and pushes on change. The same
+     * value rides on every `sync_started`, which is how a fresh
+     * connection learns it first.
+     */
+    @Serializable
+    data class HubStatus(
+        @SerialName("is_default_sms") val isDefaultSms: Boolean,
+    )
+
+    /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
      * know yet); [Malformed] is a protocol violation.
@@ -321,6 +342,8 @@ object SyncProtocol {
         withType(value, "conversation_deleted").toString()
 
     fun encodeSyncError(value: SyncError): String = withType(value, "sync_error").toString()
+
+    fun encodeHubStatus(value: HubStatus): String = withType(value, "hub_status").toString()
 
     /**
      * The `type` field is not part of the data classes (it is routing,

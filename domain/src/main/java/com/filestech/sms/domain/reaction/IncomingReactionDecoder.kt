@@ -29,11 +29,14 @@ package com.filestech.sms.domain.reaction
  *     strips U+200B from the body before [decode] runs, and the framing would be
  *     gone by then.
  *
- * **Pure emojis are NOT decoded.** Relay's "emoji only" reaction mode (cf.
- * `SendingSettings.reactionEmojiOnly`) sends just the emoji byte sequence — but a
- * real text message containing only an emoji ("👍 great job!") is ambiguous and we
- * MUST NOT silently swallow it as a reaction. Users on emoji-only mode trade
- * cross-SMS-Tech badge rendering for legacy-OEM cleanliness.
+ * **Pure-emoji bodies decode only as [Kind.EmojiOnly], and only when the body
+ * is a single emoji.** Relay's "emoji only" reaction mode (cf.
+ * `SendingSettings.reactionEmojiOnly`) sends just the emoji byte sequence —
+ * but a real text message containing only emojis ("👍😂😂") is ambiguous and
+ * we MUST NOT silently swallow it as a reaction: a multi-emoji body stays a
+ * plain message, and even a single emoji is only folded when the caller finds
+ * a recent outgoing message within a tight time window. Users on emoji-only
+ * mode trade cross-app badge rendering for legacy-OEM cleanliness.
  *
  * Stateless object, no Android dependency, fully unit-testable.
  */
@@ -51,7 +54,8 @@ object IncomingReactionDecoder {
      * @property kind  signals to the caller how strict the matching against an outgoing
      *   message must be. [Kind.Tapback] = full verbose Tapback wire format, always safe
      *   to bind to ANY recent outgoing in the conversation. [Kind.EmojiOnly] = the body
-     *   contained nothing but one-to-two emojis, which is ambiguous with a real "❤️"
+     *   contained exactly one emoji (one grapheme cluster — a ZWJ family or a flag
+     *   still counts as one), which is ambiguous with a real "❤️"
      *   message — caller MUST require a recent outgoing within a tight time window
      *   (see [EMOJI_ONLY_REACT_WINDOW_MS]) to avoid promoting a genuine emoji message
      *   into a fake reaction.
@@ -100,9 +104,9 @@ object IncomingReactionDecoder {
     const val EMOJI_ONLY_REACT_WINDOW_MS: Long = 5 * 60 * 1_000L
 
     /**
-     * Max number of UTF-16 code units accepted as a pure-emoji body. 16 covers up
-     * to 2 ZWJ clusters (a man-woman-girl family = 7 code units, two of those = 14).
-     * Anything longer is unlikely to be a reaction — almost certainly text.
+     * Fast pre-filter for [looksLikeEmojiOnly]: a single grapheme cluster is at
+     * most ~11 UTF-16 units (a four-person ZWJ family), so anything past 16
+     * units is certainly several emojis — a message, not a reaction.
      */
     private const val EMOJI_ONLY_MAX_UNITS: Int = 16
 
@@ -329,9 +333,10 @@ object IncomingReactionDecoder {
 
     /**
      * v1.4.1 — emoji-only candidate (SendingSettings.reactionEmojiOnly =
-     * true). The body contains nothing but one or two emojis; tagged
+     * true). The body is a single emoji (one grapheme cluster); tagged
      * [Kind.EmojiOnly] so the caller requires a tight time window before
-     * promoting it to a reaction badge.
+     * promoting it to a reaction badge. A body of two or more emojis is a
+     * plain message — folding it would glue several emojis onto one badge.
      */
     private fun decodeEmojiOnly(trimmed: String): DecodeAttempt =
         if (looksLikeEmojiOnly(trimmed)) {
@@ -442,21 +447,63 @@ object IncomingReactionDecoder {
     }
 
     /**
-     * Pure-emoji heuristic — no third-party emoji regex dep. Accepted iff :
-     *   - non-empty, no whitespace anywhere (a sentence with an emoji is rejected),
-     *   - length ≤ [EMOJI_ONLY_MAX_UNITS] UTF-16 units (≈ 2 ZWJ clusters max),
-     *   - every UTF-16 unit is non-ASCII (real emojis live above U+007F ; the only
-     *     ASCII chars that ever appear in emoji clusters are the digit/asterisk/hash
-     *     keycap bases like `1️⃣` which are still preceded by the variation selector
-     *     U+FE0F — those are not single-tap reactions in practice and skipping them
-     *     is a fair trade for safety).
+     * Single-emoji heuristic — no third-party emoji regex dep. Accepted iff the
+     * body is exactly ONE grapheme cluster: one emoji, optionally with
+     * skin-tone modifiers, VS16, keycap marks, ZWJ-joined parts (a family,
+     * "❤️‍🔥"), or a regional-indicator pair (a flag). A body of two or more
+     * clusters ("👍😂😂") is a plain message, not a reaction.
+     *
+     * Counted by hand over code points, never BreakIterator: JVM and Android
+     * ICU segment ZWJ sequences differently, and a decoder that folds on one
+     * platform and not the other would corrupt the mirror. Any ASCII char or
+     * whitespace fails the check — the only ASCII chars that ever appear in
+     * emoji clusters are the digit/asterisk/hash keycap bases like `1️⃣`,
+     * which are not single-tap reactions in practice and skipping them is a
+     * fair trade for safety.
      */
     private fun looksLikeEmojiOnly(text: String): Boolean {
         if (text.isEmpty() || text.length > EMOJI_ONLY_MAX_UNITS) return false
-        for (c in text) {
-            if (c.isWhitespace() || c.code < 128) return false
+        var clusters = 0
+        var index = 0
+        var joinNext = false
+        var pendingRegional = false
+        while (index < text.length) {
+            val codePoint = text.codePointAt(index)
+            index += Character.charCount(codePoint)
+            if (codePoint < 128 || Character.isWhitespace(codePoint)) return false
+            when {
+                // ZWJ joins the next emoji into the current cluster.
+                codePoint == 0x200D -> {
+                    joinNext = true
+                    pendingRegional = false
+                }
+                // Modifiers extend the current cluster, never start one.
+                codePoint in 0x1F3FB..0x1F3FF || codePoint == 0xFE0F ||
+                    codePoint == 0x20E3 -> {
+                    pendingRegional = false
+                }
+                // Regional indicators pair up: two make one flag cluster.
+                codePoint in 0x1F1E6..0x1F1FF -> {
+                    if (pendingRegional) {
+                        pendingRegional = false
+                    } else {
+                        clusters++
+                        pendingRegional = true
+                    }
+                    joinNext = false
+                }
+                joinNext -> {
+                    joinNext = false
+                    pendingRegional = false
+                }
+                else -> {
+                    clusters++
+                    pendingRegional = false
+                }
+            }
+            if (clusters > 1) return false
         }
-        return true
+        return clusters == 1
     }
 
     /** Lone Unicode horizontal ellipsis Relay appends when the preview was truncated. */

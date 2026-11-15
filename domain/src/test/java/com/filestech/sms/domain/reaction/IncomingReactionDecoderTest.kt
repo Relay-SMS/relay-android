@@ -78,10 +78,39 @@ class IncomingReactionDecoderTest {
         assertThat(result!!.kind).isEqualTo(IncomingReactionDecoder.DecodedReaction.Kind.EmojiOnly)
     }
 
-    @Test fun `decodes double emoji body as EmojiOnly (some users send two emojis)`() {
-        val result = IncomingReactionDecoder.decode("❤️❤️")
+    @Test fun `two-emoji body is NOT decoded (a message, not a reaction)`() {
+        // Two emojis are two grapheme clusters: a plain expressive message.
+        // Folding it would glue both emojis onto one badge.
+        assertThat(IncomingReactionDecoder.decode("❤️❤️")).isNull()
+    }
+
+    @Test fun `three-emoji body is NOT decoded (the reported multi-emoji case)`() {
+        assertThat(IncomingReactionDecoder.decode("👍😂😂")).isNull()
+    }
+
+    @Test fun `skin-tone emoji body folds as one cluster`() {
+        val result = IncomingReactionDecoder.decode("👍🏽")
         assertThat(result).isNotNull()
-        assertThat(result!!.kind).isEqualTo(IncomingReactionDecoder.DecodedReaction.Kind.EmojiOnly)
+        assertThat(result!!.emoji).isEqualTo("👍🏽")
+        assertThat(result.kind).isEqualTo(IncomingReactionDecoder.DecodedReaction.Kind.EmojiOnly)
+    }
+
+    @Test fun `flag body folds as one cluster (regional-indicator pair)`() {
+        val result = IncomingReactionDecoder.decode("🇫🇷")
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("🇫🇷")
+        assertThat(result.kind).isEqualTo(IncomingReactionDecoder.DecodedReaction.Kind.EmojiOnly)
+    }
+
+    @Test fun `two-flag body is NOT decoded`() {
+        assertThat(IncomingReactionDecoder.decode("🇫🇷🇩🇪")).isNull()
+    }
+
+    @Test fun `ZWJ heart-on-fire body folds as one cluster`() {
+        val result = IncomingReactionDecoder.decode("❤️‍🔥")
+        assertThat(result).isNotNull()
+        assertThat(result!!.emoji).isEqualTo("❤️‍🔥")
+        assertThat(result.kind).isEqualTo(IncomingReactionDecoder.DecodedReaction.Kind.EmojiOnly)
     }
 
     @Test fun `emoji with trailing text is NOT decoded as EmojiOnly`() {

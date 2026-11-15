@@ -198,10 +198,10 @@ class ConversationMirror @Inject constructor(
             // `OnConflictStrategy.IGNORE` on the insert means a second call with the same
             // telephonyUri is a no-op — idempotent.
             messageDao.insert(sentinel)
-            // NB: we do NOT call `touchConversation` here — the user never sent or
-            // received a new message, just a metadata reaction. Bumping
-            // `lastMessageAt` / `lastMessagePreview` would surface the empty body in
-            // the conversation list, which is exactly what we want to avoid.
+            // NB: the sentinel itself never calls `touchConversation` — its
+            // body is empty, so bumping here would surface an empty preview.
+            // The bump comes from the fold ([applyIncomingReaction]), which
+            // touches with the reaction's date and the emoji as preview.
         }
     }
 
@@ -243,8 +243,11 @@ class ConversationMirror @Inject constructor(
      * must be dated at most [REACTION_DATE_TOLERANCE_MS] after it (MMS
      * ordering can skew dates). `null` disables the check.
      *
-     * No side-effect on `conversations.lastMessagePreview` / `unreadCount` : a reaction
-     * is a metadata update on an existing row, not a new message.
+     * On an ADD, the conversation is bumped: [touchConversation] with the
+     * reaction's own date and the emoji as preview, so the thread surfaces
+     * under "today" instead of being missed (a reaction is activity, not a
+     * silent metadata edit). No unread bump — a reaction is not a message
+     * waiting to be read. A removal never bumps: clearing a badge is silent.
      */
     /**
      * v1.4.1 — outcome of [applyIncomingReaction]. `null` = no matching
@@ -344,6 +347,12 @@ class ConversationMirror @Inject constructor(
                 }
             } else {
                 messageDao.setReaction(target.id, emoji)
+                touchForReaction(
+                    conversationId = conv.id,
+                    reactorAddress = address,
+                    emoji = emoji,
+                    dateMs = reactionDateMs ?: System.currentTimeMillis(),
+                )
             }
             return@withContext ReactionApplied(
                 conversationId = conv.id,
@@ -352,6 +361,33 @@ class ConversationMirror @Inject constructor(
             )
         }
         return@withContext null
+    }
+
+    /**
+     * Bumps a conversation for an incoming reaction ADD: date = the reaction
+     * SMS's own timestamp, preview = the emoji — in a group, prefixed with
+     * the reactor's display name ("Marie ❤️") so the row says who reacted.
+     * No unread bump: a reaction is not a message waiting to be read.
+     *
+     * Relies on [touchConversation]'s newest-wins guard: when a newer real
+     * message already sits in the thread, the reaction keeps the date but
+     * does not overwrite its preview.
+     */
+    private suspend fun touchForReaction(
+        conversationId: Long,
+        reactorAddress: String,
+        emoji: String,
+        dateMs: Long,
+    ) {
+        val conv = conversationDao.findById(conversationId) ?: return
+        val isGroup = PhoneAddress.list(conv.addressesCsv).size > 1
+        val preview = if (isGroup) {
+            val name = resolveDisplayName(reactorAddress)
+            if (name != null) "$name $emoji" else emoji
+        } else {
+            emoji
+        }
+        touchConversation(conversationId, dateMs, preview, deltaUnread = 0)
     }
 
     /**
@@ -449,6 +485,19 @@ class ConversationMirror @Inject constructor(
                 // The deleted row may have been the conversation's preview —
                 // recompute it from the remaining messages.
                 messageDao.refreshConversationPreview(applied.conversationId)
+            }
+            // The refresh above recomputes the row from the remaining
+            // messages and wipes the bump [applyIncomingReaction] just wrote
+            // — re-apply it AFTER the refresh (adds only; a removal stays
+            // silent). The newest-wins guard in [touchConversation] keeps a
+            // newer real message's preview when one exists.
+            if (!decoded.isRemoval) {
+                touchForReaction(
+                    conversationId = applied.conversationId,
+                    reactorAddress = row.address,
+                    emoji = decoded.emoji,
+                    dateMs = row.date,
+                )
             }
             folded++
         }
@@ -1201,6 +1250,117 @@ class ConversationMirror @Inject constructor(
         // observer will invalidate downstream. (3) Keeping the cache hot across imports means a
         // live SMS arriving mid-sync reuses the resolutions the sync already paid for instead
         // of re-querying the contacts provider for every common correspondent.
+        //
+        // Imports one system thread's SMS rows. Plain rows insert in bulk;
+        // rows shaped like a reaction are decoded and, on a Tapback match,
+        // folded onto their target (badge + sentinel) instead of importing
+        // as a text bubble — the same outcome as the live receiver, for
+        // reactions that arrived while another app was the default SMS app.
+        //
+        // The fold runs AFTER the plain insert so a target sitting in the
+        // same batch is already in Room (the sweep reads provider ids
+        // ascending, so a target from an earlier page is always in too). A
+        // tapback that fails to fold falls back to a plain bubble, like the
+        // live receiver — nothing is silently lost.
+        //
+        // A local function (not a member): the importer is the only caller,
+        // and this class is at its Detekt function-count limit.
+        suspend fun importSmsThreadGroup(systemThreadId: Long, group: List<MessageEntity>) {
+            // Local: only this importer folds rows. Decodes the body, and on a
+            // Tapback match applies it to its target and writes the sentinel —
+            // the text row itself is never inserted. Returns `true` when the row
+            // was folded (caller must not insert it); `false` means "plain
+            // bubble" (caller inserts the row as-is). EmojiOnly is never folded
+            // here: its 5-minute window is anchored at "now", so an old
+            // bare-emoji row would mis-attach to a message sent minutes ago.
+            // Same rule as [reparseStoredReactions].
+            suspend fun foldImportedTapback(row: MessageEntity): Boolean {
+                val decoded = IncomingReactionDecoder.decode(row.body) ?: return false
+                if (decoded.kind == Kind.EmojiOnly) return false
+                val applied = try {
+                    applyIncomingReaction(
+                        address = row.address,
+                        emoji = decoded.emoji,
+                        bodyPrefix = decoded.previewPrefix,
+                        kind = decoded.kind,
+                        wasTruncated = decoded.wasTruncated,
+                        isRemoval = decoded.isRemoval,
+                        reactionDateMs = row.date,
+                    )
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    throw ce
+                } catch (t: Throwable) {
+                    Timber.w(t, "foldImportedTapback: fold failed for ${row.telephonyUri}")
+                    null
+                }
+                if (applied == null) return false
+                // Sentinel takes the tapback's telephonyUri so the next sweep sees
+                // the UNIQUE constraint taken and skips the re-import — the same
+                // poison-pill the live receiver writes.
+                upsertReactionSentinel(
+                    address = row.address,
+                    telephonyUri = row.telephonyUri,
+                    date = row.date,
+                )
+                return true
+            }
+
+            val first = group.first()
+            val convId = ensureConversationByThread(
+                systemThreadId = systemThreadId,
+                addresses = listOf(PhoneAddress.of(first.address)),
+            )
+            val withConv = group.map { it.copy(conversationId = convId) }
+            val tapbackRows = ArrayList<MessageEntity>()
+            val plainRows = ArrayList<MessageEntity>(withConv.size)
+            for (row in withConv) {
+                if (row.direction == MessageDirection.INCOMING && looksLikeReactionText(row.body)) {
+                    tapbackRows += row
+                } else {
+                    plainRows += row
+                }
+            }
+            // v1.8.0 (bug 2 fix) — Room's @Insert(OnConflictStrategy.IGNORE) returns
+            // -1L for each row that conflicted with the UNIQUE (telephony_uri) index
+            // (i.e. already mirrored), and the new row id for fresh inserts. Before
+            // this fix the unread delta was calculated over the WHOLE group — every
+            // re-sync (12h worker or manual pull-to-refresh) re-bumped the badge by
+            // the count of incoming-unread rows even when the user had already opened
+            // the thread and Room had cleared its unread counter. Now we count ONLY
+            // rows that actually inserted, so the badge reflects truly new arrivals.
+            //
+            // The MMS path above (`bulkImportMmsFromTelephony`, line ~620) is not
+            // affected by the same regression because it iterates row-by-row with a
+            // `if (insertedId <= 0L) continue` that already skips the delta increment
+            // for conflicting rows. Keep both branches symmetric in spirit even if
+            // the syntactic shape differs.
+            val insertedIds = messageDao.insertAll(plainRows)
+            var unreadDelta = plainRows.withIndex().count { (idx, m) ->
+                insertedIds.getOrElse(idx) { -1L } > 0L &&
+                    m.direction == MessageDirection.INCOMING &&
+                    !m.read
+            }
+            val foldedUris = HashSet<String>()
+            for (row in tapbackRows) {
+                if (foldImportedTapback(row)) {
+                    row.telephonyUri?.let { foldedUris += it }
+                } else {
+                    val insertedId = messageDao.insert(row)
+                    if (insertedId > 0L && !row.read) unreadDelta++
+                }
+            }
+            // The touch must never surface a folded tapback's raw text as the
+            // preview: `last` is the newest NON-folded row. When every row in the
+            // group folded, the fold's own touch already set the date and the
+            // emoji preview — nothing left to touch.
+            val last = withConv
+                .filter { it.telephonyUri !in foldedUris }
+                .maxByOrNull { it.date }
+            if (last != null) {
+                touchConversation(convId, last.date, last.body, deltaUnread = unreadDelta)
+            }
+        }
+
         database.withTransaction {
             // Group by system thread_id — that's the source of truth for "which conversation".
             // `MessageEntity.conversationId` here actually carries the system Telephony.Sms.THREAD_ID
@@ -1210,34 +1370,7 @@ class ConversationMirror @Inject constructor(
                 byThread.getOrPut(m.conversationId) { ArrayList() } += m
             }
             for ((systemThreadId, group) in byThread) {
-                val first = group.first()
-                val convId = ensureConversationByThread(
-                    systemThreadId = systemThreadId,
-                    addresses = listOf(PhoneAddress.of(first.address)),
-                )
-                val withConv = group.map { it.copy(conversationId = convId) }
-                // v1.8.0 (bug 2 fix) — Room's @Insert(OnConflictStrategy.IGNORE) returns
-                // -1L for each row that conflicted with the UNIQUE (telephony_uri) index
-                // (i.e. already mirrored), and the new row id for fresh inserts. Before
-                // this fix the unread delta was calculated over the WHOLE group — every
-                // re-sync (12h worker or manual pull-to-refresh) re-bumped the badge by
-                // the count of incoming-unread rows even when the user had already opened
-                // the thread and Room had cleared its unread counter. Now we count ONLY
-                // rows that actually inserted, so the badge reflects truly new arrivals.
-                //
-                // The MMS path above (`bulkImportMmsFromTelephony`, line ~620) is not
-                // affected by the same regression because it iterates row-by-row with a
-                // `if (insertedId <= 0L) continue` that already skips the delta increment
-                // for conflicting rows. Keep both branches symmetric in spirit even if
-                // the syntactic shape differs.
-                val insertedIds = messageDao.insertAll(withConv)
-                val last = group.maxBy { it.date }
-                val unreadDelta = withConv.withIndex().count { (idx, m) ->
-                    insertedIds.getOrElse(idx) { -1L } > 0L &&
-                        m.direction == MessageDirection.INCOMING &&
-                        !m.read
-                }
-                touchConversation(convId, last.date, last.body, deltaUnread = unreadDelta)
+                importSmsThreadGroup(systemThreadId, group)
             }
         }
     }
@@ -1775,3 +1908,38 @@ class ConversationMirror @Inject constructor(
  * dériver et rouvrir l'asymétrie réception/composition que ce correctif ferme.
  */
 internal const val CONV_MATCH_MIN_DIGITS = 8
+
+/**
+ * Wire prefixes a reaction text can start with (the six tapback verbs,
+ * `Reacted …`, `Removed …`, the French `Réagi …` / `J'ai réagi …` forms) —
+ * the prefix arms of `MessageDao.findReactionCandidates`, for the cheap
+ * pre-filter in [looksLikeReactionText]. A superset of what the decoder
+ * matches; `decode()` re-validates strictly. File scope (not a class
+ * member): the check is pure, and `ConversationMirror` is already at its
+ * function-count limit.
+ */
+private val REACTION_TEXT_PREFIXES = listOf(
+    "Reacted ",
+    "Loved ",
+    "Liked ",
+    "Disliked ",
+    "Laughed at ",
+    "Emphasized ",
+    "Questioned ",
+    "Removed ",
+    "Réagi ",
+    "J'ai réagi ",
+    "J’ai réagi ",
+)
+
+/**
+ * Cheap pre-filter for the import fold: mirrors the LIKE arms of
+ * `MessageDao.findReactionCandidates` (a superset of what the decoder can
+ * match) so the full decode only runs on bodies shaped like a reaction.
+ * False positives are harmless — `decode()` re-validates strictly.
+ */
+private fun looksLikeReactionText(body: String): Boolean {
+    if (body.isEmpty()) return false
+    if (REACTION_TEXT_PREFIXES.any { body.startsWith(it) }) return true
+    return body.contains(" a réagi par ") || body.contains('»')
+}

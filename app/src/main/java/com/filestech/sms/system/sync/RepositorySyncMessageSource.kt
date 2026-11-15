@@ -8,6 +8,7 @@ import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.sender.DefaultSmsAppChecker
 import com.filestech.sms.sync.MessageState
 import com.filestech.sms.sync.Readiness
 import com.filestech.sms.sync.SyncMessageSource
@@ -40,6 +41,7 @@ import com.filestech.sms.domain.model.MessageState as DomainMessageState
 class RepositorySyncMessageSource @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: ConversationRepository,
+    private val defaultSmsAppChecker: DefaultSmsAppChecker,
 ) : SyncMessageSource {
 
     override suspend fun conversations(): List<SyncedConversation> {
@@ -100,6 +102,8 @@ class RepositorySyncMessageSource @Inject constructor(
         if (repository.totalMessageCount() == 0L) return Readiness.MirrorEmpty
         return Readiness.Ready
     }
+
+    override suspend fun isDefaultSmsApp(): Boolean = defaultSmsAppChecker.isDefault()
 }
 
 /** Domain → wire mapping. Ids are decimal strings of the Room ids. */

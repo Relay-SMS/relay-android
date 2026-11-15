@@ -46,6 +46,14 @@ interface SyncMessageSource {
 
     /** Readiness: is there anything to sync, and if not, why? */
     suspend fun readiness(): Readiness
+
+    /**
+     * Whether this app is the phone's default SMS app. When it is
+     * not, new messages only reach the mirror on app open or the
+     * periodic import — so the desktop warns that live sync will lag
+     * until the app is made the default.
+     */
+    suspend fun isDefaultSmsApp(): Boolean
 }
 
 /**

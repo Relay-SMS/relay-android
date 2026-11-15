@@ -81,7 +81,7 @@ Slice 2 — no bytes cross the channel yet.
 |---|---|---|
 | Client → server | `sync_request` | `{"type":"sync_request","mode":"full"\|"new_only","since_message_id":"12345"}` |
 | Client → server | `messages_request` | `{"type":"messages_request","conversation_id":"123","before_id":"789","limit":200}` |
-| Server → client | `sync_started` | `{"type":"sync_started","mode":"full","total_conversations":87,"total_messages":12340,"cursor_message_id":"98765"}` |
+| Server → client | `sync_started` | `{"type":"sync_started","mode":"full","total_conversations":87,"total_messages":12340,"cursor_message_id":"98765","hub_is_default_sms":true}` |
 | Server → client | `conversations` | `{"type":"conversations","conversations":[CONVERSATION, "…"],"has_more":false}` |
 | Server → client | `messages_batch` | `{"type":"messages_batch","conversation_id":"123","messages":[MESSAGE, "…"],"has_more":true,"next_before_id":"456"}` |
 | Server → client | `sync_complete` | `{"type":"sync_complete","cursor_message_id":"98765"}` |
@@ -90,6 +90,7 @@ Slice 2 — no bytes cross the channel yet.
 | Server → client | `conversation_updated` | `{"type":"conversation_updated","conversation":CONVERSATION}` |
 | Server → client | `conversation_deleted` | `{"type":"conversation_deleted","conversation_id":"123"}` |
 | Server → client | `sync_error` | `{"type":"sync_error","code":"hub_no_sms_access","message":"…"}` |
+| Server → client | `hub_status` | `{"type":"hub_status","is_default_sms":false}` |
 
 Flow: the desktop sends `sync_request` after auth. The phone answers
 `sync_started` (totals + the current max message id as the cursor),
@@ -125,6 +126,21 @@ phone — the debug build needs the manual grant, since only one app
 can hold the default-SMS role), `hub_mirror_empty` (permission
 granted but the phone's message import hasn't run yet), `internal`
 (anything else; the message stays generic, never a stack trace).
+
+`hub_status` is the default-SMS warning. Every `sync_started`
+carries `hub_is_default_sms`, and the phone pushes `hub_status`
+to all connected devices the moment the role changes: the service
+listens for the system's `ACTION_DEFAULT_SMS_PACKAGE_CHANGED`
+broadcast (sent to both the old and the new default package) and
+answers it with an immediate re-check + broadcast. A 30 s re-check
+on the silence-watchdog tick stays as a safety net in case the
+broadcast is ever missed on some device. (`RoleManager`'s own
+role-change listener is a system API, absent from the public SDK,
+so the broadcast is the instant mechanism.) When the hub app is
+not the default SMS app, new messages only reach its mirror on app
+open or the periodic import — so the desktop shows a persistent
+banner above the conversation search until the phone reports it is
+the default again.
 
 CONVERSATION: `id`, `thread_id` (may be null), `addresses`,
 `display_name`, `custom_name`, `title` (the phone's computed title —

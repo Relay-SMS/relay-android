@@ -188,6 +188,7 @@ class SyncProtocolTest {
                 totalConversations = 87,
                 totalMessages = 12340,
                 cursorMessageId = "98765",
+                hubIsDefaultSms = true,
             ),
         )
         val obj = Json.parseToJsonElement(encoded).jsonObject
@@ -196,6 +197,31 @@ class SyncProtocolTest {
         assertThat(obj["total_conversations"]?.jsonPrimitive?.content).isEqualTo("87")
         assertThat(obj["total_messages"]?.jsonPrimitive?.content).isEqualTo("12340")
         assertThat(obj["cursor_message_id"]?.jsonPrimitive?.content).isEqualTo("98765")
+        assertThat(obj["hub_is_default_sms"]?.jsonPrimitive?.content).isEqualTo("true")
+    }
+
+    @Test fun `sync_started encodes the not-default flag`() {
+        val encoded = SyncProtocol.encodeSyncStarted(
+            SyncProtocol.SyncStarted(
+                mode = "new_only",
+                totalConversations = 3,
+                totalMessages = 10,
+                cursorMessageId = "42",
+                hubIsDefaultSms = false,
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["hub_is_default_sms"]?.jsonPrimitive?.content).isEqualTo("false")
+    }
+
+    @Test fun `hub_status encodes and decodes the default-SMS flag`() {
+        val encoded = SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms = false))
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["type"]?.jsonPrimitive?.content).isEqualTo("hub_status")
+        assertThat(obj["is_default_sms"]?.jsonPrimitive?.content).isEqualTo("false")
+        // The `type` field is routing, not payload — the decoder ignores it.
+        val decoded = SyncProtocol.json.decodeFromString<SyncProtocol.HubStatus>(encoded)
+        assertThat(decoded.isDefaultSms).isFalse()
     }
 
     @Test fun `conversations encodes the batch and has_more`() {
