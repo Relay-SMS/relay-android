@@ -3,17 +3,21 @@ package com.filestech.sms.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -50,11 +54,49 @@ fun LinkPreviewCard(
     val url = remember(body, messageId) { firstPreviewUrl(body, messageId) }
     if (url == null) return
     val fetcher = remember { LinkPreviewFetcher() }
-    val preview by produceState<LinkPreview?>(initialValue = null, url) {
-        value = fetcher.preview(url)
+    // Cached results render on first composition — a re-entered thread
+    // shows its cards immediately instead of popping them in after the
+    // fetch returns (the pop-in grows the thread and shifts the view up
+    // onto the card, and the pin effect's snap back is visible). While
+    // uncached, a fixed-height placeholder holds the card's space so
+    // the thread barely grows when it lands.
+    val isCached = remember(url) { fetcher.isCached(url) }
+    var loading by remember(url) { mutableStateOf(!isCached) }
+    val preview by produceState<LinkPreview?>(
+        initialValue = remember(url) { fetcher.cachedPreview(url) },
+        url,
+    ) {
+        if (!isCached) {
+            value = fetcher.preview(url)
+            loading = false
+        }
+    }
+    if (loading) {
+        LinkPreviewPlaceholder(modifier = modifier)
+        return
     }
     val loaded = preview ?: return
     LinkPreviewCardContent(preview = loaded, modifier = modifier)
+}
+
+/**
+ * Loading skeleton for the card: same box, text-card height, so the
+ * thread doesn't grow when the preview lands. Image cards are taller —
+ * the pin effect covers the rest.
+ */
+@Composable
+private fun LinkPreviewPlaceholder(modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(LINK_PREVIEW_CORNER_DP.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = LINK_PREVIEW_BELOW_GAP_DP.dp)
+            .height(LINK_PREVIEW_PLACEHOLDER_DP.dp)
+            .clip(shape)
+            .border(width = 1.dp, color = cs.outlineVariant, shape = shape)
+            .background(cs.surface),
+    )
 }
 
 /**
@@ -128,3 +170,4 @@ private const val LINK_PREVIEW_BELOW_GAP_DP = 8
 private const val LINK_PREVIEW_TEXT_PADDING_DP = 12
 private const val LINK_PREVIEW_HEADLINE_LINES = 2
 private const val LINK_PREVIEW_IMAGE_RATIO = 16f / 9f
+private const val LINK_PREVIEW_PLACEHOLDER_DP = 96

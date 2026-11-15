@@ -333,4 +333,30 @@ class IncomingReactionDecoderTest {
         assertThat(result).isNotNull()
         assertThat(result!!.emoji).isEqualTo("❤️")
     }
+
+    // ──────────────── v3 reparse — firstGraphemeCluster ────────────────
+
+    @Test fun `first cluster of a stacked reaction is the first emoji`() {
+        assertThat(IncomingReactionDecoder.firstGraphemeCluster("👍😂😅")).isEqualTo("👍")
+    }
+
+    @Test fun `first cluster keeps a skin tone with its base`() {
+        assertThat(IncomingReactionDecoder.firstGraphemeCluster("👍🏽😂")).isEqualTo("👍🏽")
+    }
+
+    @Test fun `first cluster keeps a flag whole`() {
+        assertThat(IncomingReactionDecoder.firstGraphemeCluster("🇫🇷😂")).isEqualTo("🇫🇷")
+    }
+
+    @Test fun `first cluster keeps a ZWJ family whole`() {
+        assertThat(IncomingReactionDecoder.firstGraphemeCluster("👨‍👩‍👧😂")).isEqualTo("👨‍👩‍👧")
+    }
+
+    @Test fun `first cluster of a single emoji is the emoji itself`() {
+        assertThat(IncomingReactionDecoder.firstGraphemeCluster("❤️")).isEqualTo("❤️")
+    }
+
+    @Test fun `first cluster of an empty string is empty`() {
+        assertThat(IncomingReactionDecoder.firstGraphemeCluster("")).isEqualTo("")
+    }
 }

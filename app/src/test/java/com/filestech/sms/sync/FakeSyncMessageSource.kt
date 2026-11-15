@@ -124,6 +124,12 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         return actionResult
     }
 
+    override suspend fun setBlocked(conversationId: Long, blocked: Boolean): ActionResult {
+        actionError?.let { throw it }
+        actions += ActionCall("set_blocked", conversationId, value = blocked)
+        return actionResult
+    }
+
     override suspend fun setReaction(conversationId: Long, messageId: Long, emoji: String?): ActionResult {
         actionError?.let { throw it }
         actions += ActionCall("set_reaction", conversationId, messageId = messageId, emoji = emoji)

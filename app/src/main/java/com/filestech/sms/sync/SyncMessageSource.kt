@@ -169,6 +169,7 @@ interface SyncMessageSource {
     suspend fun setPinned(conversationId: Long, pinned: Boolean): ActionResult
     suspend fun setArchived(conversationId: Long, archived: Boolean): ActionResult
     suspend fun setMuted(conversationId: Long, muted: Boolean): ActionResult
+    suspend fun setBlocked(conversationId: Long, blocked: Boolean): ActionResult
 
     // -- Phase 2: scheduled sends --------------------------------------
 

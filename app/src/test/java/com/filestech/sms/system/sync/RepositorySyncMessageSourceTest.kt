@@ -14,11 +14,13 @@ import com.filestech.sms.domain.repository.SetReactionResult
 import com.filestech.sms.domain.sender.DefaultSmsAppChecker
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.usecase.BlockNumberUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
 import com.filestech.sms.domain.usecase.RetrySendUseCase
 import com.filestech.sms.domain.usecase.ScheduleMessageUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
+import com.filestech.sms.domain.usecase.UnblockNumberUseCase
 import com.filestech.sms.sync.ActionResult
 import com.filestech.sms.sync.SendResult
 import com.filestech.sms.sync.SyncMessageSource
@@ -50,6 +52,8 @@ class RepositorySyncMessageSourceTest {
     private val scheduleUseCase = mockk<ScheduleMessageUseCase>()
     private val deleteScheduled = mockk<DeleteScheduledMessageUseCase>()
     private val contactsRepository = mockk<ContactRepository>()
+    private val blockNumber = mockk<BlockNumberUseCase>()
+    private val unblockNumber = mockk<UnblockNumberUseCase>()
 
     // Typed as the interface: the 4-arg `sendMessage` calls below
     // pick up the interface's `attachments = null` default (an
@@ -66,6 +70,8 @@ class RepositorySyncMessageSourceTest {
         scheduleMessageUseCase = scheduleUseCase,
         deleteScheduledMessage = deleteScheduled,
         contactsRepository = contactsRepository,
+        blockNumber = blockNumber,
+        unblockNumber = unblockNumber,
     )
 
     /** The router call the glue makes, with the key passed through. */
@@ -362,6 +368,56 @@ class RepositorySyncMessageSourceTest {
         coVerify(exactly = 1) { repository.setPinned(123L, true) }
         coVerify(exactly = 1) { repository.setArchived(123L, false) }
         coVerify(exactly = 1) { repository.setMuted(123L, true) }
+    }
+
+    @Test fun `set_blocked blocks every address and answers ok`() = runTest {
+        coEvery { repository.findById(123L) } returns conversation(
+            addresses = listOf("+15551234567", "+15559876543"),
+        )
+        coEvery { blockNumber.invoke(any(), any()) } returns Outcome.Success(Unit)
+
+        assertThat(source.setBlocked(123L, true)).isEqualTo(ActionResult(ok = true))
+        coVerify(exactly = 1) { blockNumber.invoke("+15551234567", "Marie") }
+        coVerify(exactly = 1) { blockNumber.invoke("+15559876543", "Marie") }
+        coVerify(exactly = 0) { unblockNumber.invoke(any()) }
+    }
+
+    @Test fun `set_blocked with false unblocks every address and answers ok`() = runTest {
+        coEvery { repository.findById(123L) } returns conversation(
+            addresses = listOf("+15551234567", "+15559876543"),
+        )
+        coEvery { unblockNumber.invoke(any()) } returns Outcome.Success(Unit)
+
+        assertThat(source.setBlocked(123L, false)).isEqualTo(ActionResult(ok = true))
+        coVerify(exactly = 1) { unblockNumber.invoke("+15551234567") }
+        coVerify(exactly = 1) { unblockNumber.invoke("+15559876543") }
+        coVerify(exactly = 0) { blockNumber.invoke(any(), any()) }
+    }
+
+    @Test fun `set_blocked on an unknown conversation answers unknown_conversation`() = runTest {
+        coEvery { repository.findById(999L) } returns null
+
+        assertThat(source.setBlocked(999L, true)).isEqualTo(
+            ActionResult(
+                ok = false,
+                code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
+                message = "Conversation not found.",
+            ),
+        )
+        coVerify(exactly = 0) { blockNumber.invoke(any(), any()) }
+    }
+
+    @Test fun `set_blocked answers internal when no address blocks`() = runTest {
+        coEvery { repository.findById(123L) } returns conversation()
+        coEvery { blockNumber.invoke(any(), any()) } returns Outcome.Failure(AppError.Storage())
+
+        assertThat(source.setBlocked(123L, true)).isEqualTo(
+            ActionResult(
+                ok = false,
+                code = SyncProtocol.MessageFailed.INTERNAL,
+                message = "Couldn't block this conversation.",
+            ),
+        )
     }
 
     // -- reactions -----------------------------------------------------

@@ -427,6 +427,15 @@ interface MessageDao {
     suspend fun setReaction(id: Long, emoji: String?)
 
     /**
+     * v3 reaction reparse — every message carrying a stored reaction, for
+     * normalizing legacy multi-emoji values ("👍😂😅") down to a single
+     * emoji. Only reacted messages are read (a small set); the full rows
+     * come back because the reparse needs the id and the reaction only.
+     */
+    @Query("SELECT * FROM messages WHERE reaction_emoji IS NOT NULL")
+    suspend fun findMessagesWithReactions(): List<MessageEntity>
+
+    /**
      * v1.4.1 — finds the most recent OUTGOING message in [conversationId] whose body
      * starts with [bodyPrefix] (used by the incoming Tapback parser to match a remote
      * "Reacted ❤️ to «hello…»" SMS back to the original outgoing message it was reacting

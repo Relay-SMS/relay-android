@@ -89,12 +89,27 @@
 # Netty references optional native pieces that are deliberately absent on
 # Android (OpenSSL/tcnative — we use the JDK SSL provider; epoll/kqueue
 # native transports — we use NIO; QUIC natives — no HTTP/3). R8 treats
-# those missing classes as errors, so silence them. No `-keep` here:
-# everything on our path (NIO transport, JDK SSL, WebSockets) is reached
-# by direct references from Ktor's engine code, so R8 keeps it; the
-# reflective lookups (native-transport detection, logger selection) all
-# degrade gracefully to their pure-Java fallbacks.
+# those missing classes as errors, so silence them.
 -dontwarn io.netty.**
+
+# Release-server fix (2026-11-15) — the sync server would not start in
+# release builds: Netty creates its channels REFLECTIVELY through
+# ReflectiveChannelFactory, which requires a public no-arg constructor
+# (Class.getConstructor()). R8 strips that constructor as unused — it is
+# only ever reached via reflection — so engine start threw
+# "IllegalArgumentException: Class I95 does not have a public non-arg
+# constructor" (I95 = the obfuscated NioServerSocketChannel), reported by
+# the Linked-devices start-failure diagnostic. Debug builds never hit
+# this: minify is off there. Keep both NIO channel classes Ktor uses on
+# Android (the server socket + the accepted sockets). The earlier note
+# here claiming "no -keep needed, everything is reached by direct
+# references" was wrong for exactly these two classes.
+-keep class io.netty.channel.socket.nio.NioServerSocketChannel {
+    public <init>();
+}
+-keep class io.netty.channel.socket.nio.NioSocketChannel {
+    public <init>();
+}
 
 # ----- Timber ----------------------------------------------------------------------------------
 -dontwarn org.jetbrains.annotations.**

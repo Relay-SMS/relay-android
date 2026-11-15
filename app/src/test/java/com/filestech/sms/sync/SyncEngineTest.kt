@@ -545,27 +545,29 @@ class SyncEngineTest {
         }
     }
 
-    @Test fun `set_pin set_archived and set_muted dispatch with the value`() = runTest {
+    @Test fun `set_pin set_archived set_muted and set_blocked dispatch with the value`() = runTest {
         val source = FakeSyncMessageSource()
         runEngine(source) { engine, sent ->
             engine.onSetPin(SyncProtocol.SetPin(conversationId = "123", value = true))
             engine.onSetArchived(SyncProtocol.SetArchived(conversationId = "123", value = false))
             engine.onSetMuted(SyncProtocol.SetMuted(conversationId = "456", value = true))
+            engine.onSetBlocked(SyncProtocol.SetBlocked(conversationId = "789", value = true))
             advanceUntilIdle()
             assertThat(source.actions).containsExactly(
                 ActionCall("set_pin", 123L, value = true),
                 ActionCall("set_archived", 123L, value = false),
                 ActionCall("set_muted", 456L, value = true),
+                ActionCall("set_blocked", 789L, value = true),
             ).inOrder()
             val results = sent.filter { it.frameType() == "action_result" }.map { it.asObject() }
-            assertThat(results).hasSize(3)
+            assertThat(results).hasSize(4)
             // `containsExactly` alone rend un `Ordered` : en dernière position
             // d'un `= runTest`, la méthode aurait un retour non-void et JUnit
             // l'ignorerait — d'où le `inOrder()` (void) en dernier.
             assertThat(results.map { it["ok"]?.jsonPrimitive?.content })
-                .containsExactly("true", "true", "true")
+                .containsExactly("true", "true", "true", "true")
             assertThat(results.map { it["action"]?.jsonPrimitive?.content })
-                .containsExactly("set_pin", "set_archived", "set_muted").inOrder()
+                .containsExactly("set_pin", "set_archived", "set_muted", "set_blocked").inOrder()
         }
     }
 

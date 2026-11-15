@@ -1,7 +1,9 @@
 package com.filestech.sms.data.contacts
 
+import android.Manifest
 import android.content.ContentResolver
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
 import android.util.LruCache
@@ -20,6 +22,14 @@ import javax.inject.Singleton
  * We resolve `phoneNumber → displayName` lazily; the cache is invalidated whenever
  * the provider notifies a change ([invalidate], called from the ContentObserver
  * `MainApplication` registers at startup).
+ *
+ * A miss is only cached while `READ_CONTACTS` is granted: with the permission
+ * denied the query comes back empty for every number, and caching that "miss"
+ * would keep the fallback showing after the grant until the process restarts —
+ * a grant is not a provider change, so the ContentObserver never invalidates
+ * it. The lookup itself still runs (and still lets a `SecurityException`
+ * propagate, which the block policy needs to tell "couldn't look" apart from
+ * "unknown sender"); only the negative-cache write is gated.
  *
  * **Thread-safety.** This is a Hilt `@Singleton` consumed concurrently from receiver threads
  * (SmsDeliverReceiver, MmsDownloadedReceiver), Worker threads (TelephonySyncWorker), and
@@ -71,7 +81,15 @@ class ContactsReader @Inject constructor(
         // v1.6.1 (audit QUAL-05) — smart-cast post if(contact != null) suffit, pas
         // besoin du !! qui trompait sur l'intention.
         val resolved = contact
-        if (resolved != null) cache.put(key, resolved) else negativeCache.put(key, true)
+        if (resolved != null) {
+            cache.put(key, resolved)
+        } else if (hasContactsPermission()) {
+            // Only a miss the provider could actually answer is worth
+            // caching — see the class KDoc. With the permission denied
+            // the lookup stays uncached, so the first lookup after the
+            // grant re-queries instead of replaying a stale miss.
+            negativeCache.put(key, true)
+        }
         return resolved
     }
 
@@ -167,6 +185,10 @@ class ContactsReader @Inject constructor(
         cache.evictAll()
         negativeCache.evictAll()
     }
+
+    private fun hasContactsPermission(): Boolean =
+        context.checkSelfPermission(Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
 
     private companion object {
         /** Max positive entries kept in RAM ; ~500 × 250 B = 125 KB ceiling. */

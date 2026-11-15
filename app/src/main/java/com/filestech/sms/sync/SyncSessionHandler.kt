@@ -18,7 +18,7 @@ import java.util.Base64
  * After auth, the sync frames (`sync_request`, `messages_request`)
  * and the Slice 3 send + write-back frames (`send_message`,
  * `mark_read`, `mark_all_read`, `set_pin`, `set_archived`,
- * `set_muted`, `set_reaction`, `set_pinned_message`) are dispatched
+ * `set_muted`, `set_blocked`, `set_reaction`, `set_pinned_message`) are dispatched
  * to the per-session [SyncEngine]; the engine starts its live
  * collectors the moment auth succeeds. Slice 4 adds the
  * attachment-byte frames (`attachment_request`,
@@ -74,6 +74,7 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.SetPin -> onSetPin(parsed.value)
             is SyncProtocol.Parsed.SetArchived -> onSetArchived(parsed.value)
             is SyncProtocol.Parsed.SetMuted -> onSetMuted(parsed.value)
+            is SyncProtocol.Parsed.SetBlocked -> onSetBlocked(parsed.value)
             is SyncProtocol.Parsed.SetReaction -> onSetReaction(parsed.value)
             is SyncProtocol.Parsed.SetPinnedMessage -> onSetPinnedMessage(parsed.value)
             is SyncProtocol.Parsed.AttachmentRequest -> onAttachmentRequest(parsed.value)
@@ -213,6 +214,10 @@ class SyncSessionHandler(
 
     private suspend fun onSetMuted(request: SyncProtocol.SetMuted) {
         withEngine { it.onSetMuted(request) }
+    }
+
+    private suspend fun onSetBlocked(request: SyncProtocol.SetBlocked) {
+        withEngine { it.onSetBlocked(request) }
     }
 
     private suspend fun onSetReaction(request: SyncProtocol.SetReaction) {

@@ -20,12 +20,14 @@ import com.filestech.sms.domain.repository.SetReactionResult
 import com.filestech.sms.domain.sender.DefaultSmsAppChecker
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.usecase.BlockNumberUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
 import com.filestech.sms.domain.usecase.RetrySendUseCase
 import com.filestech.sms.domain.usecase.ScheduleMessageUseCase
 import com.filestech.sms.domain.usecase.SendMediaMmsUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
+import com.filestech.sms.domain.usecase.UnblockNumberUseCase
 import com.filestech.sms.sync.ActionResult
 import com.filestech.sms.sync.AttachmentData
 import com.filestech.sms.sync.AttachmentOpenResult
@@ -123,6 +125,8 @@ class RepositorySyncMessageSource @Inject constructor(
     private val scheduleMessageUseCase: ScheduleMessageUseCase,
     private val deleteScheduledMessage: DeleteScheduledMessageUseCase,
     private val contactsRepository: ContactRepository,
+    private val blockNumber: BlockNumberUseCase,
+    private val unblockNumber: UnblockNumberUseCase,
 ) : SyncMessageSource {
 
     /** Serializes all send handling — see the class KDoc. */
@@ -777,6 +781,39 @@ class RepositorySyncMessageSource @Inject constructor(
     override suspend fun setMuted(conversationId: Long, muted: Boolean): ActionResult {
         if (resolveActionTarget(conversationId) == null) return unknownConversation()
         repository.setMuted(conversationId, muted)
+        return ActionResult(ok = true)
+    }
+
+    override suspend fun setBlocked(conversationId: Long, blocked: Boolean): ActionResult {
+        val conversation = resolveActionTarget(conversationId) ?: return unknownConversation()
+        // Blocking is per number, not a conversation flag: the phone
+        // marks a conversation blocked only when ALL its addresses
+        // are blocked, so a block/unblock applies to every address,
+        // like the list screen's block does. Each address is
+        // attempted on its own so one failure doesn't drop the rest;
+        // a total failure answers `internal` so the desktop reverts,
+        // and the live conversation update converges a partial one.
+        if (conversation.addresses.isEmpty()) return ActionResult(ok = true)
+        val applied = conversation.addresses.count { addr ->
+            runCatching {
+                if (blocked) {
+                    blockNumber.invoke(addr.raw, conversation.displayName)
+                } else {
+                    unblockNumber.invoke(addr.raw)
+                }
+            }.getOrNull() is Outcome.Success
+        }
+        if (applied == 0) {
+            return ActionResult(
+                ok = false,
+                code = SyncProtocol.MessageFailed.INTERNAL,
+                message = if (blocked) {
+                    "Couldn't block this conversation."
+                } else {
+                    "Couldn't unblock this conversation."
+                },
+            )
+        }
         return ActionResult(ok = true)
     }
 

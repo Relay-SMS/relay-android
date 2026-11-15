@@ -180,7 +180,7 @@ optimistic row to the real message.
 | Client → server | `send_message` | `{"type":"send_message","client_message_id":"3f2a…c41d","conversation_id":"123","body":"See you at 6","reply_to_message_id":"555"}` |
 | Client → server | `mark_read` | `{"type":"mark_read","conversation_id":"123"}` |
 | Client → server | `mark_all_read` | `{"type":"mark_all_read"}` |
-| Client → server | `set_pin` / `set_archived` / `set_muted` | `{"type":"set_pin","conversation_id":"123","value":true}` |
+| Client → server | `set_pin` / `set_archived` / `set_muted` / `set_blocked` | `{"type":"set_pin","conversation_id":"123","value":true}` |
 | Client → server | `set_reaction` | `{"type":"set_reaction","conversation_id":"123","message_id":"789","emoji":"❤️"}` |
 | Client → server | `set_pinned_message` | `{"type":"set_pinned_message","conversation_id":"123","message_id":"789"}` |
 | Server → client | `message_sent` | `{"type":"message_sent","client_message_id":"3f2a…c41d","message_id":"789","conversation_id":"123","status":"pending"}` |

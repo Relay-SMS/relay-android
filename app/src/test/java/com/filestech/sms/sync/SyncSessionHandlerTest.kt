@@ -325,13 +325,15 @@ class SyncSessionHandlerTest {
             harness.handler.onText("""{"type":"mark_read","conversation_id":"123"}""")
             harness.handler.onText("""{"type":"mark_all_read"}""")
             harness.handler.onText("""{"type":"set_muted","conversation_id":"456","value":true}""")
+            harness.handler.onText("""{"type":"set_blocked","conversation_id":"789","value":true}""")
             advanceUntilIdle()
             assertThat(source.actions).containsExactly(
                 ActionCall("mark_read", 123L),
                 ActionCall("mark_all_read"),
                 ActionCall("set_muted", 456L, value = true),
+                ActionCall("set_blocked", 789L, value = true),
             ).inOrder()
-            assertThat(engineSent).hasSize(3)
+            assertThat(engineSent).hasSize(4)
             assertThat(harness.closes).isEmpty()
         } finally {
             engine.stop()

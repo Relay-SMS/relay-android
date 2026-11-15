@@ -10,11 +10,13 @@ import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.sender.DefaultSmsAppChecker
 import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.usecase.BlockNumberUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
 import com.filestech.sms.domain.usecase.RetrySendUseCase
 import com.filestech.sms.domain.usecase.ScheduleMessageUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
+import com.filestech.sms.domain.usecase.UnblockNumberUseCase
 import com.filestech.sms.sync.AvatarOpenResult
 import com.filestech.sms.sync.ContactReadiness
 import com.filestech.sms.sync.SyncMessageSource
@@ -48,6 +50,8 @@ class RepositorySyncMessageSourceSlice5Test {
     private val scheduleUseCase = mockk<ScheduleMessageUseCase>()
     private val deleteScheduled = mockk<DeleteScheduledMessageUseCase>()
     private val contactsRepository = mockk<ContactRepository>()
+    private val blockNumber = mockk<BlockNumberUseCase>()
+    private val unblockNumber = mockk<UnblockNumberUseCase>()
 
     private val source: SyncMessageSource = RepositorySyncMessageSource(
         context = context,
@@ -61,6 +65,8 @@ class RepositorySyncMessageSourceSlice5Test {
         scheduleMessageUseCase = scheduleUseCase,
         deleteScheduledMessage = deleteScheduled,
         contactsRepository = contactsRepository,
+        blockNumber = blockNumber,
+        unblockNumber = unblockNumber,
     )
 
     // -- contacts: the mapping ------------------------------------------

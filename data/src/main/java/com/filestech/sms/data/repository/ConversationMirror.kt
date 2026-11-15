@@ -456,6 +456,7 @@ class ConversationMirror @Inject constructor(
         val scanned: Int,
         val folded: Int,
         val skipped: Int,
+        val normalized: Int = 0,
     )
 
     suspend fun reparseStoredReactions(): ReactionReparseResult = withContext(io) {
@@ -534,13 +535,33 @@ class ConversationMirror @Inject constructor(
             }
             folded++
         }
+        // v3 — normalize legacy multi-emoji reactions: older builds could
+        // store several emojis in one reaction ("👍😂😅"); Relay's model is
+        // one emoji per message, so keep the first cluster and drop the
+        // rest. Idempotent: single-emoji values are untouched, so a
+        // re-run (or a v3 install that already ran it) changes nothing.
+        var normalized = 0
+        for (row in messageDao.findMessagesWithReactions()) {
+            val emoji = row.reactionEmoji ?: continue
+            val first = IncomingReactionDecoder.firstGraphemeCluster(emoji)
+            if (first != emoji) {
+                messageDao.setReaction(row.id, first)
+                normalized++
+            }
+        }
         Timber.i(
-            "reparseStoredReactions: done — scanned=%d folded=%d skipped=%d",
+            "reparseStoredReactions: done — scanned=%d folded=%d skipped=%d normalized=%d",
             scanned,
             folded,
             skipped,
+            normalized,
         )
-        ReactionReparseResult(scanned = scanned, folded = folded, skipped = skipped)
+        ReactionReparseResult(
+            scanned = scanned,
+            folded = folded,
+            skipped = skipped,
+            normalized = normalized,
+        )
     }
 
     /**

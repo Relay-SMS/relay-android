@@ -188,6 +188,13 @@ class SyncEngine(
         }
     }
 
+    /** Handles a `set_blocked`, answered with `action_result`. */
+    fun onSetBlocked(request: SyncProtocol.SetBlocked) {
+        scope.launch {
+            runAction("set_blocked", request.conversationId, null) { source.setBlocked(it, request.value) }
+        }
+    }
+
     /** Handles a `set_reaction`, answered with `action_result`. */
     fun onSetReaction(request: SyncProtocol.SetReaction) {
         scope.launch {

@@ -366,6 +366,13 @@ object SyncProtocol {
         @SerialName("value") val value: Boolean,
     )
 
+    /** Client → server: block / unblock one conversation. */
+    @Serializable
+    data class SetBlocked(
+        @SerialName("conversation_id") val conversationId: String,
+        @SerialName("value") val value: Boolean,
+    )
+
     /**
      * Client → server: react to a message, or remove the reaction
      * (`emoji` null / absent). A reaction from the desktop sends a
@@ -449,7 +456,7 @@ object SyncProtocol {
     /**
      * Server → client: the ack for every action type (`mark_read`,
      * `mark_all_read`, `set_pin`, `set_archived`, `set_muted`,
-     * `set_reaction`, `set_pinned_message`). One result type for all of
+     * `set_blocked`, `set_reaction`, `set_pinned_message`). One result type for all of
      * them: [action] echoes the request type. [ok] `false` means the
      * phone did not apply it — the desktop reverts its optimistic
      * change. [messageId] is present for `set_reaction` /
@@ -780,6 +787,7 @@ object SyncProtocol {
         data class SetPin(val value: SyncProtocol.SetPin) : Parsed
         data class SetArchived(val value: SyncProtocol.SetArchived) : Parsed
         data class SetMuted(val value: SyncProtocol.SetMuted) : Parsed
+        data class SetBlocked(val value: SyncProtocol.SetBlocked) : Parsed
         data class SetReaction(val value: SyncProtocol.SetReaction) : Parsed
         data class SetPinnedMessage(val value: SyncProtocol.SetPinnedMessage) : Parsed
         data class AttachmentRequest(val value: SyncProtocol.AttachmentRequest) : Parsed
@@ -833,6 +841,7 @@ object SyncProtocol {
         "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
         "set_archived" -> decode<SetArchived>(obj)?.let(Parsed::SetArchived) ?: Parsed.Malformed
         "set_muted" -> decode<SetMuted>(obj)?.let(Parsed::SetMuted) ?: Parsed.Malformed
+        "set_blocked" -> decode<SetBlocked>(obj)?.let(Parsed::SetBlocked) ?: Parsed.Malformed
         "set_reaction" -> decode<SetReaction>(obj)?.let(Parsed::SetReaction) ?: Parsed.Malformed
         "set_pinned_message" -> decode<SetPinnedMessage>(obj)?.let(Parsed::SetPinnedMessage) ?: Parsed.Malformed
         "attachment_request" -> decode<AttachmentRequest>(obj)?.let(Parsed::AttachmentRequest) ?: Parsed.Malformed

@@ -424,7 +424,7 @@ class SyncProtocolTest {
             .isEqualTo(SyncProtocol.Parsed.MarkAllRead(SyncProtocol.MarkAllRead))
     }
 
-    @Test fun `set_pin set_archived and set_muted parse`() {
+    @Test fun `set_pin set_archived set_muted and set_blocked parse`() {
         assertThat(SyncProtocol.parse("""{"type":"set_pin","conversation_id":"123","value":true}"""))
             .isEqualTo(
                 SyncProtocol.Parsed.SetPin(SyncProtocol.SetPin(conversationId = "123", value = true)),
@@ -438,6 +438,10 @@ class SyncProtocolTest {
         assertThat(SyncProtocol.parse("""{"type":"set_muted","conversation_id":"123","value":true}"""))
             .isEqualTo(
                 SyncProtocol.Parsed.SetMuted(SyncProtocol.SetMuted(conversationId = "123", value = true)),
+            )
+        assertThat(SyncProtocol.parse("""{"type":"set_blocked","conversation_id":"123","value":true}"""))
+            .isEqualTo(
+                SyncProtocol.Parsed.SetBlocked(SyncProtocol.SetBlocked(conversationId = "123", value = true)),
             )
     }
 

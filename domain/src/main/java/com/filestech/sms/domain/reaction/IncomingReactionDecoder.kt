@@ -506,6 +506,59 @@ object IncomingReactionDecoder {
         return clusters == 1
     }
 
+    /**
+     * First grapheme cluster of [text], using the same cluster rules as
+     * [looksLikeEmojiOnly] (ZWJ sequences, skin tones, VS16 and keycap
+     * marks extend a cluster; regional indicators pair into one flag).
+     * A stored reaction holds exactly one emoji in Relay's model, but
+     * older builds could store several ("👍😂😅"); the v3 reparse keeps
+     * the first and drops the rest. Returns "" for an empty input.
+     */
+    fun firstGraphemeCluster(text: String): String {
+        if (text.isEmpty()) return ""
+        var index = 0
+        var joinNext = false
+        var pendingRegional = false
+        var clusterEnd = 0
+        while (index < text.length) {
+            val codePoint = text.codePointAt(index)
+            index += Character.charCount(codePoint)
+            when {
+                // ZWJ joins the next emoji into the current cluster.
+                codePoint == 0x200D -> {
+                    joinNext = true
+                    pendingRegional = false
+                }
+                // Modifiers extend the current cluster, never start one.
+                codePoint in 0x1F3FB..0x1F3FF || codePoint == 0xFE0F ||
+                    codePoint == 0x20E3 -> {
+                    pendingRegional = false
+                }
+                // Regional indicators pair up: two make one flag cluster.
+                codePoint in 0x1F1E6..0x1F1FF -> {
+                    if (pendingRegional) {
+                        pendingRegional = false
+                    } else {
+                        if (clusterEnd != 0) return text.substring(0, clusterEnd)
+                        pendingRegional = true
+                    }
+                    joinNext = false
+                }
+                joinNext -> {
+                    joinNext = false
+                    pendingRegional = false
+                }
+                // A plain code point starts a new cluster — unless this
+                // is the very first one.
+                else -> {
+                    if (clusterEnd != 0) return text.substring(0, clusterEnd)
+                }
+            }
+            clusterEnd = index
+        }
+        return text.substring(0, clusterEnd)
+    }
+
     /** Lone Unicode horizontal ellipsis Relay appends when the preview was truncated. */
     private const val TRUNCATION_MARKER: String = "…"
 

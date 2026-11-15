@@ -10,11 +10,13 @@ import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.sender.DefaultSmsAppChecker
 import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.usecase.BlockNumberUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
 import com.filestech.sms.domain.usecase.RetrySendUseCase
 import com.filestech.sms.domain.usecase.ScheduleMessageUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
+import com.filestech.sms.domain.usecase.UnblockNumberUseCase
 import com.filestech.sms.sync.AttachmentOpenResult
 import com.filestech.sms.sync.SendAttachmentInput
 import com.filestech.sms.sync.SendResult
@@ -58,6 +60,8 @@ class RepositorySyncMessageSourceSlice4Test {
     private val scheduleUseCase = mockk<ScheduleMessageUseCase>()
     private val deleteScheduled = mockk<DeleteScheduledMessageUseCase>()
     private val contactsRepository = mockk<ContactRepository>()
+    private val blockNumber = mockk<BlockNumberUseCase>()
+    private val unblockNumber = mockk<UnblockNumberUseCase>()
 
     // Typed as the interface: the 4-arg `sendMessage` calls below
     // pick up the interface's `attachments = null` default (an
@@ -74,6 +78,8 @@ class RepositorySyncMessageSourceSlice4Test {
         scheduleMessageUseCase = scheduleUseCase,
         deleteScheduledMessage = deleteScheduled,
         contactsRepository = contactsRepository,
+        blockNumber = blockNumber,
+        unblockNumber = unblockNumber,
     )
 
     @BeforeEach

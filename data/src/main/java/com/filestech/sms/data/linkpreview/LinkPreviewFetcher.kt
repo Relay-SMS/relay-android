@@ -81,6 +81,21 @@ open class LinkPreviewFetcher @Inject constructor(
     }
 
     /**
+     * The cached preview for [url], if this process already fetched it —
+     * a preview, or `null` for a cached "no preview". Also `null` when
+     * uncached: call [isCached] first to tell the two apart. Lets a card
+     * render its cached preview on first composition instead of popping
+     * in after the fetch returns (the pop-in grows the thread and shifts
+     * the view up onto the card). Same key cleaning as [preview].
+     */
+    fun cachedPreview(url: String): LinkPreview? =
+        synchronized(cacheLock) { cache[url.trim()] }
+
+    /** Whether [url] has a cached preview result (including "no preview"). */
+    fun isCached(url: String): Boolean =
+        synchronized(cacheLock) { cache.containsKey(url.trim()) }
+
+    /**
      * Round 18 — the preview for [url], per platform (see the class KDoc):
      * YouTube goes to oEmbed first, X post URLs get their Open Graph tags
      * reshaped to the post, TikTok suppresses its generic shell, and

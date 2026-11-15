@@ -623,10 +623,12 @@ data class AdvancedSettings(
     companion object {
         /**
          * Current reparse version (see [reactionReparseVersion]): 1 folded
-         * incoming reaction texts; 2 also folds our own outgoing tapbacks.
+         * incoming reaction texts; 2 also folds our own outgoing tapbacks;
+         * 3 also normalizes stored multi-emoji reactions (a legacy
+         * multi-react value like "👍😂😅") down to their first emoji.
          * Bump when the reparse learns a new shape, so existing installs
          * re-run it exactly once.
          */
-        const val REACTION_REPARSE_CURRENT_VERSION = 2
+        const val REACTION_REPARSE_CURRENT_VERSION = 3
     }
 }
