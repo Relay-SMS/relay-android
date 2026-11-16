@@ -91,6 +91,17 @@
          READS the connection state, it opens no connection. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Linked devices — `CHANGE_WIFI_MULTICAST_STATE`, for the
+         multicast lock SyncService holds while the server runs
+         (MulticastLockGuard): the Wi-Fi stack filters multicast
+         packets when the screen is off, and mDNS discovery is
+         multicast in both directions, so without the lock a linked
+         computer cannot find a locked phone. Protection level
+         `normal`: granted at install, no prompt, no data access —
+         it only lets the app ask the Wi-Fi stack to deliver
+         multicast packets addressed to the local network. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <!-- v1.27.1 (N3) — requise par `Window.setHideOverlayWindows()`, qui masque les
          superpositions des autres applications pendant la saisie d'un secret
          (cf. ProtectSecretInput / THREAT-MODEL.md N3).

@@ -110,6 +110,13 @@ AUTORISEES = {
     # (LAN uniquement, aucun cloud). Documentee dans PERMISSIONS.md ;
     # aucune autre utilisation reseau n'est autorisee.
     "android.permission.INTERNET",
+    # Sync server — CHANGE_WIFI_MULTICAST_STATE, pour le verrou
+    # multicast tenu tant que le serveur tourne (MulticastLockGuard) :
+    # sans lui, un ordinateur lie ne trouve plus le telephone
+    # verrouille (la pile Wi-Fi filtre le multicast ecran eteint).
+    # Niveau `normal`, accordee a l'installation. Documentee dans
+    # PERMISSIONS.md.
+    "android.permission.CHANGE_WIFI_MULTICAST_STATE",
     # Transitives : androidx.biometric (Android 8) et androidx.work.
     "android.permission.USE_FINGERPRINT",
     "android.permission.WAKE_LOCK",

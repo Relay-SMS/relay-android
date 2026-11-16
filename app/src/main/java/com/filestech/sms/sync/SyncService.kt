@@ -64,6 +64,13 @@ import javax.inject.Inject
  * moment the user switches the default app in Settings instead of
  * waiting for the server's 30 s watchdog tick (which stays as the
  * safety net in case the broadcast is ever missed on some device).
+ *
+ * While it runs, the service also holds a Wi-Fi multicast lock
+ * ([MulticastLockGuard]): the Wi-Fi stack filters multicast
+ * packets when the screen is off, and without the lock a linked
+ * computer's "Find your phone" finds nothing on a locked phone
+ * even though the server keeps listening. Acquired when the
+ * service starts, released when it is destroyed.
  */
 @AndroidEntryPoint
 class SyncService : Service() {
@@ -93,12 +100,20 @@ class SyncService : Service() {
     /** Whether [defaultSmsReceiver] is currently registered. */
     private var defaultSmsReceiverRegistered = false
 
+    /**
+     * The multicast lock, held while the service runs so a linked
+     * computer can find a locked phone. Built in [onCreate],
+     * acquired in [onStartCommand], released in [onDestroy].
+     */
+    private var multicastLockGuard: MulticastLockGuard? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
         registerDefaultSmsReceiver()
+        multicastLockGuard = MulticastLockGuard.from(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -122,6 +137,9 @@ class SyncService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // Only once the service is actually running in the
+        // foreground: a failed start must not leave a lock behind.
+        multicastLockGuard?.acquire()
         scope.launch {
             runCatching { syncServer.start() }
                 .onFailure { t ->
@@ -151,6 +169,11 @@ class SyncService : Service() {
     }
 
     override fun onDestroy() {
+        // Synchronous, not in the coroutine below: the lock must be
+        // released even if the scope is cancelled before the server
+        // stop runs.
+        multicastLockGuard?.release()
+        multicastLockGuard = null
         if (defaultSmsReceiverRegistered) {
             defaultSmsReceiverRegistered = false
             runCatching { unregisterReceiver(defaultSmsReceiver) }
