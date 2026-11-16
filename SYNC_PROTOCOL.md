@@ -666,6 +666,50 @@ phone-only, like bubble color — appearance, not contact data); a
 contacts-list UI (the directory exists to resolve names and
 photos in the messaging UI, not as a destination of its own).
 
+## Create conversation from the desktop (protocol version 1)
+
+The desktop creates a conversation — 1:1 or group — through the
+phone, the same way the phone's own composer does: the thread is
+created immediately, with no message needed, and a group name
+typed on the desktop is applied to it. Same JSON envelope, same
+`type` field, same rules. No protocol bump: every addition is
+additive.
+
+| Direction | Message | Shape |
+|---|---|---|
+| Client → server | `create_conversation` | `{"type":"create_conversation","addresses":["+15551234567","+15550001111"],"custom_name":"Family"}` |
+| Server → client | `conversation_created` | `{"type":"conversation_created","conversation":CONVERSATION}` |
+| Server → client | `action_result` (failure) | `{"type":"action_result","action":"create_conversation","ok":false,"code":"invalid_request","message":"…"}` |
+
+`create_conversation` carries `addresses` (a non-empty array of
+normalized number strings — one number is a 1:1 conversation,
+several is a group) and an optional `custom_name` (absent or
+blank means an unnamed group, which shows member names, as on
+the phone). There is NO `client_message_id`: the phone's
+`findOrCreate` is idempotent for the same member set — sending
+the same request twice returns the existing conversation, never
+a duplicate thread — so a retry after a lost ack needs no dedup
+key.
+
+`conversation_created` is the ack: `conversation` is the full
+CONVERSATION row, the exact same shape as one entry in the
+`conversations` batches, with the real message count — so the
+desktop opens an already-existing group with its history, not
+an empty thread. If a conversation with the same members
+already exists, it is returned in the same frame. The live
+conversation push (`conversation_updated`) also fires for the
+new row, as for any list change; the desktop upserts by id, so
+the duplicate is harmless.
+
+A failure answers `action_result` with `action:
+"create_conversation"` and `ok: false` — with NO
+`conversation_id` (none exists yet). Codes reuse the
+`message_failed` set: `invalid_request` (the address list was
+empty, or every entry blank — the desktop shows the message and
+lets the user pick again) and `internal` (anything else; the
+message stays generic, never a stack trace). A refused create
+is never a protocol violation — the socket stays up.
+
 ## Key storage (phone)
 
 Linked-device records in the app's store: device id, kind, display name,
@@ -680,7 +724,8 @@ adds sending from the desktop plus desktop→phone write-back (marking
 read on the phone, pin/archive/mute, reactions, pinned message),
 Slice 4 adds attachment bytes (download + upload + media sends),
 Phase 2 adds scheduled messages from the desktop, and Slice 5 adds
-contact sync (names + avatars, snapshot + live delta), all in the same
+contact sync (names + avatars, snapshot + live delta), and create
+conversation adds starting a conversation from the desktop, all in the same
 envelope; the protocol version stays 1 until a breaking change needs
 it. Still out of scope: deleting from the desktop.
 

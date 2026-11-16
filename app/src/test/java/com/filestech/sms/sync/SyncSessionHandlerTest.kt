@@ -409,6 +409,47 @@ class SyncSessionHandlerTest {
         }
     }
 
+    // -- Create conversation --------------------------------------------
+
+    @Test fun `an unauthenticated create_conversation fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText(
+            """{"type":"create_conversation","addresses":["+15551234567"],"custom_name":"Family"}""",
+        )
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `an authenticated create_conversation reaches the engine and answers conversation_created`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+
+            harness.handler.onText(
+                """{"type":"create_conversation","addresses":["+15551234567","+15550001111"],"custom_name":"Family"}""",
+            )
+            advanceUntilIdle()
+            assertThat(source.creates).containsExactly(
+                CreateCall(listOf("+15551234567", "+15550001111"), "Family"),
+            )
+            assertThat(engineSent).hasSize(1)
+            val ack = Json.parseToJsonElement(engineSent.first()).jsonObject
+            assertThat(ack["type"]?.jsonPrimitive?.content).isEqualTo("conversation_created")
+            assertThat(ack["conversation"]?.jsonObject?.get("id")?.jsonPrimitive?.content)
+                .isEqualTo("123")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
     @Test fun `a send frame with no engine answers error and stays open`() = runTest {
         val harness = authenticatedHarness()
         harness.handler.onText(

@@ -12,6 +12,7 @@ import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendReport
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
@@ -34,6 +35,7 @@ import com.filestech.sms.sync.AttachmentOpenResult
 import com.filestech.sms.sync.AvatarOpenResult
 import com.filestech.sms.sync.CancelResult
 import com.filestech.sms.sync.ContactReadiness
+import com.filestech.sms.sync.CreateConversationResult
 import com.filestech.sms.sync.MessageState
 import com.filestech.sms.sync.Readiness
 import com.filestech.sms.sync.ScheduleResult
@@ -111,6 +113,13 @@ import com.filestech.sms.domain.model.MessageState as DomainMessageState
  * opens the thumbnail stream for one number, and the readiness
  * check is separate from [readiness] — contacts failing must never
  * fail message sync.
+ *
+ * Create conversation adds [createConversation]: the desktop's
+ * new-conversation request goes through the phone's own composer
+ * path (`findOrCreate`, then `setCustomName` when a name was
+ * typed), so the thread exists immediately, with no message
+ * needed, and a retry returns the existing conversation instead
+ * of a duplicate.
  */
 @Singleton
 class RepositorySyncMessageSource @Inject constructor(
@@ -506,6 +515,57 @@ class RepositorySyncMessageSource @Inject constructor(
                 )
             }
         }
+
+    // -- Create conversation from the desktop ---------------------------
+
+    override suspend fun createConversation(
+        addresses: List<String>,
+        customName: String?,
+    ): CreateConversationResult {
+        // Blank entries carry no number (`PhoneAddress.of` normalizes
+        // them to empty) — drop them, and refuse a list with nothing
+        // left instead of creating a thread with no recipients.
+        val parsed = addresses.map { PhoneAddress.of(it) }
+            .filter { it.normalized.isNotEmpty() }
+        if (parsed.isEmpty()) {
+            return CreateConversationResult.Failed(
+                SyncProtocol.MessageFailed.INVALID_REQUEST,
+                "Choose at least one contact to start a conversation.",
+            )
+        }
+        // The phone's own composer path: `findOrCreate` creates the
+        // thread immediately (no message needed) and returns the
+        // existing conversation for the same member set, so a retry
+        // after a lost ack never duplicates the thread.
+        return when (val outcome = repository.findOrCreate(parsed)) {
+            is Outcome.Failure -> CreateConversationResult.Failed(
+                SyncProtocol.MessageFailed.INTERNAL,
+                "The conversation could not be created.",
+            )
+            is Outcome.Success -> {
+                val created = outcome.value
+                val name = customName?.trim()
+                if (!name.isNullOrEmpty()) {
+                    repository.setCustomName(created.id, name)
+                }
+                // `setCustomName` writes after `findOrCreate`
+                // returned, so the created row's custom name (and
+                // its computed title) would be stale — re-read the
+                // row so the desktop opens the conversation with
+                // its name. Falls back to the created row.
+                val fresh = if (!name.isNullOrEmpty()) {
+                    repository.findById(created.id) ?: created
+                } else {
+                    created
+                }
+                // The real count, from the same read `conversations()`
+                // uses — for an already-existing group the count must
+                // be real so the desktop opens it with its history.
+                val count = repository.messageCountsByConversation()[created.id] ?: 0
+                CreateConversationResult.Created(fresh.toSynced(count))
+            }
+        }
+    }
 
     // -- Slice 4: attachment bytes --------------------------------------
 

@@ -38,6 +38,12 @@ import java.io.InputStream
  * [readiness] (which stays SMS-only), and a contacts failure
  * surfaces as `contacts_error`, not `sync_error`.
  *
+ * Create conversation adds [createConversation] below, same
+ * argument: the phone's own composer path (`findOrCreate` + an
+ * optional `setCustomName`) does the work, the glue only maps the
+ * desktop's address strings to the phone's `PhoneAddress` values
+ * and the created row to the wire DTO.
+ *
  * The function count is the one-seam decision, not bloat: splitting
  * this interface would mean a second implementation, a second Hilt
  * binding, and a second seam to re-implement on a port, for no
@@ -216,6 +222,27 @@ interface SyncMessageSource {
      */
     suspend fun cancelScheduledMessage(clientMessageId: String): CancelResult
 
+    // -- Create conversation from the desktop --------------------------
+
+    /**
+     * Creates a conversation for [addresses] (one number = a 1:1
+     * conversation, several = a group) and names it [customName]
+     * when one was typed — the phone's own composer path
+     * (`findOrCreate`, then `setCustomName` when the name is
+     * non-blank), so no message is needed to create the thread and
+     * a blank name leaves the group unnamed (it shows member
+     * names). IDEMPOTENT: `findOrCreate` returns the existing
+     * conversation for the same member set, so a retry after a lost
+     * ack never creates a duplicate — which is why the wire request
+     * carries no client key. An empty list (or one whose entries
+     * are all blank) fails with `invalid_request`, never with a
+     * created thread.
+     */
+    suspend fun createConversation(
+        addresses: List<String>,
+        customName: String?,
+    ): CreateConversationResult
+
     /**
      * Reacts to a message ([emoji] null = remove the reaction). The
      * local reaction is set first, then the reaction SMS is sent —
@@ -327,6 +354,28 @@ sealed interface CancelResult {
 
     /** The cancel itself failed. [message] is user-facing and generic. */
     data class Failed(val code: String, val message: String) : CancelResult
+}
+
+/**
+ * Create conversation — what a create did: the `conversation_created`
+ * / `action_result` payload. Codes are [SyncProtocol.MessageFailed]'s,
+ * plus `invalid_request` for an empty address list.
+ */
+sealed interface CreateConversationResult {
+    /**
+     * The conversation was created — or already existed for the
+     * same member set (the idempotent `findOrCreate` returning the
+     * stored row). [conversation] is the full `SyncedConversation`,
+     * the exact same shape as one entry in the `conversations`
+     * batches, with the real message count — so the desktop opens
+     * an existing group with its history, not an empty thread.
+     */
+    data class Created(
+        val conversation: SyncedConversation,
+    ) : CreateConversationResult
+
+    /** The create was refused or failed. [message] is user-facing and generic. */
+    data class Failed(val code: String, val message: String) : CreateConversationResult
 }
 
 /**

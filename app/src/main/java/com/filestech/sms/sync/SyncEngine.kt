@@ -46,6 +46,10 @@ import java.util.concurrent.ConcurrentHashMap
  * the same shape; the runner is file-scope like the Slice 4 ones.
  * The scheduled-cancel handler ([onCancelScheduled]) follows it.
  *
+ * Create conversation adds the new-conversation handler
+ * ([onCreateConversation]) in the same shape; the runner is
+ * file-scope like the Slice 4 ones.
+ *
  * Slice 5 adds the contact-sync handlers ([onContactsRequest],
  * [onAvatarRequest]) in the same shape, plus the contact snapshot
  * inside [runStream] (read once before `sync_started`, streamed
@@ -329,6 +333,28 @@ class SyncEngine(
             } catch (t: Throwable) {
                 Timber.w(t, "SyncEngine: cancel scheduled failed")
                 runCatching { send(cancelFailedInternal(request)) }
+            }
+        }
+    }
+
+    // -- Create conversation -------------------------------------------
+    // Same shape as the other handlers: starts a job and returns
+    // immediately, so a slow create never blocks the frame loop.
+
+    /**
+     * Handles a `create_conversation`: answered with
+     * `conversation_created` or `action_result` (`ok: false` — no
+     * `conversation_id`, none exists yet).
+     */
+    fun onCreateConversation(request: SyncProtocol.CreateConversation) {
+        scope.launch {
+            try {
+                runCreateConversation(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: create conversation failed")
+                runCatching { send(createFailedInternal()) }
             }
         }
     }
@@ -984,6 +1010,50 @@ private fun cancelFailedInternal(request: SyncProtocol.CancelScheduled): String 
             conversationId = "",
             code = SyncProtocol.MessageFailed.INTERNAL,
             message = "The scheduled message could not be cancelled.",
+        ),
+    )
+
+// -- Create conversation (file scope, like the Slice 4 runners: the
+// runner touches no engine state beyond the source and the send
+// lambda, and the class is at the Detekt function limit) -------------
+
+/**
+ * Runs one `create_conversation`: answered with
+ * `conversation_created` (the full conversation, the same shape as
+ * one entry in the `conversations` batches) or `action_result`
+ * (`ok: false` — no `conversation_id`, none exists yet).
+ */
+private suspend fun runCreateConversation(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.CreateConversation,
+) {
+    when (val result = source.createConversation(request.addresses, request.customName)) {
+        is CreateConversationResult.Created -> send(
+            SyncProtocol.encodeConversationCreated(
+                SyncProtocol.ConversationCreated(result.conversation),
+            ),
+        )
+        is CreateConversationResult.Failed -> send(
+            SyncProtocol.encodeActionResult(
+                SyncProtocol.ActionResult(
+                    action = "create_conversation",
+                    ok = false,
+                    code = result.code,
+                    message = result.message,
+                ),
+            ),
+        )
+    }
+}
+
+private fun createFailedInternal(): String =
+    SyncProtocol.encodeActionResult(
+        SyncProtocol.ActionResult(
+            action = "create_conversation",
+            ok = false,
+            code = SyncProtocol.MessageFailed.INTERNAL,
+            message = "The conversation could not be created.",
         ),
     )
 

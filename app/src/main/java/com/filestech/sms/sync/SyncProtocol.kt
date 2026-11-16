@@ -49,6 +49,11 @@ import kotlinx.serialization.serializer
  * on `sync_started` (`total_contacts`); avatars travel through the
  * Slice 4 chunk frames under the `avatar:<number>` id, with their
  * own request type (`avatar_request`). The protocol version stays 1.
+ *
+ * Create conversation adds the desktop's new-conversation types
+ * (`create_conversation`, `conversation_created`) in the same
+ * envelope; failures reuse `action_result`. The protocol version
+ * stays 1.
  */
 object SyncProtocol {
 
@@ -450,6 +455,14 @@ object SyncProtocol {
 
             /** Anything else; [MessageFailed.message] stays generic, never a stack trace. */
             const val INTERNAL = "internal"
+
+            /**
+             * The request itself is unusable — an empty address list
+             * on `create_conversation` (every address blank, or none
+             * at all). A client bug, not a phone failure; the
+             * desktop shows the message and lets the user pick again.
+             */
+            const val INVALID_REQUEST = "invalid_request"
         }
     }
 
@@ -769,6 +782,39 @@ object SyncProtocol {
         }
     }
 
+    // -- Create conversation (SYNC_PROTOCOL.md, Create conversation) ---
+
+    /**
+     * Client → server: create a conversation for [addresses] (one
+     * number = a 1:1 conversation, several = a group) and name it
+     * [customName] when one was typed. [addresses] are normalized
+     * number strings; [customName] absent or blank means an unnamed
+     * group (it shows member names, as on the phone). There is NO
+     * `client_message_id`: the phone's `findOrCreate` is idempotent
+     * for the same member set — a retry returns the existing
+     * conversation, never a duplicate — so no dedup key is needed.
+     */
+    @Serializable
+    data class CreateConversation(
+        @SerialName("addresses") val addresses: List<String>,
+        @SerialName("custom_name") val customName: String? = null,
+    )
+
+    /**
+     * Server → client: the conversation was created (or already
+     * existed for the same member set) — the ack to
+     * `create_conversation`. [conversation] is the full
+     * `SyncedConversation`, the exact same shape as one entry in
+     * the `conversations` batches, so the desktop opens it the same
+     * way it opens any synced conversation. A failure answers
+     * `action_result` with `action: "create_conversation"` and
+     * `ok: false` instead — no `conversation_id` (none exists yet).
+     */
+    @Serializable
+    data class ConversationCreated(
+        @SerialName("conversation") val conversation: SyncedConversation,
+    )
+
     /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
@@ -797,6 +843,7 @@ object SyncProtocol {
         data class CancelScheduled(val value: SyncProtocol.CancelScheduled) : Parsed
         data class ContactsRequest(val value: SyncProtocol.ContactsRequest) : Parsed
         data class AvatarRequest(val value: SyncProtocol.AvatarRequest) : Parsed
+        data class CreateConversation(val value: SyncProtocol.CreateConversation) : Parsed
         data class Unknown(val type: String?) : Parsed
         data object Malformed : Parsed
     }
@@ -833,9 +880,10 @@ object SyncProtocol {
 
     /**
      * The second half of [parse]: the Slice 3 write-back actions, the
-     * Slice 4 attachment frames, the Phase 2 schedule frames, and the
-     * Slice 5 contact frames. A well-formed message of an unknown type
-     * comes back as [Parsed.Unknown], like in [parse].
+     * Slice 4 attachment frames, the Phase 2 schedule frames, the
+     * Slice 5 contact frames, and the create-conversation frame. A
+     * well-formed message of an unknown type comes back as
+     * [Parsed.Unknown], like in [parse].
      */
     private fun parseRemaining(type: String, obj: JsonObject): Parsed = when (type) {
         "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
@@ -851,6 +899,7 @@ object SyncProtocol {
         "cancel_scheduled" -> decode<CancelScheduled>(obj)?.let(Parsed::CancelScheduled) ?: Parsed.Malformed
         "contacts_request" -> decode<ContactsRequest>(obj)?.let(Parsed::ContactsRequest) ?: Parsed.Malformed
         "avatar_request" -> decode<AvatarRequest>(obj)?.let(Parsed::AvatarRequest) ?: Parsed.Malformed
+        "create_conversation" -> decode<CreateConversation>(obj)?.let(Parsed::CreateConversation) ?: Parsed.Malformed
         else -> Parsed.Unknown(type)
     }
 
@@ -934,6 +983,9 @@ object SyncProtocol {
 
     fun encodeContactsError(value: ContactsError): String =
         withType(value, "contacts_error").toString()
+
+    fun encodeConversationCreated(value: ConversationCreated): String =
+        withType(value, "conversation_created").toString()
 
     /**
      * The `type` field is not part of the data classes (it is routing,

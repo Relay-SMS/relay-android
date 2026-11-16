@@ -231,6 +231,27 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         return cancelResult
     }
 
+    // -- Create conversation from the desktop ---------------------------
+    // Same shape as the send surface: records its call and answers
+    // from a configurable result.
+
+    val creates = mutableListOf<CreateCall>()
+    var createResult: CreateConversationResult = CreateConversationResult.Created(
+        sampleConversation(id = 123, title = "Family"),
+    )
+
+    /** When set, [createConversation] throws this instead of answering. */
+    var createError: Throwable? = null
+
+    override suspend fun createConversation(
+        addresses: List<String>,
+        customName: String?,
+    ): CreateConversationResult {
+        createError?.let { throw it }
+        creates += CreateCall(addresses, customName)
+        return createResult
+    }
+
     // -- Slice 5: contact sync ----------------------------------------
     // Same shape as the send surface: the snapshot is a configurable
     // list, the avatar answers from a configurable result.
@@ -288,6 +309,12 @@ internal data class ScheduleCall(
     val conversationId: Long,
     val body: String,
     val sendAt: Long,
+)
+
+/** One recorded `createConversation` call on the fake. */
+internal data class CreateCall(
+    val addresses: List<String>,
+    val customName: String?,
 )
 
 /** One recorded `beginUpload` call on the fake. */
