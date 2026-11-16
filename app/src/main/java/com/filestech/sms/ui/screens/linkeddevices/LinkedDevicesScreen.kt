@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Devices
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Tablet
@@ -117,6 +118,10 @@ fun LinkedDevicesScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val linkedFmt = stringResource(R.string.linked_devices_linked)
     val removedFmt = stringResource(R.string.linked_devices_removed)
+    // Round 3, item 9 — WRITE_CONTACTS, so a linked computer can
+    // set a contact's photo. Requested from this screen (the row in
+    // the server group), never at launch.
+    val contactsWrite = rememberPermissionContactsWrite()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -148,6 +153,8 @@ fun LinkedDevicesScreen(
             onOpenScanner = { scannerOpen = true },
             onToggleServer = viewModel::setServerEnabled,
             onRemove = { deviceToRemove = it },
+            contactsWriteGranted = contactsWrite.granted,
+            onRequestContactsWrite = contactsWrite.request,
         )
     }
 
@@ -227,6 +234,10 @@ private fun LinkedDevicesList(
     onOpenScanner: () -> Unit,
     onToggleServer: (Boolean) -> Unit,
     onRemove: (LinkedDeviceUi) -> Unit,
+    /** WRITE_CONTACTS granted — the photo row hides itself when true. */
+    contactsWriteGranted: Boolean,
+    /** Request WRITE_CONTACTS (the photo row's tap). */
+    onRequestContactsWrite: () -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -260,6 +271,24 @@ private fun LinkedDevicesList(
                         checked = state.serverEnabled,
                         onCheckedChange = onToggleServer,
                     )
+                }
+                // Round 3, item 9 — WRITE_CONTACTS, so a linked
+                // computer can set a contact's photo (the camera
+                // badge on the desktop detail pane). The row shows
+                // only while the permission is missing, and tapping
+                // it requests it — the background service cannot
+                // show a dialog, so this screen is where the grant
+                // happens. Once granted the row goes away on its
+                // own (accompanist re-reads on foreground return).
+                if (!contactsWriteGranted) {
+                    item(onClick = onRequestContactsWrite) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Person,
+                            title = stringResource(R.string.linked_devices_contacts_write_title),
+                            subtitle = stringResource(R.string.linked_devices_contacts_write_subtitle),
+                            chevron = true,
+                        )
+                    }
                 }
             }
             RelayHint(stringResource(R.string.linked_devices_server_hint))
@@ -508,6 +537,44 @@ private class CameraPermission(
     val granted: Boolean,
     val request: () -> Unit,
 )
+
+/** The WRITE_CONTACTS permission, requested from this screen (round 3, item 9 — accompanist, as for the camera). */
+@Stable
+private class ContactsWritePermission(
+    val granted: Boolean,
+    val request: () -> Unit,
+)
+
+/**
+ * Mirrors [rememberPermissionCamera]: after two denials Android
+ * answers instantly without showing a dialog, so a denial that
+ * arrives faster than a human could tap it means the permission
+ * can only be granted from the app's system page — open it instead
+ * of leaving a dead button.
+ */
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+private fun rememberPermissionContactsWrite(): ContactsWritePermission {
+    val context = LocalContext.current
+    val requestStarted = remember { mutableLongStateOf(0L) }
+    val state = rememberPermissionState(
+        permission = Manifest.permission.WRITE_CONTACTS,
+        onPermissionResult = { granted ->
+            val instant = SystemClock.elapsedRealtime() - requestStarted.longValue <
+                SEUIL_SANS_DIALOGUE_MS
+            if (!granted && instant) {
+                ouvrirLaFicheDeLApplication(context)
+            }
+        },
+    )
+    return ContactsWritePermission(
+        granted = state.status == PermissionStatus.Granted,
+        request = {
+            requestStarted.longValue = SystemClock.elapsedRealtime()
+            state.launchPermissionRequest()
+        },
+    )
+}
 
 /**
  * Mirrors [com.filestech.sms.ui.components.rememberPermissionLocalisation]:

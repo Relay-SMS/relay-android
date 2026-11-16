@@ -710,6 +710,55 @@ lets the user pick again) and `internal` (anything else; the
 message stays generic, never a stack trace). A refused create
 is never a protocol violation — the socket stays up.
 
+## Contact photo from the desktop (round 3, protocol version 1)
+
+The desktop sets a contact's photo — the camera badge on the
+detail pane's avatar — through the phone: the user picks an
+image, the desktop auto-crops it to a centered 512 px square
+JPEG, applies it locally at once, and sends it to the phone,
+which writes it to the contact's PHOTO row. Same JSON envelope,
+same `type` field, same rules. No protocol bump: every addition
+is additive.
+
+| Direction | Message | Shape |
+|---|---|---|
+| Client → server | `set_contact_photo` | `{"type":"set_contact_photo","address":"+15551234567","photo_base64url":"/9j/4AAQ…"}` |
+| Server → client | `action_result` | `{"type":"action_result","action":"set_contact_photo","address":"+15551234567","ok":true}` |
+
+`set_contact_photo` carries `address` (the normalized number,
+exactly as it appears in the CONTACT payload — the phone resolves
+it with the same `PhoneLookup` the UI uses) and
+`photo_base64url` (the prepared 512 px JPEG as base64url, the
+protocol's byte alphabet, like the chunk frames), in ONE frame —
+a 512 px JPEG is small (tens of KB), so the Slice 4 chunking is
+not needed. The phone caps the decoded photo at 512 KB
+(`MAX_CONTACT_PHOTO_BYTES`).
+
+The answer reuses `action_result`, with `action:
+"set_contact_photo"` and the `address` echoed, so the desktop
+attributes the reply to exactly one in-flight pick — and unlike
+a write-back, a refusal does NOT revert the desktop's local
+choice: the picked photo stays applied and the detail pane only
+shows the reason. Codes reuse the `message_failed` set:
+`unknown_contact` (no contact exists for the number — the phone
+never creates a contact for a photo set),
+`hub_no_contacts_write` (the phone lacks WRITE_CONTACTS — the
+user grants it from the Linked devices screen, or the phone's
+app settings, and picks again), `photo_too_large` (over the cap),
+`invalid_request` (undecodable or empty bytes), and `internal`
+(anything else; the message stays generic, never a stack trace).
+A refused photo set is never a protocol violation — the socket
+stays up.
+
+The write bumps the contact's `CONTACT_LAST_UPDATED_TIMESTAMP`,
+so the next contact snapshot carries the new photo version and
+the desktop's local choice converges to the synced photo (the
+same image, no visible change). Until then the desktop keeps its
+local photo across re-syncs: the directory only replaces it when
+the phone's version moves. There is no remove/reset option in
+this round, and no other contact editing from the desktop — the
+Slice 5 scope note still stands.
+
 ## Key storage (phone)
 
 Linked-device records in the app's store: device id, kind, display name,
@@ -725,7 +774,8 @@ read on the phone, pin/archive/mute, reactions, pinned message),
 Slice 4 adds attachment bytes (download + upload + media sends),
 Phase 2 adds scheduled messages from the desktop, and Slice 5 adds
 contact sync (names + avatars, snapshot + live delta), and create
-conversation adds starting a conversation from the desktop, all in the same
+conversation adds starting a conversation from the desktop, and round 3
+adds setting a contact's photo from the desktop, all in the same
 envelope; the protocol version stays 1 until a breaking change needs
 it. Still out of scope: deleting from the desktop.
 

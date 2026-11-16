@@ -1146,6 +1146,8 @@
     <string name="linked_devices_section_devices">Geräte</string>
     <string name="linked_devices_server_title">Verknüpfungsserver</string>
     <string name="linked_devices_server_hint">Wenn aktiviert, kann Ihr Computer dieses Telefon im lokalen Netzwerk finden und sich damit verknüpfen. Nichts verlässt Ihr WLAN.</string>
+    <string name="linked_devices_contacts_write_title">Kontaktfotos ändern</string>
+    <string name="linked_devices_contacts_write_subtitle">Einem verknüpften Computer erlauben, das Foto eines Kontakts zu ändern. Zum Erlauben tippen.</string>
     <string name="linked_devices_start_error_title">Der Server konnte nicht gestartet werden</string>
     <string name="linked_devices_start_error_bind_hint">Eine andere Relay-App auf diesem Telefon nutzt bereits den Verknüpfungsport — beenden Sie zuerst deren Server und versuchen Sie es dann erneut.</string>
     <string name="linked_devices_link_action">Gerät verknüpfen</string>

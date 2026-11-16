@@ -11,6 +11,7 @@ permissions "just in case", and degrades gracefully if any of them is refused.
 | `WRITE_SMS`                                  | Mark messages read, insert sent rows (mandatory).                               |
 | `RECEIVE_MMS` / `RECEIVE_WAP_PUSH`           | Receive MMS notifications (WAP push).                                           |
 | `READ_CONTACTS`                              | Show names instead of bare phone numbers in conversations.                      |
+| `WRITE_CONTACTS`                             | Linked devices only: a computer you linked can set a contact's photo (the camera badge on the desktop detail pane) — the phone writes the photo you picked to that contact. Requested only from the Linked devices screen, never at launch. Refused: the desktop keeps the photo locally and tells you the phone couldn't save it. |
 | `READ_PHONE_STATE` / `READ_PHONE_NUMBERS`    | Detect dual-SIM and let you choose which SIM to send from.                      |
 | `POST_NOTIFICATIONS` (API 33+)               | Show new-message notifications (no notifications without your consent).         |
 | `USE_BIOMETRIC`                              | Optional biometric unlock.                                                      |

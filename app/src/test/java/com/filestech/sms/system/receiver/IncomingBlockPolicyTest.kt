@@ -4,6 +4,7 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.domain.model.BlockedNumber
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.repository.BlockedNumberRepository
+import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
@@ -72,6 +73,8 @@ class IncomingBlockPolicyTest {
         override suspend fun listAll(): List<Contact> = emptyList()
         override suspend fun listAllDetailed(): List<Contact> = emptyList()
         override suspend fun openPhotoStream(address: String): java.io.InputStream? = null
+        override suspend fun setContactPhoto(address: String, photoBytes: ByteArray): ContactPhotoWriteResult =
+            ContactPhotoWriteResult.NotFound
     }
 
     private class Reglages(bloquerInconnus: Boolean) : AppSettingsSource {

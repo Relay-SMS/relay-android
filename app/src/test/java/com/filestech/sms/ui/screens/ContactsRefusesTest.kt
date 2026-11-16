@@ -11,6 +11,7 @@ import com.filestech.sms.data.repository.ContactRepositoryImpl
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.PhoneAddress
+import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.settings.AppSettings
@@ -78,6 +79,11 @@ class ContactsRefusesTest {
             if (refuse) throw SecurityException("Permission Denial: requires android.permission.READ_CONTACTS")
             return null
         }
+
+        override suspend fun setContactPhoto(address: String, photoBytes: ByteArray): ContactPhotoWriteResult {
+            if (refuse) throw SecurityException("Permission Denial: requires android.permission.WRITE_CONTACTS")
+            return ContactPhotoWriteResult.NotFound
+        }
     }
 
     @BeforeEach
@@ -115,6 +121,8 @@ class ContactsRefusesTest {
             override suspend fun listAll(): List<Contact> = error("fournisseur indisponible")
             override suspend fun listAllDetailed(): List<Contact> = error("fournisseur indisponible")
             override suspend fun openPhotoStream(address: String): java.io.InputStream? = null
+            override suspend fun setContactPhoto(address: String, photoBytes: ByteArray): ContactPhotoWriteResult =
+                ContactPhotoWriteResult.Failed
         }
 
         val vm = ComposeViewModel(SavedStateHandle(), enPanne, mockk(relaxed = true), dispatcher)

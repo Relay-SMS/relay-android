@@ -50,6 +50,9 @@ import java.util.concurrent.ConcurrentHashMap
  * ([onCreateConversation]) in the same shape; the runner is
  * file-scope like the Slice 4 ones.
  *
+ * Round 3 adds the contact-photo handler ([onSetContactPhoto]) in
+ * the same shape; the runner is file-scope like the Slice 4 ones.
+ *
  * Slice 5 adds the contact-sync handlers ([onContactsRequest],
  * [onAvatarRequest]) in the same shape, plus the contact snapshot
  * inside [runStream] (read once before `sync_started`, streamed
@@ -394,6 +397,29 @@ class SyncEngine(
             } catch (t: Throwable) {
                 Timber.w(t, "SyncEngine: avatar request failed")
                 runCatching { send(attachmentErrorInternal(avatarId(request.address))) }
+            }
+        }
+    }
+
+    // -- Round 3: contact photo ----------------------------------------
+    // Same shape as the other handlers: starts a job and returns
+    // immediately, so a slow photo write never blocks the frame loop.
+
+    /**
+     * Handles a `set_contact_photo`: answered with `action_result`
+     * (`ok: true` on success, `ok: false` with a code on refusal —
+     * the address is echoed either way, so the desktop attributes
+     * the reply to one pick).
+     */
+    fun onSetContactPhoto(request: SyncProtocol.SetContactPhoto) {
+        scope.launch {
+            try {
+                runSetContactPhoto(source, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: set contact photo failed")
+                runCatching { send(setContactPhotoFailedInternal(request.address)) }
             }
         }
     }
@@ -1054,6 +1080,65 @@ private fun createFailedInternal(): String =
             ok = false,
             code = SyncProtocol.MessageFailed.INTERNAL,
             message = "The conversation could not be created.",
+        ),
+    )
+
+// -- Round 3: contact photo (file scope, like the Slice 4 runners:
+// the runner touches no engine state beyond the source and the send
+// lambda, and the class is at the Detekt function limit) -------------
+
+/**
+ * Runs one `set_contact_photo`: the photo decodes (base64url, the
+ * protocol's byte alphabet), the size is checked against
+ * [SyncProtocol.MAX_CONTACT_PHOTO_BYTES], and the source writes it
+ * to the contact — answered with `action_result` either way (the
+ * address echoed, so the desktop attributes the reply to one pick).
+ * Undecodable or empty bytes are `invalid_request`; an oversized
+ * photo is `photo_too_large`; the source's own failures (no
+ * contact, no write permission) ride through as-is.
+ */
+private suspend fun runSetContactPhoto(
+    source: SyncMessageSource,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.SetContactPhoto,
+) {
+    val bytes = runCatching {
+        Base64.getUrlDecoder().decode(QrPairing.padBase64(request.photoBase64Url))
+    }.getOrNull()
+    val result = when {
+        bytes == null || bytes.isEmpty() -> ActionResult(
+            ok = false,
+            code = SyncProtocol.MessageFailed.INVALID_REQUEST,
+            message = "That photo couldn't be read.",
+        )
+        bytes.size > SyncProtocol.MAX_CONTACT_PHOTO_BYTES -> ActionResult(
+            ok = false,
+            code = SyncProtocol.MessageFailed.PHOTO_TOO_LARGE,
+            message = "That photo is too big.",
+        )
+        else -> source.setContactPhoto(request.address, bytes)
+    }
+    send(
+        SyncProtocol.encodeActionResult(
+            SyncProtocol.ActionResult(
+                action = "set_contact_photo",
+                address = request.address,
+                ok = result.ok,
+                code = result.code,
+                message = result.message,
+            ),
+        ),
+    )
+}
+
+private fun setContactPhotoFailedInternal(address: String): String =
+    SyncProtocol.encodeActionResult(
+        SyncProtocol.ActionResult(
+            action = "set_contact_photo",
+            address = address,
+            ok = false,
+            code = SyncProtocol.MessageFailed.INTERNAL,
+            message = "The photo couldn't be saved on the phone.",
         ),
     )
 

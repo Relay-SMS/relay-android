@@ -18,6 +18,7 @@ import com.filestech.sms.data.sms.PhoneNumberWireFormatter
 import com.filestech.sms.data.sms.SystemThreadResolver
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.PhoneAddress
+import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import com.filestech.sms.domain.repository.ContactRepository
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +61,8 @@ class IntegrationMmsRecuTest {
         override suspend fun listAll(): List<Contact> = emptyList()
         override suspend fun listAllDetailed(): List<Contact> = emptyList()
         override suspend fun openPhotoStream(address: String): java.io.InputStream? = null
+        override suspend fun setContactPhoto(address: String, photoBytes: ByteArray): ContactPhotoWriteResult =
+            ContactPhotoWriteResult.NotFound
     }
 
     @Before

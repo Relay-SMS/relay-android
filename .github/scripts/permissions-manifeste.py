@@ -86,6 +86,13 @@ AUTORISEES = {
     "android.permission.RECEIVE_MMS",
     "android.permission.RECEIVE_WAP_PUSH",
     "android.permission.READ_CONTACTS",
+    # Round 3, item 9 — WRITE_CONTACTS, pour qu'un ordinateur lie
+    # puisse definir la photo d'un contact (la pastille camera du
+    # panneau de detail du bureau) : le telephone ecrit la photo
+    # choisie dans la ligne PHOTO du contact. Demandee a l'execution
+    # depuis l'ecran Appareils lies, jamais au lancement.
+    # Documentee dans PERMISSIONS.md.
+    "android.permission.WRITE_CONTACTS",
     "android.permission.READ_PHONE_STATE",
     "android.permission.READ_PHONE_NUMBERS",
     "android.permission.POST_NOTIFICATIONS",

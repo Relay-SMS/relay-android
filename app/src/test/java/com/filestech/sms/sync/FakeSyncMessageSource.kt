@@ -286,6 +286,25 @@ internal class FakeSyncMessageSource : SyncMessageSource {
 
     override suspend fun contactsReadiness(): ContactReadiness = contactsReadiness
 
+    // -- Round 3: contact photo ---------------------------------------
+    // Same shape as the send surface: records its call and answers
+    // from a configurable result.
+
+    val photoSets = mutableListOf<PhotoSetCall>()
+    var photoSetResult: ActionResult = ActionResult(ok = true)
+
+    /** When set, [setContactPhoto] throws this instead of answering. */
+    var photoSetError: Throwable? = null
+
+    override suspend fun setContactPhoto(
+        address: String,
+        photoBytes: ByteArray,
+    ): ActionResult {
+        photoSetError?.let { throw it }
+        photoSets += PhotoSetCall(address, photoBytes.copyOf())
+        return photoSetResult
+    }
+
     /** Adds [message] to its conversation's store and advances the max id. */
     fun store(message: SyncedMessage) {
         val list = messagesByConversation.getOrPut(message.conversationId.toLong()) { mutableListOf() }
@@ -315,6 +334,16 @@ internal data class ScheduleCall(
 internal data class CreateCall(
     val addresses: List<String>,
     val customName: String?,
+)
+
+/**
+ * One recorded `setContactPhoto` call on the fake. The bytes are a
+ * copy (the caller keeps its own array); compare them with Truth's
+ * byte-array subject, which compares by content.
+ */
+internal data class PhotoSetCall(
+    val address: String,
+    val photoBytes: ByteArray,
 )
 
 /** One recorded `beginUpload` call on the fake. */

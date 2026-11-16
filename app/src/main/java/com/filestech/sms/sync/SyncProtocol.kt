@@ -54,6 +54,11 @@ import kotlinx.serialization.serializer
  * (`create_conversation`, `conversation_created`) in the same
  * envelope; failures reuse `action_result`. The protocol version
  * stays 1.
+ *
+ * Round 3 adds the contact-photo type (`set_contact_photo`) in the
+ * same envelope; the answer reuses `action_result` (with the
+ * address echoed, so the desktop attributes the reply to one pick).
+ * The protocol version stays 1.
  */
 object SyncProtocol {
 
@@ -88,6 +93,13 @@ object SyncProtocol {
 
     /** Slice 3 — the largest `send_message` body the server accepts, in UTF-8 bytes. */
     const val MAX_SEND_BODY_BYTES = 64 * 1024
+
+    /**
+     * Round 3 — the largest `set_contact_photo` photo the server
+     * accepts, in decoded bytes. A 512 px JPEG is tens of KB; the
+     * cap guards against an abusive frame, not a real photo.
+     */
+    const val MAX_CONTACT_PHOTO_BYTES = 512 * 1024
 
     /** Slice 4 — one attachment chunk carries this many raw bytes (~87 KB as base64url in JSON). */
     const val ATTACHMENT_CHUNK_BYTES = 64 * 1024
@@ -463,6 +475,24 @@ object SyncProtocol {
              * desktop shows the message and lets the user pick again.
              */
             const val INVALID_REQUEST = "invalid_request"
+
+            /**
+             * Round 3 — `set_contact_photo`: no contact exists for
+             * the number, so there is nothing to attach the photo
+             * to. The phone never creates a contact for a photo set.
+             */
+            const val UNKNOWN_CONTACT = "unknown_contact"
+
+            /**
+             * Round 3 — `set_contact_photo`: the phone lacks
+             * WRITE_CONTACTS, so it cannot write the photo. The
+             * user grants it from the Linked devices screen (or
+             * the phone's app settings) and picks again.
+             */
+            const val HUB_NO_CONTACTS_WRITE = "hub_no_contacts_write"
+
+            /** Round 3 — `set_contact_photo`: the photo exceeds [MAX_CONTACT_PHOTO_BYTES]. */
+            const val PHOTO_TOO_LARGE = "photo_too_large"
         }
     }
 
@@ -474,7 +504,11 @@ object SyncProtocol {
      * phone did not apply it — the desktop reverts its optimistic
      * change. [messageId] is present for `set_reaction` /
      * `set_pinned_message`; [conversationId] is absent for
-     * `mark_all_read`. Codes reuse the [MessageFailed] set where they
+     * `mark_all_read`. [address] is present for `set_contact_photo`
+     * (round 3): the reply echoes the number, so the desktop
+     * attributes it to exactly one in-flight pick — and unlike a
+     * write-back, a refusal does NOT revert the desktop's local
+     * photo choice. Codes reuse the [MessageFailed] set where they
      * apply, plus `send_failed` for a reaction whose SMS didn't go out
      * (the local reaction state stays set on the phone in that case,
      * matching the phone's own behavior).
@@ -484,6 +518,7 @@ object SyncProtocol {
         @SerialName("action") val action: String,
         @SerialName("conversation_id") val conversationId: String? = null,
         @SerialName("message_id") val messageId: String? = null,
+        @SerialName("address") val address: String? = null,
         @SerialName("ok") val ok: Boolean,
         @SerialName("code") val code: String? = null,
         @SerialName("message") val message: String? = null,
@@ -815,6 +850,28 @@ object SyncProtocol {
         @SerialName("conversation") val conversation: SyncedConversation,
     )
 
+    // -- Round 3: contact photo (SYNC_PROTOCOL.md, Contact photo) -----
+
+    /**
+     * Client → server: set one contact's photo. [address] is the
+     * normalized number, exactly as it appears in the CONTACT
+     * payload — the phone resolves it with the same `PhoneLookup`
+     * the UI uses. [photoBase64Url] is the prepared 512 px JPEG as
+     * base64url (the protocol's byte alphabet, like the chunk
+     * frames), in ONE frame — a 512 px JPEG is small (tens of KB),
+     * so the Slice 4 chunking is not needed. The phone answers
+     * `action_result` (`action: "set_contact_photo"`, the address
+     * echoed, `ok` + `code` / `message` on refusal — no contact for
+     * the number, or the phone lacks the contacts-write
+     * permission). The desktop applies the photo locally first, so
+     * a refusal keeps the local choice and only shows the reason.
+     */
+    @Serializable
+    data class SetContactPhoto(
+        @SerialName("address") val address: String,
+        @SerialName("photo_base64url") val photoBase64Url: String,
+    )
+
     /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
@@ -844,6 +901,7 @@ object SyncProtocol {
         data class ContactsRequest(val value: SyncProtocol.ContactsRequest) : Parsed
         data class AvatarRequest(val value: SyncProtocol.AvatarRequest) : Parsed
         data class CreateConversation(val value: SyncProtocol.CreateConversation) : Parsed
+        data class SetContactPhoto(val value: SyncProtocol.SetContactPhoto) : Parsed
         data class Unknown(val type: String?) : Parsed
         data object Malformed : Parsed
     }
@@ -881,9 +939,9 @@ object SyncProtocol {
     /**
      * The second half of [parse]: the Slice 3 write-back actions, the
      * Slice 4 attachment frames, the Phase 2 schedule frames, the
-     * Slice 5 contact frames, and the create-conversation frame. A
-     * well-formed message of an unknown type comes back as
-     * [Parsed.Unknown], like in [parse].
+     * Slice 5 contact frames, the create-conversation frame, and the
+     * round-3 contact-photo frame. A well-formed message of an
+     * unknown type comes back as [Parsed.Unknown], like in [parse].
      */
     private fun parseRemaining(type: String, obj: JsonObject): Parsed = when (type) {
         "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
@@ -900,6 +958,7 @@ object SyncProtocol {
         "contacts_request" -> decode<ContactsRequest>(obj)?.let(Parsed::ContactsRequest) ?: Parsed.Malformed
         "avatar_request" -> decode<AvatarRequest>(obj)?.let(Parsed::AvatarRequest) ?: Parsed.Malformed
         "create_conversation" -> decode<CreateConversation>(obj)?.let(Parsed::CreateConversation) ?: Parsed.Malformed
+        "set_contact_photo" -> decode<SetContactPhoto>(obj)?.let(Parsed::SetContactPhoto) ?: Parsed.Malformed
         else -> Parsed.Unknown(type)
     }
 

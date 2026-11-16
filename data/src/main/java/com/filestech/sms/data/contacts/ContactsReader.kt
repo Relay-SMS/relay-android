@@ -2,6 +2,7 @@ package com.filestech.sms.data.contacts
 
 import android.Manifest
 import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,6 +11,7 @@ import android.util.LruCache
 import com.filestech.sms.core.ext.normalizePhone
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.PhoneAddress
+import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.io.InputStream
@@ -179,6 +181,95 @@ class ContactsReader @Inject constructor(
             Timber.d("ContactsReader: photo stream unreadable (%s)", e.javaClass.simpleName)
             null
         }
+    }
+
+    /**
+     * Round 3 — writes the photo for the contact behind [address]
+     * (the same [lookupByPhone] the UI uses, so the desktop's photo
+     * lands on the contact the phone shows for the number). An
+     * existing PHOTO row is replaced, never duplicated; a contact
+     * with no photo row gets one, on its first raw contact (a Data
+     * row hangs off a raw contact, not the aggregate). The provider
+     * bumps `CONTACT_LAST_UPDATED_TIMESTAMP` on the write, so the
+     * next contact snapshot carries the new photo version.
+     * [ContactPhotoWriteResult.NotFound] when there is no contact
+     * (the phone never creates one for a photo set);
+     * [ContactPhotoWriteResult.NoPermission] when WRITE_CONTACTS is
+     * not granted. The cache invalidates on success: the cached
+     * contact carries the old photo URI.
+     */
+    fun setPhoto(address: String, photoBytes: ByteArray): ContactPhotoWriteResult {
+        val contactId = try {
+            lookupByPhone(address)?.id
+        } catch (e: SecurityException) {
+            // READ_CONTACTS revoked (or never granted): the lookup
+            // itself throws, and the write cannot proceed either.
+            // The log carries the exception TYPE only, never its
+            // message: a provider error message can embed contact
+            // data, and contact data never reaches the log.
+            Timber.d("ContactsReader: photo lookup failed (%s)", e.javaClass.simpleName)
+            return ContactPhotoWriteResult.NoPermission
+        }
+        return try {
+            // No contact, or a contact with no raw contact to hang
+            // the Data row off: nothing to attach the photo to.
+            val rawContactId = contactId?.let { findRawContactId(it) }
+                ?: return ContactPhotoWriteResult.NotFound
+            val values = ContentValues().apply {
+                put(ContactsContract.CommonDataKinds.Photo.PHOTO, photoBytes)
+            }
+            val updated = resolver.update(
+                ContactsContract.Data.CONTENT_URI,
+                values,
+                "${ContactsContract.Data.CONTACT_ID} = ? AND ${ContactsContract.Data.MIMETYPE} = ?",
+                arrayOf(
+                    contactId.toString(),
+                    ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE,
+                ),
+            )
+            val written = if (updated == 0) {
+                values.put(ContactsContract.Data.RAW_CONTACT_ID, rawContactId)
+                values.put(
+                    ContactsContract.Data.MIMETYPE,
+                    ContactsContract.CommonDataKinds.Photo.CONTENT_ITEM_TYPE,
+                )
+                resolver.insert(ContactsContract.Data.CONTENT_URI, values) != null
+            } else {
+                true
+            }
+            if (written) {
+                invalidate()
+                ContactPhotoWriteResult.Ok
+            } else {
+                ContactPhotoWriteResult.Failed
+            }
+        } catch (e: SecurityException) {
+            // WRITE_CONTACTS revoked between the check and the
+            // write — not-granted, never a crash.
+            Timber.d("ContactsReader: photo write denied (%s)", e.javaClass.simpleName)
+            ContactPhotoWriteResult.NoPermission
+        } catch (e: Exception) {
+            // The log carries the exception TYPE only, never its
+            // message: a provider error message can embed contact
+            // data, and contact data never reaches the log.
+            Timber.d("ContactsReader: photo write failed (%s)", e.javaClass.simpleName)
+            ContactPhotoWriteResult.Failed
+        }
+    }
+
+    /** The first raw contact of a contact (the photo row hangs off a raw contact, not the aggregate). */
+    private fun findRawContactId(contactId: Long): Long? {
+        var rawId: Long? = null
+        resolver.query(
+            ContactsContract.RawContacts.CONTENT_URI,
+            arrayOf(ContactsContract.RawContacts._ID),
+            "${ContactsContract.RawContacts.CONTACT_ID} = ?",
+            arrayOf(contactId.toString()),
+            null,
+        )?.use { c ->
+            if (c.moveToFirst()) rawId = c.getLong(0)
+        }
+        return rawId
     }
 
     fun invalidate() {

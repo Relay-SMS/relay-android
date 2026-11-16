@@ -461,6 +461,46 @@ class SyncSessionHandlerTest {
         assertThat(harness.handler.isAuthenticated).isTrue()
     }
 
+    // -- Round 3: contact photo -----------------------------------------
+
+    @Test fun `an unauthenticated set_contact_photo fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText(
+            """{"type":"set_contact_photo","address":"+15551234567","photo_base64url":"_9j_"}""",
+        )
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `an authenticated set_contact_photo reaches the engine and answers action_result`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+
+            harness.handler.onText(
+                """{"type":"set_contact_photo","address":"+15551234567","photo_base64url":"_9j_"}""",
+            )
+            advanceUntilIdle()
+            assertThat(source.photoSets.map { it.address }).containsExactly("+15551234567")
+            assertThat(engineSent).hasSize(1)
+            val ack = Json.parseToJsonElement(engineSent.first()).jsonObject
+            assertThat(ack["type"]?.jsonPrimitive?.content).isEqualTo("action_result")
+            assertThat(ack["action"]?.jsonPrimitive?.content).isEqualTo("set_contact_photo")
+            assertThat(ack["address"]?.jsonPrimitive?.content).isEqualTo("+15551234567")
+            assertThat(ack["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
     // -- Slice 4: attachment-byte frames need auth ----------------------
 
     @Test fun `an unauthenticated attachment frame fails with protocol and closes`() = runTest {

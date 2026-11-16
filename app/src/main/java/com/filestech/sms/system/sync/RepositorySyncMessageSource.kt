@@ -14,6 +14,7 @@ import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendReport
+import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
@@ -120,6 +121,14 @@ import com.filestech.sms.domain.model.MessageState as DomainMessageState
  * typed), so the thread exists immediately, with no message
  * needed, and a retry returns the existing conversation instead
  * of a duplicate.
+ *
+ * Round 3 adds [setContactPhoto]: a photo the desktop picked for a
+ * contact goes to the contact's PHOTO row (the same `PhoneLookup`
+ * the UI uses, so the photo lands on the contact the phone shows
+ * for the number). WRITE_CONTACTS is checked first — a background
+ * service cannot show a permission dialog, so a missing grant is
+ * an error the desktop shows, and the user grants it from the
+ * Linked devices screen.
  */
 @Singleton
 class RepositorySyncMessageSource @Inject constructor(
@@ -266,6 +275,53 @@ class RepositorySyncMessageSource @Inject constructor(
             // never a crash.
             Timber.d(e, "RepositorySyncMessageSource: contacts probe refused")
             ContactReadiness.NoContactsPermission
+        }
+    }
+
+    // -- Round 3: contact photo from the desktop -----------------------
+
+    override suspend fun setContactPhoto(address: String, photoBytes: ByteArray): ActionResult {
+        // The direct `checkSelfPermission` (not ContextCompat's —
+        // see `contactsReadiness`): the framework call stays
+        // mockable in tests and is precisely what ContextCompat does
+        // on device for WRITE_CONTACTS. A background service cannot
+        // show a permission dialog, so a missing grant is an error
+        // the desktop shows — the user grants it from the Linked
+        // devices screen (or the phone's app settings) and picks
+        // again. Never a crash, never a silent drop.
+        val granted =
+            context.checkSelfPermission(Manifest.permission.WRITE_CONTACTS) ==
+                PackageManager.PERMISSION_GRANTED
+        if (!granted) return noContactsWrite()
+        return try {
+            when (contactsRepository.setContactPhoto(address, photoBytes)) {
+                ContactPhotoWriteResult.Ok -> ActionResult(ok = true)
+                ContactPhotoWriteResult.NotFound -> ActionResult(
+                    ok = false,
+                    code = SyncProtocol.MessageFailed.UNKNOWN_CONTACT,
+                    message = "There's no contact for this number on the phone.",
+                )
+                ContactPhotoWriteResult.NoPermission -> noContactsWrite()
+                ContactPhotoWriteResult.Failed -> ActionResult(
+                    ok = false,
+                    code = SyncProtocol.MessageFailed.INTERNAL,
+                    message = "The photo couldn't be saved on the phone.",
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SecurityException) {
+            // The permission was revoked between the check and the
+            // write — not-granted, never a crash.
+            Timber.d(e, "RepositorySyncMessageSource: contact photo write refused")
+            noContactsWrite()
+        } catch (e: Exception) {
+            Timber.w(e, "RepositorySyncMessageSource: set contact photo failed")
+            ActionResult(
+                ok = false,
+                code = SyncProtocol.MessageFailed.INTERNAL,
+                message = "The photo couldn't be saved on the phone.",
+            )
         }
     }
 
@@ -1004,6 +1060,18 @@ private fun unknownConversation(): ActionResult = ActionResult(
     ok = false,
     code = SyncProtocol.MessageFailed.UNKNOWN_CONVERSATION,
     message = "Conversation not found.",
+)
+
+/**
+ * The `hub_no_contacts_write` action failure (round 3, item 9):
+ * WRITE_CONTACTS is not granted, so the phone cannot save a photo
+ * the desktop picked. File scope, like [unknownConversation].
+ */
+private fun noContactsWrite(): ActionResult = ActionResult(
+    ok = false,
+    code = SyncProtocol.MessageFailed.HUB_NO_CONTACTS_WRITE,
+    message = "Relay on the phone needs permission to change contacts. " +
+        "Allow it in the phone's app settings, then pick the photo again.",
 )
 
 /** Same window as the thread screen's reaction burst guard (60 s). */

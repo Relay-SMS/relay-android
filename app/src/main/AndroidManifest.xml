@@ -13,6 +13,16 @@
 
     <!-- Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Round 3, item 9 — a linked computer can set a contact's
+         photo (the camera badge on the desktop detail pane): the
+         phone writes the picked photo to the contact's PHOTO row.
+         Requested at runtime from the Linked devices screen, only
+         when the user opens it — never at launch, never from the
+         background service (which cannot show a dialog). Refused:
+         the desktop keeps the photo locally and tells the user the
+         phone couldn't save it. Documented in PERMISSIONS.md and
+         allowed by .github/scripts/permissions-manifeste.py. -->
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
 
     <!-- Phone state (dual SIM) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

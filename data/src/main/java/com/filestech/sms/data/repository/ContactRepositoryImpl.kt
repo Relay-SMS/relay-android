@@ -3,6 +3,7 @@ package com.filestech.sms.data.repository
 import com.filestech.sms.data.contacts.ContactsReader
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.model.Contact
+import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import com.filestech.sms.domain.repository.ContactRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -28,5 +29,12 @@ class ContactRepositoryImpl @Inject constructor(
 
     override suspend fun openPhotoStream(address: String): InputStream? = withContext(io) {
         reader.openPhotoStream(address)
+    }
+
+    override suspend fun setContactPhoto(
+        address: String,
+        photoBytes: ByteArray,
+    ): ContactPhotoWriteResult = withContext(io) {
+        reader.setPhoto(address, photoBytes)
     }
 }

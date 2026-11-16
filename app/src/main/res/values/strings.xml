@@ -1161,6 +1161,8 @@
     <string name="linked_devices_section_devices">Devices</string>
     <string name="linked_devices_server_title">Linking server</string>
     <string name="linked_devices_server_hint">When on, your computer can find this phone on the local network and link to it. Nothing leaves your Wi-Fi network.</string>
+    <string name="linked_devices_contacts_write_title">Contact photo changes</string>
+    <string name="linked_devices_contacts_write_subtitle">Let a linked computer set a contact\'s photo. Tap to allow.</string>
     <string name="linked_devices_start_error_title">The server couldn\'t start</string>
     <string name="linked_devices_start_error_bind_hint">Another Relay app on this phone is already using the link port — stop its server first, then try again.</string>
     <string name="linked_devices_link_action">Link a device</string>

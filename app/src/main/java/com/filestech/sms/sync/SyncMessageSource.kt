@@ -291,6 +291,21 @@ interface SyncMessageSource {
      * provider read as not-ready, never a crash.
      */
     suspend fun contactsReadiness(): ContactReadiness
+
+    /**
+     * Round 3 — writes a contact photo picked on the desktop: the
+     * prepared 512 px JPEG for [address], resolved with the same
+     * `PhoneLookup` the UI uses. The photo is written to the
+     * contact's PHOTO row (an existing photo row is replaced, never
+     * duplicated). `ok: false` with `unknown_contact` when no
+     * contact exists for the number — the phone never creates a
+     * contact for a photo set — and `hub_no_contacts_write` when
+     * WRITE_CONTACTS is not granted. The write bumps the contact's
+     * `CONTACT_LAST_UPDATED_TIMESTAMP`, so the next contact snapshot
+     * carries the new photo version and the desktop's local choice
+     * converges to the synced photo.
+     */
+    suspend fun setContactPhoto(address: String, photoBytes: ByteArray): ActionResult
 }
 
 /**

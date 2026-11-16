@@ -28,7 +28,8 @@ import java.util.Base64
  * (`cancel_scheduled`), dispatched the same way. Slice 5 adds the
  * contact frames (`contacts_request`, `avatar_request`), dispatched
  * the same way. Create conversation adds the `create_conversation`
- * frame, dispatched the same way.
+ * frame, dispatched the same way. Round 3 adds the contact-photo
+ * frame (`set_contact_photo`), dispatched the same way.
  *
  * @param send carries one outbound text frame to the client.
  * @param close closes the socket; [reason] is a short human-readable
@@ -86,6 +87,7 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.ContactsRequest -> onContactsRequest()
             is SyncProtocol.Parsed.AvatarRequest -> onAvatarRequest(parsed.value)
             is SyncProtocol.Parsed.CreateConversation -> onCreateConversation(parsed.value)
+            is SyncProtocol.Parsed.SetContactPhoto -> onSetContactPhoto(parsed.value)
             is SyncProtocol.Parsed.Unknown -> onUnknown(parsed.type)
             SyncProtocol.Parsed.Malformed -> onProtocolViolation()
         }
@@ -289,6 +291,16 @@ class SyncSessionHandler(
      */
     private suspend fun onCreateConversation(request: SyncProtocol.CreateConversation) {
         withEngine { it.onCreateConversation(request) }
+    }
+
+    /**
+     * Round 3 — the contact-photo frame needs auth too: an
+     * unauthenticated photo frame is a protocol violation, like an
+     * unauthenticated send. The engine runs it in its own job, never
+     * on the frame loop.
+     */
+    private suspend fun onSetContactPhoto(request: SyncProtocol.SetContactPhoto) {
+        withEngine { it.onSetContactPhoto(request) }
     }
 
     /**
