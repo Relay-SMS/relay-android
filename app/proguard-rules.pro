@@ -93,23 +93,26 @@
 -dontwarn io.netty.**
 
 # Release-server fix (2026-11-15) — the sync server would not start in
-# release builds: Netty creates its channels REFLECTIVELY through
-# ReflectiveChannelFactory, which requires a public no-arg constructor
-# (Class.getConstructor()). R8 strips that constructor as unused — it is
-# only ever reached via reflection — so engine start threw
+# release builds. First failure: Netty creates its channels REFLECTIVELY
+# through ReflectiveChannelFactory, which requires a public no-arg
+# constructor (Class.getConstructor()). R8 stripped that constructor as
+# unused — it is only ever reached via reflection — so engine start threw
 # "IllegalArgumentException: Class I95 does not have a public non-arg
 # constructor" (I95 = the obfuscated NioServerSocketChannel), reported by
-# the Linked-devices start-failure diagnostic. Debug builds never hit
-# this: minify is off there. Keep both NIO channel classes Ktor uses on
-# Android (the server socket + the accepted sockets). The earlier note
-# here claiming "no -keep needed, everything is reached by direct
-# references" was wrong for exactly these two classes.
--keep class io.netty.channel.socket.nio.NioServerSocketChannel {
-    public <init>();
-}
--keep class io.netty.channel.socket.nio.NioSocketChannel {
-    public <init>();
-}
+# the Linked-devices start-failure diagnostic. A constructor-only keep
+# fixed that, but the next build failed differently: "VerifyError:
+# Rejecting class da that attempts to sub-type erroneous class y1" —
+# R8 had stripped something else a Netty class needs to verify. Netty
+# uses reflection pervasively (channel factories, PlatformDependent,
+# FastThreadLocal, ResourceLeakDetector, logger service loading) and
+# ships NO ProGuard rules of its own, so surgical keeps just move the
+# failure to the next class. Keep the whole Netty package, and Ktor's
+# Netty engine with it (small, same engine path). Cost is APK size only,
+# no behavior change. Debug builds never hit any of this: minify is off
+# there. The earlier note here claiming "no -keep needed, everything is
+# reached by direct references" was wrong.
+-keep class io.netty.** { *; }
+-keep class io.ktor.server.netty.** { *; }
 
 # ----- Timber ----------------------------------------------------------------------------------
 -dontwarn org.jetbrains.annotations.**
