@@ -6,15 +6,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,12 +20,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
-import com.filestech.sms.ui.theme.starColor
 
 /**
- * Overflow menu attached to a chat bubble — surfaces Copy / Forward /
- * Reply / Translate / React / Star / **Delete** (in that order, with Delete rendered
- * in red at the bottom of the list as the destructive action).
+ * Overflow menu attached to a chat bubble — a quick-reaction row on top
+ * (recents + defaults + "+", see [QuickReactionRow]), then Copy /
+ * Forward / Reply / Translate / Pin / **Delete** (in that order, with
+ * Delete rendered in red at the bottom of the list as the destructive
+ * action). Same structure as the desktop bubble popup.
  *
  * Relay: the three-dot trigger beside every bubble is gone — the caller opens
  * this menu from a tap on the bubble itself (see [MessageBubble],
@@ -39,6 +37,13 @@ import com.filestech.sms.ui.theme.starColor
  * Feedback round 6 — the "Select text" entry is gone with the free text
  * selection (long-press now opens this menu instead); the menu is 10dp wider
  * on each side than the Material default, like the overflow menus.
+ *
+ * Round 23 — the "React" entry is gone: the reaction row above the items
+ * is the way in (tap an emoji to react, "+" for the full picker), so a
+ * second entry is redundant. The row also widens the menu to its own
+ * width. "Star" is gone too: starring only exempted a message from
+ * auto-delete and there is no starred list, screen or marker, so the
+ * entry promised more than it did.
  *
  * The menu reuses the same delete pipeline as before (`onDelete()` →
  * `pendingDelete = msg` in `ThreadScreen`), so the destructive confirmation dialog
@@ -51,6 +56,11 @@ fun BubbleMenu(
     onDelete: () -> Unit,
     onReply: (() -> Unit)? = null,
     onTranslate: (() -> Unit)? = null,
+    /**
+     * Round 23 — opens the full emoji picker, from the "+" at the end of
+     * the reaction row ([quickReactions]). No longer a menu item: the row
+     * is the way in, like the desktop popup.
+     */
     onReact: (() -> Unit)? = null,
     /**
      * v1.3.11 (F3) — copy the bubble's text payload to the system clipboard. Caller passes
@@ -63,15 +73,23 @@ fun BubbleMenu(
      */
     onForward: (() -> Unit)? = null,
     /**
-     * v1.26.1 (audit F2) — bascule « favori ». `starred` porte l'état courant pour choisir le
-     * libellé. `null` désactive l'entrée (mode leurre).
+     * Round 23 — the quick-reaction row at the TOP of the menu (recents +
+     * defaults + "+", see [QuickReactionRow]), like the desktop bubble
+     * popup. The row widens the menu to its own width. `null` = no row,
+     * items only.
      */
-    starred: Boolean = false,
+    quickReactions: QuickReactionConfig? = null,
     /**
-     * Feedback round 5 — bascules « favori » / « épingler »
-     * ([BubbleMenuToggles]). `null` désactive les deux entrées. Un seul
-     * message épinglé par conversation : épingler un autre message remplace
-     * l'épingle courante.
+     * Round 23 — the message's current reaction, highlighted in the row.
+     * `null` = no reaction applied, nothing highlighted.
+     */
+    currentReaction: String? = null,
+    /**
+     * Feedback round 5 — bascule « épingler » ([BubbleMenuToggles]).
+     * `null` désactive l'entrée. Un seul message épinglé par
+     * conversation : épingler un autre message remplace l'épingle
+     * courante. Round 23 — pin only: the star toggle is gone with the
+     * "Star" entry (see [BubbleMenuToggles]).
      */
     toggles: BubbleMenuToggles? = null,
     modifier: Modifier = Modifier,
@@ -84,6 +102,26 @@ fun BubbleMenu(
         // Material default, like the overflow menus.
         modifier = modifier.padding(horizontal = 10.dp),
     ) {
+        // Round 23 — the reaction row at the top of the menu, like the
+        // desktop bubble popup: tap an emoji to react at once (the
+        // applied emoji toggles the reaction off), "+" opens the full
+        // picker. The divider below it marks the row as its own section
+        // above the items.
+        if (quickReactions != null) {
+            QuickReactionRow(
+                recentEmojis = quickReactions.recentEmojis,
+                currentReaction = currentReaction,
+                onEmojiSelected = { emoji ->
+                    onDismissRequest()
+                    quickReactions.onSelect(emoji)
+                },
+                onOpenPicker = {
+                    onDismissRequest()
+                    onReact?.invoke()
+                },
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        }
         // v1.3.11 (F3) — Copy ranked first because it's the most-requested action
         // (clipboard fed by long-press is the iMessage / Google Messages convention).
         if (onCopy != null) {
@@ -102,7 +140,7 @@ fun BubbleMenu(
             )
         }
         // v1.3.11 (F5) — Forward right under Copy: same "I want to do something with
-        // this content" intent group, before per-message actions (Reply / React).
+        // this content" intent group, before per-message actions (Reply / Pin).
         if (onForward != null) {
             DropdownMenuItem(
                 leadingIcon = {
@@ -148,61 +186,10 @@ fun BubbleMenu(
                 },
             )
         }
-        // v1.3.0 — entrée "Réagir" : ouvre le picker emoji côté ThreadScreen. Placée
-        // avant Delete pour respecter le pattern "destructive en dernier".
-        if (onReact != null) {
-            DropdownMenuItem(
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.EmojiEmotions,
-                        contentDescription = null,
-                    )
-                },
-                text = { Text(stringResource(R.string.action_react)) },
-                onClick = {
-                    onDismissRequest()
-                    onReact()
-                },
-            )
-        }
-        // v1.26.1 (audit F2) — « Favori ». `MessageDao.setStarred` existait avec ZÉRO
-        // appelant, alors que trois chaînes promettaient à l'utilisateur que « les messages
-        // favoris ne sont jamais supprimés » et que la purge automatique s'appuie réellement
-        // sur le drapeau (`DELETE … AND starred = 0`). La promesse ne protégeait donc rien :
-        // aucun message ne POUVAIT être mis en favori. Placé juste avant la suppression,
-        // parce que c'est précisément ce dont il protège.
-        if (toggles != null) {
-            DropdownMenuItem(
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (starred) Icons.Outlined.Star else Icons.Outlined.StarBorder,
-                        contentDescription = null,
-                        // v1.27.0 — l'étoile PLEINE porte l'or ; la creuse garde la couleur
-                        // d'icône du menu. Teinter les deux ferait de l'or une décoration au
-                        // lieu d'un état, et l'utilisateur ne lirait plus la différence.
-                        tint = if (starred) {
-                            starColor(MaterialTheme.colorScheme)
-                        } else {
-                            LocalContentColor.current
-                        },
-                    )
-                },
-                text = {
-                    Text(
-                        stringResource(
-                            if (starred) R.string.action_unstar else R.string.action_star,
-                        ),
-                    )
-                },
-                onClick = {
-                    onDismissRequest()
-                    toggles.onToggleStar()
-                },
-            )
-        }
-        // Feedback round 5 — « Épingler » / « Désépingler », juste après le
-        // favori : même intention « marquer ce message », avant l'action
-        // destructive. L'icône punaise pleine signale l'état épinglé.
+        // Feedback round 5 — « Épingler » / « Désépingler », juste avant
+        // l'action destructive : même intention « marquer ce message ».
+        // L'icône punaise pleine signale l'état épinglé. Round 23 — the
+        // "Star" entry that used to sit here is gone (see the KDoc above).
         if (toggles != null) {
             DropdownMenuItem(
                 leadingIcon = {

@@ -89,18 +89,24 @@ fun MessageBubble(
     /** v1.3.11 (F5) — forward the bubble's text body to another conversation. */
     onForward: (() -> Unit)? = null,
     /**
-     * Round 12 — quick-reaction bar on tap (incoming messages only; the
-     * caller passes `null` for outgoing). One bundle parameter instead of
+     * Round 12 — quick-reaction bar on tap. One bundle parameter instead of
      * two — the bubble sits at the Detekt 20-parameter limit (see
      * [BubbleMenuToggles]). `null` = tap opens the full menu, as before.
+     * Round 23 — every message, incoming or outgoing: the old
+     * incoming-only gate is what made reactions vanish on the user's own
+     * messages (no "React" item, no tap bar — it looked intermittent
+     * because it depended on which message was tapped). The local
+     * reaction is always allowed; the SMS dispatch to the recipient stays
+     * gated to incoming messages in the ViewModel, so reacting to your
+     * own message sets the local badge and sends nothing.
      */
     quickReactions: QuickReactionConfig? = null,
     /**
-     * Feedback round 5 — bascules « favori » / « épingler »
-     * ([BubbleMenuToggles]) ; l'état épinglé est lu sur la conversation
-     * (un seul message épinglé par fil), pas sur [message]. Un seul
-     * paramètre pour les deux bascules : la bulle texte est à la limite
-     * Detekt de 20 paramètres.
+     * Feedback round 5 — bascule « épingler » ([BubbleMenuToggles]) ;
+     * l'état épinglé est lu sur la conversation (un seul message épinglé
+     * par fil), pas sur [message]. Un seul paramètre pour la bascule : la
+     * bulle texte est à la limite Detekt de 20 paramètres. Round 23 —
+     * pin only: the star toggle is gone with the menu's "Star" entry.
      */
     toggles: BubbleMenuToggles? = null,
     /**
@@ -217,9 +223,11 @@ fun MessageBubble(
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu ([BubbleMenu]), un appui long ouvre le menu aussi (la sélection
     // libre est supprimée, round 6), et un tap sur un message FAILED garde
-    // le retry ([onTap]). Round 12 — tap on an INCOMING bubble opens the
+    // le retry ([onTap]). Round 12 — tap on a bubble opens the
     // quick-reaction bar instead ([QuickReactionBar]); long-press still
-    // opens the full menu, and outgoing bubbles keep tap → full menu.
+    // opens the full menu. Round 23 — the tap bar is on EVERY message now:
+    // the old incoming-only gate made reactions vanish on outgoing
+    // messages, which read as intermittent (see [quickReactions]).
     var menuExpanded by remember { mutableStateOf(false) }
     var quickBarExpanded by remember { mutableStateOf(false) }
 
@@ -297,9 +305,11 @@ fun MessageBubble(
                         )
                         // Relay — tap opens the bubble menu ([BubbleMenu]) ; tap on a
                         // FAILED message still retries ([onTap]). Round 12 — tap on
-                        // an INCOMING bubble opens the quick-reaction bar
-                        // ([QuickReactionBar]) instead; outgoing bubbles keep
-                        // tap → full menu. Feedback round 6 — long-press opens
+                        // a bubble opens the quick-reaction bar
+                        // ([QuickReactionBar]) instead; long-press opens the
+                        // full menu. Round 23 — the bar is on every message:
+                        // the incoming-only gate is gone (see
+                        // [quickReactions]). Feedback round 6 — long-press opens
                         // the menu too (the free text selection is gone);
                         // FAILED keeps its tap-to-retry on tap only.
                         .combinedClickable(
@@ -440,13 +450,18 @@ fun MessageBubble(
                 onReply = onReply,
                 onTranslate = onTranslate,
                 onReact = onReact,
-                starred = message.starred,
+                // Round 23 — the menu's top row IS the quick-reaction row
+                // (same bundle as the tap bar below); the applied reaction
+                // highlights in it, like the desktop popup.
+                quickReactions = quickReactions,
+                currentReaction = message.reactionEmoji,
                 toggles = toggles,
                 onDelete = onDelete,
             )
-            // Round 12 — quick-reaction bar on tap (incoming only). The "+"
-            // reuses [onReact]: it opens the full emoji picker for this
-            // message, exactly like the menu's "React" item.
+            // Round 12 — quick-reaction bar on tap. The "+" reuses
+            // [onReact]: it opens the full emoji picker for this message.
+            // Round 23 — every message, not just incoming (the gate is
+            // gone: see [quickReactions]).
             if (quickReactions != null) {
                 QuickReactionBar(
                     expanded = quickBarExpanded,

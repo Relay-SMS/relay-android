@@ -192,11 +192,16 @@ fun ConversationsScreen(
 
     // Re-evaluate the default-SMS-app banner whenever the screen comes back to foreground.
     // Covers the case where the user sets the default from Android Settings outside our app.
+    // The contact photos re-resolve too: a photo changed while the list was away — edited
+    // on the phone, or set from a linked device — touches no conversation row, so without
+    // this the list would keep the old photo until the app restarts. Same as the thread
+    // header, which re-resolves its photo on resume.
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshDefaultStatus()
+                viewModel.refreshContactPhotos()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

@@ -142,9 +142,13 @@ class ConversationsViewModel @Inject constructor(
     private val defaultRefreshTick = MutableStateFlow(0L)
 
     /**
-     * Bumped when contact-photo lookups may newly succeed — e.g. after `READ_CONTACTS` is
-     * granted ([requestSyncNow] runs right after the permission result). The photo flow
-     * also re-runs on every [state] emission, so this is only the explicit re-trigger.
+     * Bumped when contact-photo lookups may newly succeed or return different photos — e.g.
+     * after `READ_CONTACTS` is granted ([requestSyncNow] runs right after the permission
+     * result), and on every resume ([refreshContactPhotos]). A photo edit touches no
+     * conversation row, so without this bump the list would keep the old photo until the
+     * process restarts: the keys projection below drops every re-emission whose keys are
+     * unchanged, and the tick is what forces the lookup to re-run anyway. Same pattern as
+     * `ThreadViewModel.contactPhotoTick`.
      */
     private val contactPhotoTick = MutableStateFlow(0L)
 
@@ -425,25 +429,31 @@ class ConversationsViewModel @Inject constructor(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val contactPhotos: StateFlow<Map<Long, String>> =
-        combine(state, contactPhotoTick) { ui, _ -> ui.conversations }
+        combine(state, contactPhotoTick) { ui, tick -> tick to ui.conversations }
             // Feedback round 6 — project the list to its photo-relevant keys
             // BEFORE the lookup: the full lookup used to re-run on every
             // `state` emission (new message, read change, sync tick), even
             // though its result only depends on (conversation id, first
             // address, custom avatar) + the tick. `distinctUntilChanged` on
-            // the keys drops those emissions, so the lookup + map rebuild
-            // only run when a conversation appears, an address or custom
-            // avatar changes, or the tick bumps (permission granted). The
-            // lookups themselves are LRU-cached in `ContactsReader` and the
-            // cache is never invalidated in-process, so a dropped re-run
-            // would have returned the same photos — no behaviour change.
-            .map { conversations ->
-                conversations
+            // the (tick, keys) pair drops those emissions, so the lookup +
+            // map rebuild only run when a conversation appears, an address
+            // or custom avatar changes, or the tick bumps (permission
+            // granted, resume). The tick rides along in the pair on
+            // purpose: the old shape discarded it in the combine lambda,
+            // so `distinctUntilChanged` on the keys alone swallowed the
+            // bump and the re-trigger never actually re-ran. The lookups
+            // themselves are LRU-cached in `ContactsReader`, and the cache
+            // IS invalidated in-process on a provider change (the
+            // ContentObserver in `MainApplication`, and the photo write) —
+            // so a tick-triggered re-run can return a new photo, which is
+            // the whole point of the bump.
+            .map { (tick, conversations) ->
+                tick to conversations
                     .filter { !it.isGroup && it.avatarUri == null }
                     .map { it.id to it.firstAddress?.raw }
             }
             .distinctUntilChanged()
-            .mapLatest { keys ->
+            .mapLatest { (_, keys) ->
                 withContext(io) {
                     keys
                         .mapNotNull { (id, phone) ->
@@ -463,6 +473,18 @@ class ConversationsViewModel @Inject constructor(
     /** Forces a re-evaluation of [DefaultSmsAppManager.isDefault]. Call from ON_RESUME / role result. */
     fun refreshDefaultStatus() {
         defaultRefreshTick.update { it + 1 }
+    }
+
+    /**
+     * Re-resolves [contactPhotos]. Call from ON_RESUME, like
+     * `ThreadViewModel.refreshContactPhoto`: a contact photo changed while the list was
+     * away — edited on the phone, or set from a linked device — otherwise stays stale
+     * until the process restarts, because no conversation row changes and the keys
+     * projection would drop the re-emission. The tick is carried through that projection
+     * so the bump re-runs the lookup even when the keys are unchanged.
+     */
+    fun refreshContactPhotos() {
+        contactPhotoTick.update { it + 1 }
     }
 
     /**

@@ -97,10 +97,12 @@ fun MediaAttachmentBubble(
     onReply: () -> Unit,
     onReact: (() -> Unit)?,
     /**
-     * Round 22 — quick-reaction bar on long-press (incoming only, same
-     * condition as [onReact]): the caller passes the same bundle
-     * [MessageBubble] gets. Tap still opens the viewer, so the bar lives
-     * on the long-press instead of the tap.
+     * Round 22 — the quick-reaction bundle ([QuickReactionConfig]), the
+     * same one [MessageBubble] gets. Round 23 — it feeds the reaction row
+     * at the top of the long-press menu ([BubbleMenu]) instead of a
+     * separate bar: tap still opens the viewer, long-press opens the menu
+     * (whose top row IS the quick reactions). Every message, incoming or
+     * outgoing — the old incoming-only gate is gone.
      */
     quickReactions: QuickReactionConfig? = null,
     /**
@@ -111,11 +113,11 @@ fun MediaAttachmentBubble(
     /** v1.3.11 (F5) — forward the attachment (+ caption if any) to another conversation. */
     onForward: (() -> Unit)? = null,
     /**
-     * Feedback round 5 — bascules « favori » / « épingler »
-     * ([BubbleMenuToggles]) ; l'état épinglé est lu sur la conversation
-     * (un seul message épinglé par fil), pas sur [message]. Un seul
-     * paramètre pour les deux bascules : la bulle texte est à la limite
-     * Detekt de 20 paramètres.
+     * Feedback round 5 — bascule « épingler » ([BubbleMenuToggles]) ;
+     * l'état épinglé est lu sur la conversation (un seul message épinglé
+     * par fil), pas sur [message]. Un seul paramètre pour la bascule : la
+     * bulle texte est à la limite Detekt de 20 paramètres. Round 23 —
+     * pin only: the star toggle is gone with the menu's "Star" entry.
      */
     toggles: BubbleMenuToggles? = null,
     /**
@@ -154,20 +156,18 @@ fun MediaAttachmentBubble(
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe ;
-    // l'appui long sur la vignette ouvre la barre de réaction rapide
-    // ([QuickReactionBar], entrant uniquement) ou le menu — avant, le
-    // `clickable` interne consommait le geste et l'appui long ne faisait
-    // rien sur la vignette, donc une image/GIF sans légende n'avait AUCUN
-    // chemin vers le menu ni vers les réactions (round 22).
+    // l'appui long sur la vignette ouvre le menu — avant, le `clickable`
+    // interne consommait le geste et l'appui long ne faisait rien sur la
+    // vignette, donc une image/GIF sans légende n'avait AUCUN chemin vers le
+    // menu ni vers les réactions (round 22). Round 23 — the menu's top row
+    // IS the quick-reaction row ([BubbleMenu]), so one long-press reaches
+    // both the reactions and the items; the round-22 long-press quick bar
+    // is gone, replaced by the menu row.
     var menuExpanded by remember { mutableStateOf(false) }
-    var quickBarExpanded by remember { mutableStateOf(false) }
-    // Round 22 — same choice as [MessageBubble]'s tap, on the long-press:
-    // the quick bar when the caller wired reactions, the full menu
-    // otherwise. Shared by the outer column (caption area) and the
+    // Round 23 — long-press opens the full menu (the reaction row is
+    // inside it). Shared by the outer column (caption area) and the
     // thumbnails below.
-    val onLongPress: () -> Unit = {
-        if (quickReactions != null) quickBarExpanded = true else menuExpanded = true
-    }
+    val onLongPress: () -> Unit = { menuExpanded = true }
 
     Row(
         // Feedback round 5 — `fillMaxWidth` was missing: without it the row
@@ -311,28 +311,14 @@ fun MediaAttachmentBubble(
                 onForward = onForward,
                 onReply = onReply,
                 onReact = onReact,
-                starred = message.starred,
+                // Round 23 — the menu's top row IS the quick-reaction row
+                // (same bundle [MessageBubble] gets); the applied reaction
+                // highlights in it, like the desktop popup.
+                quickReactions = quickReactions,
+                currentReaction = message.reactionEmoji,
                 toggles = toggles,
                 onDelete = onDelete,
             )
-            // Round 22 — quick-reaction bar on long-press (incoming only).
-            // The "+" reuses [onReact]: it opens the full emoji picker for
-            // this message, exactly like the menu's "React" item.
-            if (quickReactions != null) {
-                QuickReactionBar(
-                    expanded = quickBarExpanded,
-                    onDismissRequest = { quickBarExpanded = false },
-                    recentEmojis = quickReactions.recentEmojis,
-                    onEmojiSelected = { emoji ->
-                        quickBarExpanded = false
-                        quickReactions.onSelect(emoji)
-                    },
-                    onOpenPicker = {
-                        quickBarExpanded = false
-                        onReact?.invoke()
-                    },
-                )
-            }
         }
     }
 }
@@ -379,7 +365,8 @@ private fun MediaPreview(
 
 /**
  * Thumbnail image via Coil. Tap = ACTION_VIEW; round 22 — long-press opens
- * the quick-reaction bar (incoming) or the full menu.
+ * the menu (round 23: the menu's top row IS the quick-reaction row, so the
+ * round-22 long-press quick bar is gone).
  *
  * Round 16 — the image loads through a local loader with the GIF decoder
  * (`io.coil-kt:coil-gif`), so animated GIFs play in the thread instead of
@@ -636,7 +623,8 @@ private fun com.filestech.sms.domain.model.Attachment.toShareableUri(
     }.getOrNull()
 }
 
-/** Icône + nom + taille pour vidéo / fichier. Tap = ACTION_VIEW ; round 22 — appui long = barre de réaction rapide (entrant) ou menu. */
+/** Icône + nom + taille pour vidéo / fichier. Tap = ACTION_VIEW ; round 22 —
+ * appui long = menu (round 23 : la rangée de réactions rapides est EN HAUT du menu). */
 @Composable
 private fun IconAttachment(
     attachment: Attachment,

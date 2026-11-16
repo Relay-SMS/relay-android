@@ -178,6 +178,7 @@ import com.filestech.sms.ui.components.SmsTechSnackbarVisuals
 import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.components.stickerSendUri
 import com.filestech.sms.ui.components.toPlaybackUri
+import com.filestech.sms.ui.components.toggleReaction
 import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.BrandDanger
 import com.filestech.sms.ui.theme.FixedTypeSize
@@ -1285,8 +1286,6 @@ fun ThreadScreen(
                 onForward = { msg -> forwardingMessage = msg },
                 onTranslate = { msg -> translateMessageExternal(msg) },
                 onCopy = { msg -> copyMessageBody(msg) },
-                // v1.26.1 (audit F2) — bascule sur l'état courant du message.
-                onToggleStar = { msg -> viewModel.toggleMessageStarred(msg.id, !msg.starred) },
                 // Feedback round 5 — épingler / désépingler (la VM compare à
                 // l'épingle courante du fil). Round 17 — unpinning asks
                 // first (a stray tap on "Unpin" drops the pin); pinning
@@ -3794,8 +3793,6 @@ private class ThreadMessageItemActions(
     val onForward: (Message) -> Unit,
     val onTranslate: (Message) -> Unit,
     val onCopy: (Message) -> Unit,
-    /** v1.26.1 (audit F2) — bascule « favori » ; le drapeau protège déjà de la purge auto. */
-    val onToggleStar: (Message) -> Unit,
     /** Feedback round 5 — bascule « épingler » (un seul message épinglé par fil). */
     val onTogglePin: (Message) -> Unit,
     val onPhoneClick: (String) -> Unit,
@@ -3883,8 +3880,8 @@ private fun ThreadMessageItem(
         // level down (the round-5 stable-callbacks fix stopped at
         // [itemActions]). Keyed on the whole `msg` (data-class equals): a new
         // instance with identical content keeps the lambdas, a real content
-        // change rebuilds them — so a toggle reading `msg.starred` never
-        // closes over a stale message. The calls stay unconditional (above
+        // change rebuilds them — so a callback reading `msg.reactionEmoji`
+        // never closes over a stale message. The calls stay unconditional (above
         // the `when`), so every branch reuses the same instances.
         val onTogglePlay = remember(msg, actions) {
             {
@@ -3909,28 +3906,26 @@ private fun ThreadMessageItem(
                 actions.onReact(msg.id)
             }
         }
-        // Round 12 — quick-reaction bar on tap, incoming messages only
-        // (same condition as [onReact]): recents + the send path, bundled
-        // in one parameter for [MessageBubble] (Detekt parameter limit).
-        // Round 21 — tapping the emoji already applied removes the reaction
-        // (toggle): the bar passes `null` for it, which the repo maps to
-        // `SetReactionResult.Removed`. A multi-emoji reaction only matches
-        // when the whole string is tapped — a single emoji from it swaps
-        // the reaction instead, as before.
+        // Round 12 — quick-reaction bar on tap: recents + the send path,
+        // bundled in one parameter for [MessageBubble] (Detekt parameter
+        // limit). Round 23 — EVERY message, incoming or outgoing: the old
+        // `msg.isIncoming` gate is what made reactions vanish on the
+        // user's own messages — the "React" menu item AND the tap bar
+        // both disappeared, so it read as intermittent (it depended on
+        // which message was tapped). The local reaction is always
+        // allowed: the SMS dispatch to the recipient stays gated to
+        // incoming messages in the ViewModel (`setReaction` refuses
+        // outgoing targets, and `SendReactionUseCase` refuses them too),
+        // so reacting to your own message sets the local badge and sends
+        // nothing. Round 21 — tapping the emoji already applied removes
+        // the reaction (toggle): see [toggleReaction].
         val quickReactions = remember(msg, actions, recentReactions) {
-            if (msg.isIncoming) {
-                com.filestech.sms.ui.components.QuickReactionConfig(
-                    recentEmojis = recentReactions,
-                    onSelect = { emoji ->
-                        actions.onQuickReact(
-                            msg.id,
-                            if (emoji == msg.reactionEmoji) null else emoji,
-                        )
-                    },
-                )
-            } else {
-                null
-            }
+            com.filestech.sms.ui.components.QuickReactionConfig(
+                recentEmojis = recentReactions,
+                onSelect = { emoji ->
+                    actions.onQuickReact(msg.id, toggleReaction(msg.reactionEmoji, emoji))
+                },
+            )
         }
         val onForward = remember(msg, actions) {
             {
@@ -3954,17 +3949,17 @@ private fun ThreadMessageItem(
         }
         // Feedback round 5 — menu toggles for this message, built once for
         // the three bubble types below (one bundle parameter instead of
-        // three — the text bubble is at the Detekt 20-parameter limit).
+        // two — the text bubble is at the Detekt 20-parameter limit).
+        // Round 23 — pin only: the star toggle is gone with the menu's
+        // "Star" entry.
         val menuToggles = remember(msg, actions, isPinnedMessage) {
             BubbleMenuToggles(
-                onToggleStar = { actions.onToggleStar(msg) },
                 isPinned = isPinnedMessage,
                 onTogglePin = { actions.onTogglePin(msg) },
-                // Round 21 — badge tap removes the reaction. Unlike the
-                // React entry this is NOT gated to incoming messages: a
-                // badge can sit on an outgoing message too (the other
-                // side's Tapback), and tapping it clears the local badge
-                // — same as the original wiring.
+                // Round 21 — badge tap removes the reaction. A badge can
+                // sit on an outgoing message too (the other side's
+                // Tapback, or your own reaction), and tapping it clears
+                // the local badge — same as the original wiring.
                 onRemoveReaction = { actions.onRemoveReaction(msg.id) },
             )
         }
@@ -4014,12 +4009,18 @@ private fun ThreadMessageItem(
                     onSeekTo = actions.onSeekPlayback,
                     onDelete = onDelete,
                     onReply = onReply,
-                    // v1.3.1 — "Réagir" exposé uniquement sur les messages reçus.
-                    onReact = if (msg.isIncoming) onReact else null,
+                    // Round 23 — "Réagir" on EVERY message: the v1.3.1
+                    // incoming-only gate is gone (it made reactions vanish
+                    // on outgoing messages — see [quickReactions] above).
+                    // The picker's "+" and the menu row both use it.
+                    onReact = onReact,
+                    // Round 23 — the menu's top row IS the quick-reaction
+                    // row (same bundle as the text bubble).
+                    quickReactions = quickReactions,
                     onForward = onForward,
-                    // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    // Feedback round 5 — bascules « favori » / « épingler » sur les
-                    // trois types de bulle.
+                    // Feedback round 5 — bascule « épingler » sur les
+                    // trois types de bulle. Round 23 — pin only: the star
+                    // toggle is gone with the menu's "Star" entry.
                     toggles = menuToggles,
                     repliedToPreview = repliedToPreview,
                     showTimestamp = showTimestamp,
@@ -4038,16 +4039,21 @@ private fun ThreadMessageItem(
                     showStatus = showStatus,
                     onDelete = onDelete,
                     onReply = onReply,
-                    onReact = if (msg.isIncoming) onReact else null,
-                    // Round 22 — quick-reaction bar on long-press (incoming
-                    // only); tap still opens the viewer.
+                    // Round 23 — "Réagir" on EVERY message: the v1.3.1
+                    // incoming-only gate is gone (see [quickReactions]
+                    // above). The menu row's "+" uses it.
+                    onReact = onReact,
+                    // Round 23 — the menu's top row IS the quick-reaction
+                    // row: long-press opens the menu, tap still opens the
+                    // viewer. The round-22 long-press quick bar is gone,
+                    // replaced by the menu row.
                     quickReactions = quickReactions,
                     // v1.3.11 (F3) — copy exposed only when the bubble carries a user-typed caption.
                     onCopy = if (msg.body.isNotBlank()) onCopy else null,
                     onForward = onForward,
-                    // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    // Feedback round 5 — bascules « favori » / « épingler » sur les
-                    // trois types de bulle.
+                    // Feedback round 5 — bascule « épingler » sur les
+                    // trois types de bulle. Round 23 — pin only: the star
+                    // toggle is gone with the menu's "Star" entry.
                     toggles = menuToggles,
                     onPhoneClick = actions.onPhoneClick,
                     repliedToPreview = repliedToPreview,
@@ -4067,14 +4073,19 @@ private fun ThreadMessageItem(
                     // v1.7.1 — Translate via ACTION_PROCESS_TEXT system intent. Only wired when
                     // the body is non-blank (nothing to translate on attachment-only messages).
                     onTranslate = if (msg.body.isNotBlank()) onTranslate else null,
-                    onReact = if (msg.isIncoming) onReact else null,
-                    // Round 12 — quick-reaction bar on tap (incoming only).
+                    // Round 23 — "Réagir" on EVERY message: the v1.3.1
+                    // incoming-only gate is gone (see [quickReactions]
+                    // above). The tap bar's "+" and the menu row's "+"
+                    // both use it.
+                    onReact = onReact,
+                    // Round 12 — quick-reaction bar on tap (round 23:
+                    // every message, not just incoming).
                     quickReactions = quickReactions,
                     onCopy = if (msg.body.isNotBlank()) onCopy else null,
                     onForward = onForward,
-                    // v1.26.1 (audit F2) — « Favori » sur les trois types de bulle.
-                    // Feedback round 5 — bascules « favori » / « épingler » sur les
-                    // trois types de bulle.
+                    // Feedback round 5 — bascule « épingler » sur les
+                    // trois types de bulle. Round 23 — pin only: the star
+                    // toggle is gone with the menu's "Star" entry.
                     toggles = menuToggles,
                     onPhoneClick = actions.onPhoneClick,
                     repliedToPreview = repliedToPreview,

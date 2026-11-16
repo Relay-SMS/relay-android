@@ -95,16 +95,24 @@ fun AudioMessageBubble(
     onReply: (() -> Unit)? = null,
     onReact: (() -> Unit)? = null,
     /**
+     * Round 23 — the quick-reaction bundle ([QuickReactionConfig]), the
+     * same one [MessageBubble] gets: it feeds the reaction row at the top
+     * of the menu ([BubbleMenu]). Tap still opens the menu; the row is
+     * inside it. Every message, incoming or outgoing — the old
+     * incoming-only gate is gone.
+     */
+    quickReactions: QuickReactionConfig? = null,
+    /**
      * v1.3.11 (F5) — forward the voice clip + sender label to another conversation. No
      * `onCopy` here: a voice MMS has no text payload to copy.
      */
     onForward: (() -> Unit)? = null,
     /**
-     * Feedback round 5 — bascules « favori » / « épingler »
-     * ([BubbleMenuToggles]) ; l'état épinglé est lu sur la conversation
-     * (un seul message épinglé par fil), pas sur [message]. Un seul
-     * paramètre pour les deux bascules : la bulle texte est à la limite
-     * Detekt de 20 paramètres.
+     * Feedback round 5 — bascule « épingler » ([BubbleMenuToggles]) ;
+     * l'état épinglé est lu sur la conversation (un seul message épinglé
+     * par fil), pas sur [message]. Un seul paramètre pour la bascule : la
+     * bulle texte est à la limite Detekt de 20 paramètres. Round 23 —
+     * pin only: the star toggle is gone with the menu's "Star" entry.
      */
     toggles: BubbleMenuToggles? = null,
     repliedToPreview: ReplyQuotePreview? = null,
@@ -372,8 +380,12 @@ fun AudioMessageBubble(
                 onDismissRequest = { menuExpanded = false },
                 onReply = onReply,
                 onReact = onReact,
+                // Round 23 — the menu's top row IS the quick-reaction row
+                // (same bundle as the text bubble); the applied reaction
+                // highlights in it, like the desktop popup.
+                quickReactions = quickReactions,
+                currentReaction = message.reactionEmoji,
                 onForward = onForward,
-                starred = message.starred,
                 toggles = toggles,
                 onDelete = onDelete,
             )
