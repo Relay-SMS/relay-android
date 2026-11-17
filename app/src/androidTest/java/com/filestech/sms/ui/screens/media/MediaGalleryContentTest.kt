@@ -38,14 +38,14 @@ class MediaGalleryContentTest {
 
     @Test
     fun avantLaPremiereLectureLEcranNeDitPasQuIlNYARien() {
-        compose.setContent { MediaGalleryContent(null, PaddingValues()) {} }
+        compose.setContent { MediaGalleryContent(null, PaddingValues(), onOpen = {}) }
 
         compose.onAllNodesWithText(context.getString(R.string.media_gallery_empty)).assertCountEquals(0)
     }
 
     @Test
     fun uneConversationSansPhotoLeDit() {
-        compose.setContent { MediaGalleryContent(emptyList(), PaddingValues()) {} }
+        compose.setContent { MediaGalleryContent(emptyList(), PaddingValues(), onOpen = {}) }
 
         compose.onNodeWithText(context.getString(R.string.media_gallery_empty)).assertExists()
     }
@@ -55,7 +55,12 @@ class MediaGalleryContentTest {
         val photo = piece(1, "image/jpeg", "photo.jpg")
         val video = piece(2, "video/mp4", "film.mp4")
         val ouvertes = mutableListOf<Attachment>()
-        compose.setContent { MediaGalleryContent(listOf(photo, video), PaddingValues()) { ouvertes += it } }
+        compose.setContent {
+            // Named `onOpen`: a trailing lambda would bind to the LAST
+            // lambda parameter (`onRequestDownload`, added by client mode
+            // C5) and leave `onOpen` unfilled.
+            MediaGalleryContent(listOf(photo, video), PaddingValues(), onOpen = { ouvertes += it })
+        }
 
         compose.onNodeWithContentDescription("photo.jpg").performClick()
         compose.onNodeWithContentDescription(context.getString(R.string.attachment_video_label)).performClick()
