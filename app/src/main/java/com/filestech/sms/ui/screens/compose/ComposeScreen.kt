@@ -254,6 +254,13 @@ fun ComposeScreen(
                     // contact frames until C4).
                     if (!isClientMode) {
                         item(key = "create-contact") {
+                            // Lint (LocalContextGetResourceValueCall) — the
+                            // message is read with stringResource in
+                            // composition, not via LocalContext.getString
+                            // inside the click handler, so a configuration
+                            // change (e.g. language) picks up the new text.
+                            val noContactsText =
+                                stringResource(R.string.phone_action_no_contacts)
                             ContactActionRow(
                                 title = stringResource(R.string.compose_add_contact),
                                 subtitle = null,
@@ -261,9 +268,7 @@ fun ComposeScreen(
                                 onClick = {
                                     if (!ContactIntents.createContact(context)) {
                                         scope.launch {
-                                            snackbarHost.showError(
-                                                context.getString(R.string.phone_action_no_contacts),
-                                            )
+                                            snackbarHost.showError(noContactsText)
                                         }
                                     }
                                 },
