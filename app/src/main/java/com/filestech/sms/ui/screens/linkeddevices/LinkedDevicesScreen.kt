@@ -24,14 +24,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.Contacts
 import androidx.compose.material.icons.outlined.Devices
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Tablet
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -69,8 +75,19 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.sync.DeviceKind
 import com.filestech.sms.sync.QrPairing
+import com.filestech.sms.sync.SyncProtocol
+import com.filestech.sms.sync.client.AutoLinkPhase
+import com.filestech.sms.sync.client.AutoLinkViewState
+import com.filestech.sms.sync.client.ClientConnectionState
+import com.filestech.sms.sync.client.ClientLink
+import com.filestech.sms.sync.client.ClientLinkViewModel
+import com.filestech.sms.sync.client.ClientSyncPhase
+import com.filestech.sms.sync.client.NoSimNudgeCard
+import com.filestech.sms.sync.client.QrDisplay
+import com.filestech.sms.sync.client.deviceKindFor
 import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
@@ -97,11 +114,13 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * GLUE — the Linked devices screen: the server toggle, the linked
- * devices, the QR scanner. It reuses the app's theme and settings
- * components (the third glue point in SYNC_PROTOCOL.md); all protocol,
- * crypto, transport and storage work lives in the standalone `sync`
- * package.
+ * GLUE — the Linked devices screen. The mode decides which branch
+ * renders: the hub branch (the server toggle, the linked devices,
+ * the QR scanner) or the client branch (this device's identity, the
+ * hub link status, the pairing QR). Each branch creates only its
+ * own ViewModel, so the hub graph is never built in client mode and
+ * vice versa. While the settings hydrate the screen shows nothing
+ * rather than the wrong branch.
  *
  * Seca-style grouped Settings like the rest of the app: a normal top
  * bar WITH the title, no big headline.
@@ -110,11 +129,49 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Composable
 fun LinkedDevicesScreen(
     onBack: () -> Unit,
+    clientViewModel: ClientLinkViewModel = hiltViewModel(),
+) {
+    // Client mode — the branch follows the stored mode.
+    val mode by clientViewModel.mode.collectAsStateWithLifecycle()
+    when (mode) {
+        null -> Unit
+        DeviceMode.HUB -> HubLinkedDevicesScreen(
+            onBack = onBack,
+            clientViewModel = clientViewModel,
+        )
+        DeviceMode.CLIENT -> ClientLinkedDevicesScreen(
+            onBack = onBack,
+            viewModel = clientViewModel,
+        )
+    }
+}
+
+/**
+ * GLUE — the hub branch of the Linked devices screen: the server
+ * toggle, the linked devices, the QR scanner. It reuses the app's
+ * theme and settings components (the third glue point in
+ * SYNC_PROTOCOL.md); all protocol, crypto, transport and storage
+ * work lives in the standalone `sync` package.
+ *
+ * Client mode adds two things here: the no-SIM nudge card (a SIM-less
+ * device with no default-SMS role) and the mode row at the bottom
+ * ("Link this device to another phone"), both confirmed before any
+ * switch.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HubLinkedDevicesScreen(
+    onBack: () -> Unit,
+    clientViewModel: ClientLinkViewModel,
     viewModel: LinkedDevicesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var scannerOpen by rememberSaveable { mutableStateOf(false) }
     var deviceToRemove by remember { mutableStateOf<LinkedDeviceUi?>(null) }
+    // Client mode — the mode-switch confirm (from the mode row, or
+    // from the no-SIM nudge, which opens the QR after the switch).
+    var modeSwitchConfirmOpen by remember { mutableStateOf(false) }
+    var openQrAfterSwitch by remember { mutableStateOf(false) }
     val snackbarHost = remember { SnackbarHostState() }
     val linkedFmt = stringResource(R.string.linked_devices_linked)
     val removedFmt = stringResource(R.string.linked_devices_removed)
@@ -155,6 +212,15 @@ fun LinkedDevicesScreen(
             onRemove = { deviceToRemove = it },
             contactsWriteGranted = contactsWrite.granted,
             onRequestContactsWrite = contactsWrite.request,
+            showNudge = clientViewModel.showNudge,
+            onNudgeLink = {
+                openQrAfterSwitch = true
+                modeSwitchConfirmOpen = true
+            },
+            onSwitchMode = {
+                openQrAfterSwitch = false
+                modeSwitchConfirmOpen = true
+            },
         )
     }
 
@@ -223,6 +289,23 @@ fun LinkedDevicesScreen(
             },
         )
     }
+
+    // Client mode — the mode switch asks first: switching clears the
+    // messages stored on this device.
+    if (modeSwitchConfirmOpen) {
+        ModeSwitchConfirmDialog(
+            target = DeviceMode.CLIENT,
+            onConfirm = {
+                modeSwitchConfirmOpen = false
+                if (openQrAfterSwitch) {
+                    clientViewModel.switchToClientAndOpenQr()
+                } else {
+                    clientViewModel.switchMode(DeviceMode.CLIENT)
+                }
+            },
+            onDismiss = { modeSwitchConfirmOpen = false },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -238,6 +321,12 @@ private fun LinkedDevicesList(
     contactsWriteGranted: Boolean,
     /** Request WRITE_CONTACTS (the photo row's tap). */
     onRequestContactsWrite: () -> Unit,
+    /** Client mode — the no-SIM nudge shows on a SIM-less device with no default-SMS role. */
+    showNudge: Boolean,
+    /** Client mode — the nudge tap: switch to client mode, then open the QR. */
+    onNudgeLink: () -> Unit,
+    /** Client mode — the mode row tap: switch to client mode. */
+    onSwitchMode: () -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -262,6 +351,14 @@ private fun LinkedDevicesList(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
+            // Client mode — the no-SIM nudge: a SIM-less device with no
+            // default-SMS role cannot message on its own.
+            if (showNudge) {
+                NoSimNudgeCard(
+                    onLink = onNudgeLink,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                )
+            }
             RelaySectionLabel(stringResource(R.string.linked_devices_section_server))
             RelaySettingsGroup {
                 item {
@@ -345,9 +442,467 @@ private fun LinkedDevicesList(
                     modifier = Modifier.padding(top = 32.dp),
                 )
             }
+            // Client mode — the mode row: this device becomes a linked
+            // device instead of a phone (the switch asks first).
+            RelaySectionLabel(stringResource(R.string.client_mode_section))
+            RelaySettingsGroup {
+                item(onClick = onSwitchMode) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Link,
+                        title = stringResource(R.string.client_mode_link_title),
+                        chevron = true,
+                    )
+                }
+            }
             Spacer(Modifier.size(32.dp))
         }
     }
+}
+
+/**
+ * Client mode — the client branch of the Linked devices screen:
+ * this device's identity, the hub link status, the pairing QR, and
+ * Unlink. No server toggle, no device list, no scanner — those are
+ * the hub's.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClientLinkedDevicesScreen(
+    onBack: () -> Unit,
+    viewModel: ClientLinkViewModel,
+) {
+    val link by viewModel.link.collectAsStateWithLifecycle()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val qrOpen by viewModel.qrOpen.collectAsStateWithLifecycle()
+    val pairUri by viewModel.pairUri.collectAsStateWithLifecycle()
+    val identityError by viewModel.identityError.collectAsStateWithLifecycle()
+    val autoLink by viewModel.autoLinkState.collectAsStateWithLifecycle()
+    val syncUi by viewModel.syncUi.collectAsStateWithLifecycle()
+    var unlinkConfirmOpen by remember { mutableStateOf(false) }
+    var switchConfirmOpen by remember { mutableStateOf(false) }
+    var resyncConfirmOpen by remember { mutableStateOf(false) }
+
+    if (qrOpen) {
+        ClientQrScreen(
+            pairUri = pairUri,
+            identityError = identityError,
+            autoLink = autoLink,
+            onClose = viewModel::closeQr,
+        )
+    } else {
+        ClientLinkedDevicesList(
+            link = link,
+            connectionState = connectionState,
+            contactsErrorCode = syncUi.contactsErrorCode,
+            contactsErrorMessage = syncUi.contactsErrorMessage,
+            onBack = onBack,
+            onOpenQr = viewModel::openQr,
+            onUnlink = { unlinkConfirmOpen = true },
+            onResync = { resyncConfirmOpen = true },
+            onRetryContacts = viewModel::retryContacts,
+            onSwitchBack = { switchConfirmOpen = true },
+        )
+    }
+
+    // Client mode C2 — the sync-mode prompt, on first connect after
+    // linking (and after a Re-sync). It waits for the QR to close:
+    // the prompt belongs to the connected state, not the pairing
+    // flow. Non-dismissible by design — see SyncModePromptDialog.
+    if (syncUi.phase == ClientSyncPhase.Prompting && !qrOpen) {
+        SyncModePromptDialog(onChooseMode = viewModel::chooseSyncMode)
+    }
+
+    // Re-sync asks twice (the row, then this dialog): it clears the
+    // messages stored on this device and asks how much to sync
+    // again. Nothing is deleted from the phone; the link survives.
+    if (resyncConfirmOpen) {
+        RelayDialog(
+            onDismissRequest = { resyncConfirmOpen = false },
+            title = stringResource(R.string.client_resync_title),
+            content = { Text(stringResource(R.string.client_resync_body)) },
+            confirmButton = {
+                RelayTextButton(
+                    text = stringResource(R.string.client_resync_action),
+                    confirm = true,
+                    onClick = {
+                        viewModel.resync()
+                        resyncConfirmOpen = false
+                    },
+                )
+            },
+            dismissButton = {
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = { resyncConfirmOpen = false },
+                )
+            },
+        )
+    }
+
+    // Unlink asks twice (the row, then this dialog): it drops the hub
+    // link, the TOFU pin and the cache. The mode stays client.
+    if (unlinkConfirmOpen) {
+        RelayDialog(
+            onDismissRequest = { unlinkConfirmOpen = false },
+            title = stringResource(R.string.client_unlink_title),
+            content = { Text(stringResource(R.string.client_unlink_body)) },
+            confirmButton = {
+                RelayDestructiveButton(
+                    text = stringResource(R.string.client_unlink_action),
+                    onClick = {
+                        viewModel.unlink()
+                        unlinkConfirmOpen = false
+                    },
+                )
+            },
+            dismissButton = {
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = { unlinkConfirmOpen = false },
+                )
+            },
+        )
+    }
+    if (switchConfirmOpen) {
+        ModeSwitchConfirmDialog(
+            target = DeviceMode.HUB,
+            onConfirm = {
+                switchConfirmOpen = false
+                viewModel.switchMode(DeviceMode.HUB)
+            },
+            onDismiss = { switchConfirmOpen = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClientLinkedDevicesList(
+    link: ClientLink?,
+    connectionState: ClientConnectionState,
+    contactsErrorCode: String?,
+    contactsErrorMessage: String?,
+    onBack: () -> Unit,
+    onOpenQr: () -> Unit,
+    onUnlink: () -> Unit,
+    onResync: () -> Unit,
+    onRetryContacts: () -> Unit,
+    onSwitchBack: () -> Unit,
+) {
+    val kind = deviceKindFor(LocalConfiguration.current.smallestScreenWidthDp)
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.linked_devices_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            // This device — only once the identity exists (it is
+            // created at the first link, not before).
+            if (link != null) {
+                RelaySectionLabel(stringResource(R.string.client_this_device_section))
+                RelaySettingsGroup {
+                    item {
+                        RelaySettingRow(
+                            icon = kindIcon(kind),
+                            title = link.displayName,
+                            subtitle = kindLabel(kind),
+                        )
+                    }
+                }
+            }
+            RelaySectionLabel(stringResource(R.string.client_link_section))
+            RelaySettingsGroup {
+                if (link?.isLinked == true) {
+                    item {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.PhoneAndroid,
+                            title = link.hubName
+                                ?: stringResource(R.string.linked_devices_kind_phone),
+                            subtitle = linkStatusText(connectionState),
+                        )
+                    }
+                    // Removed: the hub deleted this device, so the QR
+                    // entry comes back for a fresh pairing.
+                    if (connectionState is ClientConnectionState.Removed) {
+                        item(onClick = onOpenQr) {
+                            RelaySettingRow(
+                                icon = Icons.Outlined.QrCodeScanner,
+                                title = stringResource(R.string.client_link_qr_title),
+                                chevron = true,
+                            )
+                        }
+                    }
+                    // Client mode C2 — Re-sync, only while linked:
+                    // clears the messages stored on this device and
+                    // asks how much to sync again. The second tap
+                    // (the confirm dialog) does the work.
+                    item(onClick = onResync) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Refresh,
+                            title = stringResource(R.string.client_resync_row),
+                            subtitle = stringResource(R.string.client_resync_subtitle),
+                        )
+                    }
+                    // Client mode C4 — contacts sync failed (the
+                    // phone can't read its address book): the reason
+                    // + Retry. Message sync proceeds regardless.
+                    if (contactsErrorCode != null) {
+                        item {
+                            RelaySettingRow(
+                                icon = Icons.Outlined.Contacts,
+                                title = stringResource(R.string.client_contacts_error_title),
+                                subtitle = contactsErrorText(
+                                    contactsErrorCode,
+                                    contactsErrorMessage,
+                                ),
+                                titleColor = MaterialTheme.colorScheme.error,
+                                trailing = {
+                                    RelayTextButton(
+                                        text = stringResource(R.string.action_retry),
+                                        onClick = onRetryContacts,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                    item(onClick = onUnlink) {
+                        RelaySettingRow(
+                            iconPainter = painterResource(R.drawable.ic_trash),
+                            title = stringResource(R.string.client_unlink_row),
+                            titleColor = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else {
+                    item(onClick = onOpenQr) {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.QrCodeScanner,
+                            title = stringResource(R.string.client_link_qr_title),
+                            subtitle = stringResource(R.string.client_link_status_not_linked),
+                            chevron = true,
+                        )
+                    }
+                }
+            }
+            RelayHint(stringResource(R.string.client_link_hint))
+            RelaySectionLabel(stringResource(R.string.client_mode_section))
+            RelaySettingsGroup {
+                item(onClick = onSwitchBack) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Smartphone,
+                        title = stringResource(R.string.client_mode_switch_back_title),
+                        chevron = true,
+                    )
+                }
+            }
+            Spacer(Modifier.size(32.dp))
+        }
+    }
+}
+
+/** Client mode — the hub link status line: Connected / Reconnecting… / Offline / removed. */
+@Composable
+private fun linkStatusText(state: ClientConnectionState): String = when (state) {
+    is ClientConnectionState.Connected ->
+        stringResource(R.string.client_link_status_connected)
+    is ClientConnectionState.Connecting,
+    is ClientConnectionState.Failed,
+    -> stringResource(R.string.client_link_status_reconnecting)
+    is ClientConnectionState.Disconnected ->
+        stringResource(R.string.client_link_status_offline)
+    is ClientConnectionState.Removed ->
+        stringResource(R.string.client_link_status_removed)
+}
+
+/**
+ * Client mode C4 — the contacts error line: the known code gets
+ * local words; anything else shows the hub's message when it has
+ * one, else the local default.
+ */
+@Composable
+private fun contactsErrorText(code: String, hubMessage: String?): String = when (code) {
+    SyncProtocol.ContactsError.HUB_NO_CONTACTS_ACCESS ->
+        stringResource(R.string.client_contacts_error_no_access)
+    else -> hubMessage?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.client_contacts_error_default)
+}
+
+/**
+ * Client mode — the pairing QR: the code the hub phone scans, the
+ * instruction for it, and the auto-link status underneath (the loop
+ * keeps trying while the screen is open). Closing the screen stops
+ * the loop; a link closes it on its own.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClientQrScreen(
+    pairUri: String?,
+    identityError: String?,
+    autoLink: AutoLinkViewState,
+    onClose: () -> Unit,
+) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.client_link_qr_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onClose) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.size(32.dp))
+            if (identityError != null) {
+                Text(
+                    text = stringResource(R.string.client_link_qr_error),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.size(12.dp))
+                Text(
+                    text = identityError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            } else if (pairUri != null) {
+                QrDisplay(
+                    content = pairUri,
+                    contentDescription = stringResource(R.string.client_qr_content_desc),
+                )
+                Spacer(Modifier.size(24.dp))
+                Text(
+                    text = stringResource(R.string.client_link_qr_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.size(24.dp))
+                val statusLine = autoLinkStatusLine(autoLink)
+                if (statusLine.isNotEmpty()) {
+                    Text(
+                        text = statusLine,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                val waitDetail = autoLink.waitDetail
+                if (waitDetail != null) {
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        text = waitDetail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                autoLink.errors.forEach { error ->
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            } else {
+                CircularProgressIndicator()
+            }
+            Spacer(Modifier.size(32.dp))
+        }
+    }
+}
+
+/**
+ * Client mode — the auto-link status line (the desktop's
+ * `autoLinkStatusLine`, rendered from string resources so all five
+ * locales carry it).
+ */
+@Composable
+private fun autoLinkStatusLine(state: AutoLinkViewState): String = when (state.phase) {
+    AutoLinkPhase.SCANNING -> if (state.noPhonesFound) {
+        stringResource(R.string.client_autolink_no_phones)
+    } else {
+        stringResource(R.string.client_autolink_scanning)
+    }
+    AutoLinkPhase.CONNECTING -> state.phoneName?.let {
+        stringResource(R.string.client_autolink_connecting, it)
+    } ?: stringResource(R.string.client_autolink_connecting_generic)
+    AutoLinkPhase.WAITING -> stringResource(R.string.client_autolink_waiting)
+    AutoLinkPhase.ERROR -> stringResource(R.string.client_autolink_error)
+    AutoLinkPhase.IDLE -> ""
+}
+
+/**
+ * Client mode — the mode-switch confirm, shared by the hub branch
+ * (switching to a linked device) and the client branch (switching
+ * back to a phone). The body states the wipe in both directions:
+ * switching clears the messages stored on this device, and nothing
+ * is deleted from the phone.
+ */
+@Composable
+private fun ModeSwitchConfirmDialog(
+    target: DeviceMode,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    RelayDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(R.string.client_mode_switch_title),
+        content = {
+            Text(
+                stringResource(
+                    if (target == DeviceMode.CLIENT) {
+                        R.string.client_mode_switch_to_client_body
+                    } else {
+                        R.string.client_mode_switch_to_hub_body
+                    },
+                ),
+            )
+        },
+        confirmButton = {
+            RelayTextButton(
+                text = stringResource(R.string.client_mode_switch_action),
+                confirm = true,
+                onClick = onConfirm,
+            )
+        },
+        dismissButton = {
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+            )
+        },
+    )
 }
 
 /**

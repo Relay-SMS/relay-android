@@ -1,6 +1,9 @@
 package com.filestech.sms.domain.usecase
 
+import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.clientmode.ClientSendGateway
+import com.filestech.sms.domain.clientmode.NoOpClientSendGateway
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.scheduler.ScheduledMessageScheduler
 import javax.inject.Inject
@@ -23,9 +26,27 @@ import javax.inject.Inject
 class CancelScheduledMessageUseCase @Inject constructor(
     private val repo: ScheduledMessageRepository,
     private val scheduler: ScheduledMessageScheduler,
+    /**
+     * Client mode C3 — the wire send gateway. Default NoOp keeps the
+     * hub tests compiling untouched; Hilt always provides the real one.
+     */
+    private val clientSend: ClientSendGateway = NoOpClientSendGateway,
 ) {
     /** @return `true` si la ligne est passée en `CANCELLED`, `false` si l'envoi était déjà en vol. */
     suspend operator fun invoke(id: Long): Outcome<Boolean> {
+        // Client mode C3 — the schedule lives on the hub phone, so the
+        // `cancel_scheduled` frame goes FIRST: if the phone cannot be
+        // reached, the row stays PENDING (the schedule still lives on
+        // the hub — cancelling the record would leave a message that
+        // fires with no way to cancel it). A keyless row is a hub-mode
+        // leftover with no wire schedule: the local cancel below is
+        // the whole job.
+        if (clientSend.isClientMode()) {
+            val key = repo.findById(id)?.clientMessageId
+            if (key != null && !clientSend.cancelScheduled(key)) {
+                return Outcome.Failure(AppError.ClientOffline)
+            }
+        }
         // Cancel WorkManager first — si le worker s'exécute pile entre notre call et le DB update,
         // il verra état == PENDING et tentera d'envoyer. L'ordre WorkManager → DB minimise cette
         // fenêtre (mais ne l'élimine pas totalement — c'est OK, le worker re-check toujours l'état

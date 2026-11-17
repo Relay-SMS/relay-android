@@ -2,6 +2,10 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.clientmode.ClientAction
+import com.filestech.sms.domain.clientmode.ClientActionGateway
+import com.filestech.sms.domain.clientmode.NoOpClientActionGateway
+import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.vault.VaultMover
 import javax.inject.Inject
@@ -9,10 +13,59 @@ import javax.inject.Inject
 class ToggleConversationStateUseCase @Inject constructor(
     private val repo: ConversationRepository,
     private val vault: VaultMover,
+    /**
+     * Client mode C3 — the local block list (the optimistic change).
+     * Hub mode keeps its own block path ([BlockNumberUseCase] in the
+     * ViewModels); this use case never blocks in hub mode.
+     */
+    private val blockedRepo: BlockedNumberRepository,
+    /**
+     * Client mode C3 — the write-back gateway. Default NoOp keeps the
+     * hub tests compiling untouched; Hilt always provides the real one.
+     */
+    private val clientActions: ClientActionGateway = NoOpClientActionGateway,
 ) {
     suspend fun setPinned(id: Long, pinned: Boolean) = repo.setPinned(id, pinned)
     suspend fun setArchived(id: Long, archived: Boolean) = repo.setArchived(id, archived)
     suspend fun setMuted(id: Long, muted: Boolean) = repo.setMuted(id, muted)
+
+    /**
+     * Client mode C3 — blocks (or unblocks) every address of a
+     * conversation from a linked device: the local block list is
+     * updated optimistically, then the `set_blocked` frame goes to
+     * the hub phone, which blocks the numbers for real. The sender
+     * runs the revert (un-blocks the addresses that actually changed)
+     * when the frame cannot go out or the hub answers `ok:false`.
+     *
+     * Hub mode keeps its own block path ([BlockNumberUseCase], called
+     * directly by the ViewModels) — this method refuses there, so the
+     * two paths can never be mixed up.
+     */
+    suspend fun setBlocked(id: Long, blocked: Boolean): Outcome<Unit> {
+        if (!clientActions.isClientMode()) {
+            return Outcome.Failure(AppError.Validation("setBlocked is only available on a linked device"))
+        }
+        val conv = repo.findById(id) ?: return Outcome.Failure(AppError.NotFound("conversation"))
+        // Only the addresses that actually change are tracked: an
+        // address already in the target state must not be reverted
+        // into the opposite state by a refused frame.
+        val changed = mutableListOf<String>()
+        for (address in conv.addresses) {
+            if (blockedRepo.isBlocked(address.raw) == blocked) continue
+            val outcome = if (blocked) {
+                blockedRepo.block(address.raw, conv.displayName)
+            } else {
+                blockedRepo.unblock(address.raw)
+            }
+            if (outcome is Outcome.Success) changed += address.raw
+        }
+        val sent = clientActions.sendAction(ClientAction.SetBlocked(id, blocked)) {
+            for (raw in changed) {
+                if (blocked) blockedRepo.unblock(raw) else blockedRepo.block(raw)
+            }
+        }
+        return if (sent) Outcome.Success(Unit) else Outcome.Failure(AppError.ClientOffline)
+    }
 
     /** v1.28.3 — nommer un groupe ; la saisie brute est normalisée ici, une fois pour les deux entrées. */
     suspend fun rename(id: Long, raw: String?) =

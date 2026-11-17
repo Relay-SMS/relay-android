@@ -6,9 +6,9 @@ import com.filestech.sms.data.location.LocationResolver
 import com.filestech.sms.data.mms.MmsSender
 import com.filestech.sms.data.mms.OutgoingAttachmentStoreImpl
 import com.filestech.sms.data.repository.BlockedNumberRepositoryImpl
-import com.filestech.sms.data.repository.ContactRepositoryImpl
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.repository.ConversationRepositoryImpl
+import com.filestech.sms.data.repository.ModeAwareContactRepository
 import com.filestech.sms.data.repository.QuickReplyRepositoryImpl
 import com.filestech.sms.data.repository.ScheduledMessageRepositoryImpl
 import com.filestech.sms.data.sender.SenderNameProviderImpl
@@ -25,6 +25,7 @@ import com.filestech.sms.domain.mms.MmsDispatcher
 import com.filestech.sms.domain.mms.OutgoingAttachmentStore
 import com.filestech.sms.domain.notification.AllNotificationsCanceller
 import com.filestech.sms.domain.notification.ConversationNotificationCanceller
+import com.filestech.sms.domain.ownnumber.OwnNumberEnsurer
 import com.filestech.sms.domain.pdf.PdfExporter
 import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.domain.repository.ContactRepository
@@ -41,6 +42,7 @@ import com.filestech.sms.domain.sender.SentSmsRecorder
 import com.filestech.sms.domain.sender.SmsSender
 import com.filestech.sms.domain.settings.AppSettingsSource
 import com.filestech.sms.domain.vault.VaultMover
+import com.filestech.sms.ownnumber.OwnNumberEnsurerImpl
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.VaultManager
 import com.filestech.sms.sync.SyncMessageSource
@@ -79,8 +81,12 @@ abstract class RepositoryModule {
     @Binds @Singleton
     abstract fun bindBlockedNumberRepository(impl: BlockedNumberRepositoryImpl): BlockedNumberRepository
 
+    /**
+     * Client mode C4 — the mode-aware contacts: hub mode reads the
+     * local provider, a linked device reads the synced cache.
+     */
     @Binds @Singleton
-    abstract fun bindContactRepository(impl: ContactRepositoryImpl): ContactRepository
+    abstract fun bindContactRepository(impl: ModeAwareContactRepository): ContactRepository
 
     @Binds @Singleton
     abstract fun bindQuickReplyRepository(impl: QuickReplyRepositoryImpl): QuickReplyRepository
@@ -139,6 +145,10 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindAppSettingsSource(impl: SettingsRepository): AppSettingsSource
+
+    /** Group-send own-number fix — just-in-time own-number detection before a group MMS send. */
+    @Binds @Singleton
+    abstract fun bindOwnNumberEnsurer(impl: OwnNumberEnsurerImpl): OwnNumberEnsurer
 
     @Binds @Singleton
     abstract fun bindConversationNotificationCanceller(

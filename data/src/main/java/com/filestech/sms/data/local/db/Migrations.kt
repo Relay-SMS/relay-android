@@ -479,6 +479,84 @@ object Migrations {
         }
     }
 
+    /**
+     * Client mode C2 — `messages.hub_message_id INTEGER`,
+     * `conversations.hub_conversation_id INTEGER` et
+     * `attachments.hub_attachment_id INTEGER` (tous nullables, chacun
+     * avec son index UNIQUE) + trois tables neuves : `client_sync_state`
+     * (mode + curseur par hub), `client_conversation_state` (frontière
+     * de marche arrière par conversation) et `synced_contacts` (carnet
+     * synchronisé, rempli en C4).
+     *
+     * Strictement additive : les lignes existantes projettent NULL sur
+     * les trois colonnes (SQLite admet plusieurs NULL sous un index
+     * unique, donc les lignes hub ne se gênent pas), et les trois
+     * tables naissent vides. Les `CREATE TABLE` reprennent la forme
+     * que Room génère pour les entités (colonnes, `NOT NULL`,
+     * `PRIMARY KEY`) : `runMigrationsAndValidate` compare la table
+     * réelle au schéma exporté et refuserait le moindre écart.
+     *
+     * Aucun rattrapage n'est possible ni utile : un identifiant hub
+     * n'existe que pour les lignes synchronisées depuis un hub à
+     * partir de cette version, et les lignes existantes n'en ont
+     * jamais porté.
+     */
+    val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `hub_message_id` INTEGER")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_hub_message_id` " +
+                    "ON `messages` (`hub_message_id`)",
+            )
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `hub_conversation_id` INTEGER")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_conversations_hub_conversation_id` " +
+                    "ON `conversations` (`hub_conversation_id`)",
+            )
+            db.execSQL("ALTER TABLE `attachments` ADD COLUMN `hub_attachment_id` INTEGER")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_attachments_hub_attachment_id` " +
+                    "ON `attachments` (`hub_attachment_id`)",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `client_sync_state` (
+                    `hub_id` TEXT NOT NULL,
+                    `mode` TEXT NOT NULL,
+                    `global_last_message_id` TEXT NOT NULL,
+                    `initial_sync_done` INTEGER NOT NULL,
+                    `last_sync_at` INTEGER,
+                    PRIMARY KEY(`hub_id`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `client_conversation_state` (
+                    `hub_conversation_id` INTEGER NOT NULL,
+                    `min_synced_id` TEXT NOT NULL,
+                    `history_complete` INTEGER NOT NULL,
+                    PRIMARY KEY(`hub_conversation_id`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `synced_contacts` (
+                    `number` TEXT NOT NULL,
+                    `display_name` TEXT NOT NULL,
+                    `has_photo` INTEGER NOT NULL,
+                    `photo_updated_at` INTEGER,
+                    `avatar_local_path` TEXT,
+                    `local_avatar` TEXT,
+                    `local_avatar_baseline` TEXT,
+                    PRIMARY KEY(`number`)
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -497,5 +575,6 @@ object Migrations {
         MIGRATION_14_15,
         MIGRATION_15_16,
         MIGRATION_16_17,
+        MIGRATION_17_18,
     )
 }

@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.provider.ContactsContract
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import androidx.work.WorkManager
 import com.filestech.sms.core.logging.LineNumberDebugTree
 import com.filestech.sms.core.logging.NoOpReleaseTree
 import com.filestech.sms.data.blocking.BlockedNumbersImporter
@@ -17,11 +18,14 @@ import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.sync.TelephonySyncManager
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.safetycall.SafetyCallNotice
+import com.filestech.sms.domain.settings.DeviceMode
+import com.filestech.sms.ownnumber.OwnNumberAutoFill
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.AutoLockObserver
 import com.filestech.sms.sync.LinkedDeviceStore
 import com.filestech.sms.sync.SyncServer
 import com.filestech.sms.sync.SyncService
+import com.filestech.sms.sync.client.ClientSyncService
 import com.filestech.sms.system.notifications.NotificationChannelInitializer
 import com.filestech.sms.system.scheduler.SafetyCallAlarmScheduler
 import com.filestech.sms.system.scheduler.SafetyCallWorker
@@ -116,6 +120,14 @@ class MainApplication : Application(), Configuration.Provider {
     /** v1.24.0 — migrations one-shot cold-start qui ouvrent la base, regroupées et gardées. */
     @Inject lateinit var startupMigrations: com.filestech.sms.system.startup.StartupMigrations
 
+    /**
+     * Group-send own-number fix — fills "My phone number" from the
+     * SIM once at startup when the setting is blank. `dagger.Lazy`
+     * (the established pattern here): the fill runs on IO, never on
+     * the main thread, and never blocks the cold start.
+     */
+    @Inject lateinit var ownNumberAutoFillLazy: dagger.Lazy<OwnNumberAutoFill>
+
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     /**
@@ -187,9 +199,34 @@ class MainApplication : Application(), Configuration.Provider {
         // launch that rebuilds a legacy zero-key database that is seconds of work: a guaranteed
         // ANR. Resolution is deferred to the IO coroutine below, which is also what warms the
         // database for every other startup task.
+        // Client mode — a linked device has no telephony to sync: its
+        // messages arrive from the hub. The manager only starts on a
+        // hub; a switch back to hub starts it then (`start()` is
+        // idempotent), and a switch to client simply stops triggering
+        // it — the periodic job is cancelled below, and the sync only
+        // runs when something requests it.
         appScope.launch(ioDispatcher) {
-            runCatching { telephonySyncManagerLazy.get().start() }
-                .onFailure { Timber.w(it, "TelephonySyncManager.start failed") }
+            settingsRepository.flow
+                .map { it.mode }
+                .distinctUntilChanged()
+                .collect { mode ->
+                    if (mode == DeviceMode.HUB) {
+                        runCatching { telephonySyncManagerLazy.get().start() }
+                            .onFailure { Timber.w(it, "TelephonySyncManager.start failed") }
+                    }
+                }
+        }
+        // Group-send own-number fix — auto-fill "My phone number"
+        // from the SIM when the setting is blank (first launch, or
+        // a user who never typed it). Fail-soft and hub-only inside
+        // [OwnNumberAutoFill.runOnce]: no permission, no SIM number,
+        // or client mode all skip silently, and a number the user
+        // typed is never overwritten. This does NOT fill the number
+        // on GrapheneOS — the SIM read returns null there — where
+        // the Settings nudge is the path instead.
+        appScope.launch(ioDispatcher) {
+            runCatching { ownNumberAutoFillLazy.get().runOnce() }
+                .onFailure { Timber.w(it, "OwnNumberAutoFill failed") }
         }
         // Slice 5 — watch the contacts provider: a rename, a new or
         // removed number, a deleted contact, or a changed photo
@@ -203,7 +240,24 @@ class MainApplication : Application(), Configuration.Provider {
         // anyway. Registered for the process lifetime, like the
         // telephony sync above — never unregistered.
         registerContactsObserver()
-        TelephonySyncWorker.schedulePeriodic(this)
+        // Client mode — the 12 h telephony safety-net job only runs on
+        // a hub. On a linked device it is cancelled: it would mirror
+        // this device's own telephony into the hub's message cache.
+        // The observer also covers a runtime mode switch (the direct
+        // call it replaces only ran at startup).
+        appScope.launch {
+            settingsRepository.flow
+                .map { it.mode }
+                .distinctUntilChanged()
+                .collect { mode ->
+                    if (mode == DeviceMode.HUB) {
+                        TelephonySyncWorker.schedulePeriodic(this@MainApplication)
+                    } else {
+                        WorkManager.getInstance(this@MainApplication)
+                            .cancelUniqueWork(TelephonySyncWorker.PERIODIC_NAME)
+                    }
+                }
+        }
         // v1.9.0 — schedule du SafetyCall worker (idempotent KEEP policy).
         // Même si la config deadman est désactivée, le worker tourne en no-op
         // (1 lecture DataStore par heure, négligeable batterie). Avantage : un
@@ -458,7 +512,10 @@ class MainApplication : Application(), Configuration.Provider {
             // legacy v1.7.1, donc ici on capture juste les delta de la purge.
             runCatching { conversationDaoLazy.get().recomputeAllUnreadCounts() }
                 .onFailure { Timber.w(it, "recomputeAllUnreadCounts (async post-block) failed") }
-            TelephonySyncWorker.enqueueOneShot(this@MainApplication)
+            // Client mode — no telephony sync on a linked device.
+            if (settingsRepository.hydratedOrNull()?.mode != DeviceMode.CLIENT) {
+                TelephonySyncWorker.enqueueOneShot(this@MainApplication)
+            }
         }
 
         // v1.3.10 — observe le flag `AdvancedSettings.keepAliveService` et démarre /
@@ -491,17 +548,41 @@ class MainApplication : Application(), Configuration.Provider {
         // off on the Linked devices screen stops the service (and its
         // notification) immediately, and the app works fully standalone.
         // Boot is covered by BootReceiver, complementarily.
+        // Client mode — the server also needs the device to BE a hub:
+        // the toggle value is kept across a mode switch but ignored
+        // in client mode, so a linked device never serves.
         appScope.launch {
-            linkedDeviceStore.serverEnabled
+            combine(
+                settingsRepository.flow.map { it.mode },
+                linkedDeviceStore.serverEnabled,
+            ) { mode, enabled -> mode == DeviceMode.HUB && enabled }
                 .distinctUntilChanged()
-                .onEach { enabled ->
-                    if (enabled) {
+                .onEach { shouldRun ->
+                    if (shouldRun) {
                         SyncService.start(this@MainApplication)
                     } else {
                         SyncService.stop(this@MainApplication)
                     }
                 }
                 .collect()
+        }
+
+        // Client mode — the mirror of the server observer above: a
+        // linked device starts its client service, which reconnects
+        // to the stored hub (and stops itself when there is no link);
+        // a hub stops it. Boot is covered by BootReceiver,
+        // complementarily.
+        appScope.launch {
+            settingsRepository.flow
+                .map { it.mode }
+                .distinctUntilChanged()
+                .collect { mode ->
+                    if (mode == DeviceMode.CLIENT) {
+                        ClientSyncService.start(this@MainApplication)
+                    } else {
+                        ClientSyncService.stop(this@MainApplication)
+                    }
+                }
         }
 
         // v1.14.3 hotfix — migration one-shot pour aligner l'invariant :
@@ -612,11 +693,19 @@ class MainApplication : Application(), Configuration.Provider {
                 onContactsChanged()
             }
         }
-        contentResolver.registerContentObserver(
-            ContactsContract.Contacts.CONTENT_URI,
-            true,
-            observer,
-        )
+        // Contacts-permission fix — registering for the calling user
+        // requires no permission (AOSP ContentService Javadoc), so a
+        // missing READ_CONTACTS should not throw here; wrapped anyway,
+        // because a provider that did throw would kill the cold start
+        // before the first frame. Without the observer the name cache
+        // just goes stale until the next launch — never a crash.
+        runCatching {
+            contentResolver.registerContentObserver(
+                ContactsContract.Contacts.CONTENT_URI,
+                true,
+                observer,
+            )
+        }.onFailure { Timber.w(it, "MainApplication: contacts observer registration failed") }
     }
 
     /**
@@ -631,7 +720,12 @@ class MainApplication : Application(), Configuration.Provider {
             .onFailure { Timber.w(it, "ContactsReader.invalidate failed") }
         appScope.launch {
             runCatching {
-                if (linkedDeviceStore.serverEnabled.first()) {
+                // Client mode — the server never runs on a linked
+                // device, so a contact edit must not build the server
+                // graph there (the toggle value is kept but ignored).
+                if (settingsRepository.hydratedOrNull()?.mode == DeviceMode.HUB &&
+                    linkedDeviceStore.serverEnabled.first()
+                ) {
                     syncServerLazy.get().notifyContactsChanged()
                 }
             }.onFailure { Timber.w(it, "SyncServer.notifyContactsChanged failed") }

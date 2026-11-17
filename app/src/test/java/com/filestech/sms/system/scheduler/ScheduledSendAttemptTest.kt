@@ -5,6 +5,9 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.ScheduledMessageDao
 import com.filestech.sms.data.local.db.entity.ScheduledMessageEntity
 import com.filestech.sms.domain.model.ScheduledState
+import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
@@ -49,9 +52,9 @@ class ScheduledSendAttemptTest {
         claimedAt = claimedAt,
     )
 
-    /** Six `any()` = la signature complete de [EnvoyerMessageUseCase.invoke]. */
+    /** Seven `any()` = the full [EnvoyerMessageUseCase.invoke] signature (C3 added conversationId). */
     private fun stubSend(result: Outcome<com.filestech.sms.domain.model.SendReport>) {
-        coEvery { envoyer.invoke(any(), any(), any(), any(), any(), any()) } returns result
+        coEvery { envoyer.invoke(any(), any(), any(), any(), any(), any(), any()) } returns result
     }
 
     private fun failure() = Outcome.Failure(AppError.Telephony("no SIM"))
@@ -356,7 +359,29 @@ class ScheduledSendAttemptTest {
 
         assertThat(attempt(ID, runAttemptCount = 0)).isEqualTo(ScheduledSendAttempt.Verdict.SENT)
         coVerify(exactly = 1) {
-            envoyer.invoke(any(), "Bonjour", emptyList(), null, null, null)
+            envoyer.invoke(any(), "Bonjour", emptyList(), null, null, null, null)
+        }
+    }
+
+    /**
+     * Client mode C3 — a linked device never fires a local schedule:
+     * the row stays PENDING, untouched (no claim, no send, no state
+     * change), and the hub phone owns the fire. The gate sits above
+     * the claim so a hub→client switch cannot leak a telephony send.
+     */
+    @Test
+    fun `en mode client la ligne est differee sans revendication ni envoi`() = runTest {
+        val settings = mockk<AppSettingsSource>()
+        coEvery { settings.hydratedOrNull() } returns AppSettings(mode = DeviceMode.CLIENT)
+        val clientAttempt = ScheduledSendAttempt(dao, envoyer, settings)
+
+        assertThat(clientAttempt(ID, runAttemptCount = 0))
+            .isEqualTo(ScheduledSendAttempt.Verdict.DEFERRED)
+        coVerify(exactly = 0) { dao.claimForSending(any(), any()) }
+        coVerify(exactly = 0) { dao.findById(any()) }
+        coVerify(exactly = 0) { dao.setState(any(), any()) }
+        coVerify(exactly = 0) {
+            envoyer.invoke(any(), any(), any(), any(), any(), any(), any())
         }
     }
 

@@ -53,7 +53,13 @@ import com.filestech.sms.R
 fun BubbleMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
-    onDelete: () -> Unit,
+    /**
+     * Client mode C2 — nullable, like the other actions: `null`
+     * hides the Delete entry (a linked device cannot delete — there
+     * is no delete frame in C2). Every hub-mode caller still passes
+     * a handler.
+     */
+    onDelete: (() -> Unit)? = null,
     onReply: (() -> Unit)? = null,
     onTranslate: (() -> Unit)? = null,
     /**
@@ -212,24 +218,27 @@ fun BubbleMenu(
             )
         }
         // Destructive action always at the bottom, painted in error red.
-        DropdownMenuItem(
-            leadingIcon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_trash),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.action_delete),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            },
-            onClick = {
-                onDismissRequest()
-                onDelete()
-            },
-        )
+        // Client mode C2 — hidden when `onDelete` is null.
+        if (onDelete != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_trash),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                text = {
+                    Text(
+                        stringResource(R.string.action_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    onDelete()
+                },
+            )
+        }
     }
 }

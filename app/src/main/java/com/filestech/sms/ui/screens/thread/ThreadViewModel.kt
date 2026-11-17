@@ -18,6 +18,7 @@ import com.filestech.sms.domain.model.MessageWindowSpec
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.repository.SetReactionResult
 import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
 import com.filestech.sms.domain.usecase.ExportConversationPdfUseCase
 import com.filestech.sms.domain.usecase.MarkConversationReadUseCase
@@ -25,6 +26,8 @@ import com.filestech.sms.domain.usecase.RetrySendUseCase
 import com.filestech.sms.domain.usecase.SendMediaMmsUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
 import com.filestech.sms.domain.usecase.SendVoiceMmsUseCase
+import com.filestech.sms.sync.client.ClientSendManagerEntryPoint
+import com.filestech.sms.sync.client.ClientSyncEngineEntryPoint
 import com.filestech.sms.system.notifications.ActiveConversationTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -491,6 +494,20 @@ class ThreadViewModel @Inject constructor(
          * pas apparaître (preserve l'illusion app SMS ordinaire).
          */
         val isPanicDecoy: Boolean = false,
+        /**
+         * Client mode C2 — true when this device is a linked device:
+         * the thread is read-only (no composer, no bubble actions
+         * that write, no schedule/block/delete/rename in the menu).
+         * Set from the settings collector, like
+         * [smishingDetectionEnabled].
+         */
+        val isClientMode: Boolean = false,
+        /**
+         * Client mode C5 — the attachment download states for this
+         * thread's bubbles, keyed by local attachment id. Empty in
+         * hub mode (and before the first download starts).
+         */
+        val attachmentDownloads: Map<Long, com.filestech.sms.sync.client.ClientDownloadState> = emptyMap(),
     )
 
     /** Staged attachment awaiting user confirmation in the composer. */
@@ -549,6 +566,9 @@ class ThreadViewModel @Inject constructor(
     val events: SharedFlow<Event> = _events.asEvents()
 
     private var recorderJob: Job? = null
+
+    /** Client mode C2 — the fetch-on-open guard (once per ViewModel, see `init`). */
+    private var fetchOnOpenDone = false
 
     /**
      * Feedback round 7 — re-resolution trigger for the header contact photo.
@@ -639,13 +659,34 @@ class ThreadViewModel @Inject constructor(
         viewModelScope.launch {
             settings.state.collect { snapshot ->
                 val enabled = snapshot.security.smishingDetectionEnabled
-                _state.update { it.copy(smishingDetectionEnabled = enabled) }
+                _state.update {
+                    it.copy(
+                        smishingDetectionEnabled = enabled,
+                        // Client mode C2 — the thread reads its mode
+                        // from the same snapshot (one collect, no
+                        // extra subscription).
+                        isClientMode = snapshot.mode == DeviceMode.CLIENT,
+                    )
+                }
                 // Audit P1 : recompute sur IO lorsque le toggle change.
                 if (enabled) {
                     recomputeSmishingVerdicts(_state.value.messages)
                 } else {
                     _state.update { it.copy(smishingVerdicts = emptyMap()) }
                 }
+            }
+        }
+
+        // Client mode C5 — the attachment download states for this
+        // thread's bubbles (one map, keyed by local attachment id).
+        // Resolved via the Hilt entry point — the constructor is at
+        // the 20-parameter cap (same reason as [clientSendManager]
+        // below). A missing downloader leaves the map empty: the
+        // bubbles render as before.
+        viewModelScope.launch {
+            val downloader = runCatching { clientAttachmentDownloader() }.getOrNull() ?: return@launch
+            downloader.states.collect { states ->
+                _state.update { it.copy(attachmentDownloads = states) }
             }
         }
 
@@ -684,6 +725,30 @@ class ThreadViewModel @Inject constructor(
             // delete hook did not cover — auto-purge, resync) self-heals:
             // the pin is cleared so no banner points at a ghost.
             resolvePinnedMessage(conv?.pinnedMessageId)
+            // Client mode C2 — fetch-on-open: on the first conversation
+            // emission, walk this thread's history from its stored
+            // frontier (the engine no-ops when the thread is complete
+            // or already fetched this session). Guarded to once per
+            // ViewModel: the row re-emits on every message, and each
+            // emission must not re-fetch. The engine is resolved via
+            // the Hilt entry point — the constructor is at the
+            // 20-parameter cap (same reason as
+            // [recentReactionsStore] above).
+            if (conv != null && !fetchOnOpenDone &&
+                settings.state.value.mode == DeviceMode.CLIENT
+            ) {
+                fetchOnOpenDone = true
+                viewModelScope.launch {
+                    runCatching {
+                        dagger.hilt.android.EntryPointAccessors.fromApplication(
+                            context,
+                            ClientSyncEngineEntryPoint::class.java,
+                        ).clientSyncEngine().fetchThread(conversationId)
+                    }.onFailure {
+                        timber.log.Timber.w(it, "ThreadViewModel: fetch-on-open failed")
+                    }
+                }
+            }
         }.launchIn(viewModelScope)
         combine(
             convFlow.map { conv ->
@@ -971,7 +1036,9 @@ class ThreadViewModel @Inject constructor(
             val res = withContext(NonCancellable) {
                 // v1.28.4 — le routeur decide : MMS de groupe si le reglage est actif et que
                 // la conversation est un groupe, SMS sinon (cf. [EnvoyerMessageUseCase]).
-                envoyer.invoke(conv.addresses, body, replyToMessageId = replyTargetId)
+                // Client mode C3 — the local conversation id lets the
+                // wire branch resolve the hub conversation directly.
+                envoyer.invoke(conv.addresses, body, replyToMessageId = replyTargetId, conversationId = conversationId)
             }
             when (res) {
                 is Outcome.Success -> {
@@ -1379,7 +1446,12 @@ class ThreadViewModel @Inject constructor(
         _state.update { it.copy(isSending = true) }
         val res = try {
             withContext(NonCancellable) {
-                envoyer.invoke(conv.addresses, textBody, attachments = payloads)
+                // Client mode C3/C5 — the local conversation id lets
+                // the wire branch resolve the hub conversation
+                // directly (a budget refusal there returns before any
+                // optimistic row exists — the staged attachments stay
+                // put for retry).
+                envoyer.invoke(conv.addresses, textBody, attachments = payloads, conversationId = conversationId)
             }
         } finally {
             _state.update { it.copy(isSending = false) }
@@ -1614,13 +1686,59 @@ class ThreadViewModel @Inject constructor(
                 // v1.28.3 (F21) — l'issue de la relance remonte enfin a l'ecran. Elle etait
                 // avalee : toucher la bulle rouge d'un destinataire bloque ne produisait
                 // strictement RIEN, ni envoi ni message, et l'utilisateur recommencait.
-                val res = withContext(NonCancellable) { retrySend.invoke(messageId) }
+                //
+                // Client mode C3 — a failed wire send retries with the
+                // SAME client key (the hub dedups on it); the telephony
+                // retry path must never run on a linked device. The
+                // manager comes from the entry point: this ViewModel
+                // is at its constructor-param cap.
+                val res = withContext(NonCancellable) {
+                    if (_state.value.isClientMode) {
+                        runCatching { clientSendManager().resend(messageId) }
+                            .getOrElse { Outcome.Failure(AppError.Unknown(it)) }
+                    } else {
+                        retrySend.invoke(messageId)
+                    }
+                }
                 if (res is Outcome.Failure) _events.tryEmit(Event.SendError(res.error))
             } finally {
                 _state.update { it.copy(isSending = false) }
             }
         }
     }
+
+    /** Client mode C3 — the send manager, via the entry point (see [retry]). */
+    private fun clientSendManager(): com.filestech.sms.sync.client.ClientSendManager =
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context,
+            ClientSendManagerEntryPoint::class.java,
+        ).clientSendManager()
+
+    /**
+     * Client mode C5 — asks the downloader for an attachment's bytes
+     * (tap-to-download, or the bubble's auto-request on render). A
+     * no-op in hub mode: the screen only wires the callback in client
+     * mode, and the downloader itself no-ops for a row with no hub id.
+     */
+    fun requestAttachmentDownload(localAttachmentId: Long) {
+        viewModelScope.launch {
+            runCatching { clientAttachmentDownloader().request(localAttachmentId) }
+        }
+    }
+
+    /** Client mode C5 — retries a failed download (tap-to-retry on the failed tile). */
+    fun retryAttachmentDownload(localAttachmentId: Long) {
+        viewModelScope.launch {
+            runCatching { clientAttachmentDownloader().retry(localAttachmentId) }
+        }
+    }
+
+    /** Client mode C5 — the attachment downloader, via the entry point (see [retry]). */
+    private fun clientAttachmentDownloader(): com.filestech.sms.sync.client.ClientAttachmentDownloader =
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context,
+            com.filestech.sms.sync.client.ClientAttachmentDownloaderEntryPoint::class.java,
+        ).clientAttachmentDownloader()
 
     fun deleteMessage(messageId: Long) {
         viewModelScope.launch { repo.deleteMessage(messageId) }
@@ -1849,14 +1967,35 @@ class ThreadViewModel @Inject constructor(
         val reviewing = _state.value.voice as? VoiceState.Reviewing ?: return
         _state.update { it.copy(isSendingVoice = true) }
         playbackController.stop()
-        when (val res = sendVoiceMms.invoke(
-            recipients = conv.addresses,
-            echoInGroup = conv.isGroup,
-            groupMms = cachedSettings.value.sending.groupMms,
-            audioFile = reviewing.file,
-            mimeType = reviewing.mimeType,
-            durationMs = reviewing.durationMs,
-        )) {
+        // Client mode C5 — a voice send from a linked device goes
+        // through the router (S20), not the voice use case: the
+        // router's client branch prepares + uploads the recording,
+        // then sends it with the `attachments` array. The voice use
+        // case stays hub-only (it bypasses the router).
+        val res = if (_state.value.isClientMode) {
+            envoyer.invoke(
+                conv.addresses,
+                "",
+                attachments = listOf(
+                    SendMediaMmsUseCase.AttachmentPayload(
+                        file = reviewing.file,
+                        mimeType = reviewing.mimeType,
+                        durationMs = reviewing.durationMs,
+                    ),
+                ),
+                conversationId = conversationId,
+            )
+        } else {
+            sendVoiceMms.invoke(
+                recipients = conv.addresses,
+                echoInGroup = conv.isGroup,
+                groupMms = cachedSettings.value.sending.groupMms,
+                audioFile = reviewing.file,
+                mimeType = reviewing.mimeType,
+                durationMs = reviewing.durationMs,
+            )
+        }
+        when (res) {
             is Outcome.Success -> {
                 _state.update { it.copy(voice = VoiceState.Idle, isSendingVoice = false) }
                 // v1.28.3 (F21) — idem sur la voie vocale, troisieme chemin d'envoi.
@@ -1940,6 +2079,21 @@ class ThreadViewModel @Inject constructor(
      */
     fun blockSenders(onDone: () -> Unit = {}) {
         val addresses = _state.value.conversation?.addresses ?: return
+        // Client mode C3 — block via the hub (one `set_blocked` frame
+        // for the conversation); the per-address telephony block list
+        // is hub-only.
+        if (_state.value.isClientMode) {
+            viewModelScope.launch {
+                when (val res = toggleConvState.setBlocked(conversationId, true)) {
+                    is Outcome.Success -> {
+                        _events.tryEmit(Event.ShowSnackbar(snackNumbersBlocked()))
+                        onDone()
+                    }
+                    is Outcome.Failure -> _events.tryEmit(Event.SendError(res.error))
+                }
+            }
+            return
+        }
         viewModelScope.launch {
             val blocked = addresses.count { addr ->
                 runCatching { blockNumber.invoke(addr.raw) }
@@ -2190,9 +2344,19 @@ class ThreadViewModel @Inject constructor(
      * d'échec change, pour que « Impossible de lire la pièce jointe » ne cache pas sa vraie cause.
      */
     private fun snackEchecPieceJointe(kind: com.filestech.sms.ui.components.AttachmentKind): String {
+        // Contacts-permission fix — the direct framework call, NOT
+        // `ContextCompat.checkSelfPermission`: core 1.19's version
+        // calls `TextUtils.equals` (then `Process.myPid`/`myUid`) on
+        // its pre-33 path, and both are stubs that throw on plain-JVM
+        // unit tests — the throw escaped inside `viewModelScope`
+        // before the snackbar was emitted, so joining a contact
+        // showed NO message at all (`ContactsRefusesTest` saw `[]`
+        // for both cases). The framework call is API 23+ and minSdk
+        // is 26, so on device this is exactly what ContextCompat does
+        // for READ_CONTACTS. Same trap as
+        // `RepositorySyncMessageSource.contactsReadiness`.
         val contactSansPermission = kind == com.filestech.sms.ui.components.AttachmentKind.CONTACT &&
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
+            context.checkSelfPermission(
                 android.Manifest.permission.READ_CONTACTS,
             ) != android.content.pm.PackageManager.PERMISSION_GRANTED
         return if (contactSansPermission) {

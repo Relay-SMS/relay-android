@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.Intent
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.di.ApplicationScope
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.sync.LinkedDeviceStore
 import com.filestech.sms.sync.SyncService
+import com.filestech.sms.sync.client.ClientSyncService
 import com.filestech.sms.system.notifications.EmergencyShortcutNotifier
 import com.filestech.sms.system.scheduler.SafetyCallWorker
 import com.filestech.sms.system.scheduler.ScheduledMessageSchedulerImpl
@@ -52,7 +54,9 @@ class BootReceiver : BroadcastReceiver() {
             action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
             action != Intent.ACTION_USER_UNLOCKED
         ) return
-        TelephonySyncWorker.enqueueOneShot(context)
+        // Client mode — the telephony one-shot moved into the coroutine
+        // below, where the mode is known: a linked device must not
+        // mirror its own telephony at boot.
         // v1.9.0 audit fix SEC-2 — Safety call : reschedule le worker
         // périodique au boot pour résister aux force-stop OEM (Xiaomi,
         // Huawei) qui cancellent les jobs WorkManager. Sans ça, un user qui
@@ -64,8 +68,27 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         scope.launch {
             try {
+                // Client mode — the mode decides which sync runs at
+                // boot: telephony + server on a hub, the client link
+                // on a linked device. Same 3 s cap as the reads
+                // below; an unreadable mode (locked boot, before the
+                // user unlocks) defaults to HUB, and the
+                // ACTION_USER_UNLOCKED pass re-reads it correctly.
+                val mode = withTimeoutOrNull(3_000L) {
+                    runCatching { settingsRepository.flow.first().mode }.getOrNull()
+                } ?: DeviceMode.HUB
+                if (mode != DeviceMode.CLIENT) {
+                    TelephonySyncWorker.enqueueOneShot(context)
+                }
                 val scheduler = schedulerLazy.get()
-                scheduler.rescheduleAllPending()
+                // Client mode C3 — a linked device never re-arms local
+                // schedules: the hub phone owns the scheduler, and a
+                // hub-mode leftover must not fire from here. (The
+                // Attempt's DEFERRED gate is the second layer, for a
+                // job that survived the mode switch.)
+                if (mode != DeviceMode.CLIENT) {
+                    scheduler.rescheduleAllPending()
+                }
                 // v1.3.10 — redémarre le foreground [KeepAliveService] au boot du device
                 // SI l'utilisateur l'a activé dans Réglages → Avancé → Mode résistant.
                 // MainApplication.onCreate observe aussi le flag mais ce path donne une
@@ -107,8 +130,21 @@ class BootReceiver : BroadcastReceiver() {
                         linkedDeviceStore.serverEnabled.first()
                     }.getOrDefault(false)
                 } ?: false
-                if (syncEnabled) {
+                // Client mode — the server only restarts on a hub; the
+                // toggle value is kept across a mode switch but ignored
+                // in client mode.
+                if (mode == DeviceMode.HUB && syncEnabled) {
                     SyncService.start(context)
+                }
+                // Client mode — the mirror of the server start above:
+                // restart the client service at boot so the link comes
+                // back without the user opening the app first. The
+                // service checks the link itself and stops when there
+                // is none, so an unlinked device starts nothing.
+                // `specialUse`, like the server, so the boot start is
+                // allowed under targetSdk 35.
+                if (mode == DeviceMode.CLIENT) {
+                    ClientSyncService.start(context)
                 }
                 // v1.12.0 — re-poster la notification persistante du raccourci
                 // urgence si l'user l'a activée. Sans ça, après reboot, la notif

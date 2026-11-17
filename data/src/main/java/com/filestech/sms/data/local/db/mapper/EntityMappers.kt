@@ -38,6 +38,8 @@ fun AttachmentEntity.toDomain(): Attachment = Attachment(
     width = width,
     height = height,
     durationMs = durationMs,
+    // Client mode C5 — the UI gates its download tile on this.
+    hubAttachmentId = hubAttachmentId,
 )
 
 fun BlockedNumberEntity.toDomain(): BlockedNumber = BlockedNumber(

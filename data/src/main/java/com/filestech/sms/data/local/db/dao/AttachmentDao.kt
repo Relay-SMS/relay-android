@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -27,6 +28,18 @@ interface AttachmentDao {
      */
     @Query("SELECT * FROM attachments WHERE id = :id")
     suspend fun findById(id: Long): AttachmentEntity?
+
+    /**
+     * Client mode (schema v18) — the attachment synced from the hub
+     * attachment [hubId], or null. The mirror upserts synced
+     * attachment metadata by this key so a re-sync never duplicates
+     * a row — and never drops the downloaded `localUri` C5 fills in.
+     */
+    @Query("SELECT * FROM attachments WHERE hub_attachment_id = :hubId LIMIT 1")
+    suspend fun findByHubAttachmentId(hubId: Long): AttachmentEntity?
+
+    @Update
+    suspend fun update(attachment: AttachmentEntity)
 
     /**
      * Feedback round 6 — bulk-fetch attachments for exactly the given
@@ -117,4 +130,35 @@ interface AttachmentDao {
      */
     @Query("UPDATE attachments SET local_uri = :newUri WHERE id = :id")
     suspend fun updateLocalUri(id: Long, newUri: String)
+
+    /**
+     * Client mode C5 — every downloaded file cited by the synced
+     * cache: the local URIs of attachments on synced messages, or
+     * on messages of synced conversations (an optimistic row has no
+     * hub id yet, but its conversation does). The wiper collects
+     * these BEFORE deleting the rows, so the files can be deleted
+     * after — a file still cited by a hub-mode row survives, via the
+     * citation check.
+     */
+    @Query(
+        """
+        SELECT DISTINCT a.local_uri FROM attachments a
+        JOIN messages m ON m.id = a.message_id
+        WHERE a.local_uri != ''
+          AND (m.hub_message_id IS NOT NULL
+            OR m.conversation_id IN (
+                SELECT id FROM conversations WHERE hub_conversation_id IS NOT NULL
+            ))
+        """,
+    )
+    suspend fun findLocalUrisForSynced(): List<String>
+
+    /**
+     * Client mode C5 — deletes the optimistic attachment rows of a
+     * message (the ones with no hub id, inserted by the send
+     * manager), so the mirror's reconcile can link their durable
+     * files onto the synced attachments without duplicating rows.
+     */
+    @Query("DELETE FROM attachments WHERE message_id = :messageId AND hub_attachment_id IS NULL")
+    suspend fun deleteOptimisticForMessage(messageId: Long)
 }

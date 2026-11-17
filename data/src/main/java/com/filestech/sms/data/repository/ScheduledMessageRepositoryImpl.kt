@@ -122,6 +122,12 @@ class ScheduledMessageRepositoryImpl @Inject constructor(
             dao.findByClientMessageId(clientMessageId)?.toDomain()
         }
 
+    // Client mode C3 — one scheduled row by id (the cancel/retry wire branches need its client key).
+    override suspend fun findById(id: Long): ScheduledMessage? =
+        withContext(io) {
+            dao.findById(id)?.toDomain()
+        }
+
     override suspend fun cancel(id: Long): Outcome<Boolean> = withContext(io) {
         // v1.26.1 (audit B2) — transition CONDITIONNELLE : on n'annule que si l'envoi est
         // encore `PENDING`. Un `setState` inconditionnel ecrasait l'etat d'un envoi deja

@@ -1,5 +1,11 @@
 package com.filestech.sms.ui.screens.settings
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,9 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
@@ -26,15 +30,11 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Notifications
@@ -92,6 +92,7 @@ import com.filestech.sms.R
 import com.filestech.sms.data.sms.readSimMsisdn
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.settings.AutoLockDelay
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.system.locale.ouvrirLaLangueDeLApplication
 import com.filestech.sms.system.notifications.CANAL_DU_RACCOURCI_D_URGENCE
 import com.filestech.sms.system.notifications.canalDesMessages
@@ -103,7 +104,6 @@ import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayPickerDialog
 import com.filestech.sms.ui.components.RelayPickerOption
 import com.filestech.sms.ui.components.RelayPrimaryButton
-import com.filestech.sms.ui.components.RelaySectionLabel
 import com.filestech.sms.ui.components.RelaySettingRow
 import com.filestech.sms.ui.components.RelaySettingsGroup
 import com.filestech.sms.ui.components.RelaySwitchRow
@@ -124,6 +124,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Date
 
+/**
+ * Round 24 — Settings is a landing screen plus five sub-screens. The
+ * landing shows ONLY the ten [SettingsSection] titles, in order; tapping
+ * one opens its sub-screen in place (same Scaffold, same ViewModel, same
+ * dialogs) or the screen it already had (Linked devices, Advanced, Help,
+ * About, and the system language page). Every setting from the old
+ * single page lives on exactly one sub-screen — see [SettingsItem].
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -152,6 +160,9 @@ fun SettingsScreen(
     // v1.10.0 audit SEC-1 — en session PanicDecoy, masquer toutes les sections
     // qui révèlent que l'app dispose de fonctions de sécurité personnelle.
     val isPanicDecoy by viewModel.isPanicDecoy.collectAsStateWithLifecycle()
+    // Client mode — a linked device hides the hub-only rows (Sending,
+    // Backup, Safety call / Emergency / Blocking).
+    val isClientMode = state.mode == DeviceMode.CLIENT
     var lockModePickerOpen by remember { mutableStateOf(false) }
     // v1.26.1 (audit F4) — sélecteur du délai de verrouillage automatique.
     var autoLockDelayPickerOpen by remember { mutableStateOf(false) }
@@ -340,434 +351,214 @@ fun SettingsScreen(
         }
     }
 
+    // Feedback round 8 — the Safety call recap's "I'm OK" action,
+    // built here (it needs the ViewModel, the snackbar host and the
+    // two messages) and passed into SecuritySection, where the
+    // Safety call rows now live.
+    // Hissés au niveau de la composition : les appeler dans le lambda déclencherait
+    // `LocalContextGetResourceValueCall` (lint), et un `ctx.getString` dans un
+    // rappel ne suit pas les changements de langue.
+    val imOkResetMessage = stringResource(R.string.settings_safety_call_im_ok_snack)
+    val imOkStopsRelancesMessage =
+        stringResource(R.string.settings_safety_call_im_ok_stops_relances)
+    val onSafetyCallImOk: () -> Unit = {
+        // v1.27.2 — deux sens, selon qu'une séquence de relances est ouverte
+        // ou non. Décision de Patrice, 2026-08-05.
+        //
+        //  - AVANT déclenchement : « Je vais bien » remet le minuteur à zéro,
+        //    comportement d'origine.
+        //  - APRÈS déclenchement : il **désactive** le Safety Call et arrête
+        //    les relances. Le cycle est clos ; la personne a confirmé aller
+        //    bien, elle réarmera quand elle le voudra. Se contenter de
+        //    remettre le minuteur à zéro laisserait `triggeredAt` posé et les
+        //    relances continueraient de partir.
+        val safetyCallNow = state.security.safetyCall
+        val wasTriggered = safetyCallNow.isTriggered
+        viewModel.update { s ->
+            val cfg = s.security.safetyCall
+            s.copy(
+                security = s.security.copy(
+                    // v1.27.2 (audit Codex, SC-03) — un seul appel, partagé avec
+                    // le tap sur la notification et l'ouverture de
+                    // l'application. La branche `isTriggered` oubliait de
+                    // remettre les horloges à zéro, et la branche normale
+                    // oubliait de fermer la séquence : chacune faisait la
+                    // moitié du travail de l'autre.
+                    safetyCall = cfg.withActivityReset(
+                        disarmIfTriggered = true,
+                    ),
+                ),
+            )
+        }
+        rootScope.launch {
+            snackbarHost.showSnackbar(
+                if (wasTriggered) {
+                    imOkStopsRelancesMessage
+                } else {
+                    imOkResetMessage
+                },
+            )
+        }
+    }
+
+    // Round 24 — the landing shows only the ten section titles; tapping one
+    // opens its sub-screen in place (same Scaffold, same ViewModel, same
+    // dialogs — the security dialogs stay at this level so their event
+    // collection and snackbars keep working). `null` = the landing.
+    var openSection by remember { mutableStateOf<SettingsSection?>(null) }
+    // Round 24 — system back returns to the landing instead of leaving Settings.
+    BackHandler(enabled = openSection != null) { openSection = null }
+    // Round 24 — a decoy session engaging while the Backup sub-screen is open
+    // drops back to the landing: Backup is hidden in a decoy, like Linked devices.
+    LaunchedEffect(isPanicDecoy) {
+        if (isPanicDecoy && openSection == SettingsSection.BACKUP) openSection = null
+    }
+    // Client mode — a mode switch while a hidden sub-screen is open
+    // drops back to the landing: Sending and Backup are hidden on a
+    // linked device, so the open sub-screen would be a dead end.
+    LaunchedEffect(isClientMode) {
+        if (isClientMode &&
+            (openSection == SettingsSection.SENDING || openSection == SettingsSection.BACKUP)
+        ) {
+            openSection = null
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
+                // Round 24 — the top bar carries the section title on a
+                // sub-screen (the old section labels went away with the
+                // single-page layout); the landing keeps "Settings".
+                title = {
+                    Text(stringResource(openSection?.titleRes ?: R.string.settings_title))
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    IconButton(
+                        onClick = {
+                            // Round 24 — back from a sub-screen returns to
+                            // the landing; back from the landing leaves Settings.
+                            if (openSection == null) onBack() else openSection = null
+                        },
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
                     }
                 },
             )
         },
         snackbarHost = { com.filestech.sms.ui.components.SmsTechSnackbarHost(snackbarHost) },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            // Feedback round 4 (2026-11-07) — the identity card that used to sit here
-            // is removed: the page starts directly with the first section, whose
-            // header already carries the normal 24dp top spacing. `settings_app_subtitle`
-            // stays in strings.xml (unused now) — strings are never deleted.
-            // Slice 1 — Linked devices: the LAN server toggle, the linked
-            // devices and QR pairing live on their own screen. Hidden in
-            // a panic-decoy session like Backup: the linked device names
-            // are identifying, and the decoy must read as an ordinary
-            // SMS app. Round 22 — first on the page, above Appearance,
-            // like the desktop Settings.
-            if (!isPanicDecoy) {
-                RelaySectionLabel(stringResource(R.string.settings_section_linked_devices))
-                RelaySettingsGroup {
-                    item(onClick = onOpenLinkedDevices) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Devices,
-                            title = stringResource(R.string.linked_devices_title),
-                            chevron = true,
-                        )
-                    }
-                }
-            }
-            RelaySectionLabel(stringResource(R.string.settings_section_appearance))
-            RelaySettingsGroup {
-                item {
-                    ThemeSwatchPicker(
-                        current = state.appearance.themeMode,
-                        onSelect = { mode -> viewModel.update { it.copy(appearance = it.appearance.copy(themeMode = mode)) } },
+        // Round 24 — landing ↔ sub-screen slides 300 ms, the same slide
+        // the other Settings sub-screens use when they enter from the
+        // right. Forward (landing → sub-screen) slides in from the right;
+        // back slides in from the left.
+        AnimatedContent(
+            targetState = openSection,
+            transitionSpec = {
+                val forward = targetState != null
+                val direction = if (forward) 1 else -1
+                slideInHorizontally(animationSpec = tween(300)) { it * direction } togetherWith
+                    slideOutHorizontally(animationSpec = tween(300)) { -it * direction }
+            },
+        ) { section ->
+            when (section) {
+                null -> SettingsPageColumn(padding) {
+                    SettingsLandingContent(
+                        isPanicDecoy = isPanicDecoy,
+                        isClientMode = isClientMode,
+                        onOpenSection = { openSection = it },
+                        onOpenLinkedDevices = onOpenLinkedDevices,
+                        onOpenAdvanced = onOpenAdvanced,
+                        onOpenHelp = onOpenHelp,
+                        onOpenAbout = onOpenAbout,
+                        onOpenLanguage = { ouvrirLaLangueDeLApplication(ctx) },
                     )
                 }
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.Palette,
-                        title = stringResource(R.string.settings_dynamic_colors),
-                        checked = state.appearance.dynamicColors,
-                        onCheckedChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(dynamicColors = v)) } },
+                SettingsSection.APPEARANCE -> SettingsPageColumn(padding) {
+                    AppearanceSectionContent(
+                        appearance = state.appearance,
+                        conversations = state.conversations,
+                        onUpdate = viewModel::update,
+                        onOpenTextScalePicker = { textScalePickerOpen = true },
                     )
                 }
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.DarkMode,
-                        title = stringResource(R.string.settings_amoled),
-                        checked = state.appearance.amoledTrueBlack,
-                        onCheckedChange = { v -> viewModel.update { it.copy(appearance = it.appearance.copy(amoledTrueBlack = v)) } },
+                SettingsSection.SENDING -> SettingsPageColumn(padding) {
+                    SendingSectionContent(
+                        sending = state.sending,
+                        onUpdate = viewModel::update,
+                        onOpenDefaultRegionPicker = { defaultRegionPickerOpen = true },
+                        onOpenReactionFormatPicker = { reactionFormatPickerOpen = true },
                     )
                 }
-                // 2026-10-29 — taille du texte des messages, cf. [com.filestech.sms.ui.theme.MessageTextSize].
-                item(onClick = { textScalePickerOpen = true }) {
-                    RelaySettingRow(
-                        icon = Icons.Outlined.FormatSize,
-                        title = stringResource(R.string.settings_text_scale),
-                        chevron = true,
+                SettingsSection.NOTIFICATIONS -> SettingsPageColumn(padding) {
+                    NotificationsSection(
+                        notifications = state.notifications,
+                        mutedCategories = state.conversations.mutedCategories,
+                        onUpdate = viewModel::update,
+                        onOpenPreviewPicker = { previewModePickerOpen = true },
+                        onOpenStylePicker = { notifStylePickerOpen = true },
                     )
                 }
-                // Feedback round 8 — the Conversations section is gone: its
-                // two rows (Show avatars, Automatic signature) live here in
-                // Appearance now, so the page has one fewer card.
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.PersonOutline,
-                        title = stringResource(R.string.settings_show_avatars),
-                        checked = state.conversations.showAvatars,
-                        onCheckedChange = { v -> viewModel.update { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
+                SettingsSection.SECURITY_PRIVACY -> SettingsPageColumn(padding) {
+                    SecuritySection(
+                        security = state.security,
+                        isPanicDecoy = isPanicDecoy,
+                        isClientMode = isClientMode,
+                        onUpdate = viewModel::update,
+                        onOpenLockModePicker = { lockModePickerOpen = true },
+                        onOpenAutoLockDelayPicker = { autoLockDelayPickerOpen = true },
+                        panicCodeSet = panicCodeSet,
+                        onOpenPanicCodeSetup = { panicCodeSetupOpen = true },
+                        onOpenPanicCodeClearConfirm = { panicCodeClearConfirmOpen = true },
+                        onOpenVaultPinSetup = { vaultPinSetupOpen = true },
+                        onOpenVaultPinDisable = { vaultPinDisableOpen = true },
+                        onOpenVaultPinForgetConfirm = { vaultPinForgetConfirmOpen = true },
+                        onOpenPurgeBlockedConfirm = { showPurgeBlockedConfirm = true },
+                        onOpenAutoDeletePicker = { autoDeletePickerOpen = true },
+                        // Feedback round 8 — Safety call, Emergency mode and
+                        // Blocking now live inside this card.
+                        blocking = state.blocking,
+                        onOpenBlocked = onOpenBlocked,
+                        safetyCallRemainingMs = safetyCallRemainingMs,
+                        onOpenSafetyCall = onOpenSafetyCall,
+                        onSafetyCallImOk = onSafetyCallImOk,
+                        onOpenEmergencySetup = onOpenEmergencySetup,
+                        onOpenEmergency = onOpenEmergency,
+                        positionAccordee = localisation.accordee,
+                        onRequestLocationPermission = localisation.demander,
                     )
                 }
-                // Round 12 — hide the category tab row on the main screen.
-                // Round 17 — the subtitle says the quiet part: hiding the
-                // tabs also turns the filtering off (the ViewModel returns
-                // the full list unfiltered), so the toggle never reads as
-                // display-only.
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.Category,
-                        title = stringResource(R.string.settings_show_categories),
-                        subtitle = stringResource(R.string.settings_show_categories_subtitle),
-                        checked = state.conversations.showCategories,
-                        onCheckedChange = { v ->
-                            viewModel.update { it.copy(conversations = it.conversations.copy(showCategories = v)) }
-                        },
+                SettingsSection.BACKUP -> SettingsPageColumn(padding) {
+                    BackupSectionContent(
+                        onOpenBackup = onOpenBackup,
+                        onOpenMigration = onOpenMigration,
                     )
                 }
-                // v1.26.1 (audit F3) — la signature était consommée à chaque SMS sortant sans
-                // qu'aucun écran ne permette de la définir. Voir [SignatureRow].
-                item {
-                    SignatureRow(
-                        current = state.conversations.signature,
-                        onChange = { v ->
-                            viewModel.update { it.copy(conversations = it.conversations.copy(signature = v)) }
-                        },
-                    )
-                }
-            }
-
-            RelaySectionLabel(stringResource(R.string.settings_section_sending))
-            // Round 12 — the group's conditional rows (Reaction format,
-            // Sender name) are `if`-guarded inside the group's content
-            // lambda. That lambda is hoisted/reused because everything it
-            // captures is stable, so the group is skipped on recomposition
-            // and the rows never hide when the toggle flips. Keying the
-            // group on the two gating values forces a fresh composition —
-            // fresh item collection, correct corner rounding — when either
-            // changes.
-            key(state.sending.sendReactionsToRecipient, state.sending.reactionFormat) {
-                RelaySettingsGroup {
-                    item {
-                        RelaySwitchRow(
-                            iconPainter = painterResource(R.drawable.ic_checkmark),
-                            title = stringResource(R.string.settings_delivery_reports),
-                            checked = state.sending.deliveryReports,
-                            onCheckedChange = { v ->
-                                viewModel.update { it.copy(sending = it.sending.copy(deliveryReports = v)) }
-                            },
-                        )
-                    }
-                    item {
-                        RelaySwitchRow(
-                            icon = Icons.Outlined.WarningAmber,
-                            title = stringResource(R.string.settings_confirm_broadcast),
-                            checked = state.sending.confirmBeforeBroadcast,
-                            onCheckedChange = { v ->
-                                viewModel.update { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) }
-                            },
-                        )
-                    }
-                    // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
-                    // Feedback round 8 — the long hint lives in the info popup now
-                    // (chevron before the switch); the row stays one-line.
-                    item {
-                        RelaySwitchRow(
-                            iconPainter = painterResource(R.drawable.ic_new_group),
-                            title = stringResource(R.string.settings_group_mms),
-                            checked = state.sending.groupMms,
-                            onCheckedChange = { v ->
-                                viewModel.update { it.copy(sending = it.sending.copy(groupMms = v)) }
-                            },
-                            infoText = stringResource(R.string.settings_group_mms_hint),
-                        )
-                    }
-                    // v1.2.6 audit F4 — saisie facultative du MSISDN. Sans cette valeur, les MMS
-                    // envoyés peuvent afficher "insert-address-token" comme expéditeur dans
-                    // d'autres apps SMS sur certaines ROM Samsung One UI.
-                    item {
-                        MyNumberRow(
-                            current = state.sending.userMsisdn,
-                            onChange = { v ->
-                                viewModel.update { it.copy(sending = it.sending.copy(userMsisdn = v?.takeIf { s -> s.isNotBlank() })) }
-                            },
-                        )
-                    }
-                    // v1.21.0 — indicatif pays par défaut pour convertir les numéros nationaux
-                    // au format international (E.164) avant l'envoi. "Auto" = pays de la SIM.
-                    // Indispensable pour envoyer des numéros nationaux d'un pays depuis une SIM
-                    // étrangère (ex. 06… français depuis une SIM luxembourgeoise).
-                    item(onClick = { defaultRegionPickerOpen = true }) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Public,
-                            title = stringResource(R.string.settings_default_region_title),
-                            chevron = true,
-                        )
-                    }
-                    // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
-                    // OFF, les réactions restent strictement locales (badge visible uniquement
-                    // dans Relay). La description prévient explicitement du coût SMS.
-                    // Feedback round 8 — renamed to "Send my reactions"; the long
-                    // cost warning lives in the info popup now (chevron before the
-                    // switch); the row stays one-line.
-                    item {
-                        RelaySwitchRow(
-                            icon = Icons.Outlined.EmojiEmotions,
-                            title = stringResource(R.string.settings_send_reactions_title),
-                            checked = state.sending.sendReactionsToRecipient,
-                            onCheckedChange = { v ->
-                                viewModel.update { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
-                            },
-                            infoText = stringResource(R.string.settings_send_reactions_desc),
-                        )
-                    }
-                    // v1.8.0 (bug 5 fix) — format du SMS de réaction. 3 options
-                    // (anciennement boolean reactionEmojiOnly à 2 valeurs) :
-                    //  - READABLE_FR (nouveau défaut) : "J'ai réagi par ❤️ à : «…»"
-                    //    — naturel et lisible pour les destinataires francophones Android
-                    //  - TAPBACK_EN (ancien défaut v1.7.x) : "Reacted ❤️ to «…»"
-                    //    — compat iMessage iPhone + Google Messages récent
-                    //  - EMOJI_ONLY : "❤️" seul — minimal, perd le contexte côté destinataire
-                    //
-                    // Affiché uniquement si l'envoi des réactions est activé. The
-                    // old AnimatedVisibility is a plain `if` now: the group
-                    // shapes are computed from the rows actually shown, and an
-                    // animated segment would leave a square corner behind when
-                    // it collapses.
-                    if (state.sending.sendReactionsToRecipient) {
-                        item(onClick = { reactionFormatPickerOpen = true }) {
-                            RelaySettingRow(
-                                icon = Icons.Outlined.ChatBubbleOutline,
-                                title = stringResource(R.string.settings_reaction_format_title),
-                                chevron = true,
-                            )
-                        }
-                    }
-                    // v1.8.1 — nom inclus dans les SMS de réaction sortants au
-                    // format READABLE_FR. Affiché uniquement si READABLE_FR est
-                    // sélectionné ET envoi des réactions activé (cohérence UX).
-                    if (state.sending.sendReactionsToRecipient &&
-                        state.sending.reactionFormat ==
-                            com.filestech.sms.domain.model.ReactionFormat.READABLE_FR
-                    ) {
-                        item {
-                            SenderNameRow(
-                                current = state.sending.senderDisplayName,
-                                onChange = { name ->
-                                    viewModel.update {
-                                        it.copy(
-                                            sending = it.sending.copy(
-                                                senderDisplayName = name?.takeIf { s -> s.isNotBlank() },
-                                            ),
-                                        )
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            // v1.15.0 — Section extraite vers [NotificationsSection] private @Composable.
-            // Comportement identique, lecture facilitée (avant : 68 lignes inline ici).
-            NotificationsSection(
-                notifications = state.notifications,
-                mutedCategories = state.conversations.mutedCategories,
-                onUpdate = viewModel::update,
-                onOpenPreviewPicker = { previewModePickerOpen = true },
-                onOpenStylePicker = { notifStylePickerOpen = true },
-            )
-
-            // Feedback round 8 — the Safety call recap's "I'm OK" action,
-            // built here (it needs the ViewModel, the snackbar host and the
-            // two messages) and passed into SecuritySection, where the
-            // Safety call rows now live.
-            // Hissés au niveau de la composition : les appeler dans le lambda déclencherait
-            // `LocalContextGetResourceValueCall` (lint), et un `ctx.getString` dans un
-            // rappel ne suit pas les changements de langue.
-            val imOkResetMessage = stringResource(R.string.settings_safety_call_im_ok_snack)
-            val imOkStopsRelancesMessage =
-                stringResource(R.string.settings_safety_call_im_ok_stops_relances)
-            val onSafetyCallImOk: () -> Unit = {
-                // v1.27.2 — deux sens, selon qu'une séquence de relances est ouverte
-                // ou non. Décision de Patrice, 2026-08-05.
-                //
-                //  - AVANT déclenchement : « Je vais bien » remet le minuteur à zéro,
-                //    comportement d'origine.
-                //  - APRÈS déclenchement : il **désactive** le Safety Call et arrête
-                //    les relances. Le cycle est clos ; la personne a confirmé aller
-                //    bien, elle réarmera quand elle le voudra. Se contenter de
-                //    remettre le minuteur à zéro laisserait `triggeredAt` posé et les
-                //    relances continueraient de partir.
-                val safetyCallNow = state.security.safetyCall
-                val wasTriggered = safetyCallNow.isTriggered
-                viewModel.update { s ->
-                    val cfg = s.security.safetyCall
-                    s.copy(
-                        security = s.security.copy(
-                            // v1.27.2 (audit Codex, SC-03) — un seul appel, partagé avec
-                            // le tap sur la notification et l'ouverture de
-                            // l'application. La branche `isTriggered` oubliait de
-                            // remettre les horloges à zéro, et la branche normale
-                            // oubliait de fermer la séquence : chacune faisait la
-                            // moitié du travail de l'autre.
-                            safetyCall = cfg.withActivityReset(
-                                disarmIfTriggered = true,
-                            ),
-                        ),
-                    )
-                }
-                rootScope.launch {
-                    snackbarHost.showSnackbar(
-                        if (wasTriggered) {
-                            imOkStopsRelancesMessage
-                        } else {
-                            imOkResetMessage
-                        },
+                // Round 24 — unreachable: the landing routes these five
+                // straight to their screens (see [SettingsDestination]),
+                // so they never become `openSection`. The landing is the
+                // safe fallback if that ever changes.
+                SettingsSection.LINKED_DEVICES,
+                SettingsSection.APP_LANGUAGE,
+                SettingsSection.ADVANCED,
+                SettingsSection.HELP,
+                SettingsSection.ABOUT -> SettingsPageColumn(padding) {
+                    SettingsLandingContent(
+                        isPanicDecoy = isPanicDecoy,
+                        isClientMode = isClientMode,
+                        onOpenSection = { openSection = it },
+                        onOpenLinkedDevices = onOpenLinkedDevices,
+                        onOpenAdvanced = onOpenAdvanced,
+                        onOpenHelp = onOpenHelp,
+                        onOpenAbout = onOpenAbout,
+                        onOpenLanguage = { ouvrirLaLangueDeLApplication(ctx) },
                     )
                 }
             }
-            // v1.15.0 — Section extraite vers [SecuritySection] private @Composable.
-            SecuritySection(
-                security = state.security,
-                isPanicDecoy = isPanicDecoy,
-                onUpdate = viewModel::update,
-                onOpenLockModePicker = { lockModePickerOpen = true },
-                onOpenAutoLockDelayPicker = { autoLockDelayPickerOpen = true },
-                panicCodeSet = panicCodeSet,
-                onOpenPanicCodeSetup = { panicCodeSetupOpen = true },
-                onOpenPanicCodeClearConfirm = { panicCodeClearConfirmOpen = true },
-                onOpenVaultPinSetup = { vaultPinSetupOpen = true },
-                onOpenVaultPinDisable = { vaultPinDisableOpen = true },
-                onOpenVaultPinForgetConfirm = { vaultPinForgetConfirmOpen = true },
-                onOpenPurgeBlockedConfirm = { showPurgeBlockedConfirm = true },
-                onOpenAutoDeletePicker = { autoDeletePickerOpen = true },
-                // Feedback round 8 — Safety call, Emergency mode and
-                // Blocking now live inside this card.
-                blocking = state.blocking,
-                onOpenBlocked = onOpenBlocked,
-                safetyCallRemainingMs = safetyCallRemainingMs,
-                onOpenSafetyCall = onOpenSafetyCall,
-                onSafetyCallImOk = onSafetyCallImOk,
-                onOpenEmergencySetup = onOpenEmergencySetup,
-                onOpenEmergency = onOpenEmergency,
-                positionAccordee = localisation.accordee,
-                onRequestLocationPermission = localisation.demander,
-            )
-
-            // Feedback round 8 — Safety call, Emergency mode and
-            // Blocking moved into [SecuritySection] above (one
-            // "Security & privacy" card now holds them all). Their
-            // decoy guards moved with them.
-
-            // Feedback round 8 — Scheduled messages moved out of Settings
-            // to the main screen's 3-dot menu (under "New group"); the
-            // section and its navigation are gone from here. The screen
-            // itself (ScheduledMessages) is unchanged, and neither is the
-            // visibility rule: `ScheduledMessageRepositoryImpl` still hides
-            // vault scheduled messages in a decoy session or a closed vault.
-            //
-            // v1.26.1 (audit C2) — masquée en leurre, comme les sections Safety call et Mode
-            // urgence. La sauvegarde exporte les conversations du coffre.
-            //
-            // ⚠️ v1.28.3 — ce commentaire disait « c'était la SEULE voie de lecture du coffre qui
-            // n'était pas gardée ». C'était faux, et la relecture externe (F02) l'a montré :
-            // l'écran « Messages programmés » en était une autre, et il rendait le corps et les
-            // destinataires en clair. Une affirmation d'exhaustivité vieillit mal — celle-ci a
-            // masqué le trou voisin pendant deux versions.
-            //
-            // Le vrai verrou est côté accès
-            // (`BackupService.writeSmsbk` refuse en `PanicDecoy`) ; ceci évite en plus de
-            // proposer une action vouée au refus.
-            if (!isPanicDecoy) {
-                RelaySectionLabel(stringResource(R.string.settings_section_backup))
-                RelaySettingsGroup {
-                    item(onClick = onOpenBackup) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Backup,
-                            title = stringResource(R.string.settings_backup_now),
-                            chevron = true,
-                        )
-                    }
-                    item(onClick = onOpenBackup) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Refresh,
-                            title = stringResource(R.string.settings_restore),
-                            chevron = true,
-                        )
-                    }
-                    item(onClick = onOpenMigration) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.SystemUpdate,
-                            title = stringResource(R.string.migration_title),
-                            chevron = true,
-                        )
-                    }
-                }
-            }
-
-            // Feedback round 8 — the bottom card holds the meta rows, in
-            // order: App Language (Android 13+ only), Advanced, Help, About.
-            // The language row moved here from its own section up the page,
-            // Help moved here from the About screen, and Advanced moved here
-            // from its own section (feedback round 6 — it lives on its own
-            // screen now). The card carries a "General" header like every
-            // other section, so the page ends on a titled card instead of a
-            // bare one.
-            RelaySectionLabel(stringResource(R.string.settings_section_general))
-            RelaySettingsGroup {
-                // Réservé à Android 13+ : en dessous, la page de langue
-                // n'existe pas et l'intent n'ouvrirait rien.
-                val languageShown =
-                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
-                if (languageShown) {
-                    item(onClick = { ouvrirLaLangueDeLApplication(ctx) }) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Language,
-                            title = stringResource(R.string.settings_language),
-                            chevron = true,
-                        )
-                    }
-                }
-                item(onClick = onOpenAdvanced) {
-                    RelaySettingRow(
-                        icon = Icons.Outlined.Tune,
-                        title = stringResource(R.string.settings_section_advanced),
-                        chevron = true,
-                    )
-                }
-                item(onClick = onOpenHelp) {
-                    RelaySettingRow(
-                        icon = Icons.Outlined.HelpOutline,
-                        title = stringResource(R.string.help_title),
-                        chevron = true,
-                    )
-                }
-                item(onClick = onOpenAbout) {
-                    RelaySettingRow(
-                        icon = Icons.Outlined.Info,
-                        title = stringResource(R.string.about_title),
-                        chevron = true,
-                    )
-                }
-            }
-            Spacer(Modifier.size(32.dp))
         }
     }
 
@@ -1172,6 +963,279 @@ fun SettingsScreen(
 
     // v1.14.1 — `EmergencyCallBehaviorPickerDialog` retiré (setting orphelin
     // post-redesign EmergencyScreen full-page direct-call).
+}
+
+// ============================================================================
+// Round 24 — sub-screen contents. The landing lives in SettingsLanding.kt;
+// each section's rows live here, in the composable for its sub-screen.
+// Same rows as the old page's cards, same order — see [SettingsItem].
+// ============================================================================
+
+/**
+ * Round 24 — the Appearance sub-screen: the theme swatches, the two colour
+ * toggles, text size, and the Conversations rows that moved here in
+ * feedback round 8. Same rows as the old page's Appearance card, in the
+ * same order — see [SettingsItem] for the pinned list.
+ */
+@Composable
+private fun AppearanceSectionContent(
+    appearance: com.filestech.sms.domain.settings.Appearance,
+    conversations: com.filestech.sms.domain.settings.ConversationSettings,
+    onUpdate: (transform: (com.filestech.sms.domain.settings.AppSettings) -> com.filestech.sms.domain.settings.AppSettings) -> Unit,
+    onOpenTextScalePicker: () -> Unit,
+) {
+    RelaySettingsGroup {
+        item {
+            ThemeSwatchPicker(
+                current = appearance.themeMode,
+                onSelect = { mode -> onUpdate { it.copy(appearance = it.appearance.copy(themeMode = mode)) } },
+            )
+        }
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.Palette,
+                title = stringResource(R.string.settings_dynamic_colors),
+                checked = appearance.dynamicColors,
+                onCheckedChange = { v -> onUpdate { it.copy(appearance = it.appearance.copy(dynamicColors = v)) } },
+            )
+        }
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.DarkMode,
+                title = stringResource(R.string.settings_amoled),
+                checked = appearance.amoledTrueBlack,
+                onCheckedChange = { v -> onUpdate { it.copy(appearance = it.appearance.copy(amoledTrueBlack = v)) } },
+            )
+        }
+        // 2026-10-29 — taille du texte des messages, cf. [com.filestech.sms.ui.theme.MessageTextSize].
+        item(onClick = { onOpenTextScalePicker() }) {
+            RelaySettingRow(
+                icon = Icons.Outlined.FormatSize,
+                title = stringResource(R.string.settings_text_scale),
+                chevron = true,
+            )
+        }
+        // Feedback round 8 — the Conversations section is gone: its
+        // two rows (Show avatars, Automatic signature) live here in
+        // Appearance now, so the page has one fewer card.
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.PersonOutline,
+                title = stringResource(R.string.settings_show_avatars),
+                checked = conversations.showAvatars,
+                onCheckedChange = { v -> onUpdate { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
+            )
+        }
+        // Round 12 — hide the category tab row on the main screen.
+        // Round 17 — the subtitle says the quiet part: hiding the
+        // tabs also turns the filtering off (the ViewModel returns
+        // the full list unfiltered), so the toggle never reads as
+        // display-only.
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.Category,
+                title = stringResource(R.string.settings_show_categories),
+                subtitle = stringResource(R.string.settings_show_categories_subtitle),
+                checked = conversations.showCategories,
+                onCheckedChange = { v ->
+                    onUpdate { it.copy(conversations = it.conversations.copy(showCategories = v)) }
+                },
+            )
+        }
+        // v1.26.1 (audit F3) — la signature était consommée à chaque SMS sortant sans
+        // qu'aucun écran ne permette de la définir. Voir [SignatureRow].
+        item {
+            SignatureRow(
+                current = conversations.signature,
+                onChange = { v ->
+                    onUpdate { it.copy(conversations = it.conversations.copy(signature = v)) }
+                },
+            )
+        }
+    }
+}
+
+/**
+ * Round 24 — the Sending sub-screen. Same rows as the old page's Sending
+ * card, in the same order — see [SettingsItem] for the pinned list.
+ */
+@Composable
+private fun SendingSectionContent(
+    sending: com.filestech.sms.domain.settings.SendingSettings,
+    onUpdate: (transform: (com.filestech.sms.domain.settings.AppSettings) -> com.filestech.sms.domain.settings.AppSettings) -> Unit,
+    onOpenDefaultRegionPicker: () -> Unit,
+    onOpenReactionFormatPicker: () -> Unit,
+) {
+    // Round 12 — the group's conditional rows (Reaction format,
+    // Sender name) are `if`-guarded inside the group's content
+    // lambda. That lambda is hoisted/reused because everything it
+    // captures is stable, so the group is skipped on recomposition
+    // and the rows never hide when the toggle flips. Keying the
+    // group on the two gating values forces a fresh composition —
+    // fresh item collection, correct corner rounding — when either
+    // changes.
+    key(
+        sending.sendReactionsToRecipient,
+        sending.reactionFormat,
+    ) {
+        RelaySettingsGroup {
+            item {
+                RelaySwitchRow(
+                    iconPainter = painterResource(R.drawable.ic_checkmark),
+                    title = stringResource(R.string.settings_delivery_reports),
+                    checked = sending.deliveryReports,
+                    onCheckedChange = { v ->
+                        onUpdate { it.copy(sending = it.sending.copy(deliveryReports = v)) }
+                    },
+                )
+            }
+            item {
+                RelaySwitchRow(
+                    icon = Icons.Outlined.WarningAmber,
+                    title = stringResource(R.string.settings_confirm_broadcast),
+                    checked = sending.confirmBeforeBroadcast,
+                    onCheckedChange = { v ->
+                        onUpdate { it.copy(sending = it.sending.copy(confirmBeforeBroadcast = v)) }
+                    },
+                )
+            }
+            // v1.28.4 — MMS de groupe, désactivé par défaut (décision produit du 2026-09-10).
+            // Feedback round 8 — the long hint lives in the info popup now
+            // (chevron before the switch); the row stays one-line.
+            item {
+                RelaySwitchRow(
+                    iconPainter = painterResource(R.drawable.ic_new_group),
+                    title = stringResource(R.string.settings_group_mms),
+                    checked = sending.groupMms,
+                    onCheckedChange = { v ->
+                        onUpdate { it.copy(sending = it.sending.copy(groupMms = v)) }
+                    },
+                    infoText = stringResource(R.string.settings_group_mms_hint),
+                )
+            }
+            // v1.2.6 audit F4 — saisie facultative du MSISDN. Sans cette valeur, les MMS
+            // envoyés peuvent afficher "insert-address-token" comme expéditeur dans
+            // d'autres apps SMS sur certaines ROM Samsung One UI.
+            item {
+                MyNumberRow(
+                    current = sending.userMsisdn,
+                    onChange = { v ->
+                        onUpdate { it.copy(sending = it.sending.copy(userMsisdn = v?.takeIf { s -> s.isNotBlank() })) }
+                    },
+                )
+            }
+            // v1.21.0 — indicatif pays par défaut pour convertir les numéros nationaux
+            // au format international (E.164) avant l'envoi. "Auto" = pays de la SIM.
+            // Indispensable pour envoyer des numéros nationaux d'un pays depuis une SIM
+            // étrangère (ex. 06… français depuis une SIM luxembourgeoise).
+            item(onClick = { onOpenDefaultRegionPicker() }) {
+                RelaySettingRow(
+                    icon = Icons.Outlined.Public,
+                    title = stringResource(R.string.settings_default_region_title),
+                    chevron = true,
+                )
+            }
+            // v1.3.1 — envoi des réactions emoji au correspondant. ON par défaut. Quand
+            // OFF, les réactions restent strictement locales (badge visible uniquement
+            // dans Relay). La description prévient explicitement du coût SMS.
+            // Feedback round 8 — renamed to "Send my reactions"; the long
+            // cost warning lives in the info popup now (chevron before the
+            // switch); the row stays one-line.
+            item {
+                RelaySwitchRow(
+                    icon = Icons.Outlined.EmojiEmotions,
+                    title = stringResource(R.string.settings_send_reactions_title),
+                    checked = sending.sendReactionsToRecipient,
+                    onCheckedChange = { v ->
+                        onUpdate { it.copy(sending = it.sending.copy(sendReactionsToRecipient = v)) }
+                    },
+                    infoText = stringResource(R.string.settings_send_reactions_desc),
+                )
+            }
+            // v1.8.0 (bug 5 fix) — format du SMS de réaction. 3 options
+            // (anciennement boolean reactionEmojiOnly à 2 valeurs) :
+            //  - READABLE_FR (nouveau défaut) : "J'ai réagi par ❤️ à : «…»"
+            //    — naturel et lisible pour les destinataires francophones Android
+            //  - TAPBACK_EN (ancien défaut v1.7.x) : "Reacted ❤️ to «…»"
+            //    — compat iMessage iPhone + Google Messages récent
+            //  - EMOJI_ONLY : "❤️" seul — minimal, perd le contexte côté destinataire
+            //
+            // Affiché uniquement si l'envoi des réactions est activé. The
+            // old AnimatedVisibility is a plain `if` now: the group
+            // shapes are computed from the rows actually shown, and an
+            // animated segment would leave a square corner behind when
+            // it collapses.
+            if (sending.sendReactionsToRecipient) {
+                item(onClick = { onOpenReactionFormatPicker() }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.ChatBubbleOutline,
+                        title = stringResource(R.string.settings_reaction_format_title),
+                        chevron = true,
+                    )
+                }
+            }
+            // v1.8.1 — nom inclus dans les SMS de réaction sortants au
+            // format READABLE_FR. Affiché uniquement si READABLE_FR est
+            // sélectionné ET envoi des réactions activé (cohérence UX).
+            if (sending.sendReactionsToRecipient &&
+                sending.reactionFormat ==
+                    com.filestech.sms.domain.model.ReactionFormat.READABLE_FR
+            ) {
+                item {
+                    SenderNameRow(
+                        current = sending.senderDisplayName,
+                        onChange = { name ->
+                            onUpdate {
+                                it.copy(
+                                    sending = it.sending.copy(
+                                        senderDisplayName = name?.takeIf { s -> s.isNotBlank() },
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Round 24 — the Backup sub-screen: back up now, restore, migrate. The
+ * decoy guard lives on the landing ([SettingsSectionMapping.isVisible]):
+ * the sub-screen is unreachable in a decoy session, so it carries no
+ * guard of its own. The backup exports vault conversations, and the real
+ * lock is `BackupService.writeSmsbk` refusing in `PanicDecoy` — hiding
+ * the row only avoids offering an action doomed to refuse.
+ */
+@Composable
+private fun BackupSectionContent(
+    onOpenBackup: () -> Unit,
+    onOpenMigration: () -> Unit,
+) {
+    RelaySettingsGroup {
+        item(onClick = onOpenBackup) {
+            RelaySettingRow(
+                icon = Icons.Outlined.Backup,
+                title = stringResource(R.string.settings_backup_now),
+                chevron = true,
+            )
+        }
+        item(onClick = onOpenBackup) {
+            RelaySettingRow(
+                icon = Icons.Outlined.Refresh,
+                title = stringResource(R.string.settings_restore),
+                chevron = true,
+            )
+        }
+        item(onClick = onOpenMigration) {
+            RelaySettingRow(
+                icon = Icons.Outlined.SystemUpdate,
+                title = stringResource(R.string.migration_title),
+                chevron = true,
+            )
+        }
+    }
 }
 
 /**
@@ -2839,6 +2903,9 @@ private fun VaultPinSetupDialog(
 /**
  * v1.15.0 — Section Notifications. Extraite de [SettingsScreen] (lignes 333-400 v1.14.9).
  *
+ * Round 24 — the section label is gone: the Notifications sub-screen's
+ * top bar carries the title now, and this renders the group only.
+ *
  * Pourquoi extraire ? La fonction `SettingsScreen` dépassait 1000 lignes avec 10 sections
  * imbriquées + 14 `mutableStateOf` au niveau parent — lisibilité dégradée, previews Compose
  * impossibles section par section. La factorisation conserve les pickers state au parent
@@ -2873,7 +2940,6 @@ private fun NotificationsSection(
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    RelaySectionLabel(stringResource(R.string.settings_section_notifications))
     RelaySettingsGroup {
         item {
             RelaySwitchRow(
@@ -2969,6 +3035,10 @@ private fun NotificationsSection(
 /**
  * v1.15.0 — Section Sécurité. Extraite de [SettingsScreen] (lignes 402-491 v1.14.9).
  *
+ * Round 24 — the section label is gone: the Security & privacy
+ * sub-screen's top bar carries the title now, and this renders the
+ * group only.
+ *
  * Pickers (`lockModePickerOpen`, `vaultPinSetupOpen`, `vaultPinDisableOpen`,
  * `showPurgeBlockedConfirm`, `autoDeletePickerOpen`) restent gérés par le parent —
  * la section ne reçoit que les callbacks d'ouverture. Cohérent avec [NotificationsSection].
@@ -2979,6 +3049,9 @@ private fun NotificationsSection(
 private fun SecuritySection(
     security: com.filestech.sms.domain.settings.SecuritySettings,
     isPanicDecoy: Boolean,
+    // Client mode — Safety call, Emergency mode and Blocking hide on a
+    // linked device (they all need a SIM or the local message store).
+    isClientMode: Boolean,
     onUpdate: (transform: (com.filestech.sms.domain.settings.AppSettings) -> com.filestech.sms.domain.settings.AppSettings) -> Unit,
     onOpenLockModePicker: () -> Unit,
     /** v1.26.1 (audit F4) — ouvre le sélecteur du délai de verrouillage automatique. */
@@ -3007,7 +3080,6 @@ private fun SecuritySection(
     positionAccordee: Boolean,
     onRequestLocationPermission: () -> Unit,
 ) {
-    RelaySectionLabel(stringResource(R.string.settings_section_security))
     RelaySettingsGroup {
         // App lock entry — opens the lock-mode picker (None / PIN / Biometric). Subtitle
         // reflects the current state so the user sees at a glance whether the lock is armed.
@@ -3175,14 +3247,19 @@ private fun SecuritySection(
                 }
             }
         }
-        // Feedback round 8 — the long description moved into the confirm
-        // dialog (it already explains the purge); the row stays one-line.
-        item(onClick = onOpenPurgeBlockedConfirm) {
-            RelaySettingRow(
-                iconPainter = painterResource(R.drawable.ic_trash),
-                title = stringResource(R.string.settings_purge_blocked),
-                chevron = true,
-            )
+        // Client mode — purging blocked conversations is a hub-side
+        // action on the local message store; a linked device's
+        // conversations are a cache of the hub's, so the row hides.
+        if (!isClientMode) {
+            // Feedback round 8 — the long description moved into the confirm
+            // dialog (it already explains the purge); the row stays one-line.
+            item(onClick = onOpenPurgeBlockedConfirm) {
+                RelaySettingRow(
+                    iconPainter = painterResource(R.drawable.ic_trash),
+                    title = stringResource(R.string.settings_purge_blocked),
+                    chevron = true,
+                )
+            }
         }
         // v1.3.0 — auto-purge historique selon rétention choisie. Feedback
         // round 8 — the row shows only the current retention; the long
@@ -3208,7 +3285,9 @@ private fun SecuritySection(
         // v1.10.0 audit SEC-1 (extension) — masquée en PanicDecoy par
         // cohérence avec Mode urgence : ne pas révéler à l'agresseur
         // l'existence des features de sécurité personnelle.
-        if (!isPanicDecoy) {
+        // Client mode — the Safety call sends SMS to contacts; a linked
+        // device has no SIM, so the row hides.
+        if (!isPanicDecoy && !isClientMode) {
             val safetyCall = security.safetyCall
             // 🔴 v1.27.3 — CETTE CONDITION EST REVENUE À `enabled` SEUL, ET C'EST DÉLIBÉRÉ.
             //
@@ -3256,7 +3335,9 @@ private fun SecuritySection(
         // contacts garantie par la réutilisation de la même liste.
         // v1.10.0 audit SEC-1 — entièrement masquée en PanicDecoy
         // (l'agresseur ne doit pas savoir que la feature existe).
-        if (!isPanicDecoy) {
+        // Client mode — Emergency mode calls and texts from this device;
+        // a linked device has no SIM, so the whole block hides.
+        if (!isPanicDecoy && !isClientMode) {
             val emergency = security.emergency
             if (emergency.enabled) {
                 // v1.10.0 polish — récap visuel quand armé (parallèle exact de SafetyCallArmedRecap
@@ -3371,40 +3452,45 @@ private fun SecuritySection(
         }
         // Blocking — an ordinary feature, visible in a decoy session like
         // the rest of this card.
+        // Client mode — blocking is a hub-side decision at message
+        // receipt; a linked device receives through the hub, so both
+        // rows hide.
         // v1.28.13 (balayage des permissions refusées, MR F-Droid !38458) — sans accès aux
         // contacts, `IncomingBlockPolicy` ne peut savoir qui est inconnu et laisse TOUT
         // passer, à dessein (bloquer sur une ignorance couperait toute réception). Mais
         // l'interrupteur restait sur « activé » sans rien dire : on le dit sous lui.
         val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
-        item {
-            RelaySwitchRow(
-                iconPainter = painterResource(R.drawable.ic_block),
-                title = stringResource(R.string.settings_block_unknown),
-                checked = blocking.blockUnknown,
-                onCheckedChange = { v -> onUpdate { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },
-                // 2026-10-29 — l'effet est dit AVANT d'activer : `IncomingBlockPolicy` écarte le
-                // message à la réception, sans notification ni copie (pas même le filet de
-                // secours de `SmsDeliverReceiver`), et un expéditeur alphanumérique n'est
-                // jamais un contact. Activé sans accès aux contacts, l'avertissement prime :
-                // rien n'est alors bloqué.
-                // Feedback round 8 — the long description lives in the info
-                // popup now; the no-contacts warning still shows under the
-                // title when it applies (it is a state warning, not a
-                // description).
-                subtitle = if (blocking.blockUnknown && !contactsAccordes) {
-                    stringResource(R.string.settings_block_unknown_no_contacts)
-                } else {
-                    null
-                },
-                infoText = stringResource(R.string.settings_block_unknown_desc),
-            )
-        }
-        item(onClick = onOpenBlocked) {
-            RelaySettingRow(
-                icon = Icons.Outlined.PersonOff,
-                title = stringResource(R.string.settings_manage_blocked),
-                chevron = true,
-            )
+        if (!isClientMode) {
+            item {
+                RelaySwitchRow(
+                    iconPainter = painterResource(R.drawable.ic_block),
+                    title = stringResource(R.string.settings_block_unknown),
+                    checked = blocking.blockUnknown,
+                    onCheckedChange = { v -> onUpdate { it.copy(blocking = it.blocking.copy(blockUnknown = v)) } },
+                    // 2026-10-29 — l'effet est dit AVANT d'activer : `IncomingBlockPolicy` écarte le
+                    // message à la réception, sans notification ni copie (pas même le filet de
+                    // secours de `SmsDeliverReceiver`), et un expéditeur alphanumérique n'est
+                    // jamais un contact. Activé sans accès aux contacts, l'avertissement prime :
+                    // rien n'est alors bloqué.
+                    // Feedback round 8 — the long description lives in the info
+                    // popup now; the no-contacts warning still shows under the
+                    // title when it applies (it is a state warning, not a
+                    // description).
+                    subtitle = if (blocking.blockUnknown && !contactsAccordes) {
+                        stringResource(R.string.settings_block_unknown_no_contacts)
+                    } else {
+                        null
+                    },
+                    infoText = stringResource(R.string.settings_block_unknown_desc),
+                )
+            }
+            item(onClick = onOpenBlocked) {
+                RelaySettingRow(
+                    icon = Icons.Outlined.PersonOff,
+                    title = stringResource(R.string.settings_manage_blocked),
+                    chevron = true,
+                )
+            }
         }
     }
 }

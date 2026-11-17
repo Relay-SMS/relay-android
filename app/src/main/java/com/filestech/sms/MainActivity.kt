@@ -25,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.system.notifications.IncomingMessageNotifier
 import com.filestech.sms.system.notifications.PendingNavHolder
@@ -192,14 +193,30 @@ class MainActivity : FragmentActivity() {
      * Demande les permissions runtime manquantes parmi [criticalSmsPermissions]. No-op
      * si toutes déjà grantées (cas Pixel + Samsung One UI ≥ 11 où le grant automatique
      * via ROLE_SMS fonctionne). Idempotent — Android dédoublonne les requests successifs.
+     *
+     * Client mode — a linked device has no SIM, so only
+     * `POST_NOTIFICATIONS` is requested: notifications still arrive
+     * from the hub, but the SMS permissions are meaningless there.
+     * (`READ_CONTACTS` is not requested either — contacts arrive
+     * from the hub, and the permission is asked with context when
+     * it is actually needed.)
      */
-    private fun requestMissingCriticalPermissionsIfAny() {
-        val missing = criticalSmsPermissions.filter {
+    private fun requestMissingCriticalPermissionsIfAny(mode: DeviceMode) {
+        val wanted: Array<String> = if (mode == DeviceMode.CLIENT) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                emptyArray()
+            }
+        } else {
+            criticalSmsPermissions
+        }
+        val missing = wanted.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isNotEmpty()) {
             Timber.i(
-                "MainActivity: requesting %d missing critical permissions at cold-start (likely Samsung One UI Android 10 GRANTED_BY_ROLE bug)",
+                "MainActivity: requesting %d missing critical permissions at cold-start",
                 missing.size,
             )
             permissionsLauncher.launch(missing.toTypedArray())
@@ -257,22 +274,23 @@ class MainActivity : FragmentActivity() {
                 .onFailure { timber.log.Timber.w(it, "Reglages illisibles au lancement — theme par defaut") }
                 .getOrNull()
                 ?: AppSettings()
+            // v1.3.10 — fail-safe contre le bug Samsung One UI Android 10
+            // où GRANTED_BY_ROLE ne grant pas les permissions runtime
+            // critiques malgré que Relay soit role holder. On demande
+            // explicitement les permissions manquantes au cold-start ;
+            // les ROMs où le grant automatique a fonctionné voient
+            // toutes les perms déjà à PERMISSION_GRANTED → no-op.
+            // Client mode — the request waits for this settings read so
+            // the mode is the stored one, not the default: a linked
+            // device is only asked for notifications.
+            requestMissingCriticalPermissionsIfAny(
+                initialSettings.value?.mode ?: DeviceMode.HUB,
+            )
         }
 
         // The actual lock-state resolution still happens lazily — receivers / services call
         // `appLock.ensureResolved()` themselves; nothing here needs to block on it.
         lifecycleScope.launch { appLock.ensureResolved() }
-
-        // v1.3.10 — fail-safe contre le bug Samsung One UI Android 10 où GRANTED_BY_ROLE
-        // ne grant pas les permissions runtime critiques (RECEIVE_SMS, RECEIVE_MMS,
-        // RECEIVE_WAP_PUSH, etc.) malgré que Relay soit role holder. Sans ce check,
-        // l'utilisateur croit que Relay est correctement configurée (badge "app par
-        // défaut" affiché dans Paramètres système) mais ne reçoit aucun SMS / MMS. On
-        // demande explicitement les permissions manquantes au cold-start ; les ROMs où
-        // le grant automatique a fonctionné voient toutes les perms déjà à
-        // PERMISSION_GRANTED → `requestMissingCriticalPermissionsIfAny` est no-op
-        // (Android dédoublonne, aucun popup affiché).
-        requestMissingCriticalPermissionsIfAny()
 
         // Observe later toggles of FLAG_SECURE. distinctUntilChanged avoids the no-op addFlags /
         // clearFlags churn on every settings emission (audit P8). Note this also handles the
@@ -379,21 +397,34 @@ class MainActivity : FragmentActivity() {
         // de l'écran de verrouillage UI.
         // v1.24.0 — resolved off the main thread: `Lazy.get()` blocks until `AppDatabase` has been
         // provisioned, which on the repair launch means waiting for [LegacyZeroKeyRekey].
-        lifecycleScope.launch(ioDispatcher) {
-            runCatching { telephonySyncManagerLazy.get().requestSync(reason = "MainActivity.onResume") }
-                .onFailure { Timber.w(it, "onResume sync trigger failed") }
-        }
         // Belt-and-braces : double-track via WorkManager au cas où le manager
         // serait dans un état inattendu (started flag bloqué, mutex deadlock).
         // v1.14.7 audit P1 fix : throttle à 1 enqueue / 30s mono pour éviter de spammer
         // WorkManager si l'user oscille entre apps rapidement. `requestSync()` ci-dessus
         // gère déjà le path rapide via Mutex ; le worker est pour le path "process killé".
+        // The throttle decision stays on the main thread (as before); the
+        // enqueue itself moves into the coroutine so both tracks share the
+        // client-mode gate below.
         val nowMono = android.os.SystemClock.elapsedRealtime()
-        if (nowMono - lastOneShotEnqueueElapsed >= oneShotEnqueueCooldownMs) {
+        val shouldEnqueueOneShot = nowMono - lastOneShotEnqueueElapsed >= oneShotEnqueueCooldownMs
+        if (shouldEnqueueOneShot) {
             lastOneShotEnqueueElapsed = nowMono
-            runCatching {
-                com.filestech.sms.system.scheduler.TelephonySyncWorker.enqueueOneShot(this)
-            }.onFailure { Timber.w(it, "onResume enqueueOneShot failed") }
+        }
+        lifecycleScope.launch(ioDispatcher) {
+            // Client mode — no telephony sync on a linked device: its
+            // messages arrive from the hub. The mode is read hydrated
+            // (the repository is warm by onResume, so this is a
+            // volatile read, not a wait).
+            if (settings.hydratedOrNull()?.mode == DeviceMode.CLIENT) return@launch
+            runCatching { telephonySyncManagerLazy.get().requestSync(reason = "MainActivity.onResume") }
+                .onFailure { Timber.w(it, "onResume sync trigger failed") }
+            if (shouldEnqueueOneShot) {
+                runCatching {
+                    com.filestech.sms.system.scheduler.TelephonySyncWorker.enqueueOneShot(
+                        this@MainActivity,
+                    )
+                }.onFailure { Timber.w(it, "onResume enqueueOneShot failed") }
+            }
         }
     }
 

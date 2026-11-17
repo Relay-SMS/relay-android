@@ -86,4 +86,34 @@ class VerdictOperateurTest {
         assertThat(lireVerdictOperateur(octets(0x00, 0xFF, 0x13, 0x37))).isEqualTo(VerdictOperateur.Inconnu)
         assertThat(lireVerdictOperateur(octets(MESSAGE_TYPE))).isEqualTo(VerdictOperateur.Inconnu)
     }
+
+    // Group-send own-number fix (MMS failure logging) — the response
+    // status octet, for the failure log line.
+
+    @Test
+    fun `statut de reponse accepte - 0x80`() {
+        assertThat(statutDeReponseMms(sendConf(0x80))).isEqualTo(0x80)
+    }
+
+    @Test
+    fun `statut de reponse refuse - l'octet de refus`() {
+        assertThat(statutDeReponseMms(sendConf(0xE3))).isEqualTo(0xE3)
+    }
+
+    @Test
+    fun `statut de reponse sans reponse - null`() {
+        assertThat(statutDeReponseMms(null)).isNull()
+        assertThat(statutDeReponseMms(ByteArray(0))).isNull()
+    }
+
+    @Test
+    fun `statut de reponse sans statut - null`() {
+        assertThat(statutDeReponseMms(sendConf(null))).isNull()
+    }
+
+    @Test
+    fun `statut de reponse d'un autre type de PDU - null`() {
+        val pdu = octets(MESSAGE_TYPE, NOTIFICATION_IND, RESPONSE_STATUS, 0x87)
+        assertThat(statutDeReponseMms(pdu)).isNull()
+    }
 }

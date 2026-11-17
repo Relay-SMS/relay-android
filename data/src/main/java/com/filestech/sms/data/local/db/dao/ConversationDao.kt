@@ -64,6 +64,33 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE thread_id = :threadId LIMIT 1")
     suspend fun findByThreadId(threadId: Long): ConversationEntity?
 
+    /**
+     * Client mode (schema v18) — the conversation synced from the hub
+     * conversation [hubId], or null. The upsert key for every synced
+     * frame that names a conversation.
+     */
+    @Query("SELECT * FROM conversations WHERE hub_conversation_id = :hubId LIMIT 1")
+    suspend fun findByHubConversationId(hubId: Long): ConversationEntity?
+
+    /**
+     * Client mode (schema v18) — every hub conversation id mirrored
+     * locally. The prune step of a sync snapshot deletes the local
+     * rows whose hub id is absent from the snapshot (deletions
+     * included, no tombstone feed).
+     */
+    @Query("SELECT hub_conversation_id FROM conversations WHERE hub_conversation_id IS NOT NULL")
+    suspend fun hubConversationIds(): List<Long>
+
+    /**
+     * Client mode — deletes every conversation mirrored from a hub
+     * (Re-sync / Unlink / mode switch). Messages + attachments follow
+     * by `ForeignKey.CASCADE`. Hub-mode rows (`hub_conversation_id`
+     * NULL) are untouched, and so are `scheduled_messages` — the
+     * schedules this device created survive a Re-sync.
+     */
+    @Query("DELETE FROM conversations WHERE hub_conversation_id IS NOT NULL")
+    suspend fun deleteSynced(): Int
+
     @Query("SELECT * FROM conversations WHERE addresses_csv = :csv LIMIT 1")
     suspend fun findByAddressesCsv(csv: String): ConversationEntity?
 

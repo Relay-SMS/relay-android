@@ -197,7 +197,14 @@ class ContactsRefusesTest {
         permissionContacts: Int,
     ): List<String> {
         val context: Context = mockk(relaxed = true) {
-            every { checkPermission(Manifest.permission.READ_CONTACTS, any(), any()) } returns permissionContacts
+            // Contacts-permission fix — the stub follows the direct
+            // `checkSelfPermission` call `ThreadViewModel` now makes:
+            // the old `checkPermission(permission, pid, uid)` stub
+            // only matched what `ContextCompat` delegates to, and
+            // `ContextCompat` itself throws on plain-JVM tests (see
+            // `snackEchecPieceJointe`). A relaxed mock would otherwise
+            // answer `PERMISSION_GRANTED` (0) for the unstubbed call.
+            every { checkSelfPermission(Manifest.permission.READ_CONTACTS) } returns permissionContacts
             every { getString(R.string.attach_contact_needs_permission) } returns "permission contacts"
             every { getString(R.string.snack_thread_attach_copy_failed) } returns "lecture impossible"
         }

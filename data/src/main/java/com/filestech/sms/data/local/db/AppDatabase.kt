@@ -5,17 +5,23 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.BlockedNumberDao
+import com.filestech.sms.data.local.db.dao.ClientConversationStateDao
+import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.dao.QuickReplyDao
 import com.filestech.sms.data.local.db.dao.ScheduledMessageDao
+import com.filestech.sms.data.local.db.dao.SyncedContactDao
 import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import com.filestech.sms.data.local.db.entity.BlockedNumberEntity
+import com.filestech.sms.data.local.db.entity.ClientConversationStateEntity
+import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.local.db.entity.MessageFts
 import com.filestech.sms.data.local.db.entity.QuickReplyEntity
 import com.filestech.sms.data.local.db.entity.ScheduledMessageEntity
+import com.filestech.sms.data.local.db.entity.SyncedContactEntity
 
 @Database(
     version = AppDatabase.SCHEMA_VERSION,
@@ -28,6 +34,9 @@ import com.filestech.sms.data.local.db.entity.ScheduledMessageEntity
         BlockedNumberEntity::class,
         ScheduledMessageEntity::class,
         QuickReplyEntity::class,
+        ClientSyncStateEntity::class,
+        ClientConversationStateEntity::class,
+        SyncedContactEntity::class,
     ],
 )
 // v1.16.0 — TypeConverters pour les 3 enums MessageStatus/Type/Direction ↔ Int.
@@ -40,6 +49,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun blockedNumberDao(): BlockedNumberDao
     abstract fun scheduledMessageDao(): ScheduledMessageDao
     abstract fun quickReplyDao(): QuickReplyDao
+    abstract fun clientSyncStateDao(): ClientSyncStateDao
+    abstract fun clientConversationStateDao(): ClientConversationStateDao
+    abstract fun syncedContactDao(): SyncedContactDao
 
     companion object {
         const val DATABASE_NAME = "smstech.db"
@@ -115,6 +127,15 @@ abstract class AppDatabase : RoomDatabase() {
         //   appareil lié, transmise au routeur à l'échéance pour qu'elle atterrisse sur la
         //   ligne de message produite. Strictement additive. Les lignes existantes
         //   projettent NULL.
-        const val SCHEMA_VERSION = 17
+        // v18 (2026-11-17, client mode C2): ajoute `messages.hub_message_id INTEGER`,
+        //   `conversations.hub_conversation_id INTEGER` et
+        //   `attachments.hub_attachment_id INTEGER` (tous nullables, chacun avec un index
+        //   UNIQUE — l'identifiant hub est la clé d'upsert des lignes synchronisées, et
+        //   l'unicité garantit qu'une resynchronisation ne duplique rien) + trois tables
+        //   neuves : `client_sync_state` (mode + curseur par hub), `client_conversation_state`
+        //   (frontière de marche arrière par conversation) et `synced_contacts` (carnet
+        //   synchronisé, rempli en C4). Strictement additive. Les lignes existantes
+        //   projettent NULL sur les trois colonnes.
+        const val SCHEMA_VERSION = 18
     }
 }

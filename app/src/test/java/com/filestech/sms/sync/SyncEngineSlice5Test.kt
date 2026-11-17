@@ -138,6 +138,27 @@ class SyncEngineSlice5Test {
         }
     }
 
+    /**
+     * Contacts-permission fix — the revoke race: the readiness check
+     * passed, but the permission was revoked before the read. The
+     * refused read answers `contacts_error` (same code as never
+     * having the permission), never an empty snapshot — an empty
+     * snapshot would read as "zero contacts" on the desktop.
+     */
+    @Test fun `a contacts read refused mid-sync answers contacts_error`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.contactsError =
+            SecurityException("Permission Denial: requires android.permission.READ_CONTACTS")
+        runEngine(source) { engine, sent ->
+            engine.onContactsRequest()
+            advanceUntilIdle()
+            assertThat(sent.map { it.frameType() }).containsExactly("contacts_error").inOrder()
+            val error = sent.first().asObject()
+            assertThat(error["code"]?.jsonPrimitive?.content)
+                .isEqualTo(SyncProtocol.ContactsError.HUB_NO_CONTACTS_ACCESS)
+        }
+    }
+
     // -- Slice 5: failure isolation — contacts never fail message sync --
 
     @Test fun `no contacts permission answers contacts_error and message sync still proceeds`() = runTest {

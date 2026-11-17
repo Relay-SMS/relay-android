@@ -77,7 +77,7 @@ import kotlinx.coroutines.launch
  * overlay the messages. It lives in the thread screen's bottom bar in place of the
  * composer, so the message list shrinks and the latest messages stay visible, like
  * a keyboard — and the keyboard stays hidden while it is open. This is NOT the
- * reaction picker ([EmojiReactionPickerSheet]): that one reacts to a message, this
+ * reaction picker ([ReactionEmojiPickerSheet]): that one reacts to a message, this
  * one inserts emoji/GIF/sticker into the draft.
  *
  * The grids themselves ([EmojiGrid], [GifGrid], [StickerGrid]) are owned by the

@@ -77,6 +77,13 @@ fun ConversationRow(
      */
     contactPhotoUri: String? = null,
     /**
+     * Contact photos of the first two members of a group conversation, in address order
+     * (null where a member has no photo), resolved by the list ViewModel; null when no
+     * member photo was resolved for the group. The group avatar's minis show them; a
+     * member without a photo keeps the initials or grey glyph. 1-to-1 rows ignore this.
+     */
+    groupMemberPhotos: List<String?>? = null,
+    /**
      * v1.23.x — numéro affiché sous le nom UNIQUEMENT pour lever l'ambiguïté quand plusieurs
      * conversations partagent le même nom de contact (ex. un contact avec un numéro FR et un
      * numéro étranger). `null` = rien affiché (cas normal). Calculé par l'écran liste.
@@ -132,7 +139,7 @@ fun ConversationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showAvatars) {
-                ConversationAvatar(conversation, contactPhotoUri)
+                ConversationAvatar(conversation, contactPhotoUri, groupMemberPhotos)
                 // Feedback round 6 — 17dp between the avatar and the text
                 // (was 12dp): a touch more air on the home screen.
                 Spacer(Modifier.width(17.dp))
@@ -294,15 +301,20 @@ fun ConversationRow(
 /**
  * The leading avatar of a list row: two overlapping member avatars for a
  * group with no custom photo, the single avatar otherwise — a custom group
- * photo still wins, and 1-to-1 rows are untouched.
+ * photo still wins, and 1-to-1 rows are untouched. The group minis show the
+ * members' contact photos when the ViewModel resolved them ([groupMemberPhotos],
+ * in address order); a member without a photo keeps the initials or grey glyph.
  */
 @Composable
 private fun ConversationAvatar(
     conversation: Conversation,
     contactPhotoUri: String?,
+    groupMemberPhotos: List<String?>? = null,
 ) {
     if (conversation.isGroup && conversation.avatarUri == null) {
-        RelayGroupAvatar(members = groupMemberAvatars(conversation))
+        RelayGroupAvatar(
+            members = groupMemberAvatars(conversation, groupMemberPhotos ?: emptyList()),
+        )
     } else {
         RelayAvatar(
             label = conversation.title,
@@ -325,9 +337,14 @@ private fun ConversationAvatar(
  * (a name containing ", " would split wrong, and a stale name must never
  * put the wrong initials on a member). A member whose label is just their
  * number has no contact name, so they get the unknown-contact grey person
- * glyph instead of digit initials, like a 1-to-1 row.
+ * glyph instead of digit initials, like a 1-to-1 row. The member photos
+ * ([memberPhotos], in address order) come from the list ViewModel — a member
+ * with a photo shows it, a member without one keeps the initials or glyph.
  */
-private fun groupMemberAvatars(conversation: Conversation): List<GroupMemberAvatar> {
+private fun groupMemberAvatars(
+    conversation: Conversation,
+    memberPhotos: List<String?> = emptyList(),
+): List<GroupMemberAvatar> {
     val addresses = conversation.addresses
     val labels = conversation.displayName
         ?.split(", ")
@@ -338,6 +355,7 @@ private fun groupMemberAvatars(conversation: Conversation): List<GroupMemberAvat
         GroupMemberAvatar(
             label = label,
             isUnknownContact = label == address.raw,
+            photoUri = memberPhotos.getOrNull(index),
         )
     }
 }

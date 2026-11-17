@@ -56,6 +56,9 @@ class CancelScheduledMessageUseCaseTest {
 
         override suspend fun findByClientMessageId(clientMessageId: String): ScheduledMessage? = null
 
+        // Client mode C3 — the cancel wire branch looks the row up by id (its client key).
+        override suspend fun findById(id: Long): ScheduledMessage? = null
+
         override suspend fun cancel(id: Long): Outcome<Boolean> = cancelResult
         override suspend fun markSent(id: Long) = Unit
         override suspend fun markFailed(id: Long) = Unit

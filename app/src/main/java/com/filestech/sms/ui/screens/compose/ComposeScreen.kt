@@ -28,7 +28,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PersonOff
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +69,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
+import com.filestech.sms.core.result.AppError
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
@@ -95,6 +95,9 @@ fun ComposeScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val filtered by viewModel.filtered.collectAsStateWithLifecycle()
+    // Client mode C3 — the create-contact row is hidden on a linked
+    // device (no contact frames until C4).
+    val isClientMode by viewModel.isClientMode.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
@@ -120,6 +123,17 @@ fun ComposeScreen(
         viewModel.events.collect { e ->
             when (e) {
                 is ComposeViewModel.Event.ConversationCreated -> onConversationCreated(e.id)
+                // Client mode C3 — the hub refused the create (or
+                // could not be reached): say so, instead of a
+                // silent nothing.
+                is ComposeViewModel.Event.CreateFailed -> snackbarHost.showError(
+                    context.getString(
+                        when (e.error) {
+                            is AppError.ClientOffline -> R.string.error_send_client_offline
+                            else -> R.string.error_create_conversation_failed
+                        },
+                    ),
+                )
             }
         }
     }
@@ -236,21 +250,25 @@ fun ComposeScreen(
                     // système sur un formulaire vierge (choix produit : toujours vierge,
                     // indépendamment de la recherche saisie). Placée au-dessus des résultats
                     // pour rester atteignable même quand la liste est longue.
-                    item(key = "create-contact") {
-                        ContactActionRow(
-                            title = stringResource(R.string.compose_add_contact),
-                            subtitle = null,
-                            icon = painterResource(R.drawable.ic_add_contact),
-                            onClick = {
-                                if (!ContactIntents.createContact(context)) {
-                                    scope.launch {
-                                        snackbarHost.showError(
-                                            context.getString(R.string.phone_action_no_contacts),
-                                        )
+                    // Client mode C3 — hidden on a linked device (no
+                    // contact frames until C4).
+                    if (!isClientMode) {
+                        item(key = "create-contact") {
+                            ContactActionRow(
+                                title = stringResource(R.string.compose_add_contact),
+                                subtitle = null,
+                                icon = painterResource(R.drawable.ic_add_contact),
+                                onClick = {
+                                    if (!ContactIntents.createContact(context)) {
+                                        scope.launch {
+                                            snackbarHost.showError(
+                                                context.getString(R.string.phone_action_no_contacts),
+                                            )
+                                        }
                                     }
-                                }
-                            },
-                        )
+                                },
+                            )
+                        }
                     }
                     // v1.28.13 (MR F-Droid !38458) — sans `READ_CONTACTS`, la liste est vide parce
                     // qu'on n'a pas pu la lire, pas parce qu'il n'y a personne : l'écran le dit, et
@@ -495,7 +513,8 @@ private fun List<Contact>.displayNameFor(addr: PhoneAddress): String? =
 
 /**
  * Group-mode header, same geometry as the thread header: 44dp row, back chevron 22dp in
- * the brand blue, 32dp group avatar, title 17sp/600, hairline divider below.
+ * the brand blue, 32dp group avatar, title 17sp/600. No divider below it — the
+ * header reads clean against the search pill.
  */
 @Composable
 private fun ComposeGroupHeader(onBack: () -> Unit) {
@@ -542,7 +561,6 @@ private fun ComposeGroupHeader(onBack: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
         }
-        HorizontalDivider(color = cs.outline)
     }
 }
 

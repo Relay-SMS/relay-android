@@ -12,10 +12,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +33,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +48,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
+import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.RelayEmptyState
 import com.filestech.sms.ui.components.modeleImage
 import com.filestech.sms.ui.components.ouvrirPieceJointe
@@ -55,6 +63,9 @@ fun MediaGalleryScreen(
 ) {
     val media by viewModel.media.collectAsStateWithLifecycle()
     val vaultHidden by viewModel.vaultHidden.collectAsStateWithLifecycle()
+    // Client mode C5 — the download states for tiles whose bytes have
+    // not landed yet (empty in hub mode).
+    val downloadStates by viewModel.downloadStates.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // `withResumed`, comme `ThreadScreen` : dépiler pendant qu'un autre écran est devant viserait le voisin.
     val navOwner = LocalLifecycleOwner.current
@@ -81,7 +92,13 @@ fun MediaGalleryScreen(
             )
         },
     ) { padding ->
-        MediaGalleryContent(media, padding) { ouvrirPieceJointe(context, it) }
+        MediaGalleryContent(
+            media,
+            padding,
+            onOpen = { ouvrirPieceJointe(context, it) },
+            downloadStates = downloadStates,
+            onRequestDownload = { id -> viewModel.requestDownload(id) },
+        )
     }
 }
 
@@ -91,6 +108,10 @@ internal fun MediaGalleryContent(
     media: List<Attachment>?,
     padding: PaddingValues,
     onOpen: (Attachment) -> Unit,
+    /** Client mode C5 — the download states, keyed by local attachment id. */
+    downloadStates: Map<Long, ClientDownloadState> = emptyMap(),
+    /** Client mode C5 — asks the downloader for a tile's bytes (tap-to-download/retry). */
+    onRequestDownload: ((Long) -> Unit)? = null,
 ) {
     when {
         media == null -> Unit
@@ -118,20 +139,54 @@ internal fun MediaGalleryContent(
             verticalArrangement = Arrangement.spacedBy(TILE_GAP),
         ) {
             items(media, key = { it.id }) { attachment ->
-                MediaTile(attachment) { onOpen(attachment) }
+                MediaTile(
+                    attachment,
+                    onClick = { onOpen(attachment) },
+                    downloadState = downloadStates[attachment.id],
+                    onRequestDownload = onRequestDownload,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MediaTile(attachment: Attachment, onClick: () -> Unit) {
+private fun MediaTile(
+    attachment: Attachment,
+    onClick: () -> Unit,
+    downloadState: ClientDownloadState? = null,
+    onRequestDownload: ((Long) -> Unit)? = null,
+) {
     val fond = MaterialTheme.colorScheme.surfaceVariant
+    // Client mode C5 — a synced tile without bytes: it auto-requests
+    // on render (the desktop rule), taps request/retry instead of
+    // opening, and carries a small badge while the bytes are missing.
+    // A hub-mode tile with a missing file (`hubAttachmentId == null`)
+    // is NOT downloadable — no badge, no request, tap opens as before
+    // (and fails open, as before).
+    val needsDownload = attachment.localUri.isBlank() && attachment.hubAttachmentId != null &&
+        onRequestDownload != null && downloadState != ClientDownloadState.Downloaded
+    if (needsDownload) {
+        LaunchedEffect(attachment.id) { onRequestDownload(attachment.id) }
+    }
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .background(fond)
-            .clickable(onClick = onClick),
+            .clickable(onClick = {
+                if (needsDownload) {
+                    // Downloading + Empty are not tappable: a
+                    // download already runs, and an empty file has
+                    // nothing to fetch.
+                    if (downloadState == null || downloadState is ClientDownloadState.NotDownloaded ||
+                        downloadState is ClientDownloadState.Failed
+                    ) {
+                        onRequestDownload?.invoke(attachment.id)
+                    }
+                } else {
+                    onClick()
+                }
+            }),
         contentAlignment = Alignment.Center,
     ) {
         if (attachment.isImage) {
@@ -158,10 +213,49 @@ private fun MediaTile(attachment: Attachment, onClick: () -> Unit) {
                 modifier = Modifier.size(VIDEO_ICON_SIZE),
             )
         }
+        if (needsDownload) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(DOWNLOAD_BADGE_SIZE)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                when (downloadState) {
+                    is ClientDownloadState.Downloading -> CircularProgressIndicator(
+                        modifier = Modifier.size(DOWNLOAD_BADGE_ICON_SIZE),
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                    )
+                    is ClientDownloadState.Failed -> Icon(
+                        Icons.Outlined.Refresh,
+                        contentDescription = stringResource(R.string.client_attachment_failed),
+                        tint = Color.White,
+                        modifier = Modifier.size(DOWNLOAD_BADGE_ICON_SIZE),
+                    )
+                    is ClientDownloadState.Empty -> Icon(
+                        Icons.Outlined.AttachFile,
+                        contentDescription = stringResource(R.string.client_attachment_empty),
+                        tint = Color.White,
+                        modifier = Modifier.size(DOWNLOAD_BADGE_ICON_SIZE),
+                    )
+                    else -> Icon(
+                        Icons.Outlined.Download,
+                        contentDescription = stringResource(R.string.client_attachment_tap_download),
+                        tint = Color.White,
+                        modifier = Modifier.size(DOWNLOAD_BADGE_ICON_SIZE),
+                    )
+                }
+            }
+        }
     }
 }
 
 private const val GALLERY_COLUMNS = 3
 private val TILE_GAP = 4.dp
 private val VIDEO_ICON_SIZE = 40.dp
+private val DOWNLOAD_BADGE_SIZE = 32.dp
+private val DOWNLOAD_BADGE_ICON_SIZE = 18.dp
 private const val THUMBNAIL_PX = 360

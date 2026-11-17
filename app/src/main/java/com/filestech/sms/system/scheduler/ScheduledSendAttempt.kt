@@ -6,7 +6,14 @@ import com.filestech.sms.data.local.db.dao.ScheduledMessageDao
 import com.filestech.sms.data.local.db.mapper.toDomain
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.ScheduledState
+import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.usecase.EnvoyerMessageUseCase
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -28,6 +35,11 @@ class ScheduledSendAttempt @Inject constructor(
     // deja diverge deux fois de l'envoi immediat (piece jointe perdue en v1.26.0, reglage
     // « MMS de groupe » ignore en 1.28.3). Le routeur porte la regle, et la lit lui-meme.
     private val envoyer: EnvoyerMessageUseCase,
+    // Client mode C3 — the mode gate: a linked device never fires a
+    // local schedule (the hub phone owns the scheduler). The default
+    // is a hub-mode settings source, so the existing tests (which
+    // never pass settings) keep testing the hub path unchanged.
+    private val settings: AppSettingsSource = HubModeSettings,
 ) {
 
     /**
@@ -65,6 +77,16 @@ class ScheduledSendAttempt @Inject constructor(
          * l'utilisateur d'en décider.
          */
         INTERRUPTED,
+
+        /**
+         * Client mode C3 — the device is a linked device: a local
+         * schedule must never fire here (the hub phone owns the
+         * scheduler). The row is left `PENDING`, untouched — it
+         * resumes if the device switches back to hub mode (the next
+         * boot re-schedules it). Not a failure: nothing was
+         * attempted, nothing was lost.
+         */
+        DEFERRED,
     }
 
     /**
@@ -78,8 +100,21 @@ class ScheduledSendAttempt @Inject constructor(
         runAttemptCount: Int,
         now: Long = System.currentTimeMillis(),
     ): Verdict {
-        val entity = dao.findById(id) ?: return Verdict.UNKNOWN_ID
-        if (entity.state != ScheduledState.PENDING) return verdictSurLigneDejaPrise(id, entity.state, now)
+        // Client mode C3 — a linked device never fires a local
+        // schedule: the row stays PENDING (it resumes if the device
+        // switches back to hub mode — the next boot re-schedules it).
+        // Checked BEFORE the claim, so the row is never left SENDING.
+        if ((settings.hydratedOrNull() ?: AppSettings()).mode == DeviceMode.CLIENT) {
+            return Verdict.DEFERRED
+        }
+        val entity = dao.findById(id)
+        if (entity == null || entity.state != ScheduledState.PENDING) {
+            return if (entity == null) {
+                Verdict.UNKNOWN_ID
+            } else {
+                verdictSurLigneDejaPrise(id, entity.state, now)
+            }
+        }
         // v1.26.1 (audit H6) — revendication ATOMIQUE avant tout appel réseau.
         //
         // Le test d'état ci-dessus ne suffisait pas : il était évalué AVANT l'envoi, et l'état
@@ -116,6 +151,10 @@ class ScheduledSendAttempt @Inject constructor(
             attachments,
             entity.subId,
             clientMessageId = entity.clientMessageId,
+            // Client mode C3 — the wire branch resolves the hub
+            // conversation from the local id (unreachable here while
+            // the DEFERRED gate above holds; carried for safety).
+            conversationId = entity.conversationId,
         )
         return when (outcome) {
             is Outcome.Success -> {
@@ -225,4 +264,19 @@ class ScheduledSendAttempt @Inject constructor(
          */
         const val SEND_LEASE_MS = 15 * 60 * 1000L
     }
+}
+
+/**
+ * Client mode C3 — the default settings source for
+ * [ScheduledSendAttempt]: hub mode, always hydrated. It is the
+ * default constructor value, so the existing tests (which never pass
+ * settings) keep testing the hub path unchanged.
+ */
+internal object HubModeSettings : AppSettingsSource {
+    private val value = AppSettings()
+
+    override val flow: Flow<AppSettings> = flowOf(value)
+    override val state: StateFlow<AppSettings> = MutableStateFlow(value)
+    override suspend fun hydratedOrNull(): AppSettings = value
+    override suspend fun update(transform: (AppSettings) -> AppSettings) = Unit
 }

@@ -784,4 +784,97 @@ class MigrationTest {
         // Contrôle positif : une autre clé passe.
         db.execSQL("UPDATE scheduled_messages SET client_message_id = 'cle-b' WHERE id = 2")
     }
+
+    /**
+     * Client mode C2 — 17 → 18 : les trois colonnes `hub_*_id` (nulles
+     * sur l'existant, chacune avec son index UNIQUE) et les trois tables
+     * neuves (`client_sync_state`, `client_conversation_state`,
+     * `synced_contacts`), qui naissent vides. Strictement additive : les
+     * lignes existantes ne bougent pas.
+     */
+    @Test
+    fun migrate17To18_ajouteLesIdsHub_etLesTablesDeSyncClient() {
+        helper.createDatabase(TEST_DB, 17).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO conversations
+                    (id, thread_id, addresses_csv, display_name, last_message_at,
+                     last_message_preview, unread_count, pinned, archived, muted, in_vault)
+                VALUES (1, 7, '+33600000001', 'Alice', 1700000000000, 'a', 0, 0, 0, 0, 0)
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO messages
+                    (id, conversation_id, telephony_uri, address, body, type, direction, date,
+                     date_sent, read, starred, status, attachments_count)
+                VALUES (1, 1, 'content://sms/1', '+33600000001', 'Bonjour', 0, 1, 1700000000000,
+                        NULL, 1, 0, 0, 0)
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO attachments
+                    (id, message_id, mime_type, file_name, size_bytes, local_uri,
+                     width, height, duration_ms)
+                VALUES (1, 1, 'image/jpeg', 'photo.jpg', 100, 'content://x/1', 10, 10, NULL)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 18, true, Migrations.MIGRATION_17_18)
+
+        // Les lignes existantes projettent NULL sur les trois colonnes, et leurs
+        // données ne bougent pas.
+        db.query("SELECT body, hub_message_id FROM messages WHERE id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("Bonjour")
+            assertThat(c.isNull(1)).isTrue()
+        }
+        db.query("SELECT display_name, hub_conversation_id FROM conversations WHERE id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("Alice")
+            assertThat(c.isNull(1)).isTrue()
+        }
+        db.query("SELECT hub_attachment_id FROM attachments WHERE id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.isNull(0)).isTrue()
+        }
+
+        // Les trois tables neuves existent et naissent vides.
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN " +
+                "('client_sync_state', 'client_conversation_state', 'synced_contacts')",
+        ).use { c -> assertThat(c.count).isEqualTo(3) }
+        db.query("SELECT COUNT(*) FROM client_sync_state").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.query("SELECT COUNT(*) FROM client_conversation_state").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.query("SELECT COUNT(*) FROM synced_contacts").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+
+        // L'index UNIQUE tient sur les valeurs réelles : deux lignes ne peuvent
+        // pas porter le même id hub — c'est lui qui rend l'upsert idempotent.
+        db.execSQL("UPDATE messages SET hub_message_id = 9001 WHERE id = 1")
+        db.execSQL(
+            """
+            INSERT INTO messages
+                (id, conversation_id, telephony_uri, address, body, type, direction, date,
+                 date_sent, read, starred, status, attachments_count)
+            VALUES (2, 1, 'content://sms/2', '+33600000001', 'deux', 0, 1, 1700000001000,
+                    NULL, 1, 0, 0, 0)
+            """.trimIndent(),
+        )
+        val doublon = runCatching { db.execSQL("UPDATE messages SET hub_message_id = 9001 WHERE id = 2") }
+        assertThat(doublon.isFailure).isTrue()
+        assertThat(doublon.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
+        // Contrôle positif : une autre clé passe.
+        db.execSQL("UPDATE messages SET hub_message_id = 9002 WHERE id = 2")
+    }
 }

@@ -226,8 +226,18 @@ class RepositorySyncMessageSource @Inject constructor(
 
     // -- Slice 5: contact sync ----------------------------------------
 
-    override suspend fun contacts(): List<SyncedContact> =
-        contactsRepository.listAllDetailed().mapNotNull { it.toSynced() }
+    /**
+     * Contacts-permission fix — a refused read THROWS [SecurityException]
+     * on purpose, it is never swallowed into an empty list: an empty list
+     * would read as "this phone has zero contacts" and wipe the desktop's
+     * contacts. Both callers handle the throw: [com.filestech.sms.sync.SyncEngine]
+     * maps it to a `contacts_error` frame (`hub_no_contacts_access`, with
+     * Retry on the desktop) and the live-delta path in `SyncServer` skips
+     * the delta. Do not catch it here.
+     */
+    override suspend fun contacts(): List<SyncedContact> {
+        return contactsRepository.listAllDetailed().mapNotNull { it.toSynced() }
+    }
 
     override suspend fun openAvatar(address: String): AvatarOpenResult {
         return try {

@@ -3,6 +3,8 @@ package com.filestech.sms.domain.usecase
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.core.result.map
+import com.filestech.sms.domain.clientmode.ClientActionGateway
+import com.filestech.sms.domain.clientmode.NoOpClientActionGateway
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.ReactionFormat
 import com.filestech.sms.domain.model.SendReport
@@ -55,6 +57,11 @@ class SendReactionUseCase @Inject constructor(
     // null). Inclus dans le format READABLE_FR uniquement (TAPBACK_EN / EMOJI_ONLY
     // restent identiques pour préserver la compat iMessage et la concision).
     private val senderNameProvider: SenderNameProvider,
+    /**
+     * Client mode C3 — the write-back gateway. Default NoOp keeps the
+     * hub tests compiling untouched; Hilt always provides the real one.
+     */
+    private val clientActions: ClientActionGateway = NoOpClientActionGateway,
 ) {
     /** Message reacted to + validated recipient, resolved before any send. */
     private data class ReactionRecipient(
@@ -140,6 +147,16 @@ class SendReactionUseCase @Inject constructor(
         isRemoval: Boolean = false,
     ): Outcome<SendReport> {
         if (emoji.isBlank()) return Outcome.Failure(AppError.Validation("empty reaction emoji"))
+
+        // Client mode C3 — the `set_reaction` frame already went out
+        // via `ConversationRepository.setReaction` (which owns the
+        // optimistic badge and the revert); there is no Tapback SMS to
+        // send from a linked device — the hub applies its own
+        // `sendReactionsToRecipient` setting for the SMS. An empty
+        // report is the success the ViewModel expects.
+        if (clientActions.isClientMode()) {
+            return Outcome.Success(SendReport(dispatched = emptyList(), failed = emptyList(), blocked = emptyList()))
+        }
 
         val resolved = resolveRecipient(messageId)
         if (resolved is Outcome.Failure) return resolved

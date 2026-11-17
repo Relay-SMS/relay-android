@@ -61,8 +61,9 @@ import kotlin.math.roundToInt
  * on a hand or people emoji opens the skin-tone picker ([TonePickerPopup])
  * above the cell; tapping a variant inserts that variant.
  *
- * This is NOT the reaction picker ([EmojiReactionPickerSheet]) — that sheet
- * reacts to a message, this grid inserts an emoji into the composer.
+ * Shared by the composer picker ([EmojiPickerPanel]) and the reaction
+ * picker ([ReactionEmojiPickerSheet]): the composer inserts the emoji into
+ * the draft, the reaction picker reacts to a message with it.
  */
 @Composable
 fun EmojiGrid(

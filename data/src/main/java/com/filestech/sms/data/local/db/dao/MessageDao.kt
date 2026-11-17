@@ -174,6 +174,53 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE client_message_id = :key LIMIT 1")
     suspend fun findByClientMessageId(key: String): MessageEntity?
 
+    /**
+     * Client mode (schema v18) — the message synced from the hub
+     * message [hubId], or null. The upsert key for `messages_batch` /
+     * `message_new` / `message_updated`.
+     */
+    @Query("SELECT * FROM messages WHERE hub_message_id = :hubId LIMIT 1")
+    suspend fun findByHubMessageId(hubId: Long): MessageEntity?
+
+    /**
+     * Client mode C3 — the ids of the unread messages in one
+     * conversation. The `mark_read` write-back captures them BEFORE
+     * marking read, so an `ok:false` can restore the exact unread set
+     * (the hub is authoritative, but a refused mark must not silently
+     * clear the badge).
+     */
+    @Query("SELECT id FROM messages WHERE conversation_id = :conversationId AND read = 0")
+    suspend fun findUnreadIds(conversationId: Long): List<Long>
+
+    /**
+     * Client mode — how many messages a conversation holds locally.
+     * Fetch-on-open uses it for the complete-but-empty check: a
+     * complete thread with cached messages needs no fetch, a
+     * complete-but-empty one fetches once per session.
+     */
+    @Query("SELECT COUNT(*) FROM messages WHERE conversation_id = :conversationId")
+    suspend fun countForConversation(conversationId: Long): Int
+
+    /**
+     * Marks every cached message of one conversation read. Used by
+     * hub-mode mark-read and, in client mode, by the mirror: a
+     * `conversation_updated` with `unread: 0` IS the read signal
+     * (the hub user read the thread on the phone) — the counter is
+     * set from the hub value by the mirror, and this flips the rows
+     * so the thread view agrees.
+     */
+    @Query("UPDATE messages SET read = 1 WHERE conversation_id = :conversationId AND read = 0")
+    suspend fun markConversationRead(conversationId: Long)
+
+    /**
+     * Client mode — deletes every message mirrored from a hub. A
+     * safety net for the wipe: conversation deletion already cascades
+     * to its messages, but a message whose conversation row is gone
+     * (or never existed) would otherwise survive.
+     */
+    @Query("DELETE FROM messages WHERE hub_message_id IS NOT NULL")
+    suspend fun deleteSynced(): Int
+
     /** One-shot suspend snapshot used by deletion paths that need each row's telephony URI. */
     @Query("SELECT * FROM messages WHERE conversation_id = :conversationId")
     suspend fun findByConversation(conversationId: Long): List<MessageEntity>
@@ -186,9 +233,6 @@ interface MessageDao {
 
     @Update
     suspend fun update(message: MessageEntity)
-
-    @Query("UPDATE messages SET read = 1 WHERE conversation_id = :conversationId AND read = 0")
-    suspend fun markConversationRead(conversationId: Long)
 
     /**
      * v1.8.0 (post-audit fix unread badges) — marque TOUS les messages INCOMING

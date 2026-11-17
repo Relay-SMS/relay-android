@@ -407,6 +407,9 @@ fun AppRoot() {
                 onCompose = { nav.navigate(Compose()) },
                 onComposeGroup = { nav.navigate(Compose(groupe = true)) },
                 onOpenSettings = { nav.navigate(Settings) },
+                // Client mode — direct route to Linked devices for the
+                // no-SIM nudge card on the empty conversation list.
+                onOpenLinkedDevices = { nav.navigate(LinkedDevices) },
                 onOpenVault = { nav.navigate(Vault) },
                 onOpenArchived = { nav.navigate(Conversations(archived = true)) },
                 onOpenBlocked = { nav.navigate(Blocked) },

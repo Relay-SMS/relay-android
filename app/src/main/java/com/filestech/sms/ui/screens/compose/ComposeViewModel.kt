@@ -10,9 +10,12 @@ import androidx.lifecycle.viewModelScope
 import com.filestech.sms.core.ext.foldForSearch
 import com.filestech.sms.core.ext.normalizePhone
 import com.filestech.sms.core.ext.oneShotEvents
+import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.core.result.runCatchingCancellable
 import com.filestech.sms.di.IoDispatcher
+import com.filestech.sms.domain.clientmode.ClientActionGateway
+import com.filestech.sms.domain.clientmode.NoOpClientActionGateway
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ContactRepository
@@ -39,6 +42,13 @@ class ComposeViewModel @Inject constructor(
     private val contactRepo: ContactRepository,
     private val conversationRepo: ConversationRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
+    /**
+     * Client mode C3 — the create-conversation gateway (the group
+     * name rides the `create_conversation` frame; the repo's
+     * `findOrCreate` has no name parameter). Default NoOp keeps
+     * tests compiling; Hilt always provides the real one.
+     */
+    private val clientActions: ClientActionGateway = NoOpClientActionGateway,
 ) : ViewModel() {
 
     // v1.6.1 (audit QUAL-17) — @Stable pour Compose recomposition skipping.
@@ -74,7 +84,17 @@ class ComposeViewModel @Inject constructor(
 
     sealed interface Event {
         data class ConversationCreated(val id: Long) : Event
+
+        /** Client mode C3 — the hub refused the create (or could not be reached). */
+        data class CreateFailed(val error: AppError) : Event
     }
+
+    /**
+     * Client mode C3 — the compose screen hides the create-contact
+     * row on a linked device (no contact frames until C4).
+     */
+    private val _isClientMode = MutableStateFlow(false)
+    val isClientMode: StateFlow<Boolean> = _isClientMode.asStateFlow()
 
     /**
      * v1.28.3 — mode groupe (« Nouveau groupe » dans la liste) : le raccourci « toucher = ouvrir le
@@ -87,6 +107,7 @@ class ComposeViewModel @Inject constructor(
             _state.update { it.copy(recipients = listOf(PhoneAddress.of(addr))) }
         }
         chargerContacts()
+        viewModelScope.launch { _isClientMode.value = clientActions.isClientMode() }
     }
 
     /**
@@ -187,6 +208,26 @@ class ComposeViewModel @Inject constructor(
         viewModelScope.launch {
             val rec = _state.value.recipients
             if (rec.isEmpty()) return@launch
+            // Client mode C3 — the name rides the
+            // `create_conversation` frame (the hub applies it; a
+            // local-only rename would be overwritten by the next
+            // sync). Unnamed: the repo opens a local thread without
+            // a round-trip, and creates via wire only when absent.
+            if (clientActions.isClientMode()) {
+                val name = groupName?.trim()
+                if (name.isNullOrEmpty()) {
+                    when (val res = conversationRepo.findOrCreate(rec)) {
+                        is Outcome.Success -> events.tryEmit(Event.ConversationCreated(res.value.id))
+                        is Outcome.Failure -> events.tryEmit(Event.CreateFailed(res.error))
+                    }
+                    return@launch
+                }
+                when (val res = clientActions.createConversation(rec.map { it.raw }, name)) {
+                    is Outcome.Success -> events.tryEmit(Event.ConversationCreated(res.value))
+                    is Outcome.Failure -> events.tryEmit(Event.CreateFailed(res.error))
+                }
+                return@launch
+            }
             val res = conversationRepo.findOrCreate(rec)
             if (res is Outcome.Success) {
                 val name = groupName?.trim()

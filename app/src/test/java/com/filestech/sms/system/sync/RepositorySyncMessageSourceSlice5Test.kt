@@ -176,6 +176,23 @@ class RepositorySyncMessageSourceSlice5Test {
         assertThat(synced.single().contactId).isEqualTo(42L)
     }
 
+    /**
+     * Contacts-permission fix — a refused read THROWS: the throw is the
+     * signal [com.filestech.sms.sync.SyncEngine] maps to a `contacts_error`
+     * frame. Swallowing it into an empty list would read as "zero
+     * contacts" on the desktop and wipe its contacts (see [contacts]).
+     */
+    @Test
+    fun `contacts propagates the provider refusal instead of an empty list`() {
+        runTest {
+            coEvery { contactsRepository.listAllDetailed() } throws
+                SecurityException("Permission Denial: requires android.permission.READ_CONTACTS")
+
+            val thrown = runCatching { source.contacts() }.exceptionOrNull()
+            assertThat(thrown).isInstanceOf(SecurityException::class.java)
+        }
+    }
+
     // -- contactsReadiness ------------------------------------------------
 
     @Test fun `contactsReadiness is Ready when the permission is granted`() = runTest {

@@ -1950,6 +1950,358 @@ class ConversationMirror @Inject constructor(
         )
     }
 
+    // ------------------------------------------------------------------
+    // Client mode (C2) — the client mirror. These two methods are the
+    // ONLY writers of synced rows: every `conversations` /
+    // `messages_batch` / `message_new` / `message_updated` /
+    // `conversation_updated` frame funnels through them (via
+    // `sync.client.ClientMirror`). The hub id is the upsert key, so a
+    // re-sync is idempotent — the same hub row always lands on the
+    // same local row, and the UNIQUE indexes on the `hub_*_id`
+    // columns are the backstop. Nothing here touches the system
+    // telephony provider: client rows keep `threadId = null` and
+    // `telephonyUri = null`, so no system propagation can ever fire
+    // for them.
+    // ------------------------------------------------------------------
+
+    /**
+     * Client mode — upserts one synced conversation (snapshot row or
+     * `conversation_updated`). Hub values are authoritative and are
+     * applied as-is: preview, date, unread count, pin/mute/archive.
+     *
+     * The row is found by hub id first. When no row carries this hub
+     * id yet, [ensureConversation] matches by address (so a
+     * conversation the user already had locally — e.g. from before
+     * the switch to client mode — is adopted, not duplicated) and the
+     * hub id is stamped on the match — UNLESS the match already
+     * carries a DIFFERENT hub id (a false friend: two hub
+     * conversations sharing an address set), in which case a fresh
+     * row is inserted instead of stealing the match.
+     *
+     * A pinned message that has not arrived yet is reported back in
+     * [SyncedConversationResult.unresolvedPinnedHubMessageId] — the
+     * engine keeps it pending and pins it when the message lands.
+     * `unread == 0` is the hub's read signal: the cached messages
+     * are marked read too, so the thread view agrees with the list.
+     *
+     * `isBlocked` is intentionally NOT stored: there is no `blocked`
+     * column on `ConversationEntity` (blocking is derived at read
+     * time from the local block list). Block-list sync needs a design
+     * decision; see the C2 report.
+     */
+    suspend fun upsertSyncedConversation(
+        data: SyncedConversationData,
+    ): SyncedConversationResult = withContext(io) {
+        database.withTransaction {
+            val existing = conversationDao.findByHubConversationId(data.hubConversationId)
+            val localId = if (existing != null) {
+                existing.id
+            } else {
+                val addresses = data.addresses.map { PhoneAddress.of(it) }
+                val matchedId = ensureConversation(addresses)
+                val matched = conversationDao.findById(matchedId)
+                when {
+                    matched == null -> {
+                        // ensureConversation always returns a live row;
+                        // a null read means the row vanished mid-flight
+                        // (wipe raced us) — insert fresh.
+                        insertSyncedConversationRow(data)
+                    }
+                    matched.hubConversationId != null &&
+                        matched.hubConversationId != data.hubConversationId -> {
+                        // False friend: the address match belongs to
+                        // another hub conversation. Insert a fresh row
+                        // instead of stealing it.
+                        insertSyncedConversationRow(data)
+                    }
+                    matched.hubConversationId == null -> {
+                        // Adopt the match (or the row ensureConversation
+                        // just created) and stamp it with the hub id.
+                        conversationDao.update(
+                            matched.copy(hubConversationId = data.hubConversationId),
+                        )
+                        matchedId
+                    }
+                    else -> matchedId
+                }
+            }
+            // One update path for both branches: the hub's values win.
+            val row = conversationDao.findById(localId)
+                ?: return@withTransaction SyncedConversationResult(localId, existing == null)
+            val pinnedLocalId = data.pinnedMessageHubId?.let {
+                messageDao.findByHubMessageId(it)?.id
+            }
+            conversationDao.update(
+                row.copy(
+                    addressesCsv = data.addresses
+                        .map { PhoneAddress.of(it) }
+                        .sortedBy { it.normalized }
+                        .toCsv(),
+                    displayName = data.displayName ?: row.displayName,
+                    customName = data.customName,
+                    lastMessageAt = data.lastMessageAt,
+                    lastMessagePreview = data.lastMessagePreview,
+                    unreadCount = data.unreadCount,
+                    pinned = data.pinned,
+                    archived = data.archived,
+                    muted = data.muted,
+                    pinnedMessageId = when {
+                        data.pinnedMessageHubId == null -> null
+                        pinnedLocalId != null -> pinnedLocalId
+                        else -> row.pinnedMessageId
+                    },
+                    pinnedMessageAt = when {
+                        data.pinnedMessageHubId == null -> null
+                        pinnedLocalId != null -> data.pinnedMessageAt
+                        else -> row.pinnedMessageAt
+                    },
+                ),
+            )
+            if (data.unreadCount == 0) messageDao.markConversationRead(localId)
+            SyncedConversationResult(
+                localId = localId,
+                created = existing == null,
+                unresolvedPinnedHubMessageId =
+                if (data.pinnedMessageHubId != null && pinnedLocalId == null) {
+                    data.pinnedMessageHubId
+                } else {
+                    null
+                },
+                pinnedMessageAt = data.pinnedMessageAt,
+            )
+        }
+    }
+
+    /**
+     * Client mode — upserts one synced message (`messages_batch` /
+     * `message_new` / `message_updated`). Found by hub id; the update
+     * path patches only the live-mutable fields (status, read,
+     * starred, reaction, reply target, error code) — body, type,
+     * direction, date and address never change after a sync.
+     *
+     * When the conversation is unknown (a live message beat its
+     * `conversation_updated`, or a gap-fill reply for a pruned
+     * thread), a stub conversation is created from the sender so the
+     * message has a home; the next conversation frame fills in the
+     * real values. The touch passes `deltaUnread = 0`: the hub's
+     * unread count is authoritative and is set by the conversation
+     * frames, so a message must never bump the counter itself.
+     *
+     * The reply target resolves only when the target has already
+     * arrived; an unresolvable target leaves the stored value alone
+     * (a later `message_updated` for the reply, or the target's own
+     * arrival followed by a re-sync, heals it).
+     */
+    suspend fun upsertSyncedMessage(data: SyncedMessageData): SyncedMessageResult =
+        withContext(io) {
+            database.withTransaction {
+                val existing = messageDao.findByHubMessageId(data.hubMessageId)
+                if (existing != null) {
+                    val replyLocalId = data.replyToHubMessageId?.let {
+                        messageDao.findByHubMessageId(it)?.id
+                    }
+                    messageDao.update(
+                        existing.copy(
+                            status = data.status,
+                            read = data.read,
+                            starred = data.starred,
+                            reactionEmoji = data.reaction,
+                            errorCode = data.errorCode,
+                            replyToMessageId = replyLocalId ?: existing.replyToMessageId,
+                            clientMessageId = data.clientMessageId ?: existing.clientMessageId,
+                        ),
+                    )
+                    upsertSyncedAttachments(attachmentDao, existing.id, data.attachments)
+                    return@withTransaction SyncedMessageResult(
+                        localId = existing.id,
+                        inserted = false,
+                        unresolvedReplyToHubMessageId =
+                        if (data.replyToHubMessageId != null && replyLocalId == null) {
+                            data.replyToHubMessageId
+                        } else {
+                            null
+                        },
+                    )
+                }
+
+                // Client mode C3 — reconcile by `client_message_id`:
+                // the hub echoes the key on the sent row, so a live
+                // `message_new` for our own send lands on the optimistic
+                // row instead of duplicating it. The hub's values win
+                // (signed body, server date, status); the local id stays
+                // stable, so the thread never flickers. Only a row that
+                // has not been reconciled yet (no hub id) matches — a
+                // row the `message_sent` ack already stamped is caught
+                // by the hub-id branch above.
+                if (data.clientMessageId != null) {
+                    val optimistic = messageDao.findByClientMessageId(data.clientMessageId)
+                    if (optimistic != null && optimistic.hubMessageId == null) {
+                        val keyReplyLocalId = data.replyToHubMessageId?.let {
+                            messageDao.findByHubMessageId(it)?.id
+                        }
+                        messageDao.update(
+                            optimistic.copy(
+                                hubMessageId = data.hubMessageId,
+                                body = data.body,
+                                date = data.date,
+                                dateSent = data.dateSent,
+                                status = data.status,
+                                read = data.read,
+                                starred = data.starred,
+                                reactionEmoji = data.reaction,
+                                errorCode = data.errorCode,
+                                replyToMessageId = keyReplyLocalId ?: optimistic.replyToMessageId,
+                                address = data.address,
+                                attachmentsCount = data.attachments.size,
+                            ),
+                        )
+                        upsertSyncedAttachments(attachmentDao, optimistic.id, data.attachments)
+                        touchConversation(
+                            convId = optimistic.conversationId,
+                            date = data.date,
+                            preview = syncedMessagePreview(data),
+                            // The hub's unread count is authoritative —
+                            // a message must never bump it itself.
+                            deltaUnread = 0,
+                        )
+                        return@withTransaction SyncedMessageResult(
+                            localId = optimistic.id,
+                            inserted = false,
+                            unresolvedReplyToHubMessageId =
+                            if (data.replyToHubMessageId != null && keyReplyLocalId == null) {
+                                data.replyToHubMessageId
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                }
+
+                val convId = conversationDao.findByHubConversationId(data.hubConversationId)?.id
+                    ?: stubSyncedConversation(data.hubConversationId, data.address)
+                val replyLocalId = data.replyToHubMessageId?.let {
+                    messageDao.findByHubMessageId(it)?.id
+                }
+                var localId = messageDao.insert(
+                    MessageEntity(
+                        conversationId = convId,
+                        telephonyUri = null,
+                        address = data.address,
+                        body = data.body,
+                        type = data.type,
+                        direction = data.direction,
+                        date = data.date,
+                        dateSent = data.dateSent,
+                        read = data.read,
+                        starred = data.starred,
+                        status = data.status,
+                        errorCode = data.errorCode,
+                        attachmentsCount = data.attachments.size,
+                        replyToMessageId = replyLocalId,
+                        reactionEmoji = data.reaction,
+                        clientMessageId = data.clientMessageId,
+                        hubMessageId = data.hubMessageId,
+                    ),
+                )
+                if (localId == -1L) {
+                    // IGNORE conflict: the UNIQUE hub id raced us (the
+                    // same message arrived twice in one batch window).
+                    // Reconcile by the hub id, like the outgoing path
+                    // reconciles by `client_message_id`.
+                    localId = messageDao.findByHubMessageId(data.hubMessageId)?.id ?: -1L
+                }
+                if (localId != -1L) {
+                    upsertSyncedAttachments(attachmentDao, localId, data.attachments)
+                    touchConversation(
+                        convId = convId,
+                        date = data.date,
+                        preview = syncedMessagePreview(data),
+                        // The hub's unread count is authoritative —
+                        // a message must never bump it itself.
+                        deltaUnread = 0,
+                    )
+                }
+                SyncedMessageResult(
+                    localId = localId,
+                    inserted = localId != -1L,
+                    unresolvedReplyToHubMessageId =
+                    if (data.replyToHubMessageId != null && replyLocalId == null) {
+                        data.replyToHubMessageId
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+
+    /**
+     * Client mode — inserts a fresh synced conversation row (the
+     * false-friend branch of [upsertSyncedConversation], and the
+     * vanished-match fallback). The hub's values go straight in;
+     * `threadId` stays null — the hub's AOSP thread id means nothing
+     * on this device.
+     */
+    private suspend fun insertSyncedConversationRow(data: SyncedConversationData): Long =
+        conversationDao.insert(
+            ConversationEntity(
+                threadId = null,
+                addressesCsv = data.addresses
+                    .map { PhoneAddress.of(it) }
+                    .sortedBy { it.normalized }
+                    .toCsv(),
+                displayName = data.displayName,
+                customName = data.customName,
+                lastMessageAt = data.lastMessageAt,
+                lastMessagePreview = data.lastMessagePreview,
+                unreadCount = data.unreadCount,
+                pinned = data.pinned,
+                archived = data.archived,
+                muted = data.muted,
+                hubConversationId = data.hubConversationId,
+            ),
+        )
+
+    /**
+     * Client mode — the stub home for a message whose conversation
+     * has not arrived yet: [ensureConversation] by sender address,
+     * stamped with the hub id — or a fresh row when the match is a
+     * false friend. The next conversation frame fills in the real
+     * values (title, preview, unread).
+     */
+    private suspend fun stubSyncedConversation(hubConversationId: Long, senderAddress: String): Long {
+        val stubId = ensureConversation(listOf(PhoneAddress.of(senderAddress)))
+        val stub = conversationDao.findById(stubId)
+        return when {
+            stub == null -> conversationDao.insert(
+                ConversationEntity(
+                    threadId = null,
+                    addressesCsv = listOf(PhoneAddress.of(senderAddress)).toCsv(),
+                    displayName = null,
+                    lastMessageAt = 0L,
+                    lastMessagePreview = null,
+                    hubConversationId = hubConversationId,
+                ),
+            )
+            stub.hubConversationId == null -> {
+                conversationDao.update(stub.copy(hubConversationId = hubConversationId))
+                stubId
+            }
+            stub.hubConversationId == hubConversationId -> stubId
+            // False friend: the sender match belongs to another hub
+            // conversation — a fresh stub instead of stealing it.
+            else -> conversationDao.insert(
+                ConversationEntity(
+                    threadId = null,
+                    addressesCsv = listOf(PhoneAddress.of(senderAddress)).toCsv(),
+                    displayName = null,
+                    lastMessageAt = 0L,
+                    lastMessagePreview = null,
+                    hubConversationId = hubConversationId,
+                ),
+            )
+        }
+    }
+
     private companion object {
         const val MAX_PREVIEW = 240
 
@@ -2036,4 +2388,115 @@ private fun looksLikeReactionText(body: String): Boolean {
     if (body.isEmpty()) return false
     if (REACTION_TEXT_PREFIXES.any { body.startsWith(it) }) return true
     return body.contains(" a réagi par ") || body.contains('»')
+}
+
+/**
+ * Client mode — upserts one message's synced attachment metadata by
+ * hub id. File scope (not a class member): `ConversationMirror` is
+ * already at its function-count limit, and this only needs the DAO.
+ *
+ * The update path refreshes metadata but NEVER touches `localUri`:
+ * that is C5's download, and a re-sync must not drop a file the
+ * device already fetched. New rows get `localUri = ""` — the bubble
+ * degrades gracefully on a blank URI (placeholder, no crash) until
+ * C5 fills it in.
+ *
+ * Client mode C5 — the reconcile link: when the synced message is
+ * this device's own send, its optimistic attachment rows (no hub
+ * id) are deleted and their durable files linked onto the synced
+ * rows, by position + size (the desktop's `linkStagedFiles` rule:
+ * the hub stores the exact uploaded bytes, so an equal size is the
+ * same file). A size mismatch links nothing — the bubble falls back
+ * to download-on-demand.
+ */
+private suspend fun upsertSyncedAttachments(
+    attachmentDao: AttachmentDao,
+    messageId: Long,
+    attachments: List<SyncedAttachmentData>,
+) {
+    // Snapshot the optimistic rows BEFORE the upsert deletes them:
+    // they are the only record of where the durable files live.
+    val optimistic = attachmentDao.findForMessage(messageId)
+        .filter { it.hubAttachmentId == null }
+        .sortedBy { it.id }
+    if (optimistic.isNotEmpty()) {
+        attachmentDao.deleteOptimisticForMessage(messageId)
+    }
+    for (att in attachments) {
+        val existing = attachmentDao.findByHubAttachmentId(att.hubAttachmentId)
+        if (existing != null) {
+            attachmentDao.update(
+                existing.copy(
+                    messageId = messageId,
+                    mimeType = att.mimeType,
+                    fileName = att.fileName,
+                    sizeBytes = att.sizeBytes,
+                    width = att.width,
+                    height = att.height,
+                    durationMs = att.durationMs,
+                ),
+            )
+        } else {
+            attachmentDao.insert(
+                AttachmentEntity(
+                    messageId = messageId,
+                    mimeType = att.mimeType,
+                    fileName = att.fileName,
+                    sizeBytes = att.sizeBytes,
+                    // No bytes yet — the download is C5. A blank
+                    // URI renders as a placeholder, never a crash.
+                    localUri = "",
+                    width = att.width,
+                    height = att.height,
+                    durationMs = att.durationMs,
+                    hubAttachmentId = att.hubAttachmentId,
+                ),
+            )
+        }
+    }
+    if (optimistic.isNotEmpty()) {
+        linkOptimisticFiles(attachmentDao, messageId, optimistic)
+    }
+}
+
+/**
+ * Client mode C5 — links the optimistic rows' durable files onto
+ * the synced rows, by position + size. Only pairs whose sizes match
+ * (and whose staged file is non-blank) are linked; the rest keep
+ * their blank URI and download on demand.
+ */
+private suspend fun linkOptimisticFiles(
+    attachmentDao: AttachmentDao,
+    messageId: Long,
+    optimistic: List<AttachmentEntity>,
+) {
+    val synced = attachmentDao.findForMessage(messageId)
+        .filter { it.hubAttachmentId != null }
+        .sortedBy { it.id }
+    val linked = optimistic.zip(synced).filter { (staged, target) ->
+        staged.localUri.isNotBlank() && staged.sizeBytes == target.sizeBytes
+    }
+    for ((staged, target) in linked) {
+        attachmentDao.updateLocalUri(target.id, staged.localUri)
+    }
+}
+
+/**
+ * Client mode — the conversation-list preview for a synced message:
+ * the body when it has one, else the media label of the first
+ * attachment (same emoji + file-name shape as [ConversationMirror]'s
+ * `mediaPreviewLabel`, so a caption-less MMS never blanks the
+ * preview the hub's conversation frame already set).
+ */
+private fun syncedMessagePreview(data: SyncedMessageData): String {
+    if (data.body.isNotBlank()) return data.body
+    val first = data.attachments.firstOrNull() ?: return ""
+    val label = when {
+        first.mimeType.startsWith("image/") -> "🖼️"
+        first.mimeType.startsWith("video/") -> "🎞️"
+        first.mimeType.startsWith("audio/") -> "🎤"
+        first.mimeType == "text/x-vcard" || first.mimeType == "text/vcard" -> "👤"
+        else -> "📎"
+    }
+    return if (first.fileName != null) "$label ${first.fileName}" else label
 }

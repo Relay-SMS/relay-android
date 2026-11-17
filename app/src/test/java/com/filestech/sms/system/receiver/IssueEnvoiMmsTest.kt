@@ -24,7 +24,7 @@ class IssueEnvoiMmsTest {
     @Test
     fun `RESULT_OK mais operateur qui refuse - echec qui garde le statut`() {
         assertThat(issueDeLEnvoiMms(Activity.RESULT_OK, sendConf(0xE2)))
-            .isEqualTo(IssueEnvoiMms.Echec(SendErrorCode.mmscRefused(0xE2)))
+            .isEqualTo(IssueEnvoiMms.Echec(SendErrorCode.mmscRefused(0xE2), 0xE2))
     }
 
     @Test
@@ -35,7 +35,12 @@ class IssueEnvoiMmsTest {
 
     @Test
     fun `echec d'Android - son code, quelle que soit la reponse`() {
-        assertThat(issueDeLEnvoiMms(1, sendConf(0x80))).isEqualTo(IssueEnvoiMms.Echec(1))
+        assertThat(issueDeLEnvoiMms(1, sendConf(0x80))).isEqualTo(IssueEnvoiMms.Echec(1, 0x80))
         assertThat(issueDeLEnvoiMms(8, null)).isEqualTo(IssueEnvoiMms.Echec(8))
+    }
+
+    @Test
+    fun `echec d'Android avec un refus operateur - le statut est conserve pour le log`() {
+        assertThat(issueDeLEnvoiMms(1, sendConf(0xE2))).isEqualTo(IssueEnvoiMms.Echec(1, 0xE2))
     }
 }

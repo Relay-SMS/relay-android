@@ -123,6 +123,9 @@
     <string name="conversations_section_chats">Chats</string>
     <string name="conversations_search_short">Search</string>
     <string name="conversations_no_match">No matching conversation.</string>
+    <string name="conversations_contacts_banner_text">To show contact names and photos, Relay needs access to your contacts.</string>
+    <string name="conversations_contacts_banner_action">Allow access</string>
+    <string name="conversations_contacts_banner_dismiss">Dismiss</string>
     <string name="thread_create_contact">Create a contact</string>
     <string name="thread_update_contact">Update a contact</string>
     <string name="action_create_contact">Create contact</string>
@@ -651,12 +654,7 @@
     <string name="action_star">Star</string>
     <string name="action_unstar">Remove from starred</string>
     <string name="reaction_picker_other">Other emoji</string>
-    <string name="reaction_picker_other_title">Custom emoji</string>
-    <string name="reaction_picker_other_body">Type or paste an emoji</string>
-    <string name="reaction_picker_other_hint">😀</string>
     <!-- v1.5.0 — multi-emoji picker validate button -->
-    <string name="reaction_picker_validate_empty">Select one or more emojis</string>
-    <string name="reaction_picker_validate_count">Send reaction %1$s</string>
     <!-- v1.6.0 — a11y reaction badge (TalkBack) -->
     <string name="reaction_badge_content_description">Reaction %1$s</string>
     <!-- Round 21 — badge tap removes the reaction again (also the picker sheet's empty-selection button) -->
@@ -835,6 +833,18 @@
     <!-- v1.28.5 — the vault state could not be read: the guard refuses rather than assume. -->
     <string name="settings_lock_downgrade_vault_unverifiable">The vault state could not be checked right now. The lock is kept, please try again in a moment.</string>
     <string name="error_send_recipient_blocked">Not sent: you have blocked this number. Unblock it to send again.</string>
+    <!-- Group-send own-number fix — fail-fast when a group send has no own number on file. -->
+    <string name="error_send_own_number_missing">Not sent: set your phone number in Settings → Sending to send group messages.</string>
+    <!-- Client mode C3 -->
+    <string name="error_send_client_offline">Couldn\'t reach your phone — check you\'re on the same Wi-Fi and try again.</string>
+    <string name="error_send_client_media">Photos, videos and voice messages can\'t be scheduled from a linked device yet.</string>
+    <string name="error_send_client_photo_prepare">This photo couldn\'t be prepared.</string>
+    <!-- Client mode C5 — the download tile / gallery badge for an attachment whose bytes have not landed yet. -->
+    <string name="client_attachment_empty">This file is empty.</string>
+    <string name="client_attachment_tap_download">Tap to download</string>
+    <string name="client_attachment_downloading">Downloading…</string>
+    <string name="client_attachment_failed">Couldn\'t download. Tap to retry.</string>
+    <string name="error_create_conversation_failed">Couldn\'t create the conversation. Try again.</string>
     <string name="error_retry_group_echo">This is the copy kept in the group. Resend from each member\'s conversation.</string>
     <string name="error_retry_mms_unsupported">This MMS can\'t be resent from here. Send it again from the composer.</string>
     <!-- v1.28.3 (F21) — envoi partiel : quelque chose est parti, mais pas tout. -->
@@ -1194,4 +1204,71 @@
     <string name="sync_channel_desc">Shows while the phone is reachable by linked devices on the local network.</string>
     <string name="sync_notification_title">Relay</string>
     <string name="sync_notification_text">Ready for linked devices on this Wi-Fi network.</string>
+    <!-- Client mode — the linked-device branch of the Linked devices screen, the pairing QR,
+         the mode switch, the no-SIM nudge, and the client foreground service. -->
+    <string name="client_mode_section">Device mode</string>
+    <string name="client_this_device_section">This device</string>
+    <string name="client_link_section">Your phone</string>
+    <string name="client_mode_link_title">Link this device to another phone</string>
+    <string name="client_mode_switch_back_title">Use this device as a phone</string>
+    <string name="client_mode_switch_title">Switch device mode</string>
+    <string name="client_mode_switch_to_client_body">Switching clears the messages stored on this device. Nothing is deleted from your phone.</string>
+    <string name="client_mode_switch_to_hub_body">Switching clears the messages synced to this device. Nothing is deleted from your phone.</string>
+    <string name="client_mode_switch_action">Switch</string>
+    <string name="client_link_status_connected">Connected</string>
+    <string name="client_link_status_reconnecting">Reconnecting…</string>
+    <string name="client_link_status_offline">Offline</string>
+    <string name="client_link_status_not_linked">Not linked</string>
+    <string name="client_link_status_removed">This device was removed from your phone</string>
+    <string name="client_link_qr_title">Link to your phone</string>
+    <string name="client_link_qr_hint">On your phone: Settings → Linked devices → Link a device, then scan this code.</string>
+    <string name="client_link_qr_error">Couldn\'t prepare the pairing code.</string>
+    <string name="client_qr_content_desc">Pairing code for your phone to scan</string>
+    <string name="client_link_hint">Messages sync from your phone over your Wi-Fi network.</string>
+    <string name="client_autolink_scanning">Looking for your phone…</string>
+    <string name="client_autolink_no_phones">No phone found yet — looking again…</string>
+    <string name="client_autolink_connecting">Found %1$s, connecting…</string>
+    <string name="client_autolink_connecting_generic">Connecting…</string>
+    <string name="client_autolink_waiting">Waiting for the scan…</string>
+    <string name="client_autolink_error">Couldn\'t connect — retrying…</string>
+    <string name="client_unlink_row">Unlink</string>
+    <string name="client_unlink_title">Unlink this device?</string>
+    <string name="client_unlink_body">This device will stop syncing with your phone, and the messages stored here will be cleared. Nothing is deleted from your phone.</string>
+    <string name="client_unlink_action">Unlink</string>
+    <string name="client_nudge_no_sim">This device has no SIM. Link it to your phone to send and receive messages here.</string>
+    <string name="client_sync_channel_label">Linked device sync</string>
+    <string name="client_sync_channel_desc">Keeps the link to your phone alive so messages stay in sync</string>
+    <string name="client_notification_title">Relay link</string>
+    <string name="client_notification_connected">Connected to %1$s</string>
+    <string name="client_notification_reconnecting">Reconnecting…</string>
+    <string name="client_notification_offline">Offline</string>
+    <!-- Client mode C2 — the sync-mode choice, re-sync, and the conversation-list sync states. -->
+    <string name="client_sync_mode_title">How much should sync?</string>
+    <string name="client_sync_mode_full_title">Full sync</string>
+    <string name="client_sync_mode_full_body">Your entire message history comes over, every conversation, every message.</string>
+    <string name="client_sync_mode_new_title">Just sync</string>
+    <string name="client_sync_mode_new_body">Only new messages from now on. Your conversation list will come over, with threads starting empty.</string>
+    <string name="client_sync_mode_footer">You can change this later in Settings → Linked devices → Re-sync messages.</string>
+    <string name="client_resync_row">Re-sync messages</string>
+    <string name="client_resync_subtitle">Clears the messages stored on this device and syncs them again from your phone.</string>
+    <string name="client_resync_title">Re-sync messages?</string>
+    <string name="client_resync_body">This clears the messages stored on this device and asks how much to sync again. Nothing is deleted from your phone.</string>
+    <string name="client_resync_action">Re-sync</string>
+    <string name="client_hub_not_default">Relay on your phone isn\'t your default messaging app, so new messages won\'t reach this device. Set Relay as the default on your phone to turn on live sync.</string>
+    <string name="client_sync_progress">Syncing messages…</string>
+    <string name="client_sync_count">%1$d of %2$d</string>
+    <string name="client_sync_error_title">Couldn\'t sync messages</string>
+    <string name="client_sync_error_default">Your phone couldn\'t sync messages right now.</string>
+    <string name="client_sync_error_not_connected">Not connected to your phone. Check that both devices are on the same Wi-Fi network.</string>
+    <string name="client_sync_offline">Offline — waiting for your phone.</string>
+    <string name="client_sync_prompt_action">Choose how much to sync</string>
+    <string name="client_notif_media_photo">Photo</string>
+    <string name="client_notif_media_video">Video</string>
+    <string name="client_notif_media_voice">Voice message</string>
+    <string name="client_notif_media_audio">Audio</string>
+    <string name="client_notif_media_file">File</string>
+    <string name="client_notif_media_gif">GIF</string>
+    <string name="client_contacts_error_title">Couldn\'t sync contacts</string>
+    <string name="client_contacts_error_no_access">Your phone can\'t access its contacts. Allow contacts access on your phone, then retry.</string>
+    <string name="client_contacts_error_default">Your phone couldn\'t sync contacts right now.</string>
 </resources>

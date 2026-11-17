@@ -77,7 +77,7 @@ fun MessageBubble(
     burstPosition: BurstPosition = BurstPosition.Solo,
     onTap: () -> Unit = {},
     /** Emitted when the user picks "Supprimer" in the bubble's overflow menu. */
-    onDelete: () -> Unit = {},
+    onDelete: (() -> Unit)? = null,
     onReply: (() -> Unit)? = null,
     onTranslate: (() -> Unit)? = null,
     onReact: (() -> Unit)? = null,

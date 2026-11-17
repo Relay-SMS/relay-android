@@ -19,11 +19,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +52,7 @@ import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.bubbleIncomingColor
 import com.filestech.sms.ui.theme.onBrandBlue
@@ -93,8 +98,10 @@ fun MediaAttachmentBubble(
     showTimestamp: Boolean,
     // Feedback round 4 — statut découplé de l'heure (voir [MessageBubble]).
     showStatus: Boolean = false,
-    onDelete: () -> Unit,
-    onReply: () -> Unit,
+    // Client mode C2 — nullable, like the other menu actions: `null`
+    // hides the entry (a linked device cannot delete or reply in C2).
+    onDelete: (() -> Unit)? = null,
+    onReply: (() -> Unit)? = null,
     onReact: (() -> Unit)?,
     /**
      * Round 22 — the quick-reaction bundle ([QuickReactionConfig]), the
@@ -136,6 +143,18 @@ fun MediaAttachmentBubble(
      * message. Empty by default.
      */
     searchHighlight: SearchHighlight = SearchHighlight(),
+    /**
+     * Client mode C5 — the download states for this message's
+     * attachments, keyed by local attachment id. Empty in hub mode:
+     * the previews render as before.
+     */
+    downloadStates: Map<Long, ClientDownloadState> = emptyMap(),
+    /**
+     * Client mode C5 — asks the downloader for an attachment's bytes
+     * (tap-to-download / tap-to-retry, and the auto-request on
+     * render). Null in hub mode: the previews render as before.
+     */
+    onRequestDownload: ((Long) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val isOut = message.isOutgoing
@@ -231,7 +250,10 @@ fun MediaAttachmentBubble(
                             bgColor,
                             isOut,
                             onLongClick = onLongPress,
-                        ) { ouvrir(attachment) }
+                            onClick = { ouvrir(attachment) },
+                            downloadState = downloadStates[attachment.id],
+                            onRequestDownload = onRequestDownload,
+                        )
                     }
                     // X-04 — les pièces jointes suivantes, empilées sous la première, chacune avec son
                     // propre tap-to-view. La réaction et la légende restent celles du message.
@@ -243,7 +265,10 @@ fun MediaAttachmentBubble(
                             bgColor,
                             isOut,
                             onLongClick = onLongPress,
-                        ) { ouvrir(autre) }
+                            onClick = { ouvrir(autre) },
+                            downloadState = downloadStates[autre.id],
+                            onRequestDownload = onRequestDownload,
+                        )
                     }
                 }
                 if (message.body.isBlank()) {
@@ -332,7 +357,32 @@ private fun MediaPreview(
     isOutgoing: Boolean,
     onLongClick: () -> Unit,
     onClick: () -> Unit,
+    downloadState: ClientDownloadState? = null,
+    onRequestDownload: ((Long) -> Unit)? = null,
 ) {
+    // Client mode C5 — no bytes yet: the download tile replaces the
+    // type preview entirely (a blank URI would render a hole). The
+    // tile only shows for a synced row (`hubAttachmentId != null`)
+    // in client mode (`onRequestDownload != null`): a hub-mode row
+    // with a missing file has nothing to download, and keeps the old
+    // placeholder behavior. A `Downloaded` state means the bytes
+    // landed and the row is about to re-emit with its URI — the type
+    // preview renders meanwhile, as before.
+    val downloadable = attachment.hubAttachmentId != null && onRequestDownload != null
+    val awaitingBytes = attachment.localUri.isBlank() &&
+        downloadState != ClientDownloadState.Downloaded
+    if (downloadable && awaitingBytes) {
+        DownloadTile(
+            attachment = attachment,
+            state = downloadState,
+            shape = shape,
+            bgColor = bgColor,
+            isOutgoing = isOutgoing,
+            onLongClick = onLongClick,
+            onRequestDownload = onRequestDownload,
+        )
+        return
+    }
     when {
         attachment.isImage -> ImagePreview(
             attachment = attachment,
@@ -360,6 +410,133 @@ private fun MediaPreview(
             onLongClick = onLongClick,
             onClick = onClick,
         )
+    }
+}
+
+/**
+ * Client mode C5 — the tile for an attachment whose bytes have not
+ * landed yet: same size/shape as the image tile (240 dp box,
+ * rounded, bubble colour), so the thread layout never jumps when
+ * the bytes arrive.
+ *
+ * Auto-request on render when the state is missing or
+ * [ClientDownloadState.NotDownloaded] (the desktop rule: the user
+ * never has to tap). A failed download needs a deliberate tap — a
+ * failed download must not loop — and an empty file is final (the
+ * bytes genuinely do not exist on the phone). Long-press still
+ * opens the menu.
+ */
+@Composable
+private fun DownloadTile(
+    attachment: Attachment,
+    state: ClientDownloadState?,
+    shape: androidx.compose.ui.graphics.Shape,
+    bgColor: androidx.compose.ui.graphics.Color,
+    isOutgoing: Boolean,
+    onLongClick: () -> Unit,
+    onRequestDownload: (Long) -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val textColor = if (isOutgoing) onBrandBlue() else cs.onSurface
+    if (state == null || state is ClientDownloadState.NotDownloaded) {
+        LaunchedEffect(attachment.id) { onRequestDownload(attachment.id) }
+    }
+    Box(
+        modifier = Modifier
+            .size(width = 240.dp, height = 240.dp)
+            .clip(shape)
+            .background(bgColor)
+            .combinedClickable(
+                onClick = {
+                    // Downloading + Empty are not tappable: a
+                    // download already runs, and an empty file has
+                    // nothing to fetch.
+                    if (state == null || state is ClientDownloadState.NotDownloaded ||
+                        state is ClientDownloadState.Failed
+                    ) {
+                        onRequestDownload(attachment.id)
+                    }
+                },
+                onLongClick = onLongClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(16.dp),
+        ) {
+            when (state) {
+                is ClientDownloadState.Downloading -> {
+                    CircularProgressIndicator(color = textColor)
+                    Spacer(Modifier.size(12.dp))
+                    val label = if (state.totalBytes > 0) {
+                        val percent = (state.receivedBytes * 100 / state.totalBytes).toInt()
+                        "$percent%"
+                    } else {
+                        stringResource(R.string.client_attachment_downloading)
+                    }
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor,
+                    )
+                }
+                is ClientDownloadState.Failed -> {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    Text(
+                        text = stringResource(R.string.client_attachment_failed),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor,
+                    )
+                }
+                is ClientDownloadState.Empty -> {
+                    Icon(
+                        imageVector = Icons.Outlined.AttachFile,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    Text(
+                        text = stringResource(R.string.client_attachment_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor,
+                    )
+                }
+                // NotDownloaded / no state yet / Downloaded (unreachable
+                // here — MediaPreview filters it): tap to download.
+                else -> {
+                    Icon(
+                        imageVector = Icons.Outlined.Download,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    Text(
+                        text = stringResource(R.string.client_attachment_tap_download),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor,
+                    )
+                }
+            }
+            attachment.fileName?.takeIf { it.isNotBlank() }?.let { name ->
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = textColor.copy(alpha = 0.7f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 

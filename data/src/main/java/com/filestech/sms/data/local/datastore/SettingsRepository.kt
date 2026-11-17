@@ -21,6 +21,7 @@ import com.filestech.sms.domain.settings.AutoLockDelay
 import com.filestech.sms.domain.settings.BackupSettings
 import com.filestech.sms.domain.settings.BlockingSettings
 import com.filestech.sms.domain.settings.ConversationSettings
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.settings.EmergencyCallBehavior
 import com.filestech.sms.domain.settings.ListDensity
 import com.filestech.sms.domain.settings.LockMode
@@ -286,6 +287,9 @@ class SettingsRepository(
     private fun Preferences.toAppSettings(): AppSettings {
         val p = this
         return AppSettings(
+            // Client mode — an unknown stored name falls back to HUB:
+            // a device that cannot prove it is a client is a phone.
+            mode = enumOr(p, K.mode, DeviceMode.HUB, DeviceMode::valueOf),
             appearance = Appearance(
                 themeMode = enumOr(p, K.themeMode, ThemeMode.SYSTEM, ThemeMode::valueOf),
                 dynamicColors = p[K.dynamicColors] ?: false,
@@ -308,6 +312,8 @@ class SettingsRepository(
                 selectedCategory = p[K.selectedCategory]?.let {
                     runCatching { MessageCategory.valueOf(it) }.getOrNull()
                 },
+                // Contacts-permission fix — the dismissed banner stays dismissed.
+                contactsBannerDismissed = p[K.contactsBannerDismissed] ?: false,
             ),
             sending = SendingSettings(
                 confirmBeforeBroadcast = p[K.confirmBroadcast] ?: false,
@@ -457,6 +463,8 @@ class SettingsRepository(
     }
 
     private fun androidx.datastore.preferences.core.MutablePreferences.write(s: AppSettings) {
+        // Client mode — hub or linked device, persisted by enum name.
+        this[K.mode] = s.mode.name
         this[K.themeMode] = s.appearance.themeMode.name
         this[K.dynamicColors] = s.appearance.dynamicColors
         s.appearance.customAccentArgb?.let { this[K.customAccentArgb] = it } ?: remove(K.customAccentArgb)
@@ -482,6 +490,8 @@ class SettingsRepository(
         this[K.mutedCategories] = s.conversations.mutedCategories.map { it.name }.toSet()
         s.conversations.selectedCategory?.let { this[K.selectedCategory] = it.name }
             ?: remove(K.selectedCategory)
+        // Contacts-permission fix — the banner dismissal persists.
+        this[K.contactsBannerDismissed] = s.conversations.contactsBannerDismissed
 
         this[K.confirmBroadcast] = s.sending.confirmBeforeBroadcast
         this[K.convertMmsAfter] = s.sending.convertToMmsAfterSegments
@@ -587,6 +597,9 @@ class SettingsRepository(
         p[key]?.let { runCatching { valueOf(it) }.getOrNull() } ?: def
 
     private object K {
+        // Client mode — hub phone or linked device (default HUB).
+        val mode = stringPreferencesKey("app.mode")
+
         val themeMode = stringPreferencesKey("appearance.themeMode")
 
         // Round 19 — new key: the old `appearance.dynamic` key carried the
@@ -641,6 +654,10 @@ class SettingsRepository(
         // Round 13 — the selected category tab, stored as the enum name;
         // absent (or unknown) reads back as null (All).
         val selectedCategory = stringPreferencesKey("conv.selectedCategory")
+
+        // Contacts-permission fix — the conversation-list contacts
+        // banner, dismissed once by the user; absent reads as false.
+        val contactsBannerDismissed = booleanPreferencesKey("conv.contactsBannerDismissed")
         val confirmBroadcast = booleanPreferencesKey("send.confirmBroadcast")
         val convertMmsAfter = intPreferencesKey("send.convertMmsAfter")
         val mmsQuality = stringPreferencesKey("send.mmsQuality")

@@ -47,6 +47,13 @@ import kotlinx.serialization.Serializable
         // SQLite admet plusieurs NULL sous un index unique — seuls les messages envoyés depuis
         // un appareil lié portent une clé, et une seule ligne par envoi (la ligne montrée).
         Index(value = ["client_message_id"], unique = true),
+        // Client mode (schema v18) — the hub message id is the upsert
+        // key for `messages_batch` / `message_new` / `message_updated`.
+        // UNIQUE: one local row per hub message, so a re-sync can
+        // never duplicate one (SQLite admits several NULLs, so
+        // hub-mode rows are unaffected). The mirror upserts by lookup,
+        // so the index is a safety net, not the dedup mechanism.
+        Index(value = ["hub_message_id"], unique = true),
     ],
 )
 data class MessageEntity(
@@ -167,4 +174,17 @@ data class MessageEntity(
      */
     @kotlinx.serialization.Transient
     @ColumnInfo(name = "client_message_id") val clientMessageId: String? = null,
+    /**
+     * Client mode (schema v18) — **the hub's Room id for this message**
+     * (wire `id`): the upsert key for `messages_batch` / `message_new` /
+     * `message_updated`, and the cursor unit (the global cursor is the
+     * max hub id durably stored). `null` on hub-mode rows and on
+     * not-yet-reconciled optimistic rows.
+     *
+     * `@Transient` for the backup, like `client_message_id`: the hub
+     * id only means something on THIS link, and the backup parser is
+     * strict about unknown keys.
+     */
+    @kotlinx.serialization.Transient
+    @ColumnInfo(name = "hub_message_id") val hubMessageId: Long? = null,
 )

@@ -44,6 +44,9 @@ class EagerInjectionGuardTest {
             "com.filestech.sms.system.startup.StartupMigrations", // holds Lazy<DAO>, opens nothing at construction
             "com.filestech.sms.security.AppLockManager", // DataStore + PasswordKdf, no DAO
             "com.filestech.sms.data.local.datastore.SettingsRepository", // DataStore
+            // Slice 1 — LinkedDeviceStore is DataStore Preferences only
+            // (linked_devices file), no DAO: eager injection is safe.
+            "com.filestech.sms.sync.LinkedDeviceStore",
             "com.filestech.sms.system.notifications.EmergencyShortcutNotifier", // Context only
             // v1.28.12 — la seule implementation liee, `DefaultSmsAppManager`, prend
             // `@ApplicationContext Context` et RIEN d'autre : elle interroge `RoleManager` et
@@ -90,6 +93,9 @@ class EagerInjectionGuardTest {
         ),
         "com.filestech.sms.system.receiver.BootReceiver" to setOf(
             "com.filestech.sms.data.local.datastore.SettingsRepository",
+            // Slice 1 — LinkedDeviceStore is DataStore Preferences only
+            // (linked_devices file), no DAO: eager injection is safe.
+            "com.filestech.sms.sync.LinkedDeviceStore",
             "com.filestech.sms.system.notifications.EmergencyShortcutNotifier",
             "kotlinx.coroutines.CoroutineScope",
         ),

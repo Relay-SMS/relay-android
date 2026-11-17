@@ -2,6 +2,7 @@ package com.filestech.sms.sync
 
 import java.net.URI
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.util.Base64
 import java.util.UUID
 
@@ -69,6 +70,28 @@ object QrPairing {
                 Invite(deviceId = id, kind = kind, displayName = name, publicKeyBase64Url = key),
             )
         }
+    }
+
+    /**
+     * Client mode — builds the pairing URI a linking device displays,
+     * the inverse of [parse]:
+     * `relay://pair?v=1&id=<uuid>&kind=<phone|tablet>&name=<url-encoded>&key=<base64url>`.
+     * The name is URL-encoded (the API-1 `URLEncoder.encode(String,
+     * String)` overload — the Charset overload needs API 33, like the
+     * decoder above). A name that cannot be encoded is used as-is
+     * rather than failing the whole QR — `parse` still validates it.
+     */
+    fun buildPairUri(
+        deviceId: String,
+        kind: DeviceKind,
+        displayName: String,
+        publicKeyBase64Url: String,
+    ): String {
+        val encodedName = runCatching {
+            URLEncoder.encode(displayName, "UTF-8")
+        }.getOrDefault(displayName)
+        return "relay://pair?v=${SyncProtocol.PROTOCOL_VERSION}" +
+            "&id=$deviceId&kind=${kind.wire}&name=$encodedName&key=$publicKeyBase64Url"
     }
 
     private fun parseQuery(rawQuery: String): Map<String, String> {

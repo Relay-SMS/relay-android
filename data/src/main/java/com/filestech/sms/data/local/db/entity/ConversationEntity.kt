@@ -19,6 +19,12 @@ import kotlinx.serialization.Serializable
         Index(value = ["pinned", "last_message_at"]),
         Index(value = ["archived"]),
         Index(value = ["in_vault"]),
+        // Client mode (schema v18) — the hub conversation id is the
+        // upsert key for every synced frame that names a conversation.
+        // UNIQUE: one local row per hub conversation, so a re-sync can
+        // never duplicate one (SQLite admits several NULLs, so
+        // hub-mode rows are unaffected).
+        Index(value = ["hub_conversation_id"], unique = true),
     ],
 )
 data class ConversationEntity(
@@ -83,4 +89,17 @@ data class ConversationEntity(
      */
     @ColumnInfo(name = "pinned_message_id") val pinnedMessageId: Long? = null,
     @ColumnInfo(name = "pinned_message_at") val pinnedMessageAt: Long? = null,
+    /**
+     * Client mode (schema v18) — **the hub's Room id for this
+     * conversation** (wire `id`): the upsert key for `conversations` /
+     * `conversation_updated` / `conversation_deleted`, and the join
+     * key for every frame that names a conversation. `null` on
+     * hub-mode rows. Local `id` stays the stable primary key.
+     *
+     * `@Transient` for the backup, like `client_message_id` on
+     * messages: the hub id only means something on THIS link, and the
+     * backup parser is strict about unknown keys.
+     */
+    @kotlinx.serialization.Transient
+    @ColumnInfo(name = "hub_conversation_id") val hubConversationId: Long? = null,
 )

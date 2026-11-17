@@ -46,6 +46,9 @@ class EnvoyerMessageUseCaseTest {
                 attachmentStore = PassthroughAttachmentStore(),
             ),
             settings = reglages,
+            // Group-send own-number fix — number on file, so the
+            // just-in-time guard never blocks these routing tests.
+            ownNumberEnsurer = FakeOwnNumberEnsurer(),
         )
     }
 

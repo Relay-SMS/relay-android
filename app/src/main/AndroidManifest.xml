@@ -456,6 +456,29 @@
                 android:value="lan_server_for_linked_devices_tls_websocket" />
         </service>
 
+        <!-- 7-quater) Client mode — the linked-device client
+             (ClientSyncService): the Ktor client over TLS to the hub
+             phone on port 47831, so a linked tablet or SIM-less phone
+             stays in sync while the app is in the background. Started
+             by MainApplication / BootReceiver when the device is in
+             client mode and linked; stopped on unlink or on the switch
+             back to hub mode. `specialUse`, for the same reason as
+             SyncService above: under targetSdk 35 a `dataSync` service
+             is capped at 6 h cumulative per 24 h and cannot start from
+             BOOT_COMPLETED — both fatal to a link that must stay up.
+             The subtype property is required by the platform for this
+             type. android:exported="false": no IPC surface, started
+             only internally via [ClientSyncService.start]. -->
+        <service
+            android:name=".sync.client.ClientSyncService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="lan_client_for_hub_phone_tls_websocket" />
+        </service>
+
         <!-- 8) WorkManager init — let Hilt take over -->
         <provider
             android:name="androidx.startup.InitializationProvider"

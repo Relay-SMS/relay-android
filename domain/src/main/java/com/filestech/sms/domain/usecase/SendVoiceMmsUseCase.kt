@@ -6,6 +6,7 @@ import com.filestech.sms.domain.mms.MmsDispatcher
 import com.filestech.sms.domain.mms.OutgoingAttachmentStore
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendReport
+import com.filestech.sms.domain.ownnumber.OwnNumberEnsurer
 import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.domain.repository.OutgoingMessageMirror
 import com.filestech.sms.domain.sender.DefaultSmsAppChecker
@@ -23,6 +24,12 @@ import javax.inject.Inject
  *  2. Encode the SendReq PDU and hand it to [MmsDispatcher]
  *  3. On dispatch failure (synchronous), flip the row to FAILED; the network-side
  *     SENT/FAILED outcome arrives asynchronously via [MmsSentReceiver].
+ *
+ * Group-send own-number fix — the voice path bypasses
+ * [EnvoyerMessageUseCase], so a group voice MMS carries the same
+ * just-in-time own-number guard here ([OwnNumberEnsurer]): a
+ * still-blank number after detection fails fast with
+ * [AppError.OwnNumberMissing], before any mirror row exists.
  */
 class SendVoiceMmsUseCase @Inject constructor(
     private val defaultAppManager: DefaultSmsAppChecker,
@@ -31,6 +38,7 @@ class SendVoiceMmsUseCase @Inject constructor(
     private val sender: MmsDispatcher,
     private val settings: AppSettingsSource,
     private val attachmentStore: OutgoingAttachmentStore,
+    private val ownNumberEnsurer: OwnNumberEnsurer,
 ) {
     private val envoi = EnvoiParDestinataire(blockedRepo, mirror)
 
@@ -46,6 +54,16 @@ class SendVoiceMmsUseCase @Inject constructor(
         groupMms: Boolean = false,
     ): Outcome<SendReport> {
         refusPrealable(recipients, audioFile)?.let { return Outcome.Failure(it) }
+
+        // Group-send own-number fix — same guard as the router, same
+        // condition as the group branch below: a group voice MMS with
+        // a still-blank number fails fast here, before the audio is
+        // promoted and before any mirror row exists. 1:1 voice sends
+        // never reach this guard.
+        val groupeMms = groupMms && recipients.size > 1
+        if (groupeMms && !ownNumberEnsurer.ensureForGroupSend()) {
+            return Outcome.Failure(AppError.OwnNumberMissing)
+        }
 
         // Audit H3 (v1.14.8) — on évite `flow.first()` (ouverture DataStore) sur chaque envoi.
         //

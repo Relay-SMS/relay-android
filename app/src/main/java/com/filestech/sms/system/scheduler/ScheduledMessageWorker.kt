@@ -43,6 +43,10 @@ class ScheduledMessageWorker @AssistedInject constructor(
         return when (sendAttempt(id, runAttemptCount)) {
             ScheduledSendAttempt.Verdict.SENT,
             ScheduledSendAttempt.Verdict.ALREADY_SETTLED,
+            // Client mode C3 — a linked device defers the schedule
+            // (the row stays PENDING; nothing was attempted). The
+            // work is done — retrying it would only re-defer.
+            ScheduledSendAttempt.Verdict.DEFERRED,
             -> Result.success()
 
             ScheduledSendAttempt.Verdict.RETRY -> {

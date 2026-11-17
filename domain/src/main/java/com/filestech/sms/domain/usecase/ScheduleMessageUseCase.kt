@@ -2,16 +2,24 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.clientmode.ClientSendGateway
+import com.filestech.sms.domain.clientmode.NoOpClientSendGateway
 import com.filestech.sms.domain.mms.OutgoingAttachmentStore
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.scheduler.ScheduledMessageScheduler
+import java.util.UUID
 import javax.inject.Inject
 
 class ScheduleMessageUseCase @Inject constructor(
     private val repo: ScheduledMessageRepository,
     private val scheduler: ScheduledMessageScheduler,
     private val attachmentStore: OutgoingAttachmentStore,
+    /**
+     * Client mode C3 — the wire send gateway. Default NoOp keeps the
+     * hub tests compiling untouched; Hilt always provides the real one.
+     */
+    private val clientSend: ClientSendGateway = NoOpClientSendGateway,
 ) {
     /**
      * v1.26.0 — [attachments] non vide programme un **MMS** au lieu d'un SMS.
@@ -52,6 +60,17 @@ class ScheduleMessageUseCase @Inject constructor(
          */
         clientMessageId: String? = null,
     ): Outcome<Long> {
+        if (clientSend.isClientMode()) {
+            return scheduleFromClient(
+                conversationId,
+                addresses,
+                body,
+                whenEpochMillis,
+                subId,
+                attachments,
+                clientMessageId,
+            )
+        }
         for (a in attachments) {
             if (!a.file.exists() || a.file.length() == 0L) {
                 return Outcome.Failure(AppError.Validation("attachment file missing or empty"))
@@ -80,5 +99,42 @@ class ScheduleMessageUseCase @Inject constructor(
             }
             is Outcome.Failure -> scheduled
         }
+    }
+
+    /**
+     * Client mode C3 — the schedule lives on the hub phone, which
+     * owns the scheduler: the local row is only a record (never
+     * armed with WorkManager — see the ScheduledSendAttempt gate),
+     * and the `schedule_message` frame carries the key. A media
+     * schedule fails here: media sends arrive in C5.
+     */
+    private suspend fun scheduleFromClient(
+        conversationId: Long?,
+        addresses: List<PhoneAddress>,
+        body: String,
+        whenEpochMillis: Long,
+        subId: Int?,
+        attachments: List<SendMediaMmsUseCase.AttachmentPayload>,
+        clientMessageId: String?,
+    ): Outcome<Long> {
+        // Media first, then blank body — the same validation order
+        // the inline branch had before the extraction.
+        val invalid = when {
+            attachments.isNotEmpty() -> AppError.ClientMediaUnsupported
+            body.isBlank() -> AppError.Validation("empty message body")
+            else -> null
+        }
+        if (invalid != null) return Outcome.Failure(invalid)
+        val key = clientMessageId ?: UUID.randomUUID().toString()
+        val created = repo.schedule(conversationId, addresses, body, whenEpochMillis, subId, emptyList(), key)
+        if (created is Outcome.Failure) return created
+        val rowId = (created as Outcome.Success).value
+        // Offline: no record. A local row with no wire schedule
+        // would sit in the list pretending the phone will fire it.
+        if (!clientSend.scheduleMessage(conversationId, addresses, body, whenEpochMillis, key)) {
+            runCatching { repo.delete(rowId) }
+            return Outcome.Failure(AppError.ClientOffline)
+        }
+        return Outcome.Success(rowId)
     }
 }

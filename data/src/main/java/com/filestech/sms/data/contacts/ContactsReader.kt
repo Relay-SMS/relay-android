@@ -169,7 +169,20 @@ class ContactsReader @Inject constructor(
      * The caller closes the stream.
      */
     fun openPhotoStream(address: String): InputStream? {
-        val photoUri = lookupByPhone(address)?.photoUri ?: return null
+        // Contacts-permission fix — the lookup throws
+        // `SecurityException` when READ_CONTACTS is denied, and it
+        // used to sit outside the try below: a denied permission
+        // escaped this function despite its "null when unreadable"
+        // contract. The lookup itself stays throwing (the block
+        // policy needs the exception to tell "couldn't look" from
+        // "unknown sender") — only this call site swallows it, the
+        // way `setPhoto` already does for its own lookup.
+        val photoUri = try {
+            lookupByPhone(address)?.photoUri
+        } catch (e: SecurityException) {
+            Timber.d("ContactsReader: photo lookup denied (%s)", e.javaClass.simpleName)
+            return null
+        } ?: return null
         return try {
             resolver.openInputStream(Uri.parse(photoUri))
         } catch (e: Exception) {

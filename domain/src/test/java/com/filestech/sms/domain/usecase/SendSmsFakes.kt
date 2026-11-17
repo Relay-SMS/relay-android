@@ -5,6 +5,7 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.domain.mms.MediaAttachmentSpec
 import com.filestech.sms.domain.model.BlockedNumber
 import com.filestech.sms.domain.model.MessageStatus
+import com.filestech.sms.domain.ownnumber.OwnNumberEnsurer
 import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.domain.repository.OutgoingMessageMirror
 import com.filestech.sms.domain.sender.DefaultSmsAppChecker
@@ -293,5 +294,24 @@ internal class RecordingMmsDispatcher(
         destinatairesTentes += recipients
         dernierTexte = textBody
         return outcome
+    }
+}
+
+/**
+ * Group-send own-number fix — controllable [OwnNumberEnsurer] for the send-path tests.
+ *
+ * [result] is what the just-in-time detection reports: `true` = a number is on file (already
+ * set, or just detected), `false` = still blank after detection. [calls] counts the checks, so
+ * a test can prove the guard did — or did not — run.
+ */
+internal class FakeOwnNumberEnsurer(
+    var result: Boolean = true,
+) : OwnNumberEnsurer {
+    var calls: Int = 0
+        private set
+
+    override suspend fun ensureForGroupSend(): Boolean {
+        calls++
+        return result
     }
 }

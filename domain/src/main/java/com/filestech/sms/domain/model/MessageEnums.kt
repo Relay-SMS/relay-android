@@ -107,6 +107,16 @@ object SendErrorCode {
     const val RECIPIENT_BLOCKED: Int = -3
 
     /**
+     * Client mode C3 — the hub refused a wire send, mapped from the
+     * `message_failed` code so the failed row keeps the reason.
+     * `blocked_recipient` reuses [RECIPIENT_BLOCKED]; `send_failed`,
+     * `internal` and `upload_expired` reuse [SYNCHRONOUS].
+     */
+    const val CLIENT_HUB_NOT_DEFAULT_SMS: Int = -10
+    const val CLIENT_UNKNOWN_CONVERSATION: Int = -11
+    const val CLIENT_MESSAGE_TOO_LONG: Int = -12
+
+    /**
      * 2026-10-29 (issue #53) — le serveur MMS de l'opérateur a REFUSÉ le message, après qu'Android
      * le lui a remis (`RESULT_OK` + m-send-conf au statut d'échec). Plage à part, qui CONSERVE le
      * statut : `MMSC_REFUSED_BASE - statut`, soit -1129 à -1255. L'écran l'affiche, pour que

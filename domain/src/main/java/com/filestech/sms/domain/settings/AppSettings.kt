@@ -17,6 +17,15 @@ import com.filestech.sms.domain.model.ReactionFormat
 // divergeaient. Vérifié avant retrait : aucun lecteur, et la sauvegarde ne les sérialise
 // pas, donc aucun fichier `.smsbk` existant n'en dépend.
 data class AppSettings(
+    /**
+     * Client mode — whether this device is a hub phone (it sends and
+     * receives SMS/MMS itself) or a linked device (it shows a hub
+     * phone's messages over the LAN). An explicit choice in Settings
+     * → Linked devices, never automatic; default [DeviceMode.HUB], so
+     * every existing install stays a phone. Persisted by enum NAME
+     * (`app.mode`); an unknown name reads back as [DeviceMode.HUB].
+     */
+    val mode: DeviceMode = DeviceMode.HUB,
     val appearance: Appearance = Appearance(),
     val conversations: ConversationSettings = ConversationSettings(),
     val sending: SendingSettings = SendingSettings(),
@@ -26,6 +35,18 @@ data class AppSettings(
     val backup: BackupSettings = BackupSettings(),
     val advanced: AdvancedSettings = AdvancedSettings(),
 )
+
+/**
+ * Client mode — the two roles a device can play. [HUB] is the phone
+ * that owns the SIM and the message store; [CLIENT] is a tablet or
+ * SIM-less phone linked to a hub over the LAN, showing the hub's
+ * messages and sending through it.
+ *
+ * ⚠️ Persisted BY NAME (`app.mode`): add a mode, never rename or
+ * remove one. An unknown name — an older version reading a newer
+ * value — falls back to [HUB] (`SettingsRepository.enumOr`).
+ */
+enum class DeviceMode { HUB, CLIENT }
 
 data class Appearance(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -90,6 +111,16 @@ data class ConversationSettings(
      * only — there is no Settings row for it.
      */
     val selectedCategory: MessageCategory? = null,
+    /**
+     * Contacts-permission fix — the user dismissed the "names and
+     * photos need the contact permission" banner on the conversation
+     * list. Persisted (`conv.contactsBannerDismissed`) so the banner
+     * never nags again across launches. A later grant hides the
+     * banner by the permission check instead; a later revoke after a
+     * dismissal stays dismissed (the compose screen still shows its
+     * own refused-contacts row). UI state only — no Settings row.
+     */
+    val contactsBannerDismissed: Boolean = false,
 )
 
 /**

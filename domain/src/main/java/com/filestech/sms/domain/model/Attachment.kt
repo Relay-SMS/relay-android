@@ -15,6 +15,14 @@ data class Attachment(
     val width: Int?,
     val height: Int?,
     val durationMs: Long?,
+    /**
+     * Client mode C5 — the hub attachment id, for synced rows only
+     * (null for hub-mode rows). The UI gates its download tile on
+     * this: only a synced row's bytes can be requested from the
+     * phone — a hub-mode row with a missing file has nothing to
+     * download, and must never show a download tile.
+     */
+    val hubAttachmentId: Long? = null,
 ) {
     val isAudio: Boolean get() = mimeType.startsWith("audio/", ignoreCase = true)
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)

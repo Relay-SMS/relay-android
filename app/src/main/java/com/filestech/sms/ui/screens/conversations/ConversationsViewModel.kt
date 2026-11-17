@@ -24,10 +24,13 @@ import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.settings.AdvancedSettings
 import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.settings.SortMode
 import com.filestech.sms.domain.usecase.BlockNumberUseCase
 import com.filestech.sms.domain.usecase.ToggleConversationStateUseCase
 import com.filestech.sms.security.AppLockManager
+import com.filestech.sms.sync.client.ClientSyncEngine
+import com.filestech.sms.sync.client.ClientSyncUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +47,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -108,9 +112,33 @@ class ConversationsViewModel @Inject constructor(
     // the app right after tapping a tab. The app scope is not cancelled, so the
     // DataStore write flushes even if the ViewModel is cleared immediately.
     @ApplicationScope private val appScope: CoroutineScope,
+    // Client mode C2 — the sync engine, lazy: resolving it builds the
+    // mirror graph (Room + the sync-state tables); a hub phone never
+    // touches it, and the list only resolves it in client mode.
+    private val syncEngine: dagger.Lazy<ClientSyncEngine>,
 ) : ViewModel() {
 
     private val archivedFlag: Boolean = savedStateHandle.get<Boolean>("archived") ?: false
+
+    /**
+     * Client mode C2 — the sync state, as a SEPARATE flow (the
+     * UiState combine is already at the 5-arg typed limit): IDLE in
+     * hub mode, the engine's state in client mode. The list renders
+     * the hub-not-default notice, the progress row and the error
+     * row from this.
+     */
+    val clientSyncUi: StateFlow<ClientSyncUiState> = settings.flow
+        .map { it.mode }
+        .distinctUntilChanged()
+        .flatMapLatest { mode ->
+            if (mode == DeviceMode.CLIENT) syncEngine.get().ui else flowOf(ClientSyncUiState())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClientSyncUiState())
+
+    /** Client mode C2 — re-issues the sync request after an error (the Retry affordance). */
+    fun retryClientSync() {
+        viewModelScope.launch { syncEngine.get().retry() }
+    }
 
     /**
      * v1.27.9 — **texte saisi dans le champ de recherche, en état Compose (snapshot).**
@@ -424,8 +452,9 @@ class ConversationsViewModel @Inject constructor(
      * resolves only the display name from `ContactsReader.lookupByPhone` and drops the
      * photo URI it already fetches (`PHOTO_THUMBNAIL_URI`). Every row therefore fell back
      * to initials. Resolved here, on IO, through the cached `ContactRepository` lookup; a
-     * custom avatar still wins, groups are skipped (no single contact to show), and a
-     * denied `READ_CONTACTS` just yields no photos — initials stay the fallback.
+     * custom avatar still wins, groups are skipped (no single contact to show — their
+     * member photos come from [groupMemberPhotos]), and a denied `READ_CONTACTS` just
+     * yields no photos — initials stay the fallback.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val contactPhotos: StateFlow<Map<Long, String>> =
@@ -470,6 +499,43 @@ class ConversationsViewModel @Inject constructor(
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
 
+    /**
+     * Contact photos of the first two members of each group conversation, keyed by
+     * conversation id — the two overlapping minis of the group avatar. [contactPhotos]
+     * deliberately skips groups (no single contact to show), so group rows showed
+     * initials even when the members had photos; this flow fills that gap. A group
+     * with a custom avatar ([Conversation.avatarUri]) is skipped — the custom photo
+     * wins in the row. An entry is emitted only when at least one of the two members
+     * has a photo; a member without one leaves a null slot, so the minis keep their
+     * address order. Same shape as [contactPhotos]: the keys projection, the tick
+     * (so [refreshContactPhotos] re-runs it) and the LRU-cached lookups, so a photo
+     * edited on the phone or set from a linked device shows up on resume.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val groupMemberPhotos: StateFlow<Map<Long, List<String?>>> =
+        combine(state, contactPhotoTick) { ui, tick -> tick to ui.conversations }
+            .map { (tick, conversations) ->
+                tick to conversations
+                    .filter { it.isGroup && it.avatarUri == null }
+                    .map { it.id to it.addresses.take(2).map { addr -> addr.raw } }
+            }
+            .distinctUntilChanged()
+            .mapLatest { (_, keys) ->
+                withContext(io) {
+                    keys
+                        .mapNotNull { (id, phones) ->
+                            val photos = phones.map { raw ->
+                                runCatching { contacts.lookupByPhone(raw)?.photoUri }
+                                    .getOrNull()
+                            }
+                            if (photos.any { it != null }) id to photos else null
+                        }
+                        .toMap()
+                }
+            }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
+
     /** Forces a re-evaluation of [DefaultSmsAppManager.isDefault]. Call from ON_RESUME / role result. */
     fun refreshDefaultStatus() {
         defaultRefreshTick.update { it + 1 }
@@ -499,9 +565,15 @@ class ConversationsViewModel @Inject constructor(
     /**
      * Triggered by the host screen when SMS permissions are freshly granted, so the sync manager
      * picks up rows it couldn't read before. The manager itself debounces concurrent calls.
+     *
+     * Client mode — no telephony sync on a linked device: its messages
+     * arrive from the hub. The contact-photo refresh below still runs
+     * (photos still resolve locally).
      */
     fun requestSyncNow() {
-        syncManager.requestSync(reason = "permission granted")
+        if (state.value.settings.mode != DeviceMode.CLIENT) {
+            syncManager.requestSync(reason = "permission granted")
+        }
         // Re-resolve contact photos: the caller just got READ_CONTACTS (or came back from
         // the role dialog), so lookups that previously failed may now succeed.
         contactPhotoTick.update { it + 1 }
@@ -659,6 +731,27 @@ class ConversationsViewModel @Inject constructor(
     }
 
     /**
+     * Contacts-permission fix — persists the contacts-banner
+     * dismissal: the user asked not to be nagged, so the banner
+     * stays gone across launches. Written on the application scope,
+     * like [selectCategory]: a `viewModelScope` write could be
+     * cancelled before the DataStore flush landed. Once dismissed
+     * the banner never comes back — a later grant hides it by the
+     * permission check instead.
+     */
+    fun dismissContactsPermissionBanner() {
+        appScope.launch {
+            runCatching {
+                settings.update {
+                    it.copy(
+                        conversations = it.conversations.copy(contactsBannerDismissed = true),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * v1.26.1 (audit H18) — état leurre dérivé DIRECTEMENT du verrou, hors du flux agrégé.
      *
      * Porté par `UiState`, il valait `false` pendant toute la fenêtre de repli : le `combine`
@@ -724,6 +817,18 @@ class ConversationsViewModel @Inject constructor(
      * n'empêche pas les autres.
      */
     fun unblock(conversation: Conversation) = viewModelScope.launch {
+        // Client mode C3 — unblock via the hub (one `set_blocked`
+        // frame); the per-address telephony block list is hub-only.
+        if (state.value.settings.mode == DeviceMode.CLIENT) {
+            when (val res = toggle.setBlocked(conversation.id, false)) {
+                is Outcome.Success -> Unit
+                is Outcome.Failure -> {
+                    Timber.w("unblock: client unblock failed: %s", res.error)
+                    _events.trySend(Event.BlockFailed)
+                }
+            }
+            return@launch
+        }
         for (addr in conversation.addresses) {
             runCatching { unblockNumber.invoke(addr.raw) }
                 .onFailure { Timber.w(it, "unblock: unblock threw for one address") }
@@ -748,6 +853,18 @@ class ConversationsViewModel @Inject constructor(
      * qu'après au moins un blocage réellement réussi, et l'échec total est remonté à l'écran.
      */
     fun block(conversation: Conversation) = viewModelScope.launch {
+        // Client mode C3 — block via the hub (one `set_blocked`
+        // frame); the per-address telephony block list is hub-only.
+        if (state.value.settings.mode == DeviceMode.CLIENT) {
+            when (val res = toggle.setBlocked(conversation.id, true)) {
+                is Outcome.Success -> Unit
+                is Outcome.Failure -> {
+                    Timber.w("block: client block failed: %s", res.error)
+                    _events.trySend(Event.BlockFailed)
+                }
+            }
+            return@launch
+        }
         val blocked = conversation.addresses.count { addr ->
             runCatching { blockNumber.invoke(addr.raw, conversation.displayName) }
                 .onFailure { Timber.w(it, "block: block threw for one address") }

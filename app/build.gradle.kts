@@ -371,6 +371,17 @@ dependencies {
     implementation(libs.netty.transport.classes.epoll)
     implementation(libs.netty.transport.classes.kqueue)
     implementation(libs.ktor.server.websockets)
+    // Client mode — the Ktor *client* (OkHttp engine) for the
+    // tablet/SIM-less client: the same 3.6.1 pin as the server above.
+    // OkHttp is the battle-tested Android TLS path (the custom TOFU
+    // trust manager plugs into it), and it is already in the APK
+    // transitively via Coil — but a direct import needs a direct dep
+    // (see the AndroidSVG note above).
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.websockets)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

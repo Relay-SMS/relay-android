@@ -125,8 +125,9 @@ fun RelayAvatar(
  * initials from (the contact name when known, else the raw number) and
  * whether the member is a known contact. A photo URI, when the row can
  * supply one, wins over the initials — the same priority as [RelayAvatar].
- * The list resolves contact photos for 1-to-1 conversations only, so group
- * members arrive without one and render initials or the grey glyph.
+ * The list resolves the first two members' photos alongside the 1-to-1
+ * photos, so a member with a photo shows it; a member without one renders
+ * initials or the grey glyph.
  */
 data class GroupMemberAvatar(
     val label: String,

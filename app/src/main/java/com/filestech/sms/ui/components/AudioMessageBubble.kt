@@ -91,7 +91,9 @@ fun AudioMessageBubble(
     playbackProvider: () -> VoicePlaybackController.PlaybackState,
     onTogglePlay: () -> Unit,
     onSeekTo: (Int) -> Unit,
-    onDelete: () -> Unit = {},
+    // Client mode C2 — nullable, like the other menu actions: `null`
+    // hides the Delete entry (a linked device cannot delete in C2).
+    onDelete: (() -> Unit)? = null,
     onReply: (() -> Unit)? = null,
     onReact: (() -> Unit)? = null,
     /**
@@ -121,7 +123,23 @@ fun AudioMessageBubble(
     showStatus: Boolean = false,
     /** v1.3.3 #7 — étiquette d'expéditeur ; voir [MessageBubble] pour la sémantique. */
     senderLabel: String? = null,
+    /**
+     * Client mode C5 — asks the downloader for this clip's bytes.
+     * Null in hub mode. The bubble auto-requests when its bytes are
+     * missing and plays once they land — no visible state change: a
+     * voice clip has no tile to show a spinner in, and the play
+     * button simply does nothing until the bytes arrive.
+     */
+    onRequestDownload: (() -> Unit)? = null,
 ) {
+    // Client mode C5 — auto-request on render when the bytes are
+    // missing (the desktop rule). Keyed on the clip + its URI: a new
+    // URI (the download landed) stops the requests, and a different
+    // clip starts its own. Only a synced row requests: a hub-mode
+    // clip with a missing file has nothing to download.
+    LaunchedEffect(audio.id, audio.localUri) {
+        if (audio.localUri.isBlank() && audio.hubAttachmentId != null) onRequestDownload?.invoke()
+    }
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
     // Feedback round 5 — the voice bubble is a SOLID fill like the text bubbles

@@ -42,8 +42,10 @@ import androidx.lifecycle.viewModelScope
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.asEvents
 import com.filestech.sms.core.ext.oneShotEvents
+import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.domain.model.ScheduledMessage
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
+import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.usecase.CancelScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.RetryScheduledMessageUseCase
@@ -59,6 +61,8 @@ import com.filestech.sms.ui.util.rememberChatFormatters
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -88,13 +92,30 @@ class ScheduledMessagesViewModel @Inject constructor(
     private val cancel: CancelScheduledMessageUseCase,
     private val retry: RetryScheduledMessageUseCase,
     private val delete: DeleteScheduledMessageUseCase,
+    // Client mode C3 — the mode filter (hub-created schedules are
+    // invisible in V1: no `list_scheduled` frame exists to fetch
+    // them, and a hub-mode leftover must not be offered for cancel
+    // here — cancelling it would only cancel the local record).
+    settings: SettingsRepository,
 ) : ViewModel() {
 
-    val pending: StateFlow<List<ScheduledMessage>> = repo.observePending()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+    private val isClientMode: StateFlow<Boolean> = settings.flow
+        .map { it.mode == DeviceMode.CLIENT }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), false)
 
-    val failed: StateFlow<List<ScheduledMessage>> = repo.observeFailed()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+    val pending: StateFlow<List<ScheduledMessage>> = combine(
+        repo.observePending(),
+        isClientMode,
+    ) { list, client ->
+        if (client) list.filter { it.clientMessageId != null } else list
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+
+    val failed: StateFlow<List<ScheduledMessage>> = combine(
+        repo.observeFailed(),
+        isClientMode,
+    ) { list, client ->
+        if (client) list.filter { it.clientMessageId != null } else list
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
 
     /**
      * v1.28.3 (F20) — émet `false` quand l'annulation n'a PAS pu prendre.

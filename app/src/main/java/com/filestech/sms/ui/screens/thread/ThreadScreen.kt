@@ -147,7 +147,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.withResumed
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
-import com.filestech.sms.core.ext.splitGraphemeClusters
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Message
@@ -163,7 +162,6 @@ import com.filestech.sms.ui.components.EmojiPickerButton
 import com.filestech.sms.ui.components.EmojiPickerPanel
 import com.filestech.sms.ui.components.EmojiPickerTab
 import com.filestech.sms.ui.components.EmojiPickerTabStore
-import com.filestech.sms.ui.components.MAX_REACTION_EMOJIS
 import com.filestech.sms.ui.components.MessageBubble
 import com.filestech.sms.ui.components.RelayAvatar
 import com.filestech.sms.ui.components.RelayDialog
@@ -359,11 +357,11 @@ fun ThreadScreen(
     // here, so a stray tap can never drop the pin).
     var pendingUnpin by remember { mutableStateOf<Message?>(null) }
     var askBlock by remember { mutableStateOf(false) }
-    // v1.3.0 — état des dialogs/sheets de réaction emoji.
-    //   `pickingReactionFor` non-null = bottom-sheet quick-pick affiché pour ce message.
-    //   `customReactionFor` non-null = dialog TextField "Plus" affiché pour ce message.
+    // v1.3.0 — état du picker de réaction emoji : `pickingReactionFor`
+    // non-null = le bottom-sheet de réaction est affiché pour ce message.
+    // Round 24 — the old "Plus" custom-emoji dialog is gone with the old
+    // quick-pick sheet (the full grid + search covers every emoji now).
     var pickingReactionFor by remember { mutableStateOf<Long?>(null) }
-    var customReactionFor by remember { mutableStateOf<Long?>(null) }
     // v1.3.1 — premier envoi de réaction par SMS : on stocke (messageId, emoji) tant que
     // l'utilisateur n'a pas validé le dialog de confirmation. `null` = pas de dialog ouvert.
     // Le messageId est porté pour permettre au ViewModel de re-vérifier l'état au moment du
@@ -817,6 +815,24 @@ fun ThreadScreen(
                     context.getString(
                         when (e.error) {
                             is AppError.RecipientBlocked -> R.string.error_send_recipient_blocked
+                            // Group-send own-number fix — the fail-fast for a group send with
+                            // no number on file: the user must set it in Settings → Sending,
+                            // and a generic "Failed to send" would send them retrying a send
+                            // that cannot succeed until they do.
+                            is AppError.OwnNumberMissing -> R.string.error_send_own_number_missing
+                            // Client mode C3/C5 — the linked phone could
+                            // not be reached (offline), or the send was
+                            // a scheduled media send (still unsupported
+                            // — the schedule frame has no attachments
+                            // field): both say so, instead of a generic
+                            // "Failed to send". A media send that
+                            // exceeded the phone's MMS budget says so
+                            // with the phone's own words, and a photo
+                            // that could not be prepared says so too.
+                            is AppError.ClientOffline -> R.string.error_send_client_offline
+                            is AppError.ClientMediaUnsupported -> R.string.error_send_client_media
+                            is AppError.ClientMmsCapReached -> R.string.snack_thread_attach_cap_reached
+                            is AppError.ClientPhotoPrepareFailed -> R.string.error_send_client_photo_prepare
                             // v1.28.3 (audit global B-1) — la bulle rouge d'un MMS ne se relance
                             // pas d'ici ; le dire vaut mieux qu'un « Échec » qui fait recommencer.
                             is AppError.MmsRetryUnsupported -> R.string.error_retry_mms_unsupported
@@ -957,21 +973,42 @@ fun ThreadScreen(
                         onExportPdf = { menuOpen = false; viewModel.exportToPdf() },
                         onAppearance = { menuOpen = false; appearanceOpen = true },
                         isGroup = state.conversation?.isGroup == true,
-                        onRename = { menuOpen = false; renameOpen = true },
-                        onBlock = { menuOpen = false; askBlock = true },
-                        onDelete = { menuOpen = false; askDelete = true },
-                        // v1.15.1 — Programmer le draft pour plus tard. Grisé tant qu'il
-                        // n'y a rien à programmer — évite le tunnel date/heure → snackbar
-                        // "Tape un message avant" frustrant.
-                        // v1.26.0 — une pièce jointe suffit désormais, même sans texte : un MMS
-                        // ne portant qu'une image est un envoi normal, et la programmation les
-                        // transporte maintenant. Auparavant ce test ne regardait que le texte, si
-                        // bien qu'on pouvait programmer un message avec photo et voir partir le
-                        // texte seul.
-                        canSchedule = state.draft.isNotBlank() || state.pendingAttachments.isNotEmpty(),
-                        onScheduleSend = {
-                            menuOpen = false
-                            scheduleStep = "date"
+                        // Client mode C3 — Schedule and Block are wired
+                        // on a linked device (wire frames); Rename and
+                        // Delete stay hidden (no rename frame — a local
+                        // rename would be overwritten by the next sync;
+                        // no delete frame at all).
+                        isClientMode = state.isClientMode,
+                        hubActions = if (state.isClientMode) {
+                            ThreadHubActions(
+                                onRename = null,
+                                onBlock = { menuOpen = false; askBlock = true },
+                                onDelete = null,
+                                canSchedule = state.draft.isNotBlank() || state.pendingAttachments.isNotEmpty(),
+                                onScheduleSend = {
+                                    menuOpen = false
+                                    scheduleStep = "date"
+                                },
+                            )
+                        } else {
+                            ThreadHubActions(
+                                onRename = { menuOpen = false; renameOpen = true },
+                                onBlock = { menuOpen = false; askBlock = true },
+                                onDelete = { menuOpen = false; askDelete = true },
+                                // v1.15.1 — Programmer le draft pour plus tard. Grisé tant qu'il
+                                // n'y a rien à programmer — évite le tunnel date/heure → snackbar
+                                // "Tape un message avant" frustrant.
+                                // v1.26.0 — une pièce jointe suffit désormais, même sans texte : un MMS
+                                // ne portant qu'une image est un envoi normal, et la programmation les
+                                // transporte maintenant. Auparavant ce test ne regardait que le texte, si
+                                // bien qu'on pouvait programmer un message avec photo et voir partir le
+                                // texte seul.
+                                canSchedule = state.draft.isNotBlank() || state.pendingAttachments.isNotEmpty(),
+                                onScheduleSend = {
+                                    menuOpen = false
+                                    scheduleStep = "date"
+                                },
+                            )
                         },
                     )
                 },
@@ -1031,6 +1068,9 @@ fun ThreadScreen(
             SmsTechSnackbarHost(snackbarHost)
         },
         bottomBar = {
+            // Client mode C3 — the composer is live on a linked
+            // device: sends go via the hub phone (the router's wire
+            // branch). Media sends fail cleanly there until C5.
             // Round 20 — the keyboard padding lives on the WHOLE bottom bar
             // (composer + picker), not on the composer alone: with it on the
             // composer, tapping the picker search field shoved the composer
@@ -1259,11 +1299,17 @@ fun ThreadScreen(
         // uniquement si viewModel change (singleton scope ViewModel — donc 1 fois par
         // composition de ThreadScreen). Référence stable → Compose peut skipper la
         // recomposition des items dont le `msg` n'a pas changé.
-        val itemActions = remember(viewModel) {
+        // Client mode C2 — `state.isClientMode` is a key too: the retry
+        // gate below must rebuild when the mode flips, or a mode
+        // switch mid-thread would keep the old behaviour.
+        val itemActions = remember(viewModel, state.isClientMode) {
             ThreadMessageItemActions(
                 onTogglePlayback = { audio -> viewModel.togglePlayback(audio.localUri, audio.toPlaybackUri()) },
                 onSeekPlayback = viewModel::seekPlaybackTo,
                 onTapFailed = { msg ->
+                    // Client mode C3 — retry is wired on a linked
+                    // device (same-key resend via the hub); the
+                    // watchdog confirmation still applies.
                     // Audit R3 (v1.14.8) — WATCHDOG_TIMEOUT → confirmation dialog (risque doublon).
                     // SYNCHRONOUS = rejeté radio, retry direct sans risque.
                     if (msg.errorCode == SendErrorCode.WATCHDOG_TIMEOUT) {
@@ -1399,6 +1445,13 @@ fun ThreadScreen(
                     isPinnedMessage = msg.id == state.conversation?.pinnedMessageId,
                     recentReactions = recentReactions,
                     actions = itemActions,
+                    // Client mode C2 — the thread is read-only: the
+                    // bubble menus hide their write actions.
+                    isClientMode = state.isClientMode,
+                    // Client mode C5 — the download states for this
+                    // thread's bubbles (empty in hub mode).
+                    downloadStates = state.attachmentDownloads,
+                    onRequestDownload = { id -> viewModel.requestAttachmentDownload(id) },
                 )
             }
         }
@@ -1438,6 +1491,8 @@ fun ThreadScreen(
                 title = title,
                 memberNames = state.memberNames,
                 formatters = formatters,
+                // Client mode C2 — unpin is a hub-side write in C2,
+                // so the banner shows without its unpin action.
                 canUnpin = !state.isPanicDecoy,
                 onJump = { viewModel.jumpToPinnedMessage(pinned.first.id) },
                 // Round 17 — the banner X asks first too (same dialog as
@@ -1683,46 +1738,22 @@ fun ThreadScreen(
         )
     }
 
-    // v1.3.0 / v1.5.0 — Emoji reaction quick-pick sheet (multi-select)
+    // Round 24 — the "+" reaction picker: the full emoji grid (all 487
+    // emojis, titled sections, search at the top) instead of the old
+    // 24-emoji quick-pick sheet with its "Other emoji" button and
+    // validate step. Tap reacts immediately; tapping the applied emoji
+    // again removes the reaction (the sheet applies [toggleReaction]
+    // and passes `null` for a removal — same toggle as the
+    // quick-reaction row and the desktop picker).
     pickingReactionFor?.let { msgId ->
-        // v1.5.0 — pre-load the message's existing reaction so the sheet opens with
-        // it already selected. Lets the user add / remove an emoji from a multi
-        // reaction without having to re-tap everything from scratch.
         val existingReaction = state.messages.firstOrNull { it.id == msgId }?.reactionEmoji
-        com.filestech.sms.ui.components.EmojiReactionPickerSheet(
+        com.filestech.sms.ui.components.ReactionEmojiPickerSheet(
+            currentReaction = existingReaction,
             onPicked = { emoji ->
                 viewModel.setReaction(msgId, emoji)
                 pickingReactionFor = null
             },
-            // Round 21 — deselecting every emoji and confirming removes the
-            // reaction (the sheet's empty-selection button).
-            onRemove = { viewModel.setReaction(msgId, null) },
-            onOpenCustom = {
-                pickingReactionFor = null
-                customReactionFor = msgId
-            },
             onDismiss = { pickingReactionFor = null },
-            currentReaction = existingReaction,
-        )
-    }
-    // v1.3.0 — Emoji reaction custom dialog (bouton "Plus")
-    customReactionFor?.let { msgId ->
-        com.filestech.sms.ui.components.EmojiCustomDialog(
-            onPicked = { emoji ->
-                // v1.5.1 (audit U1) — le clavier système peut produire une chaîne
-                // arbitrairement longue (ex. l'utilisateur tape 5+ emojis). On applique
-                // ici le même cap que le picker quick-pick (MAX_REACTION_EMOJIS) pour
-                // éviter qu'une réaction "custom" déforme le badge ou contourne le
-                // contrat UX. Le découpage en clusters de graphèmes garantit qu'on ne
-                // coupe pas une ZWJ family / drapeau / skin-tone au milieu.
-                val capped = emoji
-                    .splitGraphemeClusters()
-                    .take(MAX_REACTION_EMOJIS)
-                    .joinToString(separator = "")
-                if (capped.isNotEmpty()) viewModel.setReaction(msgId, capped)
-                customReactionFor = null
-            },
-            onDismiss = { customReactionFor = null },
         )
     }
     pendingDelete?.let { msg ->
@@ -2360,6 +2391,22 @@ private fun ThreadSearchHeader(
     }
 }
 
+/**
+ * Client mode C2 — the overflow actions that write to the hub
+ * (schedule, rename, block, delete). Null on a linked device: the
+ * menu hides them instead of offering writes the next sync would
+ * revert (no write-back frames in C2).
+ */
+private data class ThreadHubActions(
+    val canSchedule: Boolean,
+    val onScheduleSend: () -> Unit,
+    /** Client mode C3 — null on a linked device (no rename frame). */
+    val onRename: (() -> Unit)?,
+    val onBlock: () -> Unit,
+    /** Client mode C3 — null on a linked device (no delete frame). */
+    val onDelete: (() -> Unit)?,
+)
+
 @Composable
 private fun ThreadActionsMenu(
     expanded: Boolean,
@@ -2378,12 +2425,17 @@ private fun ThreadActionsMenu(
     onAppearance: () -> Unit,
     /** v1.28.3 — « Renommer le groupe… », présent sur un groupe seulement. */
     isGroup: Boolean,
-    onRename: () -> Unit,
-    onBlock: () -> Unit,
-    onDelete: () -> Unit,
-    // v1.15.1 — Programme l'envoi du draft pour plus tard. Grisé si pas de draft.
-    canSchedule: Boolean,
-    onScheduleSend: () -> Unit,
+    /** Client mode C3 — contact editing/creation stays hidden on a linked device. */
+    isClientMode: Boolean = false,
+    /**
+     * The hub-side write actions (schedule, rename, block,
+     * delete). Null only when the caller has no hub actions at
+     * all; on a linked device the actions carry nulls for the
+     * unwired ones (rename, delete) and the menu hides those
+     * items. Details, Media, Export PDF, Appearance and Move to
+     * vault stay.
+     */
+    hubActions: ThreadHubActions?,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -2393,7 +2445,7 @@ private fun ThreadActionsMenu(
         // Material default, like the bubble menu and the home overflow menu.
         modifier = Modifier.padding(horizontal = 10.dp),
     ) {
-        if (!hasContact) {
+        if (!hasContact && !isClientMode) {
             // Choix clair, sans passer par le sélecteur système + défilement :
             //  - "Créer un contact"       → fiche vierge pré-remplie (ACTION_INSERT)
             //  - "Mettre à jour un contact" → sélecteur pour rattacher à un existant (INSERT_OR_EDIT)
@@ -2408,15 +2460,19 @@ private fun ThreadActionsMenu(
                 onClick = onAddContact,
             )
         }
-        // v1.15.1 — Programme l'envoi pour plus tard. Place en haut pour visibilité
-        // (action constructive, contraste avec les actions destructives en bas).
-        // Grisé tant qu'il n'y a rien à programmer (draft vide).
-        DropdownMenuItem(
-            leadingIcon = { Icon(painterResource(R.drawable.ic_schedule), contentDescription = null) },
-            text = { Text(stringResource(R.string.thread_schedule_action)) },
-            enabled = canSchedule,
-            onClick = onScheduleSend,
-        )
+        // Hub actions — scheduling goes via the `schedule_message`
+        // frame on a linked device (C3), so the item is live there too.
+        hubActions?.let { actions ->
+            // v1.15.1 — Programme l'envoi pour plus tard. Place en haut pour visibilité
+            // (action constructive, contraste avec les actions destructives en bas).
+            // Grisé tant qu'il n'y a rien à programmer (draft vide).
+            DropdownMenuItem(
+                leadingIcon = { Icon(painterResource(R.drawable.ic_schedule), contentDescription = null) },
+                text = { Text(stringResource(R.string.thread_schedule_action)) },
+                enabled = actions.canSchedule,
+                onClick = actions.onScheduleSend,
+            )
+        }
         DropdownMenuItem(
             leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
             text = { Text(stringResource(R.string.action_details)) },
@@ -2439,11 +2495,16 @@ private fun ThreadActionsMenu(
             text = { Text(stringResource(R.string.thread_overflow_appearance)) },
             onClick = onAppearance,
         )
-        if (isGroup) {
+        // Hub actions — renaming is a hub-side write (no rename
+        // frame), and a local rename would be overwritten by the
+        // next sync, so the item is absent on a linked device
+        // (`onRename == null`).
+        val renameAction = hubActions?.onRename
+        if (isGroup && renameAction != null) {
             DropdownMenuItem(
                 leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                 text = { Text(stringResource(R.string.action_rename_group)) },
-                onClick = onRename,
+                onClick = renameAction,
             )
         }
         // v1.12.0 — Déplacer vers le coffre / sortir du coffre.
@@ -2467,42 +2528,50 @@ private fun ThreadActionsMenu(
                 onClick = onMoveVault,
             )
         }
-        DropdownMenuItem(
-            leadingIcon = {
-                Icon(
-                    painterResource(R.drawable.ic_block),
-                    contentDescription = null,
-                    // v1.25.3 — orange « blocage », distinct du rouge de « Supprimer » juste en
-                    // dessous : bloquer se défait, supprimer non.
-                    tint = com.filestech.sms.ui.theme.BrandBlocked,
+        // Hub actions — blocking goes via the `set_blocked` frame
+        // on a linked device (C3); deleting has no frame, so the
+        // item is absent there (`onDelete == null`).
+        if (hubActions != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        painterResource(R.drawable.ic_block),
+                        contentDescription = null,
+                        // v1.25.3 — orange « blocage », distinct du rouge de « Supprimer » juste en
+                        // dessous : bloquer se défait, supprimer non.
+                        tint = com.filestech.sms.ui.theme.BrandBlocked,
+                    )
+                },
+                text = {
+                    Text(
+                        stringResource(R.string.action_block),
+                        // Phase 8 — l'orange [BrandBlocked] ne donnait que 3.79:1 sur fond clair
+                        // pour du texte ; voir [blockedTextColor]. L'icône garde [BrandBlocked].
+                        color = blockedTextColor(MaterialTheme.colorScheme),
+                    )
+                },
+                onClick = hubActions.onBlock,
+            )
+            val deleteAction = hubActions.onDelete
+            if (deleteAction != null) {
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            painterResource(R.drawable.ic_trash),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    text = {
+                        Text(
+                            stringResource(R.string.action_delete),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    onClick = deleteAction,
                 )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.action_block),
-                    // Phase 8 — l'orange [BrandBlocked] ne donnait que 3.79:1 sur fond clair
-                    // pour du texte ; voir [blockedTextColor]. L'icône garde [BrandBlocked].
-                    color = blockedTextColor(MaterialTheme.colorScheme),
-                )
-            },
-            onClick = onBlock,
-        )
-        DropdownMenuItem(
-            leadingIcon = {
-                Icon(
-                    painterResource(R.drawable.ic_trash),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.action_delete),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            },
-            onClick = onDelete,
-        )
+            }
+        }
     }
 }
 
@@ -3849,6 +3918,25 @@ private fun ThreadMessageItem(
     /** Round 12 — recent reaction emojis for the quick-reaction bar. */
     recentReactions: List<String> = emptyList(),
     actions: ThreadMessageItemActions,
+    /**
+     * Client mode C2 — the thread is read-only: reply / react /
+     * forward / pin / delete are hub-side in C2, so the bubbles get
+     * `null` for those actions (null = no menu item, no quick bar)
+     * while Copy, Translate, playback and phone-click stay wired.
+     */
+    isClientMode: Boolean = false,
+    /**
+     * Client mode C5 — the attachment download states for this
+     * thread's bubbles, keyed by local attachment id. Empty in hub
+     * mode; the bubbles render as before.
+     */
+    downloadStates: Map<Long, com.filestech.sms.sync.client.ClientDownloadState> = emptyMap(),
+    /**
+     * Client mode C5 — asks the downloader for an attachment's bytes
+     * (tap-to-download / tap-to-retry). The item gates it on
+     * [isClientMode]: null in hub mode, so the bubbles never ask.
+     */
+    onRequestDownload: ((Long) -> Unit)? = null,
 ) {
     // Taille du texte des messages : tout l'élément (séparateur, bulle, citation, horodatage).
     MessageTextSize {
@@ -3963,6 +4051,18 @@ private fun ThreadMessageItem(
                 onRemoveReaction = { actions.onRemoveReaction(msg.id) },
             )
         }
+        // Client mode C3 — the gated actions, one decision for the
+        // three bubble types below: `null` hides the menu item (or
+        // the quick bar). Only Delete stays gated (no delete frame);
+        // Reply, React, Forward and the pin/remove-reaction toggles
+        // are wired on a linked device. Copy, Translate, playback
+        // and phone-click are not gated — they never write.
+        val gatedOnDelete = if (isClientMode) null else onDelete
+        val gatedOnReply = onReply
+        val gatedOnReact = onReact
+        val gatedQuickReactions = quickReactions
+        val gatedOnForward = onForward
+        val gatedToggles = menuToggles
         // v1.3.3 bug #2 — pour les pièces jointes NON-audio (image/video/file), on délègue à
         // MediaAttachmentBubble qui ajoute le tap-to-view (ACTION_VIEW via FileProvider).
         // v1.28.3 (audit global, X-04 — mesuré sur le S9) — TOUTES, pas la première : F16 gardait
@@ -4007,27 +4107,34 @@ private fun ThreadMessageItem(
                     playbackProvider = playbackProvider,
                     onTogglePlay = onTogglePlay,
                     onSeekTo = actions.onSeekPlayback,
-                    onDelete = onDelete,
-                    onReply = onReply,
+                    onDelete = gatedOnDelete,
+                    onReply = gatedOnReply,
                     // Round 23 — "Réagir" on EVERY message: the v1.3.1
                     // incoming-only gate is gone (it made reactions vanish
                     // on outgoing messages — see [quickReactions] above).
                     // The picker's "+" and the menu row both use it.
-                    onReact = onReact,
+                    onReact = gatedOnReact,
                     // Round 23 — the menu's top row IS the quick-reaction
                     // row (same bundle as the text bubble).
-                    quickReactions = quickReactions,
-                    onForward = onForward,
+                    quickReactions = gatedQuickReactions,
+                    onForward = gatedOnForward,
                     // Feedback round 5 — bascule « épingler » sur les
                     // trois types de bulle. Round 23 — pin only: the star
                     // toggle is gone with the menu's "Star" entry.
-                    toggles = menuToggles,
+                    toggles = gatedToggles,
                     repliedToPreview = repliedToPreview,
                     showTimestamp = showTimestamp,
                     showStatus = showStatus,
                     senderLabel = senderLabel,
                     // Feedback round 5 — voice messages carry no searchable text
                     // body, so there is nothing to highlight on an audio bubble.
+                    // Client mode C5 — the bubble auto-requests its bytes
+                    // when they are missing (null in hub mode).
+                    onRequestDownload = if (isClientMode) {
+                        { onRequestDownload?.invoke(audio.id) }
+                    } else {
+                        null
+                    },
                 )
             }
             mediaAttachment != null -> {
@@ -4037,28 +4144,33 @@ private fun ThreadMessageItem(
                     autres = mediaAttachments.drop(1),
                     showTimestamp = showTimestamp,
                     showStatus = showStatus,
-                    onDelete = onDelete,
-                    onReply = onReply,
+                    onDelete = gatedOnDelete,
+                    onReply = gatedOnReply,
                     // Round 23 — "Réagir" on EVERY message: the v1.3.1
                     // incoming-only gate is gone (see [quickReactions]
                     // above). The menu row's "+" uses it.
-                    onReact = onReact,
+                    onReact = gatedOnReact,
                     // Round 23 — the menu's top row IS the quick-reaction
                     // row: long-press opens the menu, tap still opens the
                     // viewer. The round-22 long-press quick bar is gone,
                     // replaced by the menu row.
-                    quickReactions = quickReactions,
+                    quickReactions = gatedQuickReactions,
                     // v1.3.11 (F3) — copy exposed only when the bubble carries a user-typed caption.
                     onCopy = if (msg.body.isNotBlank()) onCopy else null,
-                    onForward = onForward,
+                    onForward = gatedOnForward,
                     // Feedback round 5 — bascule « épingler » sur les
                     // trois types de bulle. Round 23 — pin only: the star
                     // toggle is gone with the menu's "Star" entry.
-                    toggles = menuToggles,
+                    toggles = gatedToggles,
                     onPhoneClick = actions.onPhoneClick,
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,
                     searchHighlight = searchHighlight,
+                    // Client mode C5 — the download states + the
+                    // tap-to-download callback (null in hub mode, so
+                    // the bubbles never ask).
+                    downloadStates = downloadStates,
+                    onRequestDownload = if (isClientMode) onRequestDownload else null,
                 )
             }
             else -> {
@@ -4068,8 +4180,8 @@ private fun ThreadMessageItem(
                     showStatus = showStatus,
                     burstPosition = burstPosition,
                     onTap = onTapFailed,
-                    onDelete = onDelete,
-                    onReply = onReply,
+                    onDelete = gatedOnDelete,
+                    onReply = gatedOnReply,
                     // v1.7.1 — Translate via ACTION_PROCESS_TEXT system intent. Only wired when
                     // the body is non-blank (nothing to translate on attachment-only messages).
                     onTranslate = if (msg.body.isNotBlank()) onTranslate else null,
@@ -4077,16 +4189,16 @@ private fun ThreadMessageItem(
                     // incoming-only gate is gone (see [quickReactions]
                     // above). The tap bar's "+" and the menu row's "+"
                     // both use it.
-                    onReact = onReact,
+                    onReact = gatedOnReact,
                     // Round 12 — quick-reaction bar on tap (round 23:
                     // every message, not just incoming).
-                    quickReactions = quickReactions,
+                    quickReactions = gatedQuickReactions,
                     onCopy = if (msg.body.isNotBlank()) onCopy else null,
-                    onForward = onForward,
+                    onForward = gatedOnForward,
                     // Feedback round 5 — bascule « épingler » sur les
                     // trois types de bulle. Round 23 — pin only: the star
                     // toggle is gone with the menu's "Star" entry.
-                    toggles = menuToggles,
+                    toggles = gatedToggles,
                     onPhoneClick = actions.onPhoneClick,
                     repliedToPreview = repliedToPreview,
                     senderLabel = senderLabel,

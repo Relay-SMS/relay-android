@@ -38,6 +38,20 @@ sealed interface VerdictOperateur {
 /** OMA-MMS-ENC : 0x81-0x88 (anciens codes), 0xC0-0xDF (transitoires), 0xE0-0xFF (permanents). */
 private val STATUTS_DE_REFUS = 0x81..0xFF
 
+/**
+ * Group-send own-number fix (MMS failure logging) — the
+ * `X-Mms-Response-Status` octet carried by the m-send-conf, for the
+ * failure log line: `0x80` when the carrier accepted the message,
+ * the refusal octet otherwise, `null` when no readable m-send-conf
+ * came back. Pure — a mapping over [lireVerdictOperateur] — never
+ * throws, and reveals nothing about the message itself.
+ */
+fun statutDeReponseMms(reponse: ByteArray?): Int? = when (val verdict = lireVerdictOperateur(reponse)) {
+    is VerdictOperateur.Refuse -> verdict.statut
+    VerdictOperateur.Accepte -> PduHeaders.RESPONSE_STATUS_OK
+    VerdictOperateur.Inconnu -> null
+}
+
 /** Lit le m-send-conf joint au résultat d'un envoi. Ne lève jamais : l'entrée vient du réseau. */
 fun lireVerdictOperateur(reponse: ByteArray?): VerdictOperateur {
     if (reponse == null || reponse.isEmpty()) return VerdictOperateur.Inconnu

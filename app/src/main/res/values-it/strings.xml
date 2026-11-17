@@ -123,6 +123,9 @@
     <string name="conversations_section_chats">Chat</string>
     <string name="conversations_search_short">Cerca</string>
     <string name="conversations_no_match">Nessuna conversazione corrispondente.</string>
+    <string name="conversations_contacts_banner_text">Per mostrare i nomi e le foto dei Suoi contatti, Relay deve poter accedere ai Suoi contatti.</string>
+    <string name="conversations_contacts_banner_action">Consenti l\'accesso</string>
+    <string name="conversations_contacts_banner_dismiss">Ignora</string>
     <string name="thread_create_contact">Crea un contatto</string>
     <string name="thread_update_contact">Aggiorna un contatto</string>
     <string name="action_create_contact">Crea contatto</string>
@@ -656,12 +659,7 @@
     <string name="action_star">Aggiungi ai preferiti</string>
     <string name="action_unstar">Togli dai preferiti</string>
     <string name="reaction_picker_other">Altra emoji</string>
-    <string name="reaction_picker_other_title">Emoji personalizzata</string>
-    <string name="reaction_picker_other_body">Scriva o incolli un\'emoji</string>
-    <string name="reaction_picker_other_hint">😀</string>
     <!-- v1.5.0 — multi-emoji picker validate button -->
-    <string name="reaction_picker_validate_empty">Selezioni una o più emoji</string>
-    <string name="reaction_picker_validate_count">Invia la reazione %1$s</string>
     <!-- v1.6.0 — a11y reaction badge (TalkBack) -->
     <string name="reaction_badge_content_description">Reazione %1$s</string>
     <string name="reaction_badge_remove_action">Rimuovi la reazione</string>
@@ -840,6 +838,18 @@
     <!-- v1.28.5 — the vault state could not be read: the guard refuses rather than assume. -->
     <string name="settings_lock_downgrade_vault_unverifiable">Non è stato possibile verificare adesso lo stato della cassaforte. Il blocco resta invariato, riprovi tra un momento.</string>
     <string name="error_send_recipient_blocked">Non inviato: ha bloccato questo numero. Lo sblocchi per inviare di nuovo.</string>
+    <!-- Group-send own-number fix — fail-fast when a group send has no own number on file. -->
+    <string name="error_send_own_number_missing">Non inviato: inserisca il suo numero in Impostazioni → Invio per inviare messaggi di gruppo.</string>
+    <!-- Client mode C3 -->
+    <string name="error_send_client_offline">Il telefono non è raggiungibile. Verifichi di essere sulla stessa rete Wi-Fi e riprovi.</string>
+    <string name="error_send_client_media">Foto, video e messaggi vocali non possono ancora essere programmati da un dispositivo collegato.</string>
+    <string name="error_send_client_photo_prepare">Non è stato possibile preparare questa foto.</string>
+    <!-- Client mode C5 — la scheda di download / il badge della galleria per un allegato i cui byte non sono ancora arrivati. -->
+    <string name="client_attachment_empty">Questo file è vuoto.</string>
+    <string name="client_attachment_tap_download">Tocca per scaricare</string>
+    <string name="client_attachment_downloading">Download in corso…</string>
+    <string name="client_attachment_failed">Download non riuscito. Tocca per riprovare.</string>
+    <string name="error_create_conversation_failed">Non è stato possibile creare la conversazione. Riprovi.</string>
     <string name="error_retry_group_echo">Questa è la copia conservata nel gruppo. Lo rinvii dalla conversazione di ciascun membro.</string>
     <string name="error_retry_mms_unsupported">Questo MMS non può essere rinviato da qui. Lo invii di nuovo dalla finestra di scrittura.</string>
     <!-- v1.28.3 (F21) — envoi partiel : quelque chose est parti, mais pas tout. -->
@@ -1205,4 +1215,71 @@
     <string name="sync_channel_desc">Mostrato mentre il telefono è raggiungibile dai dispositivi collegati nella rete locale.</string>
     <string name="sync_notification_title">Relay</string>
     <string name="sync_notification_text">Pronto per i dispositivi collegati su questa rete Wi-Fi.</string>
+    <!-- Client mode — il ramo dispositivo collegato della schermata dispositivi collegati, il QR
+         di abbinamento, il cambio di modalità, il promemoria senza SIM e il servizio in primo piano. -->
+    <string name="client_mode_section">Modalità dispositivo</string>
+    <string name="client_this_device_section">Questo dispositivo</string>
+    <string name="client_link_section">Il tuo telefono</string>
+    <string name="client_mode_link_title">Collega questo dispositivo a un altro telefono</string>
+    <string name="client_mode_switch_back_title">Usa questo dispositivo come telefono</string>
+    <string name="client_mode_switch_title">Cambia modalità dispositivo</string>
+    <string name="client_mode_switch_to_client_body">Il passaggio cancella i messaggi salvati su questo dispositivo. Non viene eliminato nulla dal tuo telefono.</string>
+    <string name="client_mode_switch_to_hub_body">Il passaggio cancella i messaggi sincronizzati su questo dispositivo. Non viene eliminato nulla dal tuo telefono.</string>
+    <string name="client_mode_switch_action">Cambia</string>
+    <string name="client_link_status_connected">Connesso</string>
+    <string name="client_link_status_reconnecting">Riconnessione…</string>
+    <string name="client_link_status_offline">Offline</string>
+    <string name="client_link_status_not_linked">Non collegato</string>
+    <string name="client_link_status_removed">Questo dispositivo è stato rimosso dal tuo telefono</string>
+    <string name="client_link_qr_title">Collegati al tuo telefono</string>
+    <string name="client_link_qr_hint">Sul tuo telefono: Impostazioni → Dispositivi collegati → Collega un dispositivo, poi scansiona questo codice.</string>
+    <string name="client_link_qr_error">Impossibile preparare il codice di abbinamento.</string>
+    <string name="client_qr_content_desc">Codice di abbinamento da scansionare con il tuo telefono</string>
+    <string name="client_link_hint">I messaggi si sincronizzano dal tuo telefono tramite la tua rete Wi-Fi.</string>
+    <string name="client_autolink_scanning">Cerco il tuo telefono…</string>
+    <string name="client_autolink_no_phones">Ancora nessun telefono trovato — cerco di nuovo…</string>
+    <string name="client_autolink_connecting">%1$s trovato, connessione…</string>
+    <string name="client_autolink_connecting_generic">Connessione…</string>
+    <string name="client_autolink_waiting">In attesa della scansione…</string>
+    <string name="client_autolink_error">Connessione non riuscita — riprovo…</string>
+    <string name="client_unlink_row">Scollega</string>
+    <string name="client_unlink_title">Scollegare questo dispositivo?</string>
+    <string name="client_unlink_body">Questo dispositivo smetterà di sincronizzarsi con il tuo telefono e i messaggi salvati qui verranno cancellati. Non viene eliminato nulla dal tuo telefono.</string>
+    <string name="client_unlink_action">Scollega</string>
+    <string name="client_nudge_no_sim">Questo dispositivo non ha una SIM. Collegalo al tuo telefono per inviare e ricevere messaggi qui.</string>
+    <string name="client_sync_channel_label">Sincronizzazione dispositivo collegato</string>
+    <string name="client_sync_channel_desc">Mantiene attivo il collegamento con il tuo telefono così i messaggi restano sincronizzati</string>
+    <string name="client_notification_title">Collegamento Relay</string>
+    <string name="client_notification_connected">Connesso a %1$s</string>
+    <string name="client_notification_reconnecting">Riconnessione…</string>
+    <string name="client_notification_offline">Offline</string>
+    <!-- Client mode C2 — la scelta della modalità di sincronizzazione, la risincronizzazione e gli stati di sincronizzazione dell'elenco delle conversazioni. -->
+    <string name="client_sync_mode_title">Quanto sincronizzare?</string>
+    <string name="client_sync_mode_full_title">Sincronizzazione completa</string>
+    <string name="client_sync_mode_full_body">Tutta la cronologia dei messaggi viene trasferita, ogni conversazione, ogni messaggio.</string>
+    <string name="client_sync_mode_new_title">Solo nuovi messaggi</string>
+    <string name="client_sync_mode_new_body">Solo i nuovi messaggi da ora in poi. L\'elenco delle conversazioni verrà trasferito, con le chat che partono vuote.</string>
+    <string name="client_sync_mode_footer">Puoi cambiarlo in seguito in Impostazioni → Dispositivi collegati → Risincronizza i messaggi.</string>
+    <string name="client_resync_row">Risincronizza i messaggi</string>
+    <string name="client_resync_subtitle">Cancella i messaggi salvati su questo dispositivo e li sincronizza di nuovo dal telefono.</string>
+    <string name="client_resync_title">Risincronizza i messaggi?</string>
+    <string name="client_resync_body">Questo cancella i messaggi salvati su questo dispositivo e chiede di nuovo quanto sincronizzare. Non viene eliminato nulla dal telefono.</string>
+    <string name="client_resync_action">Risincronizza</string>
+    <string name="client_hub_not_default">Relay sul telefono non è l\'app di messaggistica predefinita, quindi i nuovi messaggi non raggiungeranno questo dispositivo. Imposta Relay come predefinita sul telefono per attivare la sincronizzazione in tempo reale.</string>
+    <string name="client_sync_progress">Sincronizzazione dei messaggi…</string>
+    <string name="client_sync_count">%1$d di %2$d</string>
+    <string name="client_sync_error_title">Impossibile sincronizzare i messaggi</string>
+    <string name="client_sync_error_default">Il telefono non è riuscito a sincronizzare i messaggi in questo momento.</string>
+    <string name="client_sync_error_not_connected">Non connesso al telefono. Controlla che entrambi i dispositivi siano sulla stessa rete Wi-Fi.</string>
+    <string name="client_sync_offline">Offline — in attesa del telefono.</string>
+    <string name="client_sync_prompt_action">Scegli quanto sincronizzare</string>
+    <string name="client_notif_media_photo">Foto</string>
+    <string name="client_notif_media_video">Video</string>
+    <string name="client_notif_media_voice">Messaggio vocale</string>
+    <string name="client_notif_media_audio">Audio</string>
+    <string name="client_notif_media_file">File</string>
+    <string name="client_notif_media_gif">GIF</string>
+    <string name="client_contacts_error_title">Impossibile sincronizzare i contatti</string>
+    <string name="client_contacts_error_no_access">Il telefono non può accedere ai contatti. Consenti l\'accesso ai contatti sul telefono e riprova.</string>
+    <string name="client_contacts_error_default">Il telefono non ha potuto sincronizzare i contatti ora.</string>
 </resources>

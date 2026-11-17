@@ -15,6 +15,9 @@ import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.local.db.mapper.toDomain
 import com.filestech.sms.di.IoDispatcher
+import com.filestech.sms.domain.clientmode.ClientAction
+import com.filestech.sms.domain.clientmode.ClientActionGateway
+import com.filestech.sms.domain.clientmode.NoOpClientActionGateway
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
@@ -76,6 +79,11 @@ class ConversationRepositoryImpl @Inject constructor(
     // [ConversationEraser] et [com.filestech.sms.data.sms.SystemCopyEraser].
     private val eraser: ConversationEraser,
     @IoDispatcher private val io: CoroutineDispatcher,
+    /**
+     * Client mode C3 — the write-back gateway. Default NoOp keeps the
+     * hub tests compiling untouched; Hilt always provides the real one.
+     */
+    private val clientActions: ClientActionGateway = NoOpClientActionGateway,
 ) : ConversationRepository {
 
     /**
@@ -432,6 +440,13 @@ class ConversationRepositoryImpl @Inject constructor(
      */
     override suspend fun findOrCreate(addresses: List<PhoneAddress>): Outcome<Conversation> = withContext(io) {
         if (addresses.isEmpty()) return@withContext Outcome.Failure(AppError.Validation("empty addresses"))
+        // Client mode C3 — a linked device never creates a conversation
+        // locally: the hub owns the thread. Local first (no round-trip
+        // for a thread that already exists), `create_conversation`
+        // only for a genuinely new one — and unnamed here: the compose
+        // flow, which carries the group name, calls the gateway
+        // directly.
+        if (clientActions.isClientMode()) return@withContext findOrCreateClient(addresses)
         val csv = canonicalCsv(addresses)
         // v1.12.0 — resolve le displayName AVANT la transaction Room pour le
         // cas single-recipient (parcours classique ComposeScreen).
@@ -522,6 +537,49 @@ class ConversationRepositoryImpl @Inject constructor(
             }
         }
         Outcome.Success(requireNotNull(conversationDao.findById(id)?.toDomain()))
+    }
+
+    /**
+     * Client mode C3 — find-or-create on a linked device: a local
+     * conversation is opened without a round-trip (the inline-reply
+     * path depends on this not creating anything); only a genuinely
+     * new conversation sends `create_conversation`.
+     */
+    private suspend fun findOrCreateClient(addresses: List<PhoneAddress>): Outcome<Conversation> {
+        findLocalByAddresses(addresses)?.let { return Outcome.Success(it.toDomain()) }
+        return when (val created = clientActions.createConversation(addresses.map { it.raw }, null)) {
+            is Outcome.Success -> {
+                val row = conversationDao.findById(created.value)
+                    ?: return Outcome.Failure(AppError.NotFound("conversation"))
+                Outcome.Success(row.toDomain())
+            }
+            is Outcome.Failure -> created
+        }
+    }
+
+    /**
+     * Client mode C3 — the local-first match for [findOrCreateClient]:
+     * the same three matchers the hub path replays inside its
+     * transaction (canonical CSV, 1:1 suffix, group identity), without
+     * the display-name back-fill (a synced row's display name is the
+     * hub's to own).
+     */
+    private suspend fun findLocalByAddresses(addresses: List<PhoneAddress>): ConversationEntity? {
+        val csv = canonicalCsv(addresses)
+        conversationDao.findByAddressesCsv(csv)?.let { return it }
+        return if (addresses.size == 1) {
+            matchOneToOneByBlockKey(
+                conversationDao.snapshotOneToOneConversations(),
+                addresses.first(),
+                phoneIdentity.snapshot()::matches,
+            )
+        } else {
+            matchGroupByIdentity(
+                conversationDao.snapshotGroupConversations(),
+                addresses,
+                phoneIdentity.snapshot()::matches,
+            )
+        }
     }
 
     /** Canonical CSV: addresses sorted by normalized value so reordering does not duplicate threads. */
@@ -628,11 +686,67 @@ class ConversationRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun setPinned(id: Long, pinned: Boolean) = withContext(io) { conversationDao.setPinned(id, pinned) }
-    override suspend fun setArchived(id: Long, archived: Boolean) = withContext(io) { conversationDao.setArchived(id, archived) }
-    override suspend fun setMuted(id: Long, muted: Boolean) = withContext(io) { conversationDao.setMuted(id, muted) }
-    override suspend fun setPinnedMessage(id: Long, messageId: Long?, pinnedAt: Long?) = withContext(io) {
-        conversationDao.setPinnedMessage(id, messageId, pinnedAt)
+    override suspend fun setPinned(id: Long, pinned: Boolean) {
+        withContext(io) {
+            // Client mode C3 — optimistic local change, then the `set_pin`
+            // frame; the sender reverts on `ok:false` (the hub is
+            // authoritative). No revert is run here: the sender owns it.
+            if (clientActions.isClientMode()) {
+                val previous = conversationDao.findById(id)?.pinned
+                conversationDao.setPinned(id, pinned)
+                clientActions.sendAction(ClientAction.SetPin(id, pinned)) {
+                    if (previous != null) conversationDao.setPinned(id, previous)
+                }
+            } else {
+                conversationDao.setPinned(id, pinned)
+            }
+        }
+    }
+    override suspend fun setArchived(id: Long, archived: Boolean) {
+        withContext(io) {
+            // Client mode C3 — same optimistic + `set_archived` frame pattern as [setPinned].
+            if (clientActions.isClientMode()) {
+                val previous = conversationDao.findById(id)?.archived
+                conversationDao.setArchived(id, archived)
+                clientActions.sendAction(ClientAction.SetArchived(id, archived)) {
+                    if (previous != null) conversationDao.setArchived(id, previous)
+                }
+            } else {
+                conversationDao.setArchived(id, archived)
+            }
+        }
+    }
+    override suspend fun setMuted(id: Long, muted: Boolean) {
+        withContext(io) {
+            // Client mode C3 — same optimistic + `set_muted` frame pattern as [setPinned].
+            if (clientActions.isClientMode()) {
+                val previous = conversationDao.findById(id)?.muted
+                conversationDao.setMuted(id, muted)
+                clientActions.sendAction(ClientAction.SetMuted(id, muted)) {
+                    if (previous != null) conversationDao.setMuted(id, previous)
+                }
+            } else {
+                conversationDao.setMuted(id, muted)
+            }
+        }
+    }
+    override suspend fun setPinnedMessage(id: Long, messageId: Long?, pinnedAt: Long?) {
+        withContext(io) {
+            // Client mode C3 — optimistic local pin, then the
+            // `set_pinned_message` frame (unpin sends a null message id);
+            // the sender reverts on `ok:false`.
+            if (clientActions.isClientMode()) {
+                val row = conversationDao.findById(id)
+                val previousId = row?.pinnedMessageId
+                val previousAt = row?.pinnedMessageAt
+                conversationDao.setPinnedMessage(id, messageId, pinnedAt)
+                clientActions.sendAction(ClientAction.SetPinnedMessage(id, messageId)) {
+                    conversationDao.setPinnedMessage(id, previousId, previousAt)
+                }
+            } else {
+                conversationDao.setPinnedMessage(id, messageId, pinnedAt)
+            }
+        }
     }
 
     override suspend fun findById(id: Long): Conversation? = withContext(io) {
@@ -673,6 +787,27 @@ class ConversationRepositoryImpl @Inject constructor(
             conversationDao.setAppearance(id, bubbleColorArgb, safeAvatarUri)
         }
     override suspend fun markRead(id: Long) = withContext(io) {
+        // Client mode C3 — never touch `content://sms` here: this
+        // device is not the messaging device. The unread ids are
+        // captured BEFORE the mark, so a refused frame restores the
+        // exact unread set (the hub is authoritative, but a refused
+        // mark must not silently clear the badge). Local notifications
+        // are still cancelled: they are this device's own.
+        if (clientActions.isClientMode()) {
+            val unreadIds = messageDao.findUnreadIds(id)
+            database.withTransaction {
+                messageDao.markConversationRead(id)
+                conversationDao.clearUnread(id)
+            }
+            clientActions.sendAction(ClientAction.MarkRead(id)) {
+                database.withTransaction {
+                    for (messageId in unreadIds) messageDao.setRead(messageId, false)
+                    conversationDao.recomputeUnreadCount(id)
+                }
+            }
+            notifier.cancelAllForConversation(id)
+            return@withContext
+        }
         // v1.26.1 (audit B3) — les deux écritures Room sont ATOMIQUES. Une mort du processus
         // entre elles laissait `unread_count > 0` alors que tous les messages étaient marqués
         // lus : badge fantôme. C'était rattrapé au démarrage suivant par
@@ -707,6 +842,21 @@ class ConversationRepositoryImpl @Inject constructor(
     // pour que le badge ne ré-apparaisse pas après désinstall/reinstall. Avant : la VM
     // orchestrait elle-même en injectant 2 DAOs + le TelephonyReader (layer violation).
     override suspend fun markAllRead() = withContext(io) {
+        // Client mode C3 — no system propagation (this device owns no
+        // `content://sms` rows) and no revert: the hub always answers
+        // `ok:true` for `mark_all_read`, and the next sync re-aligns
+        // the counts anyway. An offline frame leaves the local mark
+        // in place until that sync.
+        if (clientActions.isClientMode()) {
+            runCatching {
+                database.withTransaction {
+                    messageDao.markAllIncomingAsRead()
+                    conversationDao.recomputeAllUnreadCounts()
+                }
+            }.onFailure { Timber.w(it, "markAllRead: local mark failed") }
+            clientActions.sendAction(ClientAction.MarkAllRead)
+            return@withContext
+        }
         // v1.26.1 (audit B3) — les deux écritures ROOM sont atomiques ; l'écriture SYSTÈME reste
         // en dehors, et c'est délibéré : elle passe par un ContentProvider tiers, donc ni
         // transactionnable avec Room ni fiable (indisponible en mode panique, ROM custom). La
@@ -766,16 +916,41 @@ class ConversationRepositoryImpl @Inject constructor(
             // re-lire la DB. La transition est calculée AVANT l'update afin que l'ordre
             // d'exécution soit déterministe et qu'un retry suite à exception ne fasse pas
             // double-envoi côté caller.
+            //
+            // Client mode C3 — the optimistic badge goes out with a
+            // `set_reaction` frame instead of a Tapback SMS. Offline
+            // (or an unresolvable id) returns [SetReactionResult.Noop]:
+            // the sender already reverted the badge, so the ViewModel
+            // must NOT dispatch a reaction SMS for a reaction that is
+            // no longer set.
             val current = messageDao.findById(messageId) ?: return@withContext SetReactionResult.Noop
             val previous = current.reactionEmoji
             if (previous == emoji) return@withContext SetReactionResult.Noop
             messageDao.setReaction(messageId, emoji)
-            when {
-                previous == null && emoji != null -> SetReactionResult.First(messageId, emoji)
-                previous != null && emoji == null -> SetReactionResult.Removed
-                previous != null && emoji != null -> SetReactionResult.Changed(previous, emoji)
-                else -> SetReactionResult.Noop // unreachable (couvert par le check d'égalité)
+            if (clientActions.isClientMode()) {
+                val sent = clientActions.sendAction(
+                    ClientAction.SetReaction(current.conversationId, messageId, emoji),
+                ) { messageDao.setReaction(messageId, previous) }
+                return@withContext if (sent) {
+                    reactionTransition(previous, emoji, messageId)
+                } else {
+                    SetReactionResult.Noop
+                }
             }
+            reactionTransition(previous, emoji, messageId)
+        }
+
+    /**
+     * The [SetReactionResult] for a badge change from [previous] to
+     * [emoji] — shared by the hub path and the client-mode write-back
+     * branch, so the two can never disagree about what a tap means.
+     */
+    private fun reactionTransition(previous: String?, emoji: String?, messageId: Long): SetReactionResult =
+        when {
+            previous == null && emoji != null -> SetReactionResult.First(messageId, emoji)
+            previous != null && emoji == null -> SetReactionResult.Removed
+            previous != null && emoji != null -> SetReactionResult.Changed(previous, emoji)
+            else -> SetReactionResult.Noop // unreachable (couvert par le check d'égalité)
         }
 
     override suspend fun countMessagesToPurge(olderThanDays: Int): Int = withContext(io) {

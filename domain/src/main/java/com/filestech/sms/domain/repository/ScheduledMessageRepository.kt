@@ -49,6 +49,13 @@ interface ScheduledMessageRepository {
     suspend fun findByClientMessageId(clientMessageId: String): ScheduledMessage?
 
     /**
+     * Client mode C3 — one scheduled row by id. The cancel/retry wire
+     * branches need the row's client key (a keyless row is a hub-mode
+     * leftover with no wire schedule).
+     */
+    suspend fun findById(id: Long): ScheduledMessage?
+
+    /**
      * v1.26.1 (audit B2) — rend `true` si l'annulation a REELLEMENT pris, `false` si l'envoi
      * avait deja ete revendique par le worker. Le verdict conditionne la suppression des
      * pieces jointes : les effacer sous les pieds d'un envoi en cours produirait un MMS

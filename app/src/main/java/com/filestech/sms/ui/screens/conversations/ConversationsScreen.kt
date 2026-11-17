@@ -91,6 +91,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.Conversation
+import com.filestech.sms.domain.settings.DeviceMode
+import com.filestech.sms.sync.client.NoSimNudgeCard
+import com.filestech.sms.sync.client.isSimLess
+import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
 import com.filestech.sms.ui.components.ContactIntents
 import com.filestech.sms.ui.components.ConversationRow
 import com.filestech.sms.ui.components.RelayDestructiveButton
@@ -113,6 +117,33 @@ import java.util.Locale
 /** Delay before retrying the search focus request (see the `LaunchedEffect` below). */
 private const val SEARCH_FOCUS_RETRY_MS: Long = 100L
 
+/**
+ * Client mode C2 — one decision for the row gestures that are
+ * Room-only writes (pin / archive / mute / rename, multi-select,
+ * vault move): hidden in PanicDecoy, in selection mode, or on a
+ * linked device, where the next sync would silently revert them
+ * (the hub is authoritative; no write-back in C2). Computed once
+ * so the row lambdas below read flags instead of re-deciding
+ * (Detekt complexity ceiling).
+ */
+private data class RowGating(
+    val hideRowActions: Boolean,
+    val hideMultiSelect: Boolean,
+    val hideVault: Boolean,
+)
+
+private fun rowGating(
+    isPanicDecoy: Boolean,
+    selectionMode: Boolean,
+    isClientMode: Boolean,
+): RowGating = RowGating(
+    // Client mode C3 — pin/archive/mute are wired (write-back
+    // frames), so the row actions are live on a linked device.
+    hideRowActions = isPanicDecoy || selectionMode,
+    hideMultiSelect = isPanicDecoy || isClientMode,
+    hideVault = isPanicDecoy || selectionMode,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationsScreen(
@@ -121,6 +152,10 @@ fun ConversationsScreen(
     onCompose: () -> Unit,
     onComposeGroup: () -> Unit = {},
     onOpenSettings: () -> Unit,
+    // Client mode — direct route to Linked devices for the no-SIM
+    // nudge card (the link flow lives there, not on the Settings
+    // landing).
+    onOpenLinkedDevices: () -> Unit = {},
     onOpenVault: () -> Unit,
     onOpenArchived: () -> Unit,
     onOpenBlocked: () -> Unit,
@@ -131,12 +166,20 @@ fun ConversationsScreen(
     viewModel: ConversationsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Client mode C2 — the sync state (its own flow: the UiState
+    // combine is already at the 5-arg typed limit).
+    val clientSyncUi by viewModel.clientSyncUi.collectAsStateWithLifecycle()
+    val isClientMode = state.settings.mode == DeviceMode.CLIENT
     // v1.26.1 (audit H18) — l'etat leurre vient du VERROU, pas du flux agrege : ce dernier
     // resservait sa valeur en cache (`isPanicDecoy = false`) le temps de redemarrer, ce qui
     // faisait apparaitre l'icone du Coffre en session leurre.
     val isPanicDecoy by viewModel.isPanicDecoy.collectAsStateWithLifecycle()
+    // Client mode C2 — the row-gesture gating, decided once (see
+    // [rowGating]): the row lambdas below read the flags.
+    val gating = rowGating(isPanicDecoy, state.selectionMode, isClientMode)
     val messageHits by viewModel.messageHits.collectAsStateWithLifecycle()
     val contactPhotos by viewModel.contactPhotos.collectAsStateWithLifecycle()
+    val groupMemberPhotos by viewModel.groupMemberPhotos.collectAsStateWithLifecycle()
     val cs = MaterialTheme.colorScheme
     // Feedback round 10 — the app's locale (for the date-group week
     // boundary, which follows the locale's first day of week, like
@@ -153,11 +196,22 @@ fun ConversationsScreen(
     // once we become default; the running TelephonySyncManager picks up new permissions on its
     // next observer fire (or via the periodic worker, whichever comes first).
     val context = androidx.compose.ui.platform.LocalContext.current
+    // Contacts-permission fix — whether READ_CONTACTS is granted,
+    // read on first composition and refreshed on every resume (the
+    // observer below), so the contacts banner disappears right after
+    // the user grants the permission from the app settings page.
+    var contactsPermissionGranted by remember {
+        mutableStateOf(context.contactsPermissionGranted())
+    }
     val smsPermsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { viewModel.requestSyncNow() }
-    androidx.compose.runtime.LaunchedEffect(state.isDefaultSmsApp) {
-        if (state.isDefaultSmsApp) {
+    // Client mode — a linked device asks for no SMS permissions and
+    // triggers no telephony sync (its messages arrive from the hub).
+    // The mode is a key too, so a switch back to hub re-runs the
+    // permission + import trigger.
+    androidx.compose.runtime.LaunchedEffect(state.isDefaultSmsApp, state.settings.mode) {
+        if (state.isDefaultSmsApp && state.settings.mode != DeviceMode.CLIENT) {
             val needed = listOf(
                 android.Manifest.permission.READ_SMS,
                 android.Manifest.permission.RECEIVE_SMS,
@@ -202,6 +256,18 @@ fun ConversationsScreen(
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshDefaultStatus()
                 viewModel.refreshContactPhotos()
+                // Contacts-permission fix — re-check the grant on
+                // every resume: the user may have just granted it
+                // from the app settings page (the banner's enable
+                // action). A fresh grant also re-runs the import, so
+                // the sync manager picks up rows it couldn't read
+                // before — the same trigger as the permission
+                // launcher's result above.
+                val grantedNow = context.contactsPermissionGranted()
+                if (grantedNow && !contactsPermissionGranted) {
+                    viewModel.requestSyncNow()
+                }
+                contactsPermissionGranted = grantedNow
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -449,6 +515,7 @@ fun ConversationsScreen(
                                             onDismiss = { overflowOpen = false },
                                             archived = archived,
                                             isPanicDecoy = isPanicDecoy,
+                                            isClientMode = isClientMode,
                                             sortMode = sortMode,
                                             onMarkAllRead = { showMarkAllReadConfirm = true },
                                             onCreateContact = createContactAction,
@@ -579,6 +646,7 @@ fun ConversationsScreen(
                                     onDismiss = { overflowOpen = false },
                                     archived = archived,
                                     isPanicDecoy = isPanicDecoy,
+                                    isClientMode = isClientMode,
                                     sortMode = sortMode,
                                     onMarkAllRead = { showMarkAllReadConfirm = true },
                                     onCreateContact = createContactAction,
@@ -596,47 +664,53 @@ fun ConversationsScreen(
             }
         },
         floatingActionButton = {
-            // Round 4 — 56dp rounded square in the fixed brand blue in both themes:
-            // the pre-refresh default shape, restored after the refresh made it a
-            // circle. Before the refresh (commit 9d69566) the button carried NO size
-            // or shape modifier at all, so it rendered the Material 3 default — 56dp
-            // with FloatingActionButtonDefaults.shape (baseline token CornerLarge,
-            // i.e. the theme's Shapes.large, 18dp here). That default is restored
-            // exactly, instead of a hardcoded radius. Round 20 — the fill is
-            // [brandBlue] with [onBrandBlue] content: the fixed brand blue +
-            // white when dynamic colours are off, the wallpaper pair when on.
-            FloatingActionButton(
-                onClick = onCompose,
-                modifier = Modifier.size(56.dp),
-                shape = FloatingActionButtonDefaults.shape,
-                containerColor = brandBlue(),
-                contentColor = onBrandBlue(),
-            ) {
-                Icon(
-                    Icons.Outlined.Edit,
-                    contentDescription = stringResource(R.string.action_new_message),
-                    modifier = Modifier.size(24.dp),
-                )
-            }
+            ConversationsFab(onCompose = onCompose)
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             // Feedback round 10 — no search field here: the top bar IS the
             // search pill now, always visible. The filtering itself is
             // unchanged — the ViewModel still filters on the same query.
-            if (!state.isDefaultSmsApp && !archived) {
-                DefaultAppBanner(onSetDefault = {
+            // Client mode — a linked device never becomes the default
+            // SMS app, so the banner would be a dead end there (see
+            // [DefaultAppBannerIfNeeded]).
+            DefaultAppBannerIfNeeded(
+                isDefaultSmsApp = state.isDefaultSmsApp,
+                archived = archived,
+                mode = state.settings.mode,
+                onSetDefault = {
                     viewModel.buildChangeDefaultIntent()?.let { intent ->
                         defaultAppLauncher.launch(intent)
                     }
-                })
-                // Feedback round 5 — breathing room between the prompt text and
-                // the 1px divider below it: the banner's own vertical padding
-                // is only 2dp, so the text sat almost on the divider. 12dp
-                // matches the banner's internal 12dp icon-to-text spacer.
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider()
-            }
+                },
+            )
+            // Client mode C2 — the sync states above the list: the
+            // hub-not-default notice, the progress / error rows, the
+            // prompting affordance, the offline line. Hub mode and
+            // Archived render nothing.
+            ClientSyncStatesIfNeeded(
+                syncUi = clientSyncUi,
+                isClientMode = isClientMode,
+                archived = archived,
+                onRetry = viewModel::retryClientSync,
+                onOpenLinkedDevices = onOpenLinkedDevices,
+            )
+            // Contacts-permission fix — hub mode only (see
+            // [ContactsPermissionBannerIfNeeded]): a linked device
+            // never reads the local provider. The enable action
+            // opens the app settings page, not the system dialog —
+            // after two refusals Android never shows the dialog
+            // again, and a request-only button would then do
+            // nothing (see [ouvrirLaFicheDeLApplication]).
+            ContactsPermissionBannerIfNeeded(
+                isDefaultSmsApp = state.isDefaultSmsApp,
+                contactsPermissionGranted = contactsPermissionGranted,
+                bannerDismissed = state.settings.conversations.contactsBannerDismissed,
+                archived = archived,
+                mode = state.settings.mode,
+                onEnable = { ouvrirLaFicheDeLApplication(context) },
+                onDismiss = viewModel::dismissContactsPermissionBanner,
+            )
             // v1.14.0 — Chip "Je vais bien" si déclenchement urgence < 30 min.
             //
             // ⚠️ v1.28.12 — le `&& !isPanicDecoy` n'est PAS redondant, et son absence était le
@@ -683,11 +757,16 @@ fun ConversationsScreen(
             when {
                 state.isImporting -> ImportingPlaceholder(count = state.importedCount)
                 state.isLoading -> Unit
-                state.sansAucunResultat(messageHits) -> ConversationsEmptyState(
-                    archived = archived,
-                    filtered = state.filtered,
-                    onCompose = onCompose,
-                )
+                state.sansAucunResultat(messageHits) -> {
+                    ConversationsEmptyContent(
+                        mode = state.settings.mode,
+                        isDefaultSmsApp = state.isDefaultSmsApp,
+                        filtered = state.filtered,
+                        archived = archived,
+                        onCompose = onCompose,
+                        onOpenLinkedDevices = onOpenLinkedDevices,
+                    )
+                }
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
@@ -758,12 +837,16 @@ fun ConversationsScreen(
                                 viewModel.moveConversationToVault(conv.id)
                             }
                         }
-                        val rowActionsValue = remember(conv) {
+                        val rowActionsValue = remember(conv, isClientMode) {
                             ConversationRowActions(
                                 onTogglePin = { viewModel.togglePinned(conv) },
                                 onToggleArchive = { viewModel.toggleArchived(conv) },
                                 onToggleMute = { viewModel.toggleMuted(conv) },
-                                onRename = { nom -> viewModel.rename(conv, nom) },
+                                // Client mode C3 — no rename frame (a
+                                // local rename would be overwritten by
+                                // the next sync), so the action is null
+                                // on a linked device.
+                                onRename = if (isClientMode) null else { nom -> viewModel.rename(conv, nom) },
                             )
                         }
                         val selectMultipleCallback = remember(conv.id) {
@@ -777,6 +860,12 @@ fun ConversationsScreen(
                             showAvatars = state.settings.conversations.showAvatars,
                             previewLines = state.settings.conversations.previewLines.coerceIn(1, 2),
                             contactPhotoUri = contactPhotos[conv.id],
+                            groupMemberPhotos = groupMemberPhotos[conv.id],
+                            // Client mode C3 — the row gates what is
+                            // not wired (right swipe = delete, rename,
+                            // delete in the sheet); the rest is live
+                            // (see [SwipeableConversationRow]).
+                            isClientMode = isClientMode,
                             // v1.13.0 — en mode sélection, tap = toggle de l'item, pas
                             // ouverture du thread. Hors mode sélection, comportement
                             // normal. Le swipe est désactivé en mode sélection pour
@@ -789,7 +878,7 @@ fun ConversationsScreen(
                             // donc pas en session decoy (cohérent avec masquage
                             // de l'icône cadenas top-bar). Désactivé aussi en mode
                             // sélection (l'action passe par la TopAppBar bulk).
-                            onMoveToVault = if (isPanicDecoy || state.selectionMode) null else {
+                            onMoveToVault = if (gating.hideVault) null else {
                                 moveToVaultCallback
                             },
                             // v1.26.1 (audit F1) — mêmes conditions que le coffre : masqués en
@@ -797,7 +886,11 @@ fun ConversationsScreen(
                             // UN SEUL objet nullable plutôt que par trois `if` séparés : une
                             // seule décision au lieu de trois identiques, et la complexité
                             // cyclomatique de cet écran reste sous le seuil du projet.
-                            rowActions = if (isPanicDecoy || state.selectionMode) {
+                            // Client mode C3 — pin / archive / mute are
+                            // wired (write-back frames), so the row
+                            // actions are live on a linked device;
+                            // rename stays null there (no frame).
+                            rowActions = if (gating.hideRowActions) {
                                 null
                             } else {
                                 rowActionsValue
@@ -809,7 +902,10 @@ fun ConversationsScreen(
                             // (en mode sélection le long-press toggle, comportement
                             // Gmail). PanicDecoy : pas de selection toggle non plus,
                             // l'ActionsSheet legacy sans item Vault est rendu.
-                            onSelectMultiple = if (isPanicDecoy) null else {
+                            // Client mode C2 — null : no selection mode on a
+                            // read-only list (its only bulk action is the
+                            // vault move, still reachable from the thread).
+                            onSelectMultiple = if (gating.hideMultiSelect) null else {
                                 selectMultipleCallback
                             },
                             selected = isSelected,
@@ -862,6 +958,7 @@ fun ConversationsScreen(
                                 previewLines = state.settings.conversations.previewLines
                                     .coerceIn(1, 2),
                                 contactPhotoUri = contactPhotos[conv.id],
+                                groupMemberPhotos = groupMemberPhotos[conv.id],
                                 // v1.25.3 — les lignes bloquées ne participent PAS au mode
                                 // sélection : elles utilisent `ConversationRow` nu, sans l'état
                                 // visuel de sélection de `SwipeableConversationRow`. Les y
@@ -869,8 +966,14 @@ fun ConversationsScreen(
                                 // action groupée porterait sur des fils invisiblement cochés.
                                 // Elles ont leurs deux actions propres, explicites.
                                 onClick = { onOpenThread(conv.id) },
+                                // Client mode C3 — the long-press sheet
+                                // opens on a linked device too (Unblock
+                                // is wired via `set_blocked`); the
+                                // delete trash stays hidden (no frame).
                                 onLongClick = { blockedActionsFor = conv },
-                                onDelete = { pendingDeleteBlocked = conv },
+                                onDelete = if (isClientMode) null else {
+                                    { pendingDeleteBlocked = conv }
+                                },
                             )
                         }
                     }
@@ -894,6 +997,7 @@ fun ConversationsScreen(
     BlockedConversationDialogs(
         pendingDelete = pendingDeleteBlocked,
         actionsFor = blockedActionsFor,
+        isClientMode = isClientMode,
         onDismissDelete = { pendingDeleteBlocked = null },
         onDismissActions = { blockedActionsFor = null },
         onConfirmDelete = { id -> pendingDeleteBlocked = null; viewModel.delete(id) },
@@ -904,33 +1008,43 @@ fun ConversationsScreen(
     // v1.8.0 — Dialog de confirmation pour "Tout marquer comme lu".
     // Action non destructive, dialog simple (pas d'autofocus complexe — c'est
     // de l'UX, pas une action irreversible).
-    if (showMarkAllReadConfirm) {
-        RelayDialog(
-            onDismissRequest = { showMarkAllReadConfirm = false },
-            title = stringResource(R.string.action_mark_all_read),
-            content = {
-                Text(
-                    text = stringResource(R.string.mark_all_read_confirm_body),
-                    style = RelayText.MessageBody,
-                    color = cs.onSurface,
-                )
-            },
-            confirmButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_confirm),
-                    onClick = {
-                        viewModel.markAllAsRead()
-                        showMarkAllReadConfirm = false
-                    },
-                    confirm = true,
-                )
-            },
-            dismissButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_cancel),
-                    onClick = { showMarkAllReadConfirm = false },
-                )
-            },
+    MarkAllReadConfirmDialog(
+        visible = showMarkAllReadConfirm,
+        onDismiss = { showMarkAllReadConfirm = false },
+        onConfirm = {
+            viewModel.markAllAsRead()
+            showMarkAllReadConfirm = false
+        },
+    )
+}
+
+/**
+ * Client mode C3 — the compose button is live on a linked device
+ * (sends go via the hub phone). Extracted from
+ * [ConversationsScreen] (Detekt complexity ceiling).
+ */
+@Composable
+private fun ConversationsFab(onCompose: () -> Unit) {
+    // Round 4 — 56dp rounded square in the fixed brand blue in both themes:
+    // the pre-refresh default shape, restored after the refresh made it a
+    // circle. Before the refresh (commit 9d69566) the button carried NO size
+    // or shape modifier at all, so it rendered the Material 3 default — 56dp
+    // with FloatingActionButtonDefaults.shape (baseline token CornerLarge,
+    // i.e. the theme's Shapes.large, 18dp here). That default is restored
+    // exactly, instead of a hardcoded radius. Round 20 — the fill is
+    // [brandBlue] with [onBrandBlue] content: the fixed brand blue +
+    // white when dynamic colours are off, the wallpaper pair when on.
+    FloatingActionButton(
+        onClick = onCompose,
+        modifier = Modifier.size(56.dp),
+        shape = FloatingActionButtonDefaults.shape,
+        containerColor = brandBlue(),
+        contentColor = onBrandBlue(),
+    ) {
+        Icon(
+            Icons.Outlined.Edit,
+            contentDescription = stringResource(R.string.action_new_message),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
@@ -1185,6 +1299,7 @@ private fun ConversationsOverflowMenu(
     onDismiss: () -> Unit,
     archived: Boolean,
     isPanicDecoy: Boolean,
+    isClientMode: Boolean = false,
     sortMode: com.filestech.sms.domain.settings.SortMode,
     onMarkAllRead: () -> Unit,
     onCreateContact: () -> Unit,
@@ -1209,6 +1324,8 @@ private fun ConversationsOverflowMenu(
         // v1.8.0 — action "Tout marquer comme lu". Utile quand l'user a lu ses
         // messages dans une autre app SMS et que les badges SMS Tech persistent
         // (cache `messages.read` désynchronisé du système).
+        // Client mode C3 — wired: the `mark_all_read` frame clears the
+        // hub's unread too.
         DropdownMenuItem(
             leadingIcon = { Icon(painterResource(R.drawable.ic_checkmark), contentDescription = null) },
             text = { Text(stringResource(R.string.action_mark_all_read)) },
@@ -1221,16 +1338,22 @@ private fun ConversationsOverflowMenu(
         // (aucun numéro de contexte à ce niveau). Feedback snackbar si aucune
         // app Contacts n'est installée. Partage le helper ContactIntents avec
         // l'écran de composition.
-        DropdownMenuItem(
-            leadingIcon = { Icon(painterResource(R.drawable.ic_add_contact), contentDescription = null) },
-            text = { Text(stringResource(R.string.action_create_contact)) },
-            onClick = {
-                onDismiss()
-                onCreateContact()
-            },
-        )
+        // Client mode C3 — contact creation stays hidden on a linked
+        // device (no contact frames until C4).
+        if (!isClientMode) {
+            DropdownMenuItem(
+                leadingIcon = { Icon(painterResource(R.drawable.ic_add_contact), contentDescription = null) },
+                text = { Text(stringResource(R.string.action_create_contact)) },
+                onClick = {
+                    onDismiss()
+                    onCreateContact()
+                },
+            )
+        }
         // v1.28.3 — créer un groupe ouvre le composeur en mode groupe : toucher
         // un contact y ajoute une puce au lieu d'ouvrir le fil.
+        // Client mode C3 — wired: the compose flow sends
+        // `create_conversation`.
         DropdownMenuItem(
             leadingIcon = { Icon(painterResource(R.drawable.ic_new_group), contentDescription = null) },
             text = { Text(stringResource(R.string.action_new_group)) },
@@ -1241,6 +1364,9 @@ private fun ConversationsOverflowMenu(
         )
         // Feedback round 8 — Scheduled messages moved here from Settings: it
         // lives in this menu, under "New group".
+        // Client mode C3 — wired: schedules go via the
+        // `schedule_message` frame, and the scheduler is gated so
+        // local rows never fire here.
         DropdownMenuItem(
             leadingIcon = { Icon(painterResource(R.drawable.ic_schedule), contentDescription = null) },
             text = { Text(stringResource(R.string.settings_scheduled_messages)) },
@@ -1457,6 +1583,31 @@ private fun BandeauJeVaisBien(visible: Boolean, onConfirmer: () -> Unit) {
 }
 
 /**
+ * Client mode — the "set as default SMS app" banner above the list,
+ * shown only when this device is not the default SMS app (and not on
+ * the archived list). A linked device never becomes the default SMS
+ * app, so the banner would be a dead end there.
+ *
+ * Extracted from [ConversationsScreen] to keep it under the Detekt
+ * complexity ceiling.
+ */
+@Composable
+private fun DefaultAppBannerIfNeeded(
+    isDefaultSmsApp: Boolean,
+    archived: Boolean,
+    mode: DeviceMode,
+    onSetDefault: () -> Unit,
+) {
+    if (!isDefaultSmsApp && !archived && mode != DeviceMode.CLIENT) {
+        DefaultAppBanner(onSetDefault = onSetDefault)
+        // 12dp between the banner and the category tabs below it
+        // (no divider — the list reads without rules, like the
+        // conversation rows below).
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+/**
  * Soft "set me as default" banner rendered above the list when the app is not yet the system
  * default SMS handler. Information nudge — not a failure — so we paint it in the brand-blue
  * family (`primaryContainer` + `primary`) instead of error red. The lighter container alpha
@@ -1503,7 +1654,9 @@ private fun DefaultAppBanner(onSetDefault: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.size(8.dp))
+            // 16dp between the text and the button (was 8dp): the
+            // text sat almost on the button.
+            Spacer(Modifier.size(16.dp))
             // Feedback round 10 — the button gets 5px more horizontal
             // padding (12dp -> 17dp) and, in dark mode, the light
             // `#E5EAFD` background (was the brand primary in both
@@ -1544,6 +1697,14 @@ private fun SwipeableConversationRow(
      * ViewModel. The per-conversation custom avatar still wins inside [ConversationRow].
      */
     contactPhotoUri: String? = null,
+    /**
+     * Contact photos of the first two members of a group conversation, in address order
+     * (null where a member has no photo), resolved by the ViewModel; null when no member
+     * photo was resolved for the group. Only the group avatar's minis use it; 1-to-1
+     * rows ignore it. Nullable (like [contactPhotoUri]) so the call sites need no
+     * fallback branch — [ConversationsScreen] sits at the Detekt complexity ceiling.
+     */
+    groupMemberPhotos: List<String?>? = null,
     onOpenThread: () -> Unit,
     onDelete: () -> Unit,
     onBlock: () -> Unit,
@@ -1563,6 +1724,14 @@ private fun SwipeableConversationRow(
     selected: Boolean = false,
     /** v1.13.0 — désactive le swipe et le menu legacy en mode sélection. */
     selectionMode: Boolean = false,
+    /**
+     * Client mode C3 — the right swipe (delete) stays disabled on
+     * a linked device (no delete frame); the left swipe (open the
+     * thread to reply) is live, and the long-press sheet opens
+     * with the wired actions (Block / pin / archive / mute) —
+     * Delete and Rename stay hidden there.
+     */
+    isClientMode: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -1614,7 +1783,10 @@ private fun SwipeableConversationRow(
         state = dismissState,
         // v1.13.0 — swipe désactivé en mode sélection (cohérent avec absence
         // d'ActionsSheet sur long-press et avec le pattern Gmail / Messages).
-        enableDismissFromStartToEnd = !selectionMode,
+        // Client mode C3 — the right swipe (delete) stays disabled
+        // on a linked device (no delete frame); the left swipe
+        // (open the thread to reply) is live.
+        enableDismissFromStartToEnd = !selectionMode && !isClientMode,
         enableDismissFromEndToStart = !selectionMode,
         backgroundContent = {
             // v1.2.3 audit U6: use the brand/error tokens so swipe backgrounds adapt to the
@@ -1673,15 +1845,23 @@ private fun SwipeableConversationRow(
                 showAvatars = showAvatars,
                 previewLines = previewLines,
                 contactPhotoUri = contactPhotoUri,
+                groupMemberPhotos = groupMemberPhotos,
                 // v1.13.1 — long-press routing :
                 //  - en mode sélection multiple → toggle de l'item (pattern Gmail).
                 //  - sinon → ActionsSheet legacy (Block/Delete/Move to vault +
                 //    "Sélectionner plusieurs" si onSelectMultiple non-null).
                 // Haptic pulse dans les deux cas (Material guideline).
+                // Client mode C3 — the sheet opens on a linked device
+                // too (its wired actions are live; Delete and Rename
+                // stay hidden inside it).
                 onLongClick = {
-                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                    if (selectionMode && onSelectMultiple != null) onSelectMultiple()
-                    else actionsSheetOpen = true
+                    if (selectionMode && onSelectMultiple != null) {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        onSelectMultiple()
+                    } else {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        actionsSheetOpen = true
+                    }
                 },
             )
             // v1.13.0 — check icon en overlay quand sélectionné. Placé en bas-
@@ -1715,9 +1895,13 @@ private fun SwipeableConversationRow(
                 actionsSheetOpen = false
                 pendingBlock = true
             },
-            onDeleteRequested = {
-                actionsSheetOpen = false
-                pendingDelete = true
+            // Client mode C3 — no delete frame: the item is hidden
+            // on a linked device.
+            onDeleteRequested = if (isClientMode) null else {
+                {
+                    actionsSheetOpen = false
+                    pendingDelete = true
+                }
             },
             // v1.11.0 — null en PanicDecoy (le parent ne passe pas le callback)
             // → l'item de menu "Déplacer vers le coffre" n'apparaît pas.
@@ -1737,7 +1921,9 @@ private fun SwipeableConversationRow(
                 }
             },
             // v1.28.3 — renommer, sur un groupe seulement, et hors mode leurre comme les autres.
-            onRenameRequested = rowActions?.takeIf { conversation.isGroup }?.let {
+            // Client mode C3 — `onRename` is null on a linked device
+            // (no rename frame), so the item stays hidden there.
+            onRenameRequested = rowActions?.takeIf { conversation.isGroup && it.onRename != null }?.let {
                 {
                     actionsSheetOpen = false
                     renameOpen = true
@@ -1876,8 +2062,11 @@ class ConversationRowActions(
     val onTogglePin: () -> Unit,
     val onToggleArchive: () -> Unit,
     val onToggleMute: () -> Unit,
-    /** v1.28.3 — nom choisi (brut) d'un groupe ; normalisé plus bas. */
-    val onRename: (String?) -> Unit,
+    /**
+     * v1.28.3 — nom choisi (brut) d'un groupe ; normalisé plus bas.
+     * Client mode C3 — null on a linked device (no rename frame).
+     */
+    val onRename: ((String?) -> Unit)?,
 )
 
 /**
@@ -1890,7 +2079,8 @@ class ConversationRowActions(
 private fun ConversationActionsSheet(
     onDismiss: () -> Unit,
     onBlockRequested: () -> Unit,
-    onDeleteRequested: () -> Unit,
+    /** Client mode C3 — null on a linked device (no delete frame): the item is hidden. */
+    onDeleteRequested: (() -> Unit)?,
     onMoveToVaultRequested: (() -> Unit)? = null,
     onSelectMultipleRequested: (() -> Unit)? = null,
     /** v1.28.3 — « Renommer le groupe », `null` hors groupe ou en mode leurre. */
@@ -2019,19 +2209,21 @@ private fun ConversationActionsSheet(
                 },
                 modifier = Modifier.clickable(onClick = onBlockRequested),
             )
-            androidx.compose.material3.ListItem(
-                leadingContent = {
-                    Icon(
-                        painterResource(R.drawable.ic_trash),
-                        contentDescription = null,
-                        tint = cs.error,
-                    )
-                },
-                headlineContent = {
-                    Text(stringResource(R.string.action_delete), color = cs.error)
-                },
-                modifier = Modifier.clickable(onClick = onDeleteRequested),
-            )
+            if (onDeleteRequested != null) {
+                androidx.compose.material3.ListItem(
+                    leadingContent = {
+                        Icon(
+                            painterResource(R.drawable.ic_trash),
+                            contentDescription = null,
+                            tint = cs.error,
+                        )
+                    },
+                    headlineContent = {
+                        Text(stringResource(R.string.action_delete), color = cs.error)
+                    },
+                    modifier = Modifier.clickable(onClick = onDeleteRequested),
+                )
+            }
         }
     }
 }
@@ -2070,6 +2262,51 @@ private fun ImportingPlaceholder(count: Int) {
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         )
     }
+}
+
+/**
+ * Client mode — the empty-list content: the no-SIM nudge card above
+ * the empty state, when this device has no SIM and does not hold the
+ * default-SMS role (so it cannot message on its own). Only on the
+ * plain empty list (never filtered, never archived) — a search with
+ * no matches is not a reason to link. Tapping the card opens Linked
+ * devices, where the link flow starts.
+ *
+ * Extracted from [ConversationsScreen] to keep it under the Detekt
+ * complexity ceiling.
+ */
+@Composable
+private fun ConversationsEmptyContent(
+    mode: DeviceMode,
+    isDefaultSmsApp: Boolean,
+    filtered: Boolean,
+    archived: Boolean,
+    onCompose: () -> Unit,
+    onOpenLinkedDevices: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val showNudge = remember(mode, isDefaultSmsApp, filtered, archived) {
+        mode == DeviceMode.HUB &&
+            !isDefaultSmsApp &&
+            !filtered &&
+            !archived &&
+            isSimLess(context)
+    }
+    if (showNudge) {
+        NoSimNudgeCard(
+            onLink = onOpenLinkedDevices,
+            modifier = Modifier.padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+            ),
+        )
+    }
+    ConversationsEmptyState(
+        archived = archived,
+        filtered = filtered,
+        onCompose = onCompose,
+    )
 }
 
 /**
@@ -2141,6 +2378,48 @@ private fun SortMenuItem(label: String, selected: Boolean, onClick: () -> Unit) 
 }
 
 /**
+ * v1.8.0 — the "Tout marquer comme lu" confirmation dialog. Action
+ * non destructive, dialog simple (pas d'autofocus complexe — c'est
+ * de l'UX, pas une action irreversible).
+ *
+ * Extracted from [ConversationsScreen] to keep it under the Detekt
+ * complexity ceiling.
+ */
+@Composable
+private fun MarkAllReadConfirmDialog(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (visible) {
+        RelayDialog(
+            onDismissRequest = onDismiss,
+            title = stringResource(R.string.action_mark_all_read),
+            content = {
+                Text(
+                    text = stringResource(R.string.mark_all_read_confirm_body),
+                    style = RelayText.MessageBody,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            confirmButton = {
+                RelayTextButton(
+                    text = stringResource(R.string.action_confirm),
+                    onClick = onConfirm,
+                    confirm = true,
+                )
+            },
+            dismissButton = {
+                RelayTextButton(
+                    text = stringResource(R.string.action_cancel),
+                    onClick = onDismiss,
+                )
+            },
+        )
+    }
+}
+
+/**
  * v1.25.3 — les deux dialogues qui n'existent que pour une conversation bloquée : suppression
  * définitive (corbeille rouge de la ligne) et choix Débloquer / Supprimer (appui long).
  *
@@ -2151,6 +2430,8 @@ private fun SortMenuItem(label: String, selected: Boolean, onClick: () -> Unit) 
 private fun BlockedConversationDialogs(
     pendingDelete: com.filestech.sms.domain.model.Conversation?,
     actionsFor: com.filestech.sms.domain.model.Conversation?,
+    /** Client mode C3 — the delete button becomes Cancel on a linked device (no delete frame). */
+    isClientMode: Boolean = false,
     onDismissDelete: () -> Unit,
     onDismissActions: () -> Unit,
     onConfirmDelete: (Long) -> Unit,
@@ -2205,10 +2486,17 @@ private fun BlockedConversationDialogs(
                 )
             },
             dismissButton = {
-                RelayDestructiveButton(
-                    text = stringResource(R.string.action_delete),
-                    onClick = { onRequestDelete(conv) },
-                )
+                if (isClientMode) {
+                    RelayTextButton(
+                        text = stringResource(R.string.action_cancel),
+                        onClick = onDismissActions,
+                    )
+                } else {
+                    RelayDestructiveButton(
+                        text = stringResource(R.string.action_delete),
+                        onClick = { onRequestDelete(conv) },
+                    )
+                }
             },
         )
     }
