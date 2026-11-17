@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.annotation.RequiresApi
 import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
 
 /**
@@ -28,10 +27,13 @@ import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
  * parce que l'utilisateur en conclut que la fonctionnalité est cassée. On ouvre alors la fiche de
  * l'application, d'où la langue reste atteignable en une tape de plus.
  *
- * L'appel est gardé par `SDK_INT >= TIRAMISU` côté appelant : en dessous, la page n'existe pas.
+ * La fonction se garde elle-même : en dessous d'Android 13, elle ne fait
+ * rien — la page n'existe pas. L'appelant n'a donc pas besoin de vérifier
+ * la version avant d'appeler (les deux appelants de l'écran des réglages
+ * ne le faisaient pas, ce qui cassait lint [NewApi] en CI).
  */
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 fun ouvrirLaLangueDeLApplication(contexte: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
     val paquet = Uri.fromParts("package", contexte.packageName, null)
     val langue = Intent(Settings.ACTION_APP_LOCALE_SETTINGS, paquet)
     runCatching { contexte.startActivity(langue) }
