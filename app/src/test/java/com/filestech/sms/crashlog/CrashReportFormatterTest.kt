@@ -1,0 +1,69 @@
+package com.filestech.sms.crashlog
+
+import com.google.common.truth.Truth.assertThat
+import org.junit.jupiter.api.Test
+
+/**
+ * Local-only error log — the report format: file names carry the
+ * timestamp + crash type (so the list never opens a file), and the
+ * body is a metadata header plus the full stack trace.
+ */
+class CrashReportFormatterTest {
+
+    private val metadata = CrashMetadata(
+        appVersion = "1.29.2",
+        buildType = "release",
+        androidRelease = "14",
+        androidSdk = 34,
+        deviceModel = "Pixel 8",
+        timestampMillis = 1_763_000_000_000L,
+    )
+
+    @Test
+    fun `file name carries timestamp and crash type`() {
+        val name = CrashReportFormatter.fileNameFor(1_763_000_000_000L, "NullPointerException")
+        assertThat(name).isEqualTo("crash-1763000000000-NullPointerException.txt")
+    }
+
+    @Test
+    fun `file name sanitizes unsafe characters in the crash type`() {
+        val name = CrashReportFormatter.fileNameFor(1000L, "weird/type:name")
+        assertThat(name).isEqualTo("crash-1000-weird_type_name.txt")
+    }
+
+    @Test
+    fun `file name round-trips through parse`() {
+        val name = CrashReportFormatter.fileNameFor(1_763_000_000_000L, "IllegalStateException")
+        val parsed = CrashReportFormatter.parseFileName(name)
+        assertThat(parsed).isNotNull()
+        assertThat(parsed!!.id).isEqualTo(name)
+        assertThat(parsed.timestampMillis).isEqualTo(1_763_000_000_000L)
+        assertThat(parsed.crashType).isEqualTo("IllegalStateException")
+    }
+
+    @Test
+    fun `parse rejects names that are not report files`() {
+        assertThat(CrashReportFormatter.parseFileName("notes.txt")).isNull()
+        assertThat(CrashReportFormatter.parseFileName("crash-abc-X.txt")).isNull()
+        assertThat(CrashReportFormatter.parseFileName("crash-123-X.log")).isNull()
+    }
+
+    @Test
+    fun `format writes the metadata header`() {
+        val text = CrashReportFormatter.format(metadata, RuntimeException("boom"))
+        assertThat(text).contains("Relay crash report")
+        assertThat(text).contains("App version: 1.29.2 (release)")
+        assertThat(text).contains("Android: 14 (API 34)")
+        assertThat(text).contains("Device: Pixel 8")
+        assertThat(text).contains("Exception: java.lang.RuntimeException")
+    }
+
+    @Test
+    fun `format includes the stack trace and its causes`() {
+        val cause = IllegalStateException("root cause")
+        val error = RuntimeException("boom", cause)
+        val text = CrashReportFormatter.format(metadata, error)
+        assertThat(text).contains("java.lang.RuntimeException: boom")
+        assertThat(text).contains("Caused by: java.lang.IllegalStateException: root cause")
+    }
+}

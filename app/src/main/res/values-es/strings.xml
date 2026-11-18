@@ -825,6 +825,15 @@
     <string name="pdf_footer">Página %1$d — Relay</string>
 
     <!-- Errors -->
+    <string name="error_log_title">Registro de errores</string>
+    <string name="error_log_info">Los informes de errores permanecen en este dispositivo. Envíenos uno solo si lo desea.</string>
+    <string name="error_log_empty">Aún no hay informes de errores.</string>
+    <string name="error_log_share">Compartir</string>
+    <string name="error_log_clear_all">Borrar todo</string>
+    <string name="error_log_copied">Informe copiado</string>
+    <string name="error_log_cleared">Registro de errores borrado</string>
+    <string name="error_log_clear_confirm_title">¿Borrar el registro de errores?</string>
+    <string name="error_log_clear_confirm_body">Se eliminarán todos los informes de errores guardados. Esta acción no se puede deshacer.</string>
     <string name="error_not_default_app">Relay todavía no es la app de SMS predeterminada.</string>
     <string name="error_send_failed">No se ha podido enviar el mensaje.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
@@ -1182,15 +1191,16 @@
     <string name="settings_section_linked_devices">Dispositivos vinculados</string>
     <string name="linked_devices_section_server">Servidor</string>
     <string name="linked_devices_section_devices">Dispositivos</string>
-    <string name="linked_devices_server_title">Servidor de vinculación</string>
-    <string name="linked_devices_server_hint">Cuando está activado, su ordenador puede encontrar este teléfono en la red local y vincularse a él. Nada sale de su red Wi-Fi.</string>
+    <string name="linked_devices_server_title">Activar el servidor</string>
+    <string name="linked_devices_server_subtitle">Al activarlo, este dispositivo se convierte en el servidor al que se conectan los demás dispositivos</string>
+    <string name="linked_devices_server_hint">Cuando está activado, su dispositivo puede encontrar este teléfono en la red local y vincularse a él. Nada sale de su red Wi-Fi.</string>
     <string name="linked_devices_contacts_write_title">Cambiar fotos de contactos</string>
-    <string name="linked_devices_contacts_write_subtitle">Permitir que un ordenador vinculado cambie la foto de un contacto. Toque para permitirlo.</string>
+    <string name="linked_devices_contacts_write_subtitle">Permitir que un dispositivo vinculado cambie la foto de un contacto. Toque para permitirlo.</string>
     <string name="linked_devices_start_error_title">El servidor no pudo iniciarse</string>
     <string name="linked_devices_start_error_bind_hint">Otra app de Relay en este teléfono ya está usando el puerto de vinculación. Detén primero su servidor y vuelve a intentarlo.</string>
     <string name="linked_devices_link_action">Vincular un dispositivo</string>
     <string name="linked_devices_empty_title">Aún no hay dispositivos vinculados</string>
-    <string name="linked_devices_empty_body">Vincule su ordenador desde aquí escaneando su código de vinculación.</string>
+    <string name="linked_devices_empty_body">Vincule su dispositivo desde aquí escaneando su código de vinculación.</string>
     <string name="linked_devices_kind_desktop">Ordenador</string>
     <string name="linked_devices_kind_phone">Teléfono</string>
     <string name="linked_devices_kind_tablet">Tableta</string>
@@ -1222,7 +1232,7 @@
     <string name="client_mode_section">Modo de dispositivo</string>
     <string name="client_this_device_section">Este dispositivo</string>
     <string name="client_link_section">Su teléfono</string>
-    <string name="client_mode_link_title">Vincular este dispositivo a otro teléfono</string>
+    <string name="client_mode_link_title">Vincular este dispositivo a otro teléfono que es el servidor</string>
     <string name="client_mode_switch_back_title">Usar este dispositivo como teléfono</string>
     <string name="client_mode_switch_title">Cambiar el modo de dispositivo</string>
     <string name="client_mode_switch_to_client_body">Al cambiar se borrarán los mensajes guardados en este dispositivo. No se eliminará nada de su teléfono.</string>

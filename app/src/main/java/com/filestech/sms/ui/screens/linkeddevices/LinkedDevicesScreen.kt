@@ -177,10 +177,13 @@ private fun HubLinkedDevicesScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val linkedFmt = stringResource(R.string.linked_devices_linked)
     val removedFmt = stringResource(R.string.linked_devices_removed)
-    // Round 3, item 9 — WRITE_CONTACTS, so a linked computer can
-    // set a contact's photo. Requested from this screen (the row in
-    // the server group), never at launch.
-    val contactsWrite = rememberPermissionContactsWrite()
+    // Round 3, item 9 — WRITE_CONTACTS, so a linked device can
+    // set a contact's photo. Asked when the server is switched on
+    // (the toggle below), never at launch. A denial is remembered
+    // (the ViewModel persists it) so the row can offer it again.
+    val contactsWrite = rememberPermissionContactsWrite(
+        onDenied = { viewModel.setContactsWriteDenied(true) },
+    )
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -210,7 +213,16 @@ private fun HubLinkedDevicesScreen(
             snackbarHost = snackbarHost,
             onBack = onBack,
             onOpenScanner = { scannerOpen = true },
-            onToggleServer = viewModel::setServerEnabled,
+            onToggleServer = { enabled ->
+                viewModel.setServerEnabled(enabled)
+                // Enabling the server is what makes contact-photo
+                // setting possible, so the WRITE_CONTACTS grant is
+                // asked here — once, and only before the first
+                // denial; after that the row is the way back in.
+                if (enabled && !contactsWrite.granted && !state.contactsWriteDenied) {
+                    contactsWrite.request()
+                }
+            },
             onRemove = { deviceToRemove = it },
             contactsWriteGranted = contactsWrite.granted,
             onRequestContactsWrite = contactsWrite.request,
@@ -362,31 +374,41 @@ private fun LinkedDevicesList(
                 )
             }
             RelaySectionLabel(stringResource(R.string.linked_devices_section_server))
-            RelaySettingsGroup {
-                item {
-                    RelaySwitchRow(
-                        icon = Icons.Outlined.Wifi,
-                        title = stringResource(R.string.linked_devices_server_title),
-                        checked = state.serverEnabled,
-                        onCheckedChange = onToggleServer,
-                    )
-                }
-                // Round 3, item 9 — WRITE_CONTACTS, so a linked
-                // computer can set a contact's photo (the camera
-                // badge on the desktop detail pane). The row shows
-                // only while the permission is missing, and tapping
-                // it requests it — the background service cannot
-                // show a dialog, so this screen is where the grant
-                // happens. Once granted the row goes away on its
-                // own (accompanist re-reads on foreground return).
-                if (!contactsWriteGranted) {
-                    item(onClick = onRequestContactsWrite) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Person,
-                            title = stringResource(R.string.linked_devices_contacts_write_title),
-                            subtitle = stringResource(R.string.linked_devices_contacts_write_subtitle),
-                            chevron = true,
+            // The photo row shows only after a denial (never before
+            // the first ask): key the group on the gating value, as
+            // the Settings screen keys its conditional groups —
+            // without it the row would never appear or disappear
+            // when the denial state changes.
+            val showContactsWriteRow =
+                !contactsWriteGranted && state.contactsWriteDenied
+            key(showContactsWriteRow) {
+                RelaySettingsGroup {
+                    item {
+                        RelaySwitchRow(
+                            icon = Icons.Outlined.Wifi,
+                            title = stringResource(R.string.linked_devices_server_title),
+                            subtitle = stringResource(R.string.linked_devices_server_subtitle),
+                            checked = state.serverEnabled,
+                            onCheckedChange = onToggleServer,
                         )
+                    }
+                    // Round 3, item 9 — WRITE_CONTACTS, so a linked
+                    // device can set a contact's photo (the camera
+                    // badge on the desktop detail pane). The grant
+                    // is asked when the server is switched on; this
+                    // row appears only after a denial, so the user
+                    // is never stuck with it — tapping asks again,
+                    // and a permanent denial opens the app's system
+                    // page instead (see rememberPermissionContactsWrite).
+                    if (showContactsWriteRow) {
+                        item(onClick = onRequestContactsWrite) {
+                            RelaySettingRow(
+                                icon = Icons.Outlined.Person,
+                                title = stringResource(R.string.linked_devices_contacts_write_title),
+                                subtitle = stringResource(R.string.linked_devices_contacts_write_subtitle),
+                                chevron = true,
+                            )
+                        }
                     }
                 }
             }
@@ -401,37 +423,42 @@ private fun LinkedDevicesList(
                 )
             }
 
-            RelaySectionLabel(stringResource(R.string.linked_devices_section_devices))
-            // Keyed on the device list, as the Settings screen keys its
-            // conditional groups: without it the group's content lambda
-            // is reused and a freshly linked (or removed) row never
-            // appears until the next unrelated recomposition.
-            key(state.devices) {
-                RelaySettingsGroup {
-                    item(onClick = onOpenScanner) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.QrCodeScanner,
-                            title = stringResource(R.string.linked_devices_link_action),
-                            chevron = true,
-                        )
-                    }
-                    state.devices.forEach { ui ->
-                        item {
+            // One link button before linking: with no devices yet
+            // the whole section (title + Link row) hides and only
+            // the centered empty state offers the link action.
+            if (state.devices.isNotEmpty()) {
+                RelaySectionLabel(stringResource(R.string.linked_devices_section_devices))
+                // Keyed on the device list, as the Settings screen keys its
+                // conditional groups: without it the group's content lambda
+                // is reused and a freshly linked (or removed) row never
+                // appears until the next unrelated recomposition.
+                key(state.devices) {
+                    RelaySettingsGroup {
+                        item(onClick = onOpenScanner) {
                             RelaySettingRow(
-                                icon = kindIcon(ui.device.kind),
-                                title = ui.device.displayName,
-                                subtitle = deviceSubtitle(ui),
-                                trailing = {
-                                    IconButton(onClick = { onRemove(ui) }) {
-                                        Icon(
-                                            painterResource(R.drawable.ic_trash),
-                                            contentDescription = stringResource(
-                                                R.string.linked_devices_remove_content_desc,
-                                            ),
-                                        )
-                                    }
-                                },
+                                icon = Icons.Outlined.QrCodeScanner,
+                                title = stringResource(R.string.linked_devices_link_action),
+                                chevron = true,
                             )
+                        }
+                        state.devices.forEach { ui ->
+                            item {
+                                RelaySettingRow(
+                                    icon = kindIcon(ui.device.kind),
+                                    title = ui.device.displayName,
+                                    subtitle = deviceSubtitle(ui),
+                                    trailing = {
+                                        IconButton(onClick = { onRemove(ui) }) {
+                                            Icon(
+                                                painterResource(R.drawable.ic_trash),
+                                                contentDescription = stringResource(
+                                                    R.string.linked_devices_remove_content_desc,
+                                                ),
+                                            )
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -472,7 +499,7 @@ private fun describeCollectedLink(link: ClientLink?): String =
     "isLinked=${link?.isLinked} deviceId=${link?.deviceId != null} " +
         "displayName=${link?.displayName != null} hubId=${link?.hubId != null} " +
         "hubName=${link?.hubName != null} hubHost=${link?.hubHost != null} " +
-        "hubPort=${link?.hubPort != null}"
+        "hubPort=${link?.hubPort != null} lastSeen=${link?.lastSeen}"
 
 /**
  * Client mode — the client branch of the Linked devices screen:
@@ -492,12 +519,18 @@ private fun ClientLinkedDevicesScreen(
     // nothing, and the conditionally-composed child branch may not
     // be delivering StateFlow updates.
     val link by viewModel.link.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     // TEMP-DIAG "Not linked": what the composition actually sees —
     // presence only, never values. One line per collected value.
+    // The connection state rides along: the hub row read "Offline"
+    // after the QR dance, and this shows what the screen held.
     LaunchedEffect(link) {
-        Timber.d("ClientLinkedDevicesScreen: link collected %s", describeCollectedLink(link))
+        Timber.d(
+            "ClientLinkedDevicesScreen: link collected %s connection=%s",
+            describeCollectedLink(link),
+            connectionState::class.simpleName,
+        )
     }
-    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val qrOpen by viewModel.qrOpen.collectAsStateWithLifecycle()
     val pairUri by viewModel.pairUri.collectAsStateWithLifecycle()
     val identityError by viewModel.identityError.collectAsStateWithLifecycle()
@@ -652,75 +685,92 @@ private fun ClientLinkedDevicesList(
                 }
             }
             RelaySectionLabel(stringResource(R.string.client_link_section))
-            RelaySettingsGroup {
-                if (link?.isLinked == true) {
-                    item {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.PhoneAndroid,
-                            title = link.hubName
-                                ?: stringResource(R.string.linked_devices_kind_phone),
-                            subtitle = linkStatusText(connectionState),
-                        )
-                    }
-                    // Removed: the hub deleted this device, so the QR
-                    // entry comes back for a fresh pairing.
-                    if (connectionState is ClientConnectionState.Removed) {
+            // Keyed on the linked boolean, as the hub branch keys its
+            // device group and Settings keys its conditional groups:
+            // without it the group's content lambda is hoisted/reused
+            // and the "Not linked" row registered on the first
+            // composition (link still null) never goes away when the
+            // link arrives. Keyed on the boolean, not the record —
+            // the record changes every minute (last-seen touch),
+            // the boolean only on link/unlink.
+            key(link?.isLinked) {
+                RelaySettingsGroup {
+                    // TEMP-DIAG "Not linked": proves the group content
+                    // lambda re-runs when the link arrives — before
+                    // the fix this logged once with null, never again.
+                    Timber.d(
+                        "ClientLinkedDevicesList: Your-phone group evaluating isLinked=%s",
+                        link?.isLinked,
+                    )
+                    if (link?.isLinked == true) {
+                        item {
+                            RelaySettingRow(
+                                icon = Icons.Outlined.PhoneAndroid,
+                                title = link.hubName
+                                    ?: stringResource(R.string.linked_devices_kind_phone),
+                                subtitle = linkStatusText(connectionState),
+                            )
+                        }
+                        // Removed: the hub deleted this device, so the QR
+                        // entry comes back for a fresh pairing.
+                        if (connectionState is ClientConnectionState.Removed) {
+                            item(onClick = onOpenQr) {
+                                RelaySettingRow(
+                                    icon = Icons.Outlined.QrCodeScanner,
+                                    title = stringResource(R.string.client_link_qr_title),
+                                    chevron = true,
+                                )
+                            }
+                        }
+                        // Client mode C2 — Re-sync, only while linked:
+                        // clears the messages stored on this device and
+                        // asks how much to sync again. The second tap
+                        // (the confirm dialog) does the work.
+                        item(onClick = onResync) {
+                            RelaySettingRow(
+                                icon = Icons.Outlined.Refresh,
+                                title = stringResource(R.string.client_resync_row),
+                                subtitle = stringResource(R.string.client_resync_subtitle),
+                            )
+                        }
+                        // Client mode C4 — contacts sync failed (the
+                        // phone can't read its address book): the reason
+                        // + Retry. Message sync proceeds regardless.
+                        if (contactsErrorCode != null) {
+                            item {
+                                RelaySettingRow(
+                                    icon = Icons.Outlined.Contacts,
+                                    title = stringResource(R.string.client_contacts_error_title),
+                                    subtitle = contactsErrorText(
+                                        contactsErrorCode,
+                                        contactsErrorMessage,
+                                    ),
+                                    titleColor = MaterialTheme.colorScheme.error,
+                                    trailing = {
+                                        RelayTextButton(
+                                            text = stringResource(R.string.action_retry),
+                                            onClick = onRetryContacts,
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                        item(onClick = onUnlink) {
+                            RelaySettingRow(
+                                iconPainter = painterResource(R.drawable.ic_trash),
+                                title = stringResource(R.string.client_unlink_row),
+                                titleColor = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    } else {
                         item(onClick = onOpenQr) {
                             RelaySettingRow(
                                 icon = Icons.Outlined.QrCodeScanner,
                                 title = stringResource(R.string.client_link_qr_title),
+                                subtitle = stringResource(R.string.client_link_status_not_linked),
                                 chevron = true,
                             )
                         }
-                    }
-                    // Client mode C2 — Re-sync, only while linked:
-                    // clears the messages stored on this device and
-                    // asks how much to sync again. The second tap
-                    // (the confirm dialog) does the work.
-                    item(onClick = onResync) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.Refresh,
-                            title = stringResource(R.string.client_resync_row),
-                            subtitle = stringResource(R.string.client_resync_subtitle),
-                        )
-                    }
-                    // Client mode C4 — contacts sync failed (the
-                    // phone can't read its address book): the reason
-                    // + Retry. Message sync proceeds regardless.
-                    if (contactsErrorCode != null) {
-                        item {
-                            RelaySettingRow(
-                                icon = Icons.Outlined.Contacts,
-                                title = stringResource(R.string.client_contacts_error_title),
-                                subtitle = contactsErrorText(
-                                    contactsErrorCode,
-                                    contactsErrorMessage,
-                                ),
-                                titleColor = MaterialTheme.colorScheme.error,
-                                trailing = {
-                                    RelayTextButton(
-                                        text = stringResource(R.string.action_retry),
-                                        onClick = onRetryContacts,
-                                    )
-                                },
-                            )
-                        }
-                    }
-                    item(onClick = onUnlink) {
-                        RelaySettingRow(
-                            iconPainter = painterResource(R.drawable.ic_trash),
-                            title = stringResource(R.string.client_unlink_row),
-                            titleColor = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                } else {
-                    item(onClick = onOpenQr) {
-                        RelaySettingRow(
-                            icon = Icons.Outlined.QrCodeScanner,
-                            title = stringResource(R.string.client_link_qr_title),
-                            subtitle = stringResource(R.string.client_link_status_not_linked),
-                            chevron = true,
-                        )
                     }
                 }
             }
@@ -1144,20 +1194,27 @@ private class ContactsWritePermission(
  * answers instantly without showing a dialog, so a denial that
  * arrives faster than a human could tap it means the permission
  * can only be granted from the app's system page — open it instead
- * of leaving a dead button.
+ * of leaving a dead button. Every denial also reports through
+ * [onDenied] (the screen remembers it, so the row can offer the
+ * grant again later).
  */
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-private fun rememberPermissionContactsWrite(): ContactsWritePermission {
+private fun rememberPermissionContactsWrite(
+    onDenied: () -> Unit,
+): ContactsWritePermission {
     val context = LocalContext.current
     val requestStarted = remember { mutableLongStateOf(0L) }
     val state = rememberPermissionState(
         permission = Manifest.permission.WRITE_CONTACTS,
         onPermissionResult = { granted ->
-            val instant = SystemClock.elapsedRealtime() - requestStarted.longValue <
-                SEUIL_SANS_DIALOGUE_MS
-            if (!granted && instant) {
-                ouvrirLaFicheDeLApplication(context)
+            if (!granted) {
+                onDenied()
+                val instant = SystemClock.elapsedRealtime() - requestStarted.longValue <
+                    SEUIL_SANS_DIALOGUE_MS
+                if (instant) {
+                    ouvrirLaFicheDeLApplication(context)
+                }
             }
         },
     )

@@ -96,6 +96,21 @@ class LinkedDeviceStore(
         }
 
     /**
+     * True once the user has denied the WRITE_CONTACTS request
+     * (asked when the server is switched on). Sticky — never
+     * cleared: the "Contact photo changes" row shows while the
+     * permission is missing *and* this is true, so the row never
+     * appears before the first ask, appears after a denial, and
+     * reappears if the grant is later revoked in Settings.
+     */
+    val contactsWriteDenied: Flow<Boolean> = dataStore.data
+        .map { prefs -> prefs[KEY_CONTACTS_WRITE_DENIED] ?: false }
+        .catch { t ->
+            Timber.w(t, "LinkedDeviceStore: contactsWriteDenied read failed, serving false")
+            emit(false)
+        }
+
+    /**
      * The last server start failure, one line
      * (`<ISO-8601 time> | <step> | <SimpleName>: <first line>`), or
      * null when the server last started cleanly. The release build
@@ -133,6 +148,14 @@ class LinkedDeviceStore(
             dataStore.edit { prefs -> prefs[KEY_SERVER_ENABLED] = enabled }
         }.onFailure { t ->
             Timber.w(t, "LinkedDeviceStore: setServerEnabled failed")
+        }
+    }
+
+    suspend fun setContactsWriteDenied(denied: Boolean) {
+        runCatching {
+            dataStore.edit { prefs -> prefs[KEY_CONTACTS_WRITE_DENIED] = denied }
+        }.onFailure { t ->
+            Timber.w(t, "LinkedDeviceStore: setContactsWriteDenied failed")
         }
     }
 
@@ -279,6 +302,8 @@ class LinkedDeviceStore(
         private val KEY_SERVER_ENABLED = booleanPreferencesKey("sync.server_enabled")
         private val KEY_SERVER_DEFAULT_MIGRATED =
             booleanPreferencesKey("sync.server_default_migrated")
+        private val KEY_CONTACTS_WRITE_DENIED =
+            booleanPreferencesKey("sync.contacts_write_denied")
         private val KEY_DEVICES = stringPreferencesKey("sync.devices_json")
         private val KEY_LAST_START_ERROR = stringPreferencesKey("sync_last_start_error")
 

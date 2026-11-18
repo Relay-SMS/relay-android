@@ -810,6 +810,15 @@
     <string name="pdf_header_subtitle">Exporté le %1$s • %2$d participant(s)</string>
     <string name="pdf_footer">Page %1$d — Relay</string>
 
+    <string name="error_log_title">Journal d\'erreurs</string>
+    <string name="error_log_info">Les rapports de plantage restent sur cet appareil. Envoyez-nous-en un uniquement si vous le souhaitez.</string>
+    <string name="error_log_empty">Aucun rapport de plantage pour l\'instant.</string>
+    <string name="error_log_share">Partager</string>
+    <string name="error_log_clear_all">Tout effacer</string>
+    <string name="error_log_copied">Rapport copié</string>
+    <string name="error_log_cleared">Journal d\'erreurs effacé</string>
+    <string name="error_log_clear_confirm_title">Effacer le journal d\'erreurs ?</string>
+    <string name="error_log_clear_confirm_body">Tous les rapports de plantage enregistrés seront supprimés. Cette action est irréversible.</string>
     <string name="error_not_default_app">Relay n\'est pas encore l\'application SMS par défaut.</string>
     <string name="error_send_failed">Échec de l\'envoi du message.</string>
     <string name="error_send_recipient_blocked">Non envoyé : vous avez bloqué ce numéro. Débloquez-le pour pouvoir écrire.</string>
@@ -1157,15 +1166,16 @@
     <string name="settings_section_linked_devices">Appareils liés</string>
     <string name="linked_devices_section_server">Serveur</string>
     <string name="linked_devices_section_devices">Appareils</string>
-    <string name="linked_devices_server_title">Serveur d\'appariement</string>
-    <string name="linked_devices_server_hint">Quand c\'est activé, votre ordinateur peut trouver ce téléphone sur le réseau local et s\'y lier. Rien ne quitte votre réseau Wi-Fi.</string>
+    <string name="linked_devices_server_title">Activer le serveur</string>
+    <string name="linked_devices_server_subtitle">En l\'activant, cet appareil devient le serveur auquel les autres appareils se connectent</string>
+    <string name="linked_devices_server_hint">Quand c\'est activé, votre appareil peut trouver ce téléphone sur le réseau local et s\'y lier. Rien ne quitte votre réseau Wi-Fi.</string>
     <string name="linked_devices_contacts_write_title">Modifier les photos de contacts</string>
-    <string name="linked_devices_contacts_write_subtitle">Autoriser un ordinateur lié à modifier la photo d\'un contact. Appuyez pour autoriser.</string>
+    <string name="linked_devices_contacts_write_subtitle">Autoriser un appareil lié à modifier la photo d\'un contact. Appuyez pour autoriser.</string>
     <string name="linked_devices_start_error_title">Le serveur n\'a pas pu démarrer</string>
     <string name="linked_devices_start_error_bind_hint">Une autre app Relay sur ce téléphone utilise déjà le port d\'appariement — arrêtez d\'abord son serveur, puis réessayez.</string>
     <string name="linked_devices_link_action">Lier un appareil</string>
     <string name="linked_devices_empty_title">Aucun appareil lié pour le moment</string>
-    <string name="linked_devices_empty_body">Liez votre ordinateur d\'ici en scannant son code d\'appariement.</string>
+    <string name="linked_devices_empty_body">Liez votre appareil d\'ici en scannant son code d\'appariement.</string>
     <string name="linked_devices_kind_desktop">Ordinateur</string>
     <string name="linked_devices_kind_phone">Téléphone</string>
     <string name="linked_devices_kind_tablet">Tablette</string>
@@ -1197,7 +1207,7 @@
     <string name="client_mode_section">Mode de l\'appareil</string>
     <string name="client_this_device_section">Cet appareil</string>
     <string name="client_link_section">Votre téléphone</string>
-    <string name="client_mode_link_title">Lier cet appareil à un autre téléphone</string>
+    <string name="client_mode_link_title">Lier cet appareil à un autre téléphone qui est le serveur</string>
     <string name="client_mode_switch_back_title">Utiliser cet appareil comme téléphone</string>
     <string name="client_mode_switch_title">Changer de mode d\'appareil</string>
     <string name="client_mode_switch_to_client_body">Le changement efface les messages enregistrés sur cet appareil. Rien n\'est supprimé de votre téléphone.</string>

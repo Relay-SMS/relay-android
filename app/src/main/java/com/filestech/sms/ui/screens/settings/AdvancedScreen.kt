@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sms
@@ -82,6 +83,7 @@ import com.filestech.sms.ui.theme.RelayColors
 @Composable
 fun AdvancedScreen(
     onBack: () -> Unit,
+    onOpenErrorLog: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -266,6 +268,16 @@ fun AdvancedScreen(
                             viewModel.update { it.copy(advanced = it.advanced.copy(keepAliveService = v)) }
                         },
                         infoText = stringResource(R.string.settings_keep_alive_desc),
+                    )
+                }
+                // Local-only error log — the saved crash reports,
+                // for sending us what went wrong. Nothing here
+                // uploads anything; see `crashlog`.
+                item(onClick = onOpenErrorLog) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.BugReport,
+                        title = stringResource(R.string.error_log_title),
+                        chevron = true,
                     )
                 }
                 // v1.8.0 — dialog de confirmation (les préférences reviennent

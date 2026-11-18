@@ -823,6 +823,15 @@
     <string name="pdf_footer">Seite %1$d — Relay</string>
 
     <!-- Errors -->
+    <string name="error_log_title">Fehlerprotokoll</string>
+    <string name="error_log_info">Absturzberichte bleiben auf diesem Gerät. Senden Sie uns nur dann einen, wenn Sie möchten.</string>
+    <string name="error_log_empty">Noch keine Absturzberichte.</string>
+    <string name="error_log_share">Teilen</string>
+    <string name="error_log_clear_all">Alle löschen</string>
+    <string name="error_log_copied">Bericht kopiert</string>
+    <string name="error_log_cleared">Fehlerprotokoll gelöscht</string>
+    <string name="error_log_clear_confirm_title">Fehlerprotokoll löschen?</string>
+    <string name="error_log_clear_confirm_body">Alle gespeicherten Absturzberichte werden gelöscht. Dies kann nicht rückgängig gemacht werden.</string>
     <string name="error_not_default_app">Relay ist noch nicht die Standard-SMS-App.</string>
     <string name="error_send_failed">Die Nachricht konnte nicht gesendet werden.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
@@ -1156,15 +1165,16 @@
     <string name="settings_section_linked_devices">Verknüpfte Geräte</string>
     <string name="linked_devices_section_server">Server</string>
     <string name="linked_devices_section_devices">Geräte</string>
-    <string name="linked_devices_server_title">Verknüpfungsserver</string>
-    <string name="linked_devices_server_hint">Wenn aktiviert, kann Ihr Computer dieses Telefon im lokalen Netzwerk finden und sich damit verknüpfen. Nichts verlässt Ihr WLAN.</string>
+    <string name="linked_devices_server_title">Server aktivieren</string>
+    <string name="linked_devices_server_subtitle">Wenn Sie dies aktivieren, wird dieses Gerät zum Server, mit dem sich andere Geräte verbinden</string>
+    <string name="linked_devices_server_hint">Wenn aktiviert, kann Ihr Gerät dieses Telefon im lokalen Netzwerk finden und sich damit verknüpfen. Nichts verlässt Ihr WLAN.</string>
     <string name="linked_devices_contacts_write_title">Kontaktfotos ändern</string>
-    <string name="linked_devices_contacts_write_subtitle">Einem verknüpften Computer erlauben, das Foto eines Kontakts zu ändern. Zum Erlauben tippen.</string>
+    <string name="linked_devices_contacts_write_subtitle">Einem verknüpften Gerät erlauben, das Foto eines Kontakts zu ändern. Zum Erlauben tippen.</string>
     <string name="linked_devices_start_error_title">Der Server konnte nicht gestartet werden</string>
     <string name="linked_devices_start_error_bind_hint">Eine andere Relay-App auf diesem Telefon nutzt bereits den Verknüpfungsport — beenden Sie zuerst deren Server und versuchen Sie es dann erneut.</string>
     <string name="linked_devices_link_action">Gerät verknüpfen</string>
     <string name="linked_devices_empty_title">Noch keine verknüpften Geräte</string>
-    <string name="linked_devices_empty_body">Verknüpfen Sie Ihren Computer von hier aus, indem Sie seinen Kopplungscode scannen.</string>
+    <string name="linked_devices_empty_body">Verknüpfen Sie Ihr Gerät von hier aus, indem Sie seinen Kopplungscode scannen.</string>
     <string name="linked_devices_kind_desktop">Computer</string>
     <string name="linked_devices_kind_phone">Telefon</string>
     <string name="linked_devices_kind_tablet">Tablet</string>
@@ -1196,7 +1206,7 @@
     <string name="client_mode_section">Gerätemodus</string>
     <string name="client_this_device_section">Dieses Gerät</string>
     <string name="client_link_section">Ihr Telefon</string>
-    <string name="client_mode_link_title">Dieses Gerät mit einem anderen Telefon verknüpfen</string>
+    <string name="client_mode_link_title">Dieses Gerät mit einem anderen Telefon verknüpfen, das der Server ist</string>
     <string name="client_mode_switch_back_title">Dieses Gerät als Telefon verwenden</string>
     <string name="client_mode_switch_title">Gerätemodus wechseln</string>
     <string name="client_mode_switch_to_client_body">Beim Wechsel werden die auf diesem Gerät gespeicherten Nachrichten gelöscht. Auf Ihrem Telefon wird nichts gelöscht.</string>

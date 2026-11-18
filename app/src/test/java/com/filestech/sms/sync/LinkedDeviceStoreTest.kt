@@ -103,6 +103,17 @@ class LinkedDeviceStoreTest {
         assertThat(store.serverEnabled.first()).isFalse()
     }
 
+    @Test fun `contacts write denial is false on a fresh store`() = runTest {
+        val store = linkedStore()
+        assertThat(store.contactsWriteDenied.first()).isFalse()
+    }
+
+    @Test fun `a contacts write denial persists`() = runTest {
+        val store = linkedStore()
+        store.setContactsWriteDenied(true)
+        assertThat(store.contactsWriteDenied.first()).isTrue()
+    }
+
     private fun TestScope.linkedStore(): LinkedDeviceStore {
         val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
             scope = backgroundScope,

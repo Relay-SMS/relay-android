@@ -820,6 +820,15 @@
     <string name="pdf_footer">Page %1$d — Relay</string>
 
     <!-- Errors -->
+    <string name="error_log_title">Error log</string>
+    <string name="error_log_info">Crash reports stay on this device. Send one to us only if you choose to.</string>
+    <string name="error_log_empty">No crash reports yet.</string>
+    <string name="error_log_share">Share</string>
+    <string name="error_log_clear_all">Clear all</string>
+    <string name="error_log_copied">Report copied</string>
+    <string name="error_log_cleared">Error log cleared</string>
+    <string name="error_log_clear_confirm_title">Clear the error log?</string>
+    <string name="error_log_clear_confirm_body">All saved crash reports will be deleted. This cannot be undone.</string>
     <string name="error_not_default_app">Relay is not the default SMS app yet.</string>
     <string name="error_send_failed">Failed to send the message.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
@@ -1171,15 +1180,16 @@
     <string name="settings_section_linked_devices">Linked devices</string>
     <string name="linked_devices_section_server">Server</string>
     <string name="linked_devices_section_devices">Devices</string>
-    <string name="linked_devices_server_title">Linking server</string>
-    <string name="linked_devices_server_hint">When on, your computer can find this phone on the local network and link to it. Nothing leaves your Wi-Fi network.</string>
+    <string name="linked_devices_server_title">Enable server</string>
+    <string name="linked_devices_server_subtitle">Enabling this sets this device to be the server other devices connect to</string>
+    <string name="linked_devices_server_hint">When on, your device can find this phone on the local network and link to it. Nothing leaves your Wi-Fi network.</string>
     <string name="linked_devices_contacts_write_title">Contact photo changes</string>
-    <string name="linked_devices_contacts_write_subtitle">Let a linked computer set a contact\'s photo. Tap to allow.</string>
+    <string name="linked_devices_contacts_write_subtitle">Let a linked device set a contact\'s photo. Tap to allow.</string>
     <string name="linked_devices_start_error_title">The server couldn\'t start</string>
     <string name="linked_devices_start_error_bind_hint">Another Relay app on this phone is already using the link port — stop its server first, then try again.</string>
     <string name="linked_devices_link_action">Link a device</string>
     <string name="linked_devices_empty_title">No linked devices yet</string>
-    <string name="linked_devices_empty_body">Link your computer from here by scanning its pairing code.</string>
+    <string name="linked_devices_empty_body">Link your device from here by scanning its pairing code.</string>
     <string name="linked_devices_kind_desktop">Computer</string>
     <string name="linked_devices_kind_phone">Phone</string>
     <string name="linked_devices_kind_tablet">Tablet</string>
@@ -1211,7 +1221,7 @@
     <string name="client_mode_section">Device mode</string>
     <string name="client_this_device_section">This device</string>
     <string name="client_link_section">Your phone</string>
-    <string name="client_mode_link_title">Link this device to another phone</string>
+    <string name="client_mode_link_title">Link this device to another phone that is the server</string>
     <string name="client_mode_switch_back_title">Use this device as a phone</string>
     <string name="client_mode_switch_title">Switch device mode</string>
     <string name="client_mode_switch_to_client_body">Switching clears the messages stored on this device. Nothing is deleted from your phone.</string>

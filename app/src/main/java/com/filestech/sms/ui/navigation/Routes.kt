@@ -24,6 +24,11 @@ import kotlinx.serialization.Serializable
 // Language and Help). Was the "Advanced" section of the Settings list.
 @Serializable data object Advanced : Route
 
+// Error log screen, reached from Advanced. Lists the locally saved
+// crash reports (see `crashlog`); nothing here leaves the device
+// unless the user shares one.
+@Serializable data object ErrorLog : Route
+
 // v1.23.2 — route `Onboarding` retirée : injoignable depuis v1.2.0 (aucun
 // `navigate(Onboarding)`, pas de startDestination), l'accueil passe par Splash.
 // L'écran et ses 9 strings FR/EN sont récupérables via `git show 9b553d3`.

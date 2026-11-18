@@ -34,6 +34,8 @@ data class LinkedDevicesState(
     val devices: List<LinkedDeviceUi> = emptyList(),
     val pendingInvite: QrPairing.Invite? = null,
     val scanError: QrPairing.Failure? = null,
+    /** The user denied the WRITE_CONTACTS request at least once. */
+    val contactsWriteDenied: Boolean = false,
 )
 
 /**
@@ -76,14 +78,16 @@ class LinkedDevicesViewModel @Inject constructor(
         val enabled: Boolean,
         val running: Boolean,
         val lastStartError: String?,
+        val contactsWriteDenied: Boolean,
     )
 
     private val serverUiState: Flow<ServerUiState> = combine(
         store.serverEnabled,
         server.running,
         store.lastStartError,
-    ) { enabled, running, startError ->
-        ServerUiState(enabled, running, startError)
+        store.contactsWriteDenied,
+    ) { enabled, running, startError, contactsWriteDenied ->
+        ServerUiState(enabled, running, startError, contactsWriteDenied)
     }
 
     val state: StateFlow<LinkedDevicesState> = combine(
@@ -102,11 +106,17 @@ class LinkedDevicesViewModel @Inject constructor(
             },
             pendingInvite = invite,
             scanError = error,
+            contactsWriteDenied = server.contactsWriteDenied,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LinkedDevicesState())
 
     fun setServerEnabled(enabled: Boolean) {
         viewModelScope.launch { store.setServerEnabled(enabled) }
+    }
+
+    /** The user denied the WRITE_CONTACTS request: remember it, so the row can offer it later. */
+    fun setContactsWriteDenied(denied: Boolean) {
+        viewModelScope.launch { store.setContactsWriteDenied(denied) }
     }
 
     /**

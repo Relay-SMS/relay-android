@@ -825,6 +825,15 @@
     <string name="pdf_footer">Pagina %1$d — Relay</string>
 
     <!-- Errors -->
+    <string name="error_log_title">Registro errori</string>
+    <string name="error_log_info">Le segnalazioni di arresto anomalo restano su questo dispositivo. Vengono inviate solo se si sceglie di farlo.</string>
+    <string name="error_log_empty">Ancora nessuna segnalazione di arresto anomalo.</string>
+    <string name="error_log_share">Condividi</string>
+    <string name="error_log_clear_all">Cancella tutto</string>
+    <string name="error_log_copied">Segnalazione copiata</string>
+    <string name="error_log_cleared">Registro errori cancellato</string>
+    <string name="error_log_clear_confirm_title">Cancellare il registro errori?</string>
+    <string name="error_log_clear_confirm_body">Tutte le segnalazioni di arresto anomalo salvate verranno eliminate. Questa azione non può essere annullata.</string>
     <string name="error_not_default_app">Relay non è ancora l\'app SMS predefinita.</string>
     <string name="error_send_failed">Invio del messaggio non riuscito.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
@@ -1182,15 +1191,16 @@
     <string name="settings_section_linked_devices">Dispositivi collegati</string>
     <string name="linked_devices_section_server">Server</string>
     <string name="linked_devices_section_devices">Dispositivi</string>
-    <string name="linked_devices_server_title">Server di collegamento</string>
-    <string name="linked_devices_server_hint">Quando attivo, il computer può trovare questo telefono nella rete locale e collegarsi ad esso. Nulla lascia la tua rete Wi-Fi.</string>
+    <string name="linked_devices_server_title">Attivare il server</string>
+    <string name="linked_devices_server_subtitle">Attivandolo, questo dispositivo diventa il server a cui si collegano gli altri dispositivi</string>
+    <string name="linked_devices_server_hint">Quando attivo, il dispositivo può trovare questo telefono nella rete locale e collegarsi ad esso. Nulla lascia la tua rete Wi-Fi.</string>
     <string name="linked_devices_contacts_write_title">Modificare le foto dei contatti</string>
-    <string name="linked_devices_contacts_write_subtitle">Consentire a un computer collegato di impostare la foto di un contatto. Tocca per consentire.</string>
+    <string name="linked_devices_contacts_write_subtitle">Consentire a un dispositivo collegato di impostare la foto di un contatto. Tocca per consentire.</string>
     <string name="linked_devices_start_error_title">Il server non è stato avviato</string>
     <string name="linked_devices_start_error_bind_hint">Un\'altra app Relay su questo telefono sta già usando la porta di collegamento: prima ferma il suo server, poi riprova.</string>
     <string name="linked_devices_link_action">Collega un dispositivo</string>
     <string name="linked_devices_empty_title">Ancora nessun dispositivo collegato</string>
-    <string name="linked_devices_empty_body">Collega il tuo computer da qui scansionando il suo codice di abbinamento.</string>
+    <string name="linked_devices_empty_body">Collega il tuo dispositivo da qui scansionando il suo codice di abbinamento.</string>
     <string name="linked_devices_kind_desktop">Computer</string>
     <string name="linked_devices_kind_phone">Telefono</string>
     <string name="linked_devices_kind_tablet">Tablet</string>
@@ -1222,7 +1232,7 @@
     <string name="client_mode_section">Modalità dispositivo</string>
     <string name="client_this_device_section">Questo dispositivo</string>
     <string name="client_link_section">Il tuo telefono</string>
-    <string name="client_mode_link_title">Collega questo dispositivo a un altro telefono</string>
+    <string name="client_mode_link_title">Collega questo dispositivo a un altro telefono che è il server</string>
     <string name="client_mode_switch_back_title">Usa questo dispositivo come telefono</string>
     <string name="client_mode_switch_title">Cambia modalità dispositivo</string>
     <string name="client_mode_switch_to_client_body">Il passaggio cancella i messaggi salvati su questo dispositivo. Non viene eliminato nulla dal tuo telefono.</string>

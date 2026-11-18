@@ -36,6 +36,7 @@ import com.filestech.sms.ui.navigation.Compose
 import com.filestech.sms.ui.navigation.Conversations
 import com.filestech.sms.ui.navigation.Emergency
 import com.filestech.sms.ui.navigation.EmergencySetup
+import com.filestech.sms.ui.navigation.ErrorLog
 import com.filestech.sms.ui.navigation.Help
 import com.filestech.sms.ui.navigation.License
 import com.filestech.sms.ui.navigation.LinkedDevices
@@ -58,6 +59,7 @@ import com.filestech.sms.ui.screens.lock.LockScreen
 import com.filestech.sms.ui.screens.media.MediaGalleryScreen
 import com.filestech.sms.ui.screens.migration.MigrationScreen
 import com.filestech.sms.ui.screens.settings.AdvancedScreen
+import com.filestech.sms.ui.screens.settings.ErrorLogScreen
 import com.filestech.sms.ui.screens.settings.SettingsScreen
 import com.filestech.sms.ui.screens.splash.SplashScreen
 import com.filestech.sms.ui.screens.thread.ThreadScreen
@@ -565,7 +567,18 @@ fun AppRoot() {
             enterTransition = { glissementEntrant },
             popExitTransition = { glissementSortant },
         ) {
-            AdvancedScreen(onBack = { nav.popBackStack() })
+            AdvancedScreen(
+                onBack = { nav.popBackStack() },
+                onOpenErrorLog = { nav.navigate(ErrorLog) },
+            )
+        }
+        // Error log screen, reached from Advanced: same slide-in
+        // transition as Advanced itself.
+        composable<ErrorLog>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            ErrorLogScreen(onBack = { nav.popBackStack() })
         }
         composable<Lock> {
             LockScreen(

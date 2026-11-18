@@ -13,6 +13,7 @@ import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.filestech.sms.core.logging.LineNumberDebugTree
 import com.filestech.sms.core.logging.NoOpReleaseTree
+import com.filestech.sms.crashlog.CrashLogHandler
 import com.filestech.sms.data.blocking.BlockedNumbersImporter
 import com.filestech.sms.data.contacts.ContactsReader
 import com.filestech.sms.data.local.datastore.SettingsRepository
@@ -147,6 +148,11 @@ class MainApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // Local-only error log — install the uncaught-exception
+        // handler first, so even a startup crash is captured. It
+        // only writes a local file and chains to the previous
+        // handler; see [CrashLogHandler].
+        CrashLogHandler.install(this)
         if (BuildConfig.LOG_ENABLED) {
             Timber.plant(LineNumberDebugTree())
         } else {
