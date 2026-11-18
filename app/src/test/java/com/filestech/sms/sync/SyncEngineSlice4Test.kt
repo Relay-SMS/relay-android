@@ -477,7 +477,7 @@ class SyncEngineSlice4Test {
     ) {
         val sent = Collections.synchronizedList(mutableListOf<String>())
         val scope = CoroutineScope(Dispatchers.Default + Job())
-        val engine = SyncEngine(source, scope, send = { sent += it })
+        val engine = SyncEngine(source, scope, send = { sent += it }, wakelock = NoOpSyncWakelock)
         try {
             block(engine, sent)
         } finally {

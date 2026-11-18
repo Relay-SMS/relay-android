@@ -27,6 +27,19 @@
     <!-- Phone state (dual SIM) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <!-- Live calls — the incoming number of a ringing call, shown
+         on a linked device: since Android 9 the platform passes an
+         empty number to call-state listeners that lack this
+         permission (Android 9 behavior changes, "Restrict access
+         to phone numbers"). Relay never reads the call log itself
+         — no query on CallLog.Calls anywhere; the permission only
+         unlocks the number in the live call-state callback. The
+         state (ringing / active / ended) still works without it,
+         just with no number. Requested at runtime from the Linked
+         devices screen, only when the server is on — never at
+         launch. Documented in PERMISSIONS.md and allowed by
+         .github/scripts/permissions-manifeste.py. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -111,6 +124,9 @@
          it only lets the app ask the Wi-Fi stack to deliver
          multicast packets addressed to the local network. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <!-- WAKE_LOCK (normal, granted at install, no prompt): held only while a sync run is actively streaming. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- v1.27.1 (N3) — requise par `Window.setHideOverlayWindows()`, qui masque les
          superpositions des autres applications pendant la saisie d'un secret

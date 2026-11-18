@@ -106,6 +106,7 @@
     <string name="action_copy">Copiar</string>
     <string name="action_forward">Reenviar</string>
     <string name="action_retry">Reintentar</string>
+    <string name="action_resume">Reanudar</string>
     <string name="action_close">Cerrar</string>
     <string name="action_continue">Continuar</string>
     <string name="action_export_pdf">Exportar a PDF</string>
@@ -834,6 +835,7 @@
     <string name="error_log_cleared">Registro de errores borrado</string>
     <string name="error_log_clear_confirm_title">¿Borrar el registro de errores?</string>
     <string name="error_log_clear_confirm_body">Se eliminarán todos los informes de errores guardados. Esta acción no se puede deshacer.</string>
+    <string name="error_log_unexpected_stop">La app se detuvo inesperadamente (sin informe de errores)</string>
     <string name="error_not_default_app">Relay todavía no es la app de SMS predeterminada.</string>
     <string name="error_send_failed">No se ha podido enviar el mensaje.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
@@ -1196,6 +1198,8 @@
     <string name="linked_devices_server_hint">Cuando está activado, su dispositivo puede encontrar este teléfono en la red local y vincularse a él. Nada sale de su red Wi-Fi.</string>
     <string name="linked_devices_contacts_write_title">Cambiar fotos de contactos</string>
     <string name="linked_devices_contacts_write_subtitle">Permitir que un dispositivo vinculado cambie la foto de un contacto. Toque para permitirlo.</string>
+    <string name="linked_devices_calls_title">Llamadas en dispositivos vinculados</string>
+    <string name="linked_devices_calls_subtitle">Permitir que un dispositivo vinculado vea las llamadas entrantes y llame desde este teléfono. Toque para permitirlo.</string>
     <string name="linked_devices_start_error_title">El servidor no pudo iniciarse</string>
     <string name="linked_devices_start_error_bind_hint">Otra app de Relay en este teléfono ya está usando el puerto de vinculación. Detén primero su servidor y vuelve a intentarlo.</string>
     <string name="linked_devices_link_action">Vincular un dispositivo</string>
@@ -1284,6 +1288,9 @@
     <string name="client_sync_error_default">Tu teléfono no pudo sincronizar los mensajes en este momento.</string>
     <string name="client_sync_error_not_connected">Sin conexión con tu teléfono. Comprueba que ambos dispositivos estén en la misma red Wi-Fi.</string>
     <string name="client_sync_offline">Sin conexión — esperando a tu teléfono.</string>
+    <string name="client_sync_paused_title">Sincronización en pausa</string>
+    <string name="client_sync_paused_asleep">Este dispositivo entró en reposo.</string>
+    <string name="client_sync_paused_no_response">Sin respuesta de tu teléfono.</string>
     <string name="client_sync_prompt_action">Elige cuánto sincronizar</string>
     <string name="client_notif_media_photo">Foto</string>
     <string name="client_notif_media_video">Vídeo</string>

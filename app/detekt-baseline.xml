@@ -341,6 +341,12 @@
     <ID>TooManyFunctions:RepositorySyncMessageSource.kt$RepositorySyncMessageSource : SyncMessageSource</ID>
     <ID>TooManyFunctions:SyncEngine.kt$SyncEngine</ID>
     <ID>TooManyFunctions:SyncProtocol.kt$SyncProtocol</ID>
+    <!-- Live calls — the session handler is the frame dispatcher:
+         one small private handler per wire frame, 35 and growing
+         with the protocol. Splitting it would scatter the auth
+         gate (`withEngine`) across files for no readability gain;
+         the count is inherent to the role. -->
+    <ID>TooManyFunctions:SyncSessionHandler.kt$SyncSessionHandler</ID>
     <ID>TooManyFunctions:ThreadViewModel.kt$ThreadViewModel : ViewModel</ID>
     <ID>UnusedImports:AppearanceDialog.kt$import androidx.compose.foundation.layout.padding</ID>
     <ID>UnusedImports:AudioMessageBubble.kt$import androidx.compose.foundation.layout.Spacer</ID>

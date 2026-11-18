@@ -695,6 +695,7 @@ fun ConversationsScreen(
                 isClientMode = isClientMode,
                 archived = archived,
                 onRetry = viewModel::retryClientSync,
+                onResume = viewModel::resumeClientSync,
                 onOpenLinkedDevices = onOpenLinkedDevices,
             )
             // Contacts-permission fix — hub mode only (see

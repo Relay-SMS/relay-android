@@ -29,7 +29,8 @@ import java.util.Base64
  * contact frames (`contacts_request`, `avatar_request`), dispatched
  * the same way. Create conversation adds the `create_conversation`
  * frame, dispatched the same way. Round 3 adds the contact-photo
- * frame (`set_contact_photo`), dispatched the same way.
+ * frame (`set_contact_photo`), dispatched the same way. Live calls
+ * add the dial frame (`dial_request`), dispatched the same way.
  *
  * @param send carries one outbound text frame to the client.
  * @param close closes the socket; [reason] is a short human-readable
@@ -90,6 +91,7 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.AvatarRequest -> onAvatarRequest(parsed.value)
             is SyncProtocol.Parsed.CreateConversation -> onCreateConversation(parsed.value)
             is SyncProtocol.Parsed.SetContactPhoto -> onSetContactPhoto(parsed.value)
+            is SyncProtocol.Parsed.DialRequest -> onDialRequest(parsed.value)
             is SyncProtocol.Parsed.Unknown -> onUnknown(parsed.type)
             SyncProtocol.Parsed.Malformed -> onProtocolViolation()
         }
@@ -303,6 +305,16 @@ class SyncSessionHandler(
      */
     private suspend fun onSetContactPhoto(request: SyncProtocol.SetContactPhoto) {
         withEngine { it.onSetContactPhoto(request) }
+    }
+
+    /**
+     * Live calls — the dial frame needs auth too: an
+     * unauthenticated dial frame is a protocol violation, like an
+     * unauthenticated send. The engine runs it in its own job,
+     * never on the frame loop.
+     */
+    private suspend fun onDialRequest(request: SyncProtocol.DialRequest) {
+        withEngine { it.onDialRequest(request) }
     }
 
     /**

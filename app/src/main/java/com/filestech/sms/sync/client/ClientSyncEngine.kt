@@ -1,5 +1,6 @@
 package com.filestech.sms.sync.client
 
+import androidx.annotation.VisibleForTesting
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.ClientConversationStateEntity
@@ -7,6 +8,7 @@ import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.repository.SyncedConversationResult
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.sync.SyncProtocol
+import com.filestech.sms.sync.SyncWakelock
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
 import dagger.hilt.EntryPoint
@@ -37,11 +39,31 @@ enum class ClientSyncPhase {
     /** A sync run is streaming. */
     Syncing,
 
+    /**
+     * A full sync run parked mid-stream — the device fell asleep
+     * or the stream stalled. The counter is kept (never restarted
+     * at 0); a resume picks the run up where it stopped.
+     */
+    Paused,
+
     /** Caught up; live frames keep the cache fresh. */
     Live,
 
     /** The run failed (`sync_error`, or the request never went out). */
     Error,
+}
+
+/**
+ * Client mode — why a full sync run paused. The UI renders the
+ * reason; the engine resumes on screen-on for either reason, and
+ * on leaving idle mode only for [DEVICE_ASLEEP].
+ */
+enum class SyncPauseReason {
+    /** The device entered Doze idle mode and the app is not battery-exempt. */
+    DEVICE_ASLEEP,
+
+    /** No `messages_batch` arrived for 60 s during an active full sync. */
+    NO_RESPONSE,
 }
 
 /**
@@ -60,6 +82,11 @@ data class ClientSyncUiState(
     val isDelta: Boolean = false,
     /** True once the run has lasted past [ClientSyncEngine.DELTA_SYNC_DIALOG_DELAY_MS]. */
     val deltaElapsed: Boolean = false,
+    /**
+     * Why the run paused, when [phase] is [ClientSyncPhase.Paused].
+     * Null otherwise (including while a resume is in flight).
+     */
+    val pauseReason: SyncPauseReason? = null,
     /** The `sync_error` code, or [ClientSyncEngine.ERROR_NOT_CONNECTED]. Null when no error. */
     val errorCode: String? = null,
     /** The hub's error message, or null (the UI falls back to its default wording). */
@@ -125,6 +152,16 @@ fun shouldShowSyncProgress(ui: ClientSyncUiState): Boolean {
  * - **`new_only`.** The `sync_started` cursor is saved immediately
  *   as the "now" baseline — there are no batches to advance it —
  *   and no gap-fill runs (history was declined by choice).
+ * - **Pause/resume.** A first full sync can pause — the device
+ *   fell asleep (Doze, unexempted) or the stream stalled 60 s —
+ *   and resumes where it stopped: the per-batch pause record
+ *   ([SyncPauseStore]) survives process death, and the resume
+ *   walks the per-conversation frontiers (gap-fill) instead of
+ *   re-streaming. The record clears only when the run completes
+ *   (or on re-sync, unlink, or a hub change). The service owns
+ *   the transport: it disconnects when the phase turns Paused
+ *   and reconnects when a resume flips it back to Syncing with
+ *   no session ([ClientSyncService]).
  *
  * Started once by [ClientSyncService] before it connects; the
  * engine then follows the connection state (prompt on first
@@ -155,6 +192,12 @@ class ClientSyncEngine @Inject constructor(
     private val downloader: ClientAttachmentDownloader,
     /** Client mode C5 — attachment uploads (`attachment_upload_*` acks route here). */
     private val uploader: ClientAttachmentUploader,
+    /** Pause/resume — the durable record of an interrupted full run. */
+    private val pauseStore: SyncPauseStore,
+    /** Pause/resume — the device-idle + screen-on signals. */
+    private val idleMonitor: DeviceIdleMonitor,
+    /** Pause/resume — the bounded wakelock held while a run streams. */
+    private val wakelock: SyncWakelock,
 ) {
 
     private val _ui = MutableStateFlow(ClientSyncUiState())
@@ -204,11 +247,57 @@ class ClientSyncEngine @Inject constructor(
 
     private var deltaElapsedJob: Job? = null
 
+    /** The stall watchdog: fires 60 s after the last batch of an active full run. */
+    private var stallWatchdogJob: Job? = null
+
+    /**
+     * Whether the hub's conversation snapshot finished in the
+     * current run (`conversations` with `has_more: false`). A
+     * resume gap-fills when it did and re-requests the run when it
+     * did not (gap-fill cannot find conversations the snapshot
+     * never named). Persisted in the pause record.
+     */
+    private var snapshotComplete: Boolean = false
+
+    /** True while a resumed run is in progress (its gap-fill is the run). */
+    private var resumedRun: Boolean = false
+
+    /** A resume waiting for a live session (set by [resume], consumed by `onConnected`). */
+    private var pendingResume: PausedRun? = null
+
+    /** The in-memory mirror of the pause record, while a run is paused. */
+    private var pausedRun: PausedRun? = null
+
+    /**
+     * The imported count restored from an interrupted run's pause
+     * record, consumed by `onSyncStarted` (a fresh full run
+     * re-streams from the start; only newly inserted rows advance
+     * the counter past this, so it continues instead of
+     * restarting at 0).
+     */
+    private var restoredImported: Long = 0L
+
+    /** Whether this engine currently holds the wakelock (one acquire per run). */
+    private var wakelockHeld: Boolean = false
+
+    /**
+     * Test hook: the stall watchdog timeout. Production uses
+     * [STALL_WATCHDOG_TIMEOUT_MS]; the engine tests disable it
+     * (`0`) — `advanceUntilIdle` fast-forwards virtual time past
+     * 60 s, which would pause every full run under test. The pause
+     * tests keep the real value and drive it with `advanceTimeBy`.
+     */
+    @VisibleForTesting
+    internal var stallWatchdogTimeoutMs: Long = STALL_WATCHDOG_TIMEOUT_MS
+
     /** A pinned message not yet in the cache: which conversation pins it, and when. */
     private data class PendingPin(val hubConversationId: Long, val pinnedAt: Long?)
 
-    /** What one stored batch contributed: its oldest hub id + how many rows landed. */
+    /** What one stored batch contributed: its oldest hub id + how many new rows landed. */
     private data class BatchStored(val minId: Long?, val count: Int)
+
+    /** What one stored wire message contributed: its hub id + whether it was new. */
+    private data class StoredMessage(val hubMessageId: Long, val inserted: Boolean)
 
     /**
      * Starts the engine: follows the connection state and the frame
@@ -238,6 +327,37 @@ class ClientSyncEngine @Inject constructor(
         }
         appScope.launch {
             channel.frames.collect { frame -> mutex.withLock { onFrame(frame) } }
+        }
+        // Pause/resume — the idle monitor drives both triggers and
+        // both auto-resumes. Entering idle pauses an active full
+        // run only when the app is NOT battery-exempt (the "know"
+        // condition); screen-off alone never pauses — there is no
+        // screen-off signal here at all, only screen-on, for
+        // auto-resume.
+        idleMonitor.start()
+        appScope.launch {
+            idleMonitor.idleChanges.collect { idle ->
+                mutex.withLock {
+                    if (idle) {
+                        if (isActiveFullRun() &&
+                            !idleMonitor.isIgnoringBatteryOptimizations()
+                        ) {
+                            pause(SyncPauseReason.DEVICE_ASLEEP)
+                        }
+                    } else if (ui.value.phase == ClientSyncPhase.Paused &&
+                        ui.value.pauseReason == SyncPauseReason.DEVICE_ASLEEP
+                    ) {
+                        resumeLocked()
+                    }
+                }
+            }
+        }
+        appScope.launch {
+            idleMonitor.screenOn.collect {
+                mutex.withLock {
+                    if (ui.value.phase == ClientSyncPhase.Paused) resumeLocked()
+                }
+            }
         }
     }
 
@@ -298,6 +418,7 @@ class ClientSyncEngine @Inject constructor(
         mutex.withLock {
             resetRunState()
             wiper.wipeMessageCache()
+            pauseStore.clear()
             syncState = null
             fetchedThisSession.clear()
             pendingPinned.clear()
@@ -311,12 +432,54 @@ class ClientSyncEngine @Inject constructor(
                     deltaElapsed = false,
                     errorCode = null,
                     errorMessage = null,
+                    pauseReason = null,
                     hubIsDefaultSms = null,
                     contactsErrorCode = null,
                     contactsErrorMessage = null,
                 )
             }
         }
+    }
+
+    /**
+     * Resumes a paused sync run where it stopped (the Resume
+     * affordance). No-op unless the phase is Paused. The run
+     * restarts from the pause record — the counter continues,
+     * never restarts at 0 — and picks each conversation up from
+     * its stored frontier (gap-fill), unless the snapshot never
+     * finished, in which case the run is re-requested. When no
+     * session is live, the phase flips to Syncing at once and the
+     * service reconnects (it watches for Syncing + Disconnected);
+     * `onConnected` then completes the resume. The pause record
+     * is NOT cleared here — a process death mid-resume must still
+     * resume — only when the run completes.
+     */
+    suspend fun resume() {
+        mutex.withLock { resumeLocked() }
+    }
+
+    /**
+     * The resume, under the mutex (called by [resume] and by the
+     * auto-resume collectors, which already hold it).
+     */
+    private suspend fun resumeLocked() {
+        if (ui.value.phase != ClientSyncPhase.Paused) return
+        val record = pausedRun ?: pauseStore.snapshot()
+        if (record == null || record.hubId != hubId) {
+            // No record (or a stale one for another hub): nothing
+            // to resume — drop back to idle and let the next
+            // connect decide (a fresh prompt or a delta).
+            if (record != null) pauseStore.clear()
+            pausedRun = null
+            updateUi { it.copy(phase = ClientSyncPhase.Idle, pauseReason = null) }
+            return
+        }
+        beginResume(record)
+        if (channel.state.value is ClientConnectionState.Connected) {
+            completeResume(record)
+        }
+        // Otherwise the service sees Syncing + Disconnected and
+        // reconnects; `onConnected` completes the resume.
     }
 
     /**
@@ -357,11 +520,11 @@ class ClientSyncEngine @Inject constructor(
     // -- Connection -------------------------------------------------
 
     private suspend fun onConnection(state: ClientConnectionState) {
-        updateUi { it.copy(connection = state) }
         when (state) {
             is ClientConnectionState.Connected -> onConnected(state)
             is ClientConnectionState.Removed -> {
                 resetRunState()
+                pauseStore.clear()
                 hubId = null
                 hubName = null
                 syncState = null
@@ -383,6 +546,7 @@ class ClientSyncEngine @Inject constructor(
                         hubIsDefaultSms = null,
                         hubId = null,
                         hubName = null,
+                        pauseReason = null,
                         contactsErrorCode = null,
                         contactsErrorMessage = null,
                     )
@@ -413,6 +577,15 @@ class ClientSyncEngine @Inject constructor(
                 uploader.onSessionEnded()
             }
         }
+        // The connection field updates LAST: the service reconnects
+        // a resume when it sees Syncing + Disconnected, and
+        // updating the connection first would flash that
+        // combination on every drop mid-sync (Disconnected lands
+        // before the phase resets to Idle) — a spurious reconnect
+        // that restarts the manager's backoff loop. With the phase
+        // settled first, Syncing + Disconnected only ever means a
+        // resume waiting for a session.
+        updateUi { it.copy(connection = state) }
     }
 
     /**
@@ -462,10 +635,18 @@ class ClientSyncEngine @Inject constructor(
             // Client mode C5 — a different hub is a different
             // attachment store: its downloads drop too.
             downloader.onHubChanged()
+            // A different hub is a different run: the old hub's
+            // pause record is moot (its cache is wiped above), and
+            // a Paused phase for the old hub must not survive —
+            // the new hub prompts or syncs, it never resumes the
+            // old hub's run.
+            pauseStore.clear()
             updateUi {
                 it.copy(
+                    phase = ClientSyncPhase.Idle,
                     hubId = hubId,
                     hubName = hubName,
+                    pauseReason = null,
                     hubIsDefaultSms = null,
                     contactsErrorCode = null,
                     contactsErrorMessage = null,
@@ -484,12 +665,32 @@ class ClientSyncEngine @Inject constructor(
         // Client mode C5 — connected (again): the interrupted
         // attachment downloads resume.
         downloader.onSessionResumed()
+        // Pause/resume — a reconnect while Paused must NOT restart
+        // the sync: the pause owns the run until a resume (manual
+        // or automatic) restarts it. The service normally
+        // disconnects on Paused, so this is the defensive path
+        // (a connect racing the disconnect).
+        if (ui.value.phase == ClientSyncPhase.Paused) return
+        // A resume waiting for a session: the service reconnected,
+        // so complete it now instead of starting a fresh run.
+        pendingResume?.let { record ->
+            completeResume(record)
+            return
+        }
         val stored = syncState
         if (stored == null) {
-            // Never synced with this hub — ask how much.
+            // Never synced with this hub — ask how much. A pause
+            // record with no sync state is stale (unlink / re-sync
+            // wipes the state; the record outlived it) — drop it
+            // so a re-link never resumes a wiped run.
+            pauseStore.clear()
+            pausedRun = null
             updateUi { it.copy(phase = ClientSyncPhase.Prompting) }
             return
         }
+        // Restart after a process death mid-run: the pause record
+        // decides (parked as Paused, or resumed via gap-fill).
+        if (resumeFromPauseRecord(state.hubId)) return
         // Same hub, reconnected after a drop or an error: resume the
         // delta. The phase is usually `live` here — a drop leaves it
         // alone (only a drop mid-sync resets it to `idle`) — so
@@ -500,6 +701,251 @@ class ClientSyncEngine @Inject constructor(
         if (ui.value.phase != ClientSyncPhase.Prompting) {
             startSync(stored.mode, stored.globalLastMessageId)
         }
+    }
+
+    // -- Pause / resume ---------------------------------------------
+
+    /**
+     * Parks an active full sync run (under the mutex): the
+     * watchdog + delta jobs stop, the wakelock releases, the
+     * record persists (counter, cursor seed, snapshot flag), and
+     * the phase turns Paused. The disconnect is the service's job:
+     * it watches the UI state and disconnects the transport when
+     * the phase turns Paused (see [ClientSyncService]) — the
+     * engine owns no transport handle, and the phase change is
+     * the signal. A straggler batch in the window before the
+     * disconnect lands is dropped by the Paused guard in
+     * [onFrame]. Only an active full run pauses — never a delta,
+     * never a live session, never `new_only`.
+     */
+    private suspend fun pause(reason: SyncPauseReason) {
+        if (ui.value.phase != ClientSyncPhase.Syncing) return
+        if (runMode != SyncProtocol.SyncRequest.FULL || runIsDelta) return
+        val hub = hubId ?: return
+        stallWatchdogJob?.cancel()
+        stallWatchdogJob = null
+        deltaElapsedJob?.cancel()
+        deltaElapsedJob = null
+        gapFillQueue.clear()
+        gapFillActive = false
+        // In-flight fetches belong to the dying session — their
+        // replies will never come. A completed fetch stays done
+        // for the app session (only a hub change clears it).
+        fetchInFlight.clear()
+        releaseWakelock()
+        val record = PausedRun(
+            hubId = hub,
+            mode = runMode ?: SyncProtocol.SyncRequest.FULL,
+            imported = imported,
+            total = total,
+            reason = reason,
+            pausedAt = System.currentTimeMillis(),
+            snapshotComplete = snapshotComplete,
+            maxStoredId = maxStoredId,
+        )
+        pauseStore.save(record)
+        pausedRun = record
+        updateUi {
+            it.copy(phase = ClientSyncPhase.Paused, pauseReason = reason)
+        }
+        Timber.i(
+            "ClientSyncEngine: paused (%s) at %d of %s",
+            reason,
+            imported,
+            total?.toString() ?: "?",
+        )
+    }
+
+    /**
+     * Flips a paused run back to Syncing with its restored counter
+     * (under the mutex). The session-dependent half is
+     * [completeResume]: inline when already connected, on the next
+     * connect otherwise.
+     */
+    private fun beginResume(record: PausedRun) {
+        pendingResume = record
+        resumedRun = true
+        runMode = record.mode
+        runIsDelta = false
+        maxStoredId = record.maxStoredId
+        imported = record.imported
+        total = record.total
+        snapshotComplete = record.snapshotComplete
+        updateUi {
+            it.copy(
+                phase = ClientSyncPhase.Syncing,
+                imported = imported,
+                total = total,
+                isDelta = false,
+                deltaElapsed = false,
+                errorCode = null,
+                errorMessage = null,
+                pauseReason = null,
+            )
+        }
+    }
+
+    /**
+     * Completes a resume on a live session (under the mutex): the
+     * snapshot finished, so each conversation picks up from its
+     * stored frontier (gap-fill) — completed conversations are
+     * never re-requested, unreached ones are walked from `"0"`.
+     * When the snapshot never finished, the run is re-requested
+     * instead: gap-fill cannot find conversations the snapshot
+     * never named, and [startSync] restores the counter from the
+     * pause record while re-delivered messages do not re-count.
+     * A resumed run with nothing left to fill (the pause landed
+     * after the last batch, before `sync_complete`) completes at
+     * once.
+     */
+    private suspend fun completeResume(record: PausedRun) {
+        pendingResume = null
+        if (record.snapshotComplete) {
+            acquireWakelock()
+            startStallWatchdog()
+            startGapFill()
+            if (!gapFillActive) {
+                onSyncComplete()
+            }
+        } else {
+            startSync(record.mode, "0")
+        }
+    }
+
+    /**
+     * Restores the Paused UI after a restart, from the stored
+     * record (under the mutex). The run waits for auto-resume
+     * (leaving idle mode, or screen-on) or a manual Resume.
+     */
+    private fun restorePaused(record: PausedRun) {
+        pausedRun = record
+        runMode = record.mode
+        runIsDelta = false
+        maxStoredId = record.maxStoredId
+        imported = record.imported
+        total = record.total
+        snapshotComplete = record.snapshotComplete
+        updateUi {
+            it.copy(
+                phase = ClientSyncPhase.Paused,
+                imported = imported,
+                total = total,
+                isDelta = false,
+                pauseReason = record.reason,
+            )
+        }
+    }
+
+    /**
+     * Restart after a process death (or a drop) mid-run: the pause
+     * record says whether the run was paused (a reason) or merely
+     * interrupted (no reason — a crash or a drop). Returns true
+     * when the record decided the connect — parked as Paused
+     * (still asleep, unexempted), or resumed via gap-fill. False
+     * when there is no record, or the run was merely interrupted:
+     * the caller then restarts it normally, and [startSync]
+     * restores its counter from the record.
+     */
+    private suspend fun resumeFromPauseRecord(hubId: String): Boolean {
+        val record = pauseStore.snapshot()?.takeIf { it.hubId == hubId } ?: return false
+        if (idleMonitor.isDeviceIdleMode() && !idleMonitor.isIgnoringBatteryOptimizations()) {
+            // Still asleep: do not restart a run the network
+            // cannot serve — park it as paused and wait for the
+            // wake, whether it was paused before or merely
+            // interrupted by the crash/drop.
+            val parked = record.copy(
+                reason = SyncPauseReason.DEVICE_ASLEEP,
+                pausedAt = System.currentTimeMillis(),
+            )
+            pauseStore.save(parked)
+            restorePaused(parked)
+            return true
+        }
+        if (record.reason == null) return false
+        beginResume(record)
+        completeResume(record)
+        return true
+    }
+
+    /**
+     * Persists the run's progress after each batch (a small
+     * DataStore write per 200-message batch), so the counter is
+     * right even after a process death without a pause. The
+     * reason stays null — the run is in progress, not parked —
+     * except on a resumed run, where the original reason is kept
+     * so a second interruption still resumes via gap-fill.
+     */
+    private suspend fun persistProgress() {
+        val hub = hubId ?: return
+        pauseStore.save(
+            PausedRun(
+                hubId = hub,
+                mode = runMode ?: SyncProtocol.SyncRequest.FULL,
+                imported = imported,
+                total = total,
+                reason = if (resumedRun) pausedRun?.reason else null,
+                pausedAt = System.currentTimeMillis(),
+                snapshotComplete = snapshotComplete,
+                maxStoredId = maxStoredId,
+            ),
+        )
+    }
+
+    /**
+     * True while a full sync run is actively streaming — the only
+     * runs that can pause (deltas resume on their own, and a live
+     * session has nothing to pause). Both pause triggers share
+     * this gate.
+     */
+    private fun isActiveFullRun(): Boolean =
+        ui.value.phase == ClientSyncPhase.Syncing &&
+            runMode == SyncProtocol.SyncRequest.FULL && !runIsDelta
+
+    /**
+     * (Re)starts the stall watchdog: 60 s without a
+     * `messages_batch` during an active full sync pauses the run
+     * (`NO_RESPONSE`). 60 s is comfortably above the 30 s
+     * heartbeat — a live session proves itself twice over inside
+     * the window — and far above a normal inter-batch gap
+     * (batches arrive in well under a second on LAN, and the hub
+     * streams conversation after conversation without pausing) —
+     * so a fire means the stream genuinely stalled, not a slow
+     * page. The [runToken] guard keeps a superseded watchdog from
+     * pausing a newer run. The job runs in the app scope, so
+     * tests drive it with virtual time (`TestScope` +
+     * `advanceTimeBy`).
+     */
+    private fun startStallWatchdog() {
+        stallWatchdogJob?.cancel()
+        if (stallWatchdogTimeoutMs <= 0L) return
+        val token = runToken
+        stallWatchdogJob = appScope.launch {
+            delay(stallWatchdogTimeoutMs)
+            mutex.withLock {
+                if (runToken == token && isActiveFullRun()) {
+                    pause(SyncPauseReason.NO_RESPONSE)
+                }
+            }
+        }
+    }
+
+    /** Acquires the wakelock once per run (balanced by construction — see [releaseWakelock]). */
+    private fun acquireWakelock() {
+        if (wakelockHeld) return
+        wakelockHeld = true
+        wakelock.acquire()
+    }
+
+    /**
+     * Releases the wakelock, once per acquire. The engine holds
+     * the lock for one run at a time; the guard keeps a stray
+     * second `sync_started` (or a double release) from wedging
+     * the reference-counted lock held.
+     */
+    private fun releaseWakelock() {
+        if (!wakelockHeld) return
+        wakelockHeld = false
+        wakelock.release()
     }
 
     // -- Runs ---------------------------------------------------------
@@ -522,6 +968,19 @@ class ClientSyncEngine @Inject constructor(
         runIsDelta = sinceMessageId != "0"
         maxStoredId = sinceMessageId.toLongOrNull() ?: 0L
         snapshotIds = mutableSetOf()
+        // A fresh full run picks up the counter of an interrupted
+        // run (the per-batch pause-record writes): the hub
+        // re-streams from the start, the mirror upserts
+        // idempotently, and only newly inserted rows advance the
+        // counter past this — so the counter continues instead of
+        // restarting at 0. Consumed by `onSyncStarted`.
+        restoredImported = if (mode == SyncProtocol.SyncRequest.FULL && sinceMessageId == "0") {
+            pauseStore.snapshot()?.takeIf { it.hubId == hubId }?.imported ?: 0L
+        } else {
+            0L
+        }
+        imported = restoredImported
+        if (mode == SyncProtocol.SyncRequest.FULL && !runIsDelta) startStallWatchdog()
         deltaElapsedJob = appScope.launch {
             delay(DELTA_SYNC_DIALOG_DELAY_MS)
             mutex.withLock {
@@ -533,17 +992,20 @@ class ClientSyncEngine @Inject constructor(
         updateUi {
             it.copy(
                 phase = ClientSyncPhase.Syncing,
-                imported = 0,
+                imported = imported,
                 total = null,
                 isDelta = runIsDelta,
                 deltaElapsed = false,
                 errorCode = null,
                 errorMessage = null,
+                pauseReason = null,
             )
         }
         val cursor = sinceMessageId.takeIf { it != "0" }
         val sent = channel.send(ClientFrames.encodeSyncRequest(mode, cursor))
         if (!sent) {
+            stallWatchdogJob?.cancel()
+            stallWatchdogJob = null
             updateUi {
                 it.copy(
                     phase = ClientSyncPhase.Error,
@@ -571,6 +1033,14 @@ class ClientSyncEngine @Inject constructor(
         fetchInFlight.clear()
         deltaElapsedJob?.cancel()
         deltaElapsedJob = null
+        stallWatchdogJob?.cancel()
+        stallWatchdogJob = null
+        snapshotComplete = false
+        resumedRun = false
+        pendingResume = null
+        pausedRun = null
+        restoredImported = 0L
+        releaseWakelock()
     }
 
     /** Persists the cursor after a live message lands (cheap, one row). */
@@ -584,6 +1054,22 @@ class ClientSyncEngine @Inject constructor(
     // -- Frames -----------------------------------------------------
 
     private suspend fun onFrame(frame: ServerFrame) {
+        // Paused: the stream is dead (the service is disconnecting,
+        // or already has) — a straggler run frame must not restart
+        // the counter or complete a run that is parked. Live frames
+        // (`message_new`, updates, acks) still apply: they are
+        // independent of the run.
+        if (ui.value.phase == ClientSyncPhase.Paused) {
+            when (frame) {
+                is ServerFrame.SyncStarted,
+                is ServerFrame.Conversations,
+                is ServerFrame.MessagesBatch,
+                is ServerFrame.SyncComplete,
+                is ServerFrame.SyncError,
+                -> return
+                else -> Unit
+            }
+        }
         when (frame) {
             is ServerFrame.SyncStarted -> onSyncStarted(frame.value)
             is ServerFrame.Conversations -> onConversations(frame.value)
@@ -707,11 +1193,15 @@ class ClientSyncEngine @Inject constructor(
         } else {
             value.totalMessages
         }
-        imported = 0
+        // A restarted full run continues its restored counter (see
+        // `startSync`); a fresh run restores 0, as before.
+        imported = restoredImported
+        restoredImported = 0L
+        acquireWakelock()
         updateUi {
             it.copy(
                 phase = ClientSyncPhase.Syncing,
-                imported = 0,
+                imported = imported,
                 total = total,
                 hubIsDefaultSms = value.hubIsDefaultSms,
             )
@@ -738,6 +1228,7 @@ class ClientSyncEngine @Inject constructor(
             }
         }
         if (!value.hasMore) {
+            snapshotComplete = true
             // Snapshot complete: drop local conversations the hub no
             // longer has. The hub always sends the FULL snapshot
             // (delta runs included), so this is safe on every run.
@@ -749,6 +1240,15 @@ class ClientSyncEngine @Inject constructor(
     }
 
     private suspend fun onMessagesBatch(value: SyncProtocol.MessagesBatch) {
+        // A batch is proof of life: the stall watchdog restarts
+        // from it (active full runs only — a delta, a live
+        // fetch-on-open reply, or post-complete gap-fill never
+        // arms it).
+        if (ui.value.phase == ClientSyncPhase.Syncing &&
+            runMode == SyncProtocol.SyncRequest.FULL && !runIsDelta
+        ) {
+            startStallWatchdog()
+        }
         val hubConvId = parseHubId(value.conversationId) ?: return
         val isGapFillReply = gapFillActive && gapFillQueue.firstOrNull() == hubConvId
         val isFetchReply = hubConvId in fetchInFlight
@@ -780,6 +1280,13 @@ class ClientSyncEngine @Inject constructor(
         if (runMode != SyncProtocol.SyncRequest.NEW_ONLY) {
             imported += stored.count
             updateUi { it.copy(imported = imported) }
+            // A full run persists its progress per batch, so the
+            // counter survives a process death without a pause.
+            if (ui.value.phase == ClientSyncPhase.Syncing &&
+                runMode == SyncProtocol.SyncRequest.FULL && !runIsDelta
+            ) {
+                persistProgress()
+            }
         }
         if (isGapFillReply) advanceGapFill(value, hubConvId, stored.minId)
         if (isFetchReply) advanceFetch(value, hubConvId, stored.minId, isGapFillReply)
@@ -824,10 +1331,16 @@ class ClientSyncEngine @Inject constructor(
         var minId: Long? = null
         var count = 0
         for (wire in messages) {
-            val hubMsgId = storeOneMessage(wire) ?: continue
+            val stored = storeOneMessage(wire) ?: continue
+            val hubMsgId = stored.hubMessageId
             if (hubMsgId > maxStoredId) maxStoredId = hubMsgId
             if (minId == null || hubMsgId < minId) minId = hubMsgId
-            count++
+            // Only newly inserted rows count: a restarted full run
+            // re-streams messages the mirror already holds, and
+            // re-counting them would push the counter past the
+            // total. Within one run the hub sends each message
+            // once, so the count is unchanged there.
+            if (stored.inserted) count++
         }
         return BatchStored(minId, count)
     }
@@ -837,7 +1350,7 @@ class ClientSyncEngine @Inject constructor(
      * pending pin, a pending quote). Null when the row cannot be
      * stored: the mirror declined, or the id is unparsable.
      */
-    private suspend fun storeOneMessage(wire: SyncedMessage): Long? {
+    private suspend fun storeOneMessage(wire: SyncedMessage): StoredMessage? {
         val result = mirror.upsertSyncedMessage(wire) ?: return null
         val hubMsgId = parseHubId(wire.id) ?: return null
         resolvePendingFor(hubMsgId, result.localId)
@@ -848,7 +1361,7 @@ class ClientSyncEngine @Inject constructor(
         // fired schedule (or our own send, already reconciled by the
         // mirror): the schedule's local row goes SENT.
         wire.clientMessageId?.let { sendManager.onLiveMessage(it) }
-        return hubMsgId
+        return StoredMessage(hubMsgId, result.inserted)
     }
 
     /** Gap-fill walks one conversation at a time, oldest page first. */
@@ -906,6 +1419,16 @@ class ClientSyncEngine @Inject constructor(
         }
         deltaElapsedJob?.cancel()
         deltaElapsedJob = null
+        stallWatchdogJob?.cancel()
+        stallWatchdogJob = null
+        releaseWakelock()
+        resumedRun = false
+        pendingResume = null
+        pausedRun = null
+        // The run completed: its pause record (if any — a resumed
+        // run, or a run whose batches were persisted) is done.
+        // Deltas never write one, so they skip the write.
+        if (!runIsDelta) pauseStore.clear()
         updateUi {
             it.copy(
                 phase = ClientSyncPhase.Live,
@@ -913,6 +1436,7 @@ class ClientSyncEngine @Inject constructor(
                 total = null,
                 isDelta = false,
                 deltaElapsed = false,
+                pauseReason = null,
             )
         }
         // `new_only` fetches no history by choice — there is nothing
@@ -955,8 +1479,14 @@ class ClientSyncEngine @Inject constructor(
     private suspend fun onSyncError(value: SyncProtocol.SyncError) {
         deltaElapsedJob?.cancel()
         deltaElapsedJob = null
+        stallWatchdogJob?.cancel()
+        stallWatchdogJob = null
+        releaseWakelock()
+        resumedRun = false
         gapFillActive = false
         gapFillQueue.clear()
+        // The pause record stays: a retry restores the counter
+        // from it (see `startSync`).
         updateUi {
             it.copy(
                 phase = ClientSyncPhase.Error,
@@ -964,6 +1494,7 @@ class ClientSyncEngine @Inject constructor(
                 total = null,
                 isDelta = false,
                 deltaElapsed = false,
+                pauseReason = null,
                 errorCode = value.code,
                 errorMessage = value.message.ifBlank { null },
             )
@@ -1065,6 +1596,14 @@ class ClientSyncEngine @Inject constructor(
         val id = gapFillQueue.firstOrNull()
         if (id == null) {
             gapFillActive = false
+            // A resumed run ends when its gap-fill drains: there
+            // is no `sync_complete` coming for it (the hub sent
+            // the run's long ago, or the parked run never gets
+            // one) — completing here persists the cursor, marks
+            // the first sync done, and clears the pause record.
+            if (resumedRun && ui.value.phase == ClientSyncPhase.Syncing) {
+                onSyncComplete()
+            }
             return
         }
         val frontier = stateStore.getConversationState(id)?.minSyncedId ?: "0"
@@ -1114,6 +1653,15 @@ class ClientSyncEngine @Inject constructor(
 
         /** Page size for gap-fill / fetch-on-open (the hub caps at 200). */
         const val GAP_FILL_LIMIT = 200
+
+        /**
+         * The stall watchdog: how long an active full sync may go
+         * without a `messages_batch` before it pauses
+         * (`NO_RESPONSE`). 60 s is comfortably above the 30 s
+         * heartbeat and far above a normal inter-batch gap (see
+         * `startStallWatchdog`).
+         */
+        const val STALL_WATCHDOG_TIMEOUT_MS = 60_000L
 
         /** [ClientSyncUiState.errorCode] when the request never went out (dead session). */
         const val ERROR_NOT_CONNECTED = "not_connected"

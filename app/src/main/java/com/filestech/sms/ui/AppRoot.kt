@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -20,11 +21,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.filestech.sms.R
+import com.filestech.sms.crashlog.SessionMarker
+import com.filestech.sms.crashlog.SessionMarkerTracker
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.system.notifications.SafetyCallAckHolder
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
@@ -87,31 +91,24 @@ fun AppRoot() {
     val incomingShare = rootViewModel.incomingShare
     val pendingNav = rootViewModel.pendingNav
     val nav = rememberNavController()
+
+    // Session marker — record the current screen (see
+    // `TrackSessionMarkerScreen` below).
+    TrackSessionMarkerScreen(nav)
+
     val lockState by appLock.state.collectAsStateWithLifecycle()
     // Fail-closed: anything that is NOT an explicit "open" state requires the lock screen.
     // This fixes F1 (cold-start bypass) and the panic-decoy edge case (F28 mitigation: decoy is
     // an explicit unlock state, treated as "open" until we ship a second decoy DB in v1.1).
     val showLock = !appLock.isOpenForUi(lockState)
+
+    LockScreenNavEffect(nav, showLock)
+
     // Audit S-P0-1: the panic-decoy session must never reach the Vault route. Combined with the
     // data-layer gate in ConversationRepositoryImpl.observeVault, this gives two independent
     // backstops — navigation refuses to land on the screen, and even if a saved nav state forces
     // it, the screen renders empty.
     val isPanicDecoy = lockState is AppLockManager.LockState.PanicDecoy
-
-    LaunchedEffect(showLock) {
-        val isOnLock = nav.currentDestination?.route?.contains("Lock") == true
-        // R2 fix: pop the Lock screen when the state flips back to an "open" state — e.g. on a
-        // fresh install where _state starts Locked (fail-closed) and resolveInitialState()
-        // immediately downgrades to Disabled. Without this branch the user is stranded on
-        // LockScreen with no PIN configured.
-        if (!showLock && isOnLock) {
-            nav.popBackStack(route = Lock, inclusive = true)
-        } else if (showLock && !isOnLock) {
-            nav.navigate(Lock) {
-                popUpTo(Conversations()) { inclusive = false }
-            }
-        }
-    }
 
     // Panic-decoy nav guard: if we land on the Vault route while in decoy state (saved nav,
     // share-target shortcut, app-link, future deep-link), pop it immediately back to the list.
@@ -799,6 +796,52 @@ private const val NAV_TRANSITION_MS = 80
  * ignored for up to ~300 ms. Re-check the immediate swipe after back on a real device.
  */
 private const val THREAD_TRANSITION_MS = 300
+
+/**
+ * Session marker — records the current screen so a death without
+ * a crash still says where the app was. The route PATTERN is
+ * recorded (see [SessionMarker.screenName]), never the filled-in
+ * arguments, so no conversation id or address ever reaches the
+ * marker. The current destination is recorded at once (the
+ * listener only fires on changes). Top-level helper, not inline
+ * in [AppRoot], so AppRoot stays under the Detekt method-length
+ * threshold.
+ */
+@Composable
+private fun TrackSessionMarkerScreen(nav: NavController) {
+    DisposableEffect(nav) {
+        val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
+            SessionMarkerTracker.current?.updateScreen(SessionMarker.screenName(destination.route))
+        }
+        nav.addOnDestinationChangedListener(listener)
+        SessionMarkerTracker.current?.updateScreen(SessionMarker.screenName(nav.currentDestination?.route))
+        onDispose { nav.removeOnDestinationChangedListener(listener) }
+    }
+}
+
+/**
+ * Pushes the Lock screen when the lock state requires it, and
+ * pops it when the state flips back to an open state. Top-level
+ * helper, not inline in [AppRoot], so AppRoot stays under the
+ * Detekt method-length threshold.
+ */
+@Composable
+private fun LockScreenNavEffect(nav: NavController, showLock: Boolean) {
+    LaunchedEffect(showLock) {
+        val isOnLock = nav.currentDestination?.route?.contains("Lock") == true
+        // R2 fix: pop the Lock screen when the state flips back to an "open" state — e.g. on a
+        // fresh install where _state starts Locked (fail-closed) and resolveInitialState()
+        // immediately downgrades to Disabled. Without this branch the user is stranded on
+        // LockScreen with no PIN configured.
+        if (!showLock && isOnLock) {
+            nav.popBackStack(route = Lock, inclusive = true)
+        } else if (showLock && !isOnLock) {
+            nav.navigate(Lock) {
+                popUpTo(Conversations()) { inclusive = false }
+            }
+        }
+    }
+}
 
 /**
  * Feedback round 8 — destinations whose return to the conversation list

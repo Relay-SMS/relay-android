@@ -765,6 +765,57 @@ the phone's version moves. There is no remove/reset option in
 this round, and no other contact editing from the desktop — the
 Slice 5 scope note still stands.
 
+## Live calls (protocol version 1)
+
+The phone forwards its cellular call state to every linked
+device, and a linked device can place a cellular call on the
+phone. Signaling + dial only: the audio itself travels over
+Bluetooth HFP on the desktop side, outside this protocol. Same
+JSON envelope, same `type` field, same rules. No protocol bump:
+every addition is additive.
+
+| Direction | Message | Shape |
+|---|---|---|
+| Server → client | `incoming_call` | `{"type":"incoming_call","number":"+15551234567","timestamp":1794000000000}` |
+| Server → client | `call_state` | `{"type":"call_state","state":"ringing","number":"+15551234567"}` |
+| Client → server | `dial_request` | `{"type":"dial_request","number":"+15551234567"}` |
+| Server → client | `dial_result` | `{"type":"dial_result","ok":true}` |
+
+`incoming_call` is sent when the phone starts ringing, together
+with a `call_state` `ringing` for the same transition — the
+announcement carries the `timestamp` (epoch millis, when the
+ring was observed), the state frame carries the state.
+`call_state` is sent on EVERY transition (`ringing`, `active`,
+`ended`), broadcast to every authenticated session. The number
+is `""` when unknown: a withheld number, an outgoing call dialed
+on the phone (the platform only reports a number while ringing),
+or a phone without READ_CALL_LOG — since Android 9 the platform
+passes an empty number to call-state listeners that lack it, so
+a linked device still sees that the phone is ringing, just not
+who is calling. The phone never reads the call log itself; the
+permission only unlocks the number in the live call-state
+callback.
+
+`dial_request` places a cellular call on the phone (ACTION_CALL
++ CALL_PHONE) and is answered with `dial_result` — `ok: true`
+when the call was placed, `ok: false` with a short snake_case
+`error` otherwise: `permission_denied` (CALL_PHONE is not
+granted on the phone — the user grants it from the Linked
+devices screen), `no_number` (the request carried no usable
+number), `failed` (anything else: no dialer installed, or the
+OS refused). A refused dial is never a protocol violation — the
+socket stays up. The resulting off-hook transition also arrives
+as `call_state` `active`, so the desktop sees its own dial
+land. A `dial_request` before auth is a protocol violation,
+like any other post-auth frame.
+
+Listening needs READ_PHONE_STATE (requested at cold start, as
+a critical SMS permission — the observer reuses that granted
+state); without it the observer stays off and no call frames
+are sent. The observer runs while the server runs — one
+listener for the whole server, not one per session — and stops
+with it.
+
 ## Key storage (phone)
 
 Linked-device records in the app's store: device id, kind, display name,
@@ -781,9 +832,11 @@ Slice 4 adds attachment bytes (download + upload + media sends),
 Phase 2 adds scheduled messages from the desktop, and Slice 5 adds
 contact sync (names + avatars, snapshot + live delta), and create
 conversation adds starting a conversation from the desktop, and round 3
-adds setting a contact's photo from the desktop, all in the same
-envelope; the protocol version stays 1 until a breaking change needs
-it. Still out of scope: deleting from the desktop.
+adds setting a contact's photo from the desktop, and live calls add
+call signaling (incoming-call + call-state frames) and dialing from
+the desktop, all in the same envelope; the protocol version stays 1
+until a breaking change needs it. Still out of scope: deleting from
+the desktop.
 
 ## Glue points (Android)
 
@@ -805,7 +858,10 @@ thin, explicit glue:
    ViewModel talks only to `LinkedDeviceStore` and `SyncServer`; the
    screen reuses the app's theme and shared settings components
    (`RelaySettingsGroup`, `RelaySwitchRow`, …) — the one visual
-   dependency.
+   dependency. The screen also owns the runtime permission prompts
+   the sync layer cannot show itself (WRITE_CONTACTS for contact
+   photos; READ_CALL_LOG + CALL_PHONE for live calls) — the
+   background service has no Activity to ask from.
 4. **The message-store seam** (`sync/SyncMessageSource.kt`):
    the interface the sync engine calls, plus the wire DTOs
    (`SyncedConversation` / `SyncedMessage` / `SyncedAttachment` /
@@ -821,6 +877,12 @@ thin, explicit glue:
    `contacts()` / `openAvatar()` / `contactsReadiness()` — and
    `MainApplication` registers the contacts ContentObserver, which
    lives outside the sync package for exactly this reason.)
+5. **The live-calls Hilt bindings** (`di/SyncCallsModule.kt`): the
+   observer and dialer implementations live inside the sync package
+   (`sync/calls/`, Android-framework imports only, no app code) and
+   are bound to their interfaces here, the same shape as the
+   wakelock binding — so a future port re-binds two interfaces and
+   lifts the package as-is.
 
-A future port re-wires those four points and lifts the `sync` package
+A future port re-wires those five points and lifts the `sync` package
 as-is.

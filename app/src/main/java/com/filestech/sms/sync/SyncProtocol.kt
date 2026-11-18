@@ -59,6 +59,12 @@ import kotlinx.serialization.serializer
  * same envelope; the answer reuses `action_result` (with the
  * address echoed, so the desktop attributes the reply to one pick).
  * The protocol version stays 1.
+ *
+ * Live calls add the call-signaling types (`incoming_call`,
+ * `call_state`, `dial_request`, `dial_result`) in the same
+ * envelope; the audio itself travels over Bluetooth HFP on the
+ * desktop side — these frames are signaling + dial only. The
+ * protocol version stays 1.
  */
 object SyncProtocol {
 
@@ -877,6 +883,84 @@ object SyncProtocol {
         @SerialName("photo_base64url") val photoBase64Url: String,
     )
 
+    // -- Live calls: call signaling + dial (SYNC_PROTOCOL.md, Live calls) --
+
+    /**
+     * Server → client: the phone started ringing. Sent together
+     * with a `call_state` `ringing` for the same transition — the
+     * announcement carries the [timestamp] (epoch millis, when
+     * the ring was observed), the state frame carries the state.
+     * [number] is "" when the number is unknown: a withheld
+     * number, or a phone without READ_CALL_LOG (since Android 9
+     * the platform passes an empty number to listeners that lack
+     * it).
+     */
+    @Serializable
+    data class IncomingCall(
+        @SerialName("number") val number: String,
+        @SerialName("timestamp") val timestamp: Long,
+    )
+
+    /**
+     * Server → client: the phone's call state changed — sent on
+     * EVERY transition (ringing, active, ended), broadcast to
+     * every authenticated session. [number] is the number of the
+     * call in progress, "" when unknown (an outgoing call dialed
+     * on the phone has no number to report — the platform only
+     * reports a number while ringing).
+     */
+    @Serializable
+    data class CallState(
+        @SerialName("state") val state: String,
+        @SerialName("number") val number: String,
+    ) {
+        companion object {
+            /** The phone is ringing (an incoming call). */
+            const val RINGING = "ringing"
+
+            /** A call is off-hook (answered, or dialed out). */
+            const val ACTIVE = "active"
+
+            /** The call ended (hung up, missed, or rejected). */
+            const val ENDED = "ended"
+        }
+    }
+
+    /**
+     * Client → server: place a cellular call on the phone. The
+     * phone dials [number] with ACTION_CALL + CALL_PHONE and
+     * answers `dial_result`. The resulting off-hook transition
+     * also arrives as `call_state` `active`, so the desktop sees
+     * its own dial land.
+     */
+    @Serializable
+    data class DialRequest(
+        @SerialName("number") val number: String,
+    )
+
+    /**
+     * Server → client: the ack to `dial_request`. [ok] `false`
+     * means the phone did not dial — [error] is a short
+     * snake_case code, never a stack trace. A refused dial is
+     * never a protocol violation — the socket stays up.
+     */
+    @Serializable
+    data class DialResult(
+        @SerialName("ok") val ok: Boolean,
+        @SerialName("error") val error: String? = null,
+    ) {
+        companion object {
+            /** CALL_PHONE is not granted on the phone. */
+            const val PERMISSION_DENIED = "permission_denied"
+
+            /** The request carried no usable number (blank). */
+            const val NO_NUMBER = "no_number"
+
+            /** Anything else: no dialer installed, or the OS refused. */
+            const val FAILED = "failed"
+        }
+    }
+
     /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
@@ -907,6 +991,7 @@ object SyncProtocol {
         data class AvatarRequest(val value: SyncProtocol.AvatarRequest) : Parsed
         data class CreateConversation(val value: SyncProtocol.CreateConversation) : Parsed
         data class SetContactPhoto(val value: SyncProtocol.SetContactPhoto) : Parsed
+        data class DialRequest(val value: SyncProtocol.DialRequest) : Parsed
         data class Unknown(val type: String?) : Parsed
         data object Malformed : Parsed
     }
@@ -944,9 +1029,10 @@ object SyncProtocol {
     /**
      * The second half of [parse]: the Slice 3 write-back actions, the
      * Slice 4 attachment frames, the Phase 2 schedule frames, the
-     * Slice 5 contact frames, the create-conversation frame, and the
-     * round-3 contact-photo frame. A well-formed message of an
-     * unknown type comes back as [Parsed.Unknown], like in [parse].
+     * Slice 5 contact frames, the create-conversation frame, the
+     * round-3 contact-photo frame, and the live-calls dial frame. A
+     * well-formed message of an unknown type comes back as
+     * [Parsed.Unknown], like in [parse].
      */
     private fun parseRemaining(type: String, obj: JsonObject): Parsed = when (type) {
         "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
@@ -964,6 +1050,7 @@ object SyncProtocol {
         "avatar_request" -> decode<AvatarRequest>(obj)?.let(Parsed::AvatarRequest) ?: Parsed.Malformed
         "create_conversation" -> decode<CreateConversation>(obj)?.let(Parsed::CreateConversation) ?: Parsed.Malformed
         "set_contact_photo" -> decode<SetContactPhoto>(obj)?.let(Parsed::SetContactPhoto) ?: Parsed.Malformed
+        "dial_request" -> decode<DialRequest>(obj)?.let(Parsed::DialRequest) ?: Parsed.Malformed
         else -> Parsed.Unknown(type)
     }
 
@@ -1050,6 +1137,12 @@ object SyncProtocol {
 
     fun encodeConversationCreated(value: ConversationCreated): String =
         withType(value, "conversation_created").toString()
+
+    fun encodeIncomingCall(value: IncomingCall): String = withType(value, "incoming_call").toString()
+
+    fun encodeCallState(value: CallState): String = withType(value, "call_state").toString()
+
+    fun encodeDialResult(value: DialResult): String = withType(value, "dial_result").toString()
 
     /**
      * The `type` field is not part of the data classes (it is routing,

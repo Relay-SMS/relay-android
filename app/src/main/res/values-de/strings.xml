@@ -104,6 +104,7 @@
     <string name="action_copy">Kopieren</string>
     <string name="action_forward">Weiterleiten</string>
     <string name="action_retry">Erneut versuchen</string>
+    <string name="action_resume">Fortsetzen</string>
     <string name="action_close">Schließen</string>
     <string name="action_continue">Weiter</string>
     <string name="action_export_pdf">Als PDF exportieren</string>
@@ -832,6 +833,7 @@
     <string name="error_log_cleared">Fehlerprotokoll gelöscht</string>
     <string name="error_log_clear_confirm_title">Fehlerprotokoll löschen?</string>
     <string name="error_log_clear_confirm_body">Alle gespeicherten Absturzberichte werden gelöscht. Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="error_log_unexpected_stop">App unerwartet beendet (kein Absturz aufgezeichnet)</string>
     <string name="error_not_default_app">Relay ist noch nicht die Standard-SMS-App.</string>
     <string name="error_send_failed">Die Nachricht konnte nicht gesendet werden.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
@@ -1170,6 +1172,8 @@
     <string name="linked_devices_server_hint">Wenn aktiviert, kann Ihr Gerät dieses Telefon im lokalen Netzwerk finden und sich damit verknüpfen. Nichts verlässt Ihr WLAN.</string>
     <string name="linked_devices_contacts_write_title">Kontaktfotos ändern</string>
     <string name="linked_devices_contacts_write_subtitle">Einem verknüpften Gerät erlauben, das Foto eines Kontakts zu ändern. Zum Erlauben tippen.</string>
+    <string name="linked_devices_calls_title">Anrufe auf verknüpften Geräten</string>
+    <string name="linked_devices_calls_subtitle">Einem verknüpften Gerät erlauben, eingehende Anrufe zu sehen und von diesem Telefon aus anzurufen. Zum Erlauben tippen.</string>
     <string name="linked_devices_start_error_title">Der Server konnte nicht gestartet werden</string>
     <string name="linked_devices_start_error_bind_hint">Eine andere Relay-App auf diesem Telefon nutzt bereits den Verknüpfungsport — beenden Sie zuerst deren Server und versuchen Sie es dann erneut.</string>
     <string name="linked_devices_link_action">Gerät verknüpfen</string>
@@ -1258,6 +1262,9 @@
     <string name="client_sync_error_default">Ihr Telefon konnte die Nachrichten gerade nicht synchronisieren.</string>
     <string name="client_sync_error_not_connected">Nicht mit Ihrem Telefon verbunden. Prüfen Sie, ob beide Geräte im selben WLAN sind.</string>
     <string name="client_sync_offline">Offline — wartet auf Ihr Telefon.</string>
+    <string name="client_sync_paused_title">Synchronisierung pausiert</string>
+    <string name="client_sync_paused_asleep">Dieses Gerät ist in den Ruhezustand gewechselt.</string>
+    <string name="client_sync_paused_no_response">Keine Antwort von Ihrem Telefon.</string>
     <string name="client_sync_prompt_action">Wählen, wie viel synchronisiert wird</string>
     <string name="client_notif_media_photo">Foto</string>
     <string name="client_notif_media_video">Video</string>

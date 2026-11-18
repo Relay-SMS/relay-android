@@ -5,6 +5,7 @@ import android.os.Build
 import com.filestech.sms.domain.clientmode.ClientActionGateway
 import com.filestech.sms.domain.clientmode.ClientAvatarGateway
 import com.filestech.sms.domain.clientmode.ClientSendGateway
+import com.filestech.sms.sync.client.AndroidDeviceIdleMonitor
 import com.filestech.sms.sync.client.AndroidNetworkAvailabilityMonitor
 import com.filestech.sms.sync.client.ClientActionSender
 import com.filestech.sms.sync.client.ClientConnectionManager
@@ -15,8 +16,11 @@ import com.filestech.sms.sync.client.ClientMirror
 import com.filestech.sms.sync.client.ClientSendManager
 import com.filestech.sms.sync.client.ClientSyncChannel
 import com.filestech.sms.sync.client.ConversationMirrorAdapter
+import com.filestech.sms.sync.client.DataStoreSyncPauseStore
+import com.filestech.sms.sync.client.DeviceIdleMonitor
 import com.filestech.sms.sync.client.NetworkAvailabilityMonitor
 import com.filestech.sms.sync.client.RoomSyncStateStore
+import com.filestech.sms.sync.client.SyncPauseStore
 import com.filestech.sms.sync.client.SyncStateStore
 import com.filestech.sms.sync.client.TofuPinStore
 import dagger.Module
@@ -94,6 +98,27 @@ object ClientSyncModule {
     fun provideNetworkAvailabilityMonitor(
         impl: AndroidNetworkAvailabilityMonitor,
     ): NetworkAvailabilityMonitor = impl
+
+    /**
+     * Pause/resume — the device-idle signal is the Android
+     * implementation; the engine depends on the narrow
+     * [DeviceIdleMonitor] interface so its tests can use a fake
+     * that drives the idle + screen-on flows on demand.
+     */
+    @Provides
+    @Singleton
+    fun provideDeviceIdleMonitor(
+        impl: AndroidDeviceIdleMonitor,
+    ): DeviceIdleMonitor = impl
+
+    /**
+     * Pause/resume — the pause record is the DataStore-backed
+     * one; the engine depends on the narrow [SyncPauseStore]
+     * interface so its tests can use an in-memory fake.
+     */
+    @Provides
+    @Singleton
+    fun provideSyncPauseStore(impl: DataStoreSyncPauseStore): SyncPauseStore = impl
 
     /** Client mode C2 — the sync-state store is the Room-backed one. */
     @Provides

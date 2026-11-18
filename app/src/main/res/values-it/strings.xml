@@ -105,6 +105,7 @@
     <string name="action_copy">Copia</string>
     <string name="action_forward">Inoltra</string>
     <string name="action_retry">Riprova</string>
+    <string name="action_resume">Riprendi</string>
     <string name="action_close">Chiudi</string>
     <string name="action_continue">Continua</string>
     <string name="action_export_pdf">Esporta in PDF</string>
@@ -834,6 +835,7 @@
     <string name="error_log_cleared">Registro errori cancellato</string>
     <string name="error_log_clear_confirm_title">Cancellare il registro errori?</string>
     <string name="error_log_clear_confirm_body">Tutte le segnalazioni di arresto anomalo salvate verranno eliminate. Questa azione non può essere annullata.</string>
+    <string name="error_log_unexpected_stop">L\'app si è chiusa inaspettatamente (nessun arresto anomalo registrato)</string>
     <string name="error_not_default_app">Relay non è ancora l\'app SMS predefinita.</string>
     <string name="error_send_failed">Invio del messaggio non riuscito.</string>
     <!-- v1.28.3 — un SMS sortant qui echoue le disait a personne. -->
@@ -1196,6 +1198,8 @@
     <string name="linked_devices_server_hint">Quando attivo, il dispositivo può trovare questo telefono nella rete locale e collegarsi ad esso. Nulla lascia la tua rete Wi-Fi.</string>
     <string name="linked_devices_contacts_write_title">Modificare le foto dei contatti</string>
     <string name="linked_devices_contacts_write_subtitle">Consentire a un dispositivo collegato di impostare la foto di un contatto. Tocca per consentire.</string>
+    <string name="linked_devices_calls_title">Chiamate sui dispositivi collegati</string>
+    <string name="linked_devices_calls_subtitle">Consentire a un dispositivo collegato di vedere le chiamate in arrivo e di chiamare da questo telefono. Tocca per consentire.</string>
     <string name="linked_devices_start_error_title">Il server non è stato avviato</string>
     <string name="linked_devices_start_error_bind_hint">Un\'altra app Relay su questo telefono sta già usando la porta di collegamento: prima ferma il suo server, poi riprova.</string>
     <string name="linked_devices_link_action">Collega un dispositivo</string>
@@ -1284,6 +1288,9 @@
     <string name="client_sync_error_default">Il telefono non è riuscito a sincronizzare i messaggi in questo momento.</string>
     <string name="client_sync_error_not_connected">Non connesso al telefono. Controlla che entrambi i dispositivi siano sulla stessa rete Wi-Fi.</string>
     <string name="client_sync_offline">Offline — in attesa del telefono.</string>
+    <string name="client_sync_paused_title">Sincronizzazione in pausa</string>
+    <string name="client_sync_paused_asleep">Questo dispositivo è andato in standby.</string>
+    <string name="client_sync_paused_no_response">Nessuna risposta dal telefono.</string>
     <string name="client_sync_prompt_action">Scegli quanto sincronizzare</string>
     <string name="client_notif_media_photo">Foto</string>
     <string name="client_notif_media_video">Video</string>

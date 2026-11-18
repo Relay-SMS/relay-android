@@ -10,6 +10,7 @@ import com.filestech.sms.data.repository.FichiersDePiecesJointes
 import com.filestech.sms.data.repository.SyncedConversationResult
 import com.filestech.sms.data.repository.SyncedMessageResult
 import com.filestech.sms.sync.SyncProtocol
+import com.filestech.sms.sync.SyncWakelock
 import com.filestech.sms.sync.SyncedContact
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
@@ -245,6 +246,16 @@ class ClientSyncEngineTest {
         val sendManager = mockk<ClientSendManager>(relaxed = true)
         val actionSender = mockk<ClientActionSender>(relaxed = true)
         val notificationRelay = mockk<ClientNotificationRelay>(relaxed = true)
+        // Pause/resume — relaxed mocks: the pause store reads null
+        // (no interrupted run), the idle monitor reports awake with
+        // silent flows, the wakelock is a no-op. The stall watchdog
+        // is disabled here: `advanceUntilIdle` fast-forwards
+        // virtual time past 60 s, which would pause every full run
+        // under test. The pause tests (ClientSyncEnginePauseTest)
+        // keep the real timeout and drive it with `advanceTimeBy`.
+        val pauseStore = mockk<SyncPauseStore>(relaxed = true)
+        val idleMonitor = mockk<DeviceIdleMonitor>(relaxed = true)
+        val wakelock = mockk<SyncWakelock>(relaxed = true)
         val engine = ClientSyncEngine(
             channel,
             mirror,
@@ -260,7 +271,11 @@ class ClientSyncEngineTest {
             contactSync,
             downloader,
             uploader,
+            pauseStore,
+            idleMonitor,
+            wakelock,
         )
+        engine.stallWatchdogTimeoutMs = 0L
         engine.start()
         return Harness(
             engine,

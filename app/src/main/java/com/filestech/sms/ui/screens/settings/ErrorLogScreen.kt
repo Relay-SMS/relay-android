@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.crashlog.CrashReportFormatter
 import com.filestech.sms.crashlog.CrashReportSummary
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
@@ -156,6 +157,10 @@ private fun ErrorLogList(
     onClearAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // An "unexpected stop" entry (a session that died without a
+    // crash) shows a readable title instead of its stable
+    // crash-type identifier, which only exists to name the file.
+    val unexpectedStopTitle = stringResource(R.string.error_log_unexpected_stop)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -178,9 +183,14 @@ private fun ErrorLogList(
         } else {
             RelaySettingsGroup {
                 reports.forEach { report ->
+                    val title = if (report.crashType == CrashReportFormatter.UNEXPECTED_STOP_TYPE) {
+                        unexpectedStopTitle
+                    } else {
+                        report.crashType
+                    }
                     item(onClick = { onSelect(report) }) {
                         RelaySettingRow(
-                            title = report.crashType,
+                            title = title,
                             subtitle = formatReportDate(report.timestampMillis),
                             chevron = true,
                         )

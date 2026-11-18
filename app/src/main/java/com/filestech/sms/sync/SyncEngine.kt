@@ -1,5 +1,7 @@
 package com.filestech.sms.sync
 
+import com.filestech.sms.sync.calls.CallDialer
+import com.filestech.sms.sync.calls.DialOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +55,12 @@ import java.util.concurrent.ConcurrentHashMap
  * Round 3 adds the contact-photo handler ([onSetContactPhoto]) in
  * the same shape; the runner is file-scope like the Slice 4 ones.
  *
+ * Live calls add the dial handler ([onDialRequest]) in the same
+ * shape; the runner is file-scope like the Slice 4 ones. The
+ * inbound call frames (`incoming_call`, `call_state`) are NOT an
+ * engine concern — the server broadcasts them from the shared
+ * observer (see [SyncServer]), so every session hears them.
+ *
  * Slice 5 adds the contact-sync handlers ([onContactsRequest],
  * [onAvatarRequest]) in the same shape, plus the contact snapshot
  * inside [runStream] (read once before `sync_started`, streamed
@@ -65,20 +73,37 @@ import java.util.concurrent.ConcurrentHashMap
  * desktop. The per-conversation "max sent id" tracking exists only
  * to keep the live path from re-pushing whole threads.
  *
+ * Sync pause/resume — the stream holds the [SyncWakelock] while it
+ * runs, so a brief screen-off doesn't freeze the sync. The lock is
+ * taken when a stream starts and released in a `finally` when it
+ * ends, errors, or is cancelled — and only for sync streams: never
+ * for attachment downloads/uploads, live push, or anything else.
+ * A superseded stream must not release the lock under its
+ * replacement (see [onSyncRequest]), so the engine tracks which
+ * stream job owns the lock.
+ *
  * @param source the message store, behind the [SyncMessageSource] seam.
  * @param parentScope the session's scope; the engine's jobs are
  * children of it, so a dead socket takes the engine with it.
  * @param send carries one outbound text frame to the client.
+ * @param wakelock the bounded partial wakelock, held only while a
+ * sync stream runs (see [onSyncRequest]).
+ * @param callDialer the dial executor for `dial_request`, or null
+ * when the session has none (tests): a dial then answers
+ * `dial_result` `failed` instead of crashing.
  */
 class SyncEngine(
     private val source: SyncMessageSource,
     parentScope: CoroutineScope,
     private val send: suspend (String) -> Unit,
+    private val wakelock: SyncWakelock,
+    private val callDialer: CallDialer? = null,
 ) {
     private val engineJob = SupervisorJob(parentScope.coroutineContext[Job])
     private val scope = CoroutineScope(parentScope.coroutineContext + engineJob)
 
     private var streamJob: Job? = null
+
     private var started = false
 
     /** Last conversation snapshot the live collector saw (by id). */
@@ -113,10 +138,19 @@ class SyncEngine(
      * the engine's scope, never on the frame loop. A failure mid-stream
      * answers `sync_error` (generic message, never a stack trace);
      * the socket stays up.
+     *
+     * The stream holds the [wakelock] from start to finish — taken
+     * when the stream job starts, released in the `finally` when it
+     * ends, errors, or is cancelled — so a brief screen-off doesn't
+     * freeze the sync. The holder is reference-counted, so a
+     * superseded stream's `finally` only drops its own count and
+     * can never release the lock under its replacement, in either
+     * interleaving.
      */
     fun onSyncRequest(request: SyncProtocol.SyncRequest) {
         streamJob?.cancel()
         streamJob = scope.launch {
+            wakelock.acquire()
             try {
                 runStream(request)
             } catch (e: CancellationException) {
@@ -124,6 +158,8 @@ class SyncEngine(
             } catch (t: Throwable) {
                 Timber.w(t, "SyncEngine: sync stream failed")
                 runCatching { send(syncErrorInternal()) }
+            } finally {
+                wakelock.release()
             }
         }
     }
@@ -420,6 +456,28 @@ class SyncEngine(
             } catch (t: Throwable) {
                 Timber.w(t, "SyncEngine: set contact photo failed")
                 runCatching { send(setContactPhotoFailedInternal(request.address)) }
+            }
+        }
+    }
+
+    // -- Live calls: dial ----------------------------------------------
+    // Same shape as the other handlers: starts a job and returns
+    // immediately, so a slow dial never blocks the frame loop.
+
+    /**
+     * Handles a `dial_request`: answered with `dial_result`
+     * (`ok: true` when the call was placed, `ok: false` with a
+     * snake_case code on refusal — see [SyncProtocol.DialResult]).
+     */
+    fun onDialRequest(request: SyncProtocol.DialRequest) {
+        scope.launch {
+            try {
+                runDialRequest(callDialer, send, request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Timber.w(t, "SyncEngine: dial request failed")
+                runCatching { send(dialResultInternal()) }
             }
         }
     }
@@ -1139,6 +1197,49 @@ private fun setContactPhotoFailedInternal(address: String): String =
             ok = false,
             code = SyncProtocol.MessageFailed.INTERNAL,
             message = "The photo couldn't be saved on the phone.",
+        ),
+    )
+
+// -- Live calls: dial (file scope, not a class member: the runner
+// touches no engine state beyond the dialer and the send lambda,
+// and the class is at the Detekt function limit) ----------------------
+
+/**
+ * Runs one `dial_request`: the dialer places the call (or refuses
+ * it), and the outcome maps 1:1 onto the `dial_result` frame — a
+ * session without a dialer (tests) answers `failed`. A refused
+ * dial is never a protocol violation: the socket stays up, and
+ * the desktop shows the reason.
+ */
+private suspend fun runDialRequest(
+    dialer: CallDialer?,
+    send: suspend (String) -> Unit,
+    request: SyncProtocol.DialRequest,
+) {
+    val outcome = dialer?.dial(request.number) ?: DialOutcome.Failed
+    val result = when (outcome) {
+        DialOutcome.Success -> SyncProtocol.DialResult(ok = true)
+        DialOutcome.PermissionDenied -> SyncProtocol.DialResult(
+            ok = false,
+            error = SyncProtocol.DialResult.PERMISSION_DENIED,
+        )
+        DialOutcome.NoNumber -> SyncProtocol.DialResult(
+            ok = false,
+            error = SyncProtocol.DialResult.NO_NUMBER,
+        )
+        DialOutcome.Failed -> SyncProtocol.DialResult(
+            ok = false,
+            error = SyncProtocol.DialResult.FAILED,
+        )
+    }
+    send(SyncProtocol.encodeDialResult(result))
+}
+
+private fun dialResultInternal(): String =
+    SyncProtocol.encodeDialResult(
+        SyncProtocol.DialResult(
+            ok = false,
+            error = SyncProtocol.DialResult.FAILED,
         ),
     )
 

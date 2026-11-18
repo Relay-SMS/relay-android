@@ -140,6 +140,11 @@ class ConversationsViewModel @Inject constructor(
         viewModelScope.launch { syncEngine.get().retry() }
     }
 
+    /** Client mode — resumes a paused sync run where it stopped (the Resume affordance). */
+    fun resumeClientSync() {
+        viewModelScope.launch { syncEngine.get().resume() }
+    }
+
     /**
      * v1.27.9 — **texte saisi dans le champ de recherche, en état Compose (snapshot).**
      *

@@ -66,4 +66,46 @@ class CrashReportFormatterTest {
         assertThat(text).contains("java.lang.RuntimeException: boom")
         assertThat(text).contains("Caused by: java.lang.IllegalStateException: root cause")
     }
+
+    @Test
+    fun `formatUnexpectedStop writes the marker details, not a stack trace`() {
+        val marker = SessionMarker(
+            sessionStartMillis = 1_000L,
+            lastAliveMillis = 2_000L,
+            pid = 1234,
+            foreground = true,
+            screen = "Thread",
+            syncState = "syncing",
+        )
+        val text = CrashReportFormatter.formatUnexpectedStop(metadata, marker, SessionExitReason.ANR)
+        assertThat(text).contains("App stopped unexpectedly (no crash recorded)")
+        assertThat(text).contains("Exit reason: ANR")
+        assertThat(text).contains("Foreground: yes")
+        assertThat(text).contains("Last screen: Thread")
+        assertThat(text).contains("Sync state: syncing")
+        assertThat(text).doesNotContain("Exception:")
+    }
+
+    @Test
+    fun `formatUnexpectedStop says unknown for missing details`() {
+        val marker = SessionMarker(
+            sessionStartMillis = 1_000L,
+            lastAliveMillis = 2_000L,
+            pid = 1234,
+            foreground = false,
+        )
+        val text = CrashReportFormatter.formatUnexpectedStop(metadata, marker, null)
+        assertThat(text).contains("Exit reason: unknown")
+        assertThat(text).contains("Foreground: no")
+        assertThat(text).contains("Last screen: unknown")
+        assertThat(text).contains("Sync state: unknown")
+    }
+
+    @Test
+    fun `the unexpected stop type round-trips through file names`() {
+        val name = CrashReportFormatter.fileNameFor(2_500L, CrashReportFormatter.UNEXPECTED_STOP_TYPE)
+        assertThat(name).isEqualTo("crash-2500-UnexpectedStop.txt")
+        assertThat(CrashReportFormatter.parseFileName(name)?.crashType)
+            .isEqualTo(CrashReportFormatter.UNEXPECTED_STOP_TYPE)
+    }
 }

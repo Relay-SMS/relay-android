@@ -29,6 +29,7 @@ import com.filestech.sms.sync.client.ClientConnectionState
 import com.filestech.sms.sync.client.ClientSyncEngine
 import com.filestech.sms.sync.client.ClientSyncPhase
 import com.filestech.sms.sync.client.ClientSyncUiState
+import com.filestech.sms.sync.client.SyncPauseReason
 import com.filestech.sms.sync.client.shouldShowSyncProgress
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.theme.brandBlue
@@ -36,10 +37,10 @@ import com.filestech.sms.ui.theme.brandBlue
 /**
  * Client mode C2 — the sync states above the conversation list
  * (main list only, never Archived): the hub-not-default notice, the
- * sync progress row, the sync error row with Retry, the
- * choose-how-much affordance while prompting, and a quiet offline
- * line while the hub is unreachable. Hub mode renders nothing —
- * the engine's state is IDLE there.
+ * sync progress row, the sync error row with Retry, the paused row
+ * with Resume, the choose-how-much affordance while prompting, and
+ * a quiet offline line while the hub is unreachable. Hub mode
+ * renders nothing — the engine's state is IDLE there.
  */
 @Composable
 fun ClientSyncStatesIfNeeded(
@@ -47,6 +48,7 @@ fun ClientSyncStatesIfNeeded(
     isClientMode: Boolean,
     archived: Boolean,
     onRetry: () -> Unit,
+    onResume: () -> Unit,
     onOpenLinkedDevices: () -> Unit,
 ) {
     if (!isClientMode || archived) return
@@ -74,6 +76,14 @@ fun ClientSyncStatesIfNeeded(
                     ClientSyncProgressRow(syncUi = syncUi)
                 }
             }
+
+            // Paused has its own branch: shouldShowSyncProgress
+            // only fires while Syncing, so a paused run would
+            // otherwise render nothing at all.
+            ClientSyncPhase.Paused -> ClientSyncPausedRow(
+                syncUi = syncUi,
+                onResume = onResume,
+            )
 
             ClientSyncPhase.Idle,
             ClientSyncPhase.Live,
@@ -235,6 +245,72 @@ private fun ClientSyncErrorRow(
             RelayTextButton(
                 text = stringResource(R.string.action_retry),
                 onClick = onRetry,
+            )
+        }
+    }
+}
+
+/**
+ * The paused row: the title, why the run stopped, the clamped
+ * progress ("X of Y", never above the total), and Resume. Same
+ * card as the error row, in the notice card's primaryContainer —
+ * a pause is not an error. A null reason (the engine always sets
+ * one when it pauses) just drops the reason line.
+ */
+@Composable
+private fun ClientSyncPausedRow(
+    syncUi: ClientSyncUiState,
+    onResume: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val reason = when (syncUi.pauseReason) {
+        SyncPauseReason.DEVICE_ASLEEP -> stringResource(R.string.client_sync_paused_asleep)
+        SyncPauseReason.NO_RESPONSE -> stringResource(R.string.client_sync_paused_no_response)
+        null -> null
+    }
+    val total = syncUi.total
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = cs.primaryContainer.copy(alpha = 0.55f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.client_sync_paused_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = cs.onPrimaryContainer,
+                )
+                if (reason != null) {
+                    Text(
+                        text = reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cs.onPrimaryContainer,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (total != null) {
+                    Text(
+                        text = stringResource(
+                            R.string.client_sync_count,
+                            minOf(syncUi.imported, total),
+                            total,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cs.onPrimaryContainer,
+                    )
+                }
+            }
+            RelayTextButton(
+                text = stringResource(R.string.action_resume),
+                onClick = onResume,
             )
         }
     }

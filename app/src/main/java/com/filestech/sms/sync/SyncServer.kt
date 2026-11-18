@@ -1,5 +1,9 @@
 package com.filestech.sms.sync
 
+import com.filestech.sms.sync.calls.CallDialer
+import com.filestech.sms.sync.calls.CallEvent
+import com.filestech.sms.sync.calls.CallStateObserver
+import com.filestech.sms.sync.calls.encodeCallEventFrames
 import io.ktor.server.application.install
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.applicationEnvironment
@@ -62,7 +66,8 @@ import javax.inject.Singleton
  * lives in [SyncSessionHandler] — this file is the Ktor wiring around
  * it, nothing more. Each session gets its own [SyncEngine], fed by
  * the injected [SyncMessageSource]; the engine is cancelled when the
- * session ends.
+ * session ends. Every session's engine shares the one injected
+ * [SyncWakelock], held only while a sync stream runs.
  *
  * Slice 5 — the server also owns the live contact delta: it holds
  * the last-broadcast contact snapshot (keyed by CONTACT_ID, internal
@@ -78,6 +83,24 @@ import javax.inject.Singleton
  * application scope: the sync package imports no app code, so it
  * cannot use the app's DI qualifiers (see the glue-points section at
  * the end of SYNC_PROTOCOL.md).
+ *
+ * Live calls — the server also owns the call-state observer: ONE
+ * observer for the whole server (a single system listener), started
+ * in [start] and stopped in [stop], whose events broadcast
+ * `incoming_call` / `call_state` to every authenticated session
+ * ([broadcastCallEvent]). The observer lives here, not in the
+ * per-session engines: a call is a phone-wide event, not a
+ * session event, and one listener must not be registered per
+ * socket. The dial side is per-session instead — each engine gets
+ * the shared [CallDialer] and answers its own session's
+ * `dial_request` with `dial_result`.
+ *
+ * @param callStateObserver the phone's call-state observer, or
+ * null when the server has none (tests): call events are then
+ * simply never broadcast.
+ * @param callDialer the dial executor handed to each session's
+ * engine, or null when the server has none (tests): a dial then
+ * answers `dial_result` `failed`.
  */
 @Singleton
 class SyncServer @Inject constructor(
@@ -85,12 +108,18 @@ class SyncServer @Inject constructor(
     private val tlsProvider: TlsCertificateProvider,
     private val mdnsAdvertiser: MdnsAdvertiser,
     private val messageSource: SyncMessageSource,
+    private val syncWakelock: SyncWakelock,
+    private val callStateObserver: CallStateObserver? = null,
+    private val callDialer: CallDialer? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val startStopMutex = Mutex()
 
     private var engine: EmbeddedServer<*, *>? = null
     private var watchdogJob: Job? = null
+
+    /** Live calls — the collector that broadcasts the observer's events. */
+    private var callEventsJob: Job? = null
 
     /** Live sessions, keyed by their state machine (which owns the socket's close). */
     private val sessions = ConcurrentHashMap<SyncSessionHandler, Unit>()
@@ -165,6 +194,7 @@ class SyncServer @Inject constructor(
                 mdnsAdvertiser.start(hubId, hubName)
                 startWatchdog()
                 _running.value = true
+                startCallObserver()
                 store.clearStartError()
                 Timber.i("SyncServer: listening on port %d (TLS only)", SyncProtocol.PORT)
             } catch (t: Throwable) {
@@ -183,6 +213,9 @@ class SyncServer @Inject constructor(
         startStopMutex.withLock {
             watchdogJob?.cancel()
             watchdogJob = null
+            callEventsJob?.cancel()
+            callEventsJob = null
+            runCatching { callStateObserver?.stop() }
             contactsDebounceJob?.cancel()
             contactsDebounceJob = null
             lastContacts = null
@@ -218,6 +251,42 @@ class SyncServer @Inject constructor(
      */
     suspend fun broadcastHubStatus(isDefaultSms: Boolean) {
         broadcast(SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms)))
+    }
+
+    /**
+     * Live calls — starts the call-state observer and the
+     * collector that broadcasts its events to every authenticated
+     * session. The collector launches BEFORE the observer starts:
+     * the event flow has no replay, so a call that begins
+     * between the two would otherwise be missed — and the
+     * listener's callbacks are delivered asynchronously on the
+     * telephony thread, so the collector is subscribed long
+     * before the first event can arrive. A no-op without an
+     * observer (tests). Fail-soft: the observer never throws, so
+     * a listening failure degrades to "no call events" instead
+     * of failing the server start.
+     */
+    private fun startCallObserver() {
+        val observer = callStateObserver ?: return
+        callEventsJob = scope.launch {
+            observer.events.collect { event ->
+                runCatching { broadcastCallEvent(event) }
+            }
+        }
+        runCatching { observer.start() }
+    }
+
+    /**
+     * Live calls — broadcasts one call event to every
+     * authenticated session: a ringing phone sends both
+     * `incoming_call` and `call_state` `ringing`; every other
+     * transition sends only its `call_state` (see
+     * [encodeCallEventFrames]). A dead socket just skips.
+     */
+    private suspend fun broadcastCallEvent(event: CallEvent) {
+        for (frame in encodeCallEventFrames(event)) {
+            broadcast(frame)
+        }
     }
 
     /**
@@ -379,6 +448,8 @@ class SyncServer @Inject constructor(
             source = messageSource,
             parentScope = session,
             send = { text -> session.send(Frame.Text(text)) },
+            wakelock = syncWakelock,
+            callDialer = callDialer,
         )
         val handler = SyncSessionHandler(
             lookup = store,

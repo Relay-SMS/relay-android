@@ -95,6 +95,17 @@ AUTORISEES = {
     "android.permission.WRITE_CONTACTS",
     "android.permission.READ_PHONE_STATE",
     "android.permission.READ_PHONE_NUMBERS",
+    # Live calls — READ_CALL_LOG, pour le numero de l'appelant
+    # quand le telephone sonne (affiche sur un appareil lie) :
+    # depuis Android 9, la plateforme passe un numero vide aux
+    # ecouteurs d'etat d'appel qui ne l'ont pas. Relay ne lit
+    # JAMAIS le journal d'appels lui-meme (aucune requete sur
+    # CallLog.Calls) ; la permission ne fait que deverrouiller le
+    # numero dans le rappel d'etat d'appel en direct. Demandee a
+    # l'execution depuis l'ecran Appareils lies, serveur allume
+    # uniquement, jamais au lancement. Documentee dans
+    # PERMISSIONS.md.
+    "android.permission.READ_CALL_LOG",
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.VIBRATE",
     "android.permission.USE_BIOMETRIC",
@@ -317,8 +328,12 @@ def controle_negatif() -> int:
         ("permission reseau non revue (CHANGE_NETWORK_STATE)",
          conforme + ["android.permission.CHANGE_NETWORK_STATE"], 1,
          ("hors de la liste revue", "android.permission.CHANGE_NETWORK_STATE")),
-        ("permission inconnue", conforme + ["android.permission.READ_CALL_LOG"], 1,
-         ("hors de la liste revue", "android.permission.READ_CALL_LOG")),
+        # Live calls — the unknown-permission example used to be
+        # READ_CALL_LOG; it is reviewed now, so the case uses
+        # BODY_SENSORS instead (a permission Relay will never
+        # need).
+        ("permission inconnue", conforme + ["android.permission.BODY_SENSORS"], 1,
+         ("hors de la liste revue", "android.permission.BODY_SENSORS")),
         ("manifeste vide", [], 1, ("aucune permission lue",)),
     ]
     echecs = 0

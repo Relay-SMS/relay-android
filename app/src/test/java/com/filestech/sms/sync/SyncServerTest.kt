@@ -1,5 +1,6 @@
 package com.filestech.sms.sync
 
+import com.filestech.sms.sync.calls.FakeCallStateObserver
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -66,6 +67,7 @@ class SyncServerTest {
             tlsProvider = tlsProvider,
             mdnsAdvertiser = mockk(),
             messageSource = FakeSyncMessageSource(),
+            syncWakelock = NoOpSyncWakelock,
         )
         val thrown = runCatching { server.start() }.exceptionOrNull()
         assertThat(thrown).isSameInstanceAs(failure)
@@ -90,6 +92,7 @@ class SyncServerTest {
             tlsProvider = tlsProvider,
             mdnsAdvertiser = advertiser,
             messageSource = FakeSyncMessageSource(),
+            syncWakelock = NoOpSyncWakelock,
         )
         try {
             server.start()
@@ -104,11 +107,44 @@ class SyncServerTest {
         verify { advertiser.start("test-hub", "Pixel 8") }
     }
 
+    @Test fun `starting the server starts the call observer and stopping stops it`() = runTest {
+        val store = mockk<LinkedDeviceStore>(relaxed = true)
+        coEvery { store.hubId() } returns "test-hub"
+        every { store.hubName() } returns "Pixel 8"
+        val identity = testIdentity()
+        val tlsProvider = mockk<TlsCertificateProvider>()
+        coEvery { tlsProvider.ensureIdentity(any()) } returns TlsIdentity(
+            identity.keyStore,
+            identity.alias,
+            identity.password,
+            identity.password,
+        )
+        val observer = FakeCallStateObserver()
+        val server = SyncServer(
+            store = store,
+            tlsProvider = tlsProvider,
+            mdnsAdvertiser = mockk(relaxed = true),
+            messageSource = FakeSyncMessageSource(),
+            syncWakelock = NoOpSyncWakelock,
+            callStateObserver = observer,
+        )
+        try {
+            server.start()
+            assertThat(server.running.value).isTrue()
+            assertThat(observer.startCount).isEqualTo(1)
+        } finally {
+            runCatching { server.stop() }
+        }
+        assertThat(observer.stopCount).isEqualTo(1)
+        assertThat(server.running.value).isFalse()
+    }
+
     private fun serverWith(source: FakeSyncMessageSource): SyncServer = SyncServer(
         store = mockk(),
         tlsProvider = mockk(),
         mdnsAdvertiser = mockk(),
         messageSource = source,
+        syncWakelock = NoOpSyncWakelock,
     )
 
     /** A real TLS identity (Netty's self-signed certificate), as in [SyncEngineTlsTest]. */

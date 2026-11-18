@@ -23,6 +23,11 @@ import java.util.TimeZone
  * detail screen shows the full text before the user shares or
  * copies anything, so nothing leaves the device unseen.
  *
+ * A second body kind exists for sessions that died WITHOUT an
+ * exception ([formatUnexpectedStop]): same metadata header, then
+ * what the session marker knew (exit reason, session times, last
+ * screen, sync state) instead of a stack trace.
+ *
  * Pure JVM — no Android calls — so everything here is unit-tested
  * on plain JVM.
  */
@@ -32,6 +37,15 @@ object CrashReportFormatter {
 
     /** Characters outside this set are replaced with '_' in file names. */
     private val SAFE_TYPE = Regex("""[^A-Za-z0-9._$-]""")
+
+    /**
+     * The crash type of an "unexpected stop" entry — a session
+     * that died without a Java exception (see
+     * [formatUnexpectedStop]). The Error log screen maps it to a
+     * localized title; the file name carries this stable
+     * identifier, never the localized wording.
+     */
+    const val UNEXPECTED_STOP_TYPE: String = "UnexpectedStop"
 
     /**
      * The file name for a report. [crashType] is the exception's
@@ -64,12 +78,9 @@ object CrashReportFormatter {
      */
     fun format(metadata: CrashMetadata, throwable: Throwable): String {
         val trace = StringWriter().also { throwable.printStackTrace(PrintWriter(it)) }.toString()
-        val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }.format(Date(metadata.timestampMillis))
         return buildString {
             appendLine("Relay crash report")
-            appendLine("Date: $date")
+            appendLine("Date: ${formatDate(metadata.timestampMillis)}")
             appendLine("App version: ${metadata.appVersion} (${metadata.buildType})")
             appendLine("Android: ${metadata.androidRelease} (API ${metadata.androidSdk})")
             appendLine("Device: ${metadata.deviceModel}")
@@ -77,5 +88,47 @@ object CrashReportFormatter {
             appendLine()
             append(trace)
         }
+    }
+
+    /**
+     * The body of an "unexpected stop" entry: a session that died
+     * without a Java exception, so there is no stack trace — the
+     * entry carries what the session marker knew instead (see
+     * [SessionMarker]). The header date is the death time, which
+     * the caller sets as [CrashMetadata.timestampMillis] (the exit
+     * record's time when there is one, else the marker's
+     * last-alive time). [exitReason] is the system's reason, or
+     * null below API 30 / when the system kept no record.
+     */
+    fun formatUnexpectedStop(
+        metadata: CrashMetadata,
+        marker: SessionMarker,
+        exitReason: SessionExitReason?,
+    ): String {
+        return buildString {
+            appendLine("App stopped unexpectedly (no crash recorded)")
+            appendLine("Date: ${formatDate(metadata.timestampMillis)}")
+            appendLine("App version: ${metadata.appVersion} (${metadata.buildType})")
+            appendLine("Android: ${metadata.androidRelease} (API ${metadata.androidSdk})")
+            appendLine("Device: ${metadata.deviceModel}")
+            appendLine("Exit reason: ${exitReason?.displayName ?: "unknown"}")
+            appendLine("Session started: ${formatDate(marker.sessionStartMillis)}")
+            appendLine("Last alive: ${formatDate(marker.lastAliveMillis)}")
+            appendLine("Foreground: ${if (marker.foreground) "yes" else "no"}")
+            appendLine("Last screen: ${marker.screen ?: "unknown"}")
+            appendLine("Sync state: ${marker.syncState ?: "unknown"}")
+            appendLine()
+            appendLine(
+                "No Java exception was recorded for this session: the process died without " +
+                    "throwing (a freeze, a system kill, or a native crash).",
+            )
+        }
+    }
+
+    /** One timestamp in the header format (UTC, ISO-like). Shared by both report kinds. */
+    private fun formatDate(timestampMillis: Long): String {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date(timestampMillis))
     }
 }

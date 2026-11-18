@@ -1,5 +1,6 @@
 package com.filestech.sms
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.pm.PackageManager
 import android.database.ContentObserver
@@ -13,7 +14,11 @@ import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.filestech.sms.core.logging.LineNumberDebugTree
 import com.filestech.sms.core.logging.NoOpReleaseTree
+import com.filestech.sms.crashlog.ActivityManagerExitReasonProvider
 import com.filestech.sms.crashlog.CrashLogHandler
+import com.filestech.sms.crashlog.CrashReportStore
+import com.filestech.sms.crashlog.SessionDeathChecker
+import com.filestech.sms.crashlog.SessionMarkerTracker
 import com.filestech.sms.data.blocking.BlockedNumbersImporter
 import com.filestech.sms.data.contacts.ContactsReader
 import com.filestech.sms.data.local.datastore.SettingsRepository
@@ -44,6 +49,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.File
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -153,6 +159,24 @@ class MainApplication : Application(), Configuration.Provider {
         // only writes a local file and chains to the previous
         // handler; see [CrashLogHandler].
         CrashLogHandler.install(this)
+        // Session marker — a death without a Java exception
+        // (freeze, ANR-kill, native crash, OOM, system kill) leaves
+        // no crash report, so the marker records the previous
+        // session's end. Install writes this session's marker
+        // (synchronous, ~200 bytes); the check runs off the main
+        // thread (one binder call + maybe one file write).
+        val previousMarker = runCatching { SessionMarkerTracker.install(this) }.getOrNull()
+        appScope.launch(ioDispatcher) {
+            runCatching {
+                val store = CrashReportStore(File(filesDir, CrashReportStore.DIR_NAME))
+                val activityManager = getSystemService(ActivityManager::class.java)
+                val provider = activityManager?.let {
+                    ActivityManagerExitReasonProvider(it, packageName)
+                }
+                SessionDeathChecker(store, provider)
+                    .check(previousMarker, CrashLogHandler.collectMetadata())
+            }.onFailure { Timber.w(it, "Session death check failed") }
+        }
         if (BuildConfig.LOG_ENABLED) {
             Timber.plant(LineNumberDebugTree())
         } else {

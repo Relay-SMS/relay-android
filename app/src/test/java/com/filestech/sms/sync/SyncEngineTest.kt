@@ -655,14 +655,17 @@ class SyncEngineTest {
 /**
  * Builds an engine on the test scope and guarantees it is stopped
  * afterwards — the live collectors run forever, so a test that
- * leaks one would hang `runTest` until its timeout.
+ * leaks one would hang `runTest` until its timeout. The wakelock
+ * defaults to a no-op; pass a recording one to pin the hub
+ * wiring (see SyncWakelockTest).
  */
 internal suspend fun TestScope.runEngine(
     source: FakeSyncMessageSource,
+    wakelock: SyncWakelock = NoOpSyncWakelock,
     block: suspend TestScope.(SyncEngine, MutableList<String>) -> Unit,
 ) {
     val sent = mutableListOf<String>()
-    val engine = SyncEngine(source, this, send = { sent += it })
+    val engine = SyncEngine(source, this, send = { sent += it }, wakelock = wakelock)
     try {
         block(engine, sent)
     } finally {

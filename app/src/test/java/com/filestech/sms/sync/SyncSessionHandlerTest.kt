@@ -1,5 +1,7 @@
 package com.filestech.sms.sync
 
+import com.filestech.sms.sync.calls.DialOutcome
+import com.filestech.sms.sync.calls.FakeCallDialer
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -188,7 +190,7 @@ class SyncSessionHandlerTest {
         val source = FakeSyncMessageSource()
         source.snapshot = listOf(sampleConversation(id = 1))
         val sent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { sent += it })
+        val engine = SyncEngine(source, this, send = { sent += it }, wakelock = NoOpSyncWakelock)
         try {
             val harness = Harness(mapOf(DEVICE_ID to device), engine, sent)
             harness.handler.onText(helloJson())
@@ -289,7 +291,7 @@ class SyncSessionHandlerTest {
     @Test fun `an authenticated send_message reaches the engine and answers message_sent`() = runTest {
         val source = FakeSyncMessageSource()
         val engineSent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
         val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
         try {
             harness.handler.onText(helloJson())
@@ -317,7 +319,7 @@ class SyncSessionHandlerTest {
     @Test fun `an authenticated action frame reaches the engine`() = runTest {
         val source = FakeSyncMessageSource()
         val engineSent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
         val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
         try {
             harness.handler.onText(helloJson())
@@ -364,7 +366,7 @@ class SyncSessionHandlerTest {
         val source = FakeSyncMessageSource()
         source.contactsSnapshot = listOf(sampleContact(id = 1L))
         val engineSent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
         val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
         try {
             harness.handler.onText(helloJson())
@@ -388,7 +390,7 @@ class SyncSessionHandlerTest {
         val source = FakeSyncMessageSource()
         source.openAvatarResult = AvatarOpenResult.Unknown
         val engineSent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
         val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
         try {
             harness.handler.onText(helloJson())
@@ -425,7 +427,7 @@ class SyncSessionHandlerTest {
     @Test fun `an authenticated create_conversation reaches the engine and answers conversation_created`() = runTest {
         val source = FakeSyncMessageSource()
         val engineSent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
         val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
         try {
             harness.handler.onText(helloJson())
@@ -477,7 +479,7 @@ class SyncSessionHandlerTest {
     @Test fun `an authenticated set_contact_photo reaches the engine and answers action_result`() = runTest {
         val source = FakeSyncMessageSource()
         val engineSent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
         val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
         try {
             harness.handler.onText(helloJson())
@@ -494,6 +496,50 @@ class SyncSessionHandlerTest {
             assertThat(ack["type"]?.jsonPrimitive?.content).isEqualTo("action_result")
             assertThat(ack["action"]?.jsonPrimitive?.content).isEqualTo("set_contact_photo")
             assertThat(ack["address"]?.jsonPrimitive?.content).isEqualTo("+15551234567")
+            assertThat(ack["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    // -- Live calls: dial -----------------------------------------------
+
+    @Test fun `an unauthenticated dial_request fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText(
+            """{"type":"dial_request","number":"+15551234567"}""",
+        )
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `an authenticated dial_request reaches the engine and answers dial_result`() = runTest {
+        val dialer = FakeCallDialer(outcome = DialOutcome.Success)
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(
+            FakeSyncMessageSource(),
+            this,
+            send = { engineSent += it },
+            wakelock = NoOpSyncWakelock,
+            callDialer = dialer,
+        )
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+
+            harness.handler.onText(
+                """{"type":"dial_request","number":"+15551234567"}""",
+            )
+            advanceUntilIdle()
+            assertThat(dialer.dialedNumbers).containsExactly("+15551234567")
+            assertThat(engineSent).hasSize(1)
+            val ack = Json.parseToJsonElement(engineSent.first()).jsonObject
+            assertThat(ack["type"]?.jsonPrimitive?.content).isEqualTo("dial_result")
             assertThat(ack["ok"]?.jsonPrimitive?.content).isEqualTo("true")
             assertThat(harness.closes).isEmpty()
         } finally {
@@ -526,7 +572,7 @@ class SyncSessionHandlerTest {
     @Test fun `authenticated attachment frames reach the engine`() = runTest {
         val source = FakeSyncMessageSource()
         val engineSent = mutableListOf<String>()
-        val engine = SyncEngine(source, this, send = { engineSent += it })
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
         val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
         try {
             harness.handler.onText(helloJson())

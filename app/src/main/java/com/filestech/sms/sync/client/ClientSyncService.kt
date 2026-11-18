@@ -15,6 +15,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.getSystemService
 import com.filestech.sms.MainActivity
 import com.filestech.sms.R
+import com.filestech.sms.crashlog.SessionMarkerTracker
 import dagger.Lazy
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.Locale
 import javax.inject.Inject
 
 /**
@@ -70,6 +72,9 @@ class ClientSyncService : Service() {
     /** The job watching the connection state to refresh the notification. */
     private var observeJob: Job? = null
 
+    /** The job watching the engine state to disconnect on pause / reconnect on resume. */
+    private var engineObserveJob: Job? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -99,6 +104,8 @@ class ClientSyncService : Service() {
             return START_NOT_STICKY
         }
         observeJob?.cancel()
+        engineObserveJob?.cancel()
+        engineObserveJob = null
         observeJob = scope.launch {
             connectionManager.state.collect { state ->
                 val manager = getSystemService<NotificationManager>()
@@ -127,7 +134,50 @@ class ClientSyncService : Service() {
             // connect, so it sees the connection state from the
             // beginning (prompt on first connect, delta resume on
             // reconnect) and no frame arrives unobserved.
-            syncEngine.get().start()
+            val engine = syncEngine.get()
+            engine.start()
+            // Pause/resume — the engine owns the sync state, the
+            // service owns the transport: when the engine pauses a
+            // run (device asleep / stalled stream), the service
+            // disconnects so the reconnect loop does not fight the
+            // pause; when a resume flips the phase back to Syncing
+            // with no session, the service reconnects and the
+            // engine completes the resume on connect. The link is
+            // re-read fresh at reconnect time: the hub may have
+            // moved since this service started, and the manager
+            // keeps the link record current.
+            engineObserveJob = scope.launch {
+                var paused = false
+                engine.ui.collect { ui ->
+                    // Session marker — record the sync phase so a
+                    // death during a sync still says the sync was
+                    // running. Only phase transitions write; the
+                    // tracker skips unchanged values, so the
+                    // per-batch progress emissions cost nothing.
+                    SessionMarkerTracker.current?.updateSyncState(ui.phase.name.lowercase(Locale.ROOT))
+                    if (ui.phase == ClientSyncPhase.Paused) {
+                        if (!paused) {
+                            paused = true
+                            connectionManager.disconnect()
+                        }
+                    } else {
+                        paused = false
+                        if (ui.phase == ClientSyncPhase.Syncing &&
+                            ui.connection is ClientConnectionState.Disconnected
+                        ) {
+                            val fresh = linkStore.snapshot()
+                            val freshHost = fresh?.hubHost
+                            val freshPort = fresh?.hubPort
+                            if (freshHost != null && freshPort != null) {
+                                connectionManager.connect(
+                                    HubTarget(freshHost, freshPort, fresh.hubId.orEmpty()),
+                                    kind,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             connectionManager.connect(HubTarget(host, port, link.hubId.orEmpty()), kind)
         }
         // START_STICKY: if the system kills the service, Android
@@ -150,6 +200,8 @@ class ClientSyncService : Service() {
     override fun onDestroy() {
         observeJob?.cancel()
         observeJob = null
+        engineObserveJob?.cancel()
+        engineObserveJob = null
         connectionManager.disconnect()
         scope.cancel()
     }
