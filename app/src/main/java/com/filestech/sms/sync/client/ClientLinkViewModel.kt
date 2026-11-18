@@ -87,6 +87,9 @@ class ClientLinkViewModel @Inject constructor(
     private val kind = deviceKindFor(context.resources.configuration.smallestScreenWidthDp)
 
     init {
+        // TEMP-DIAG "Not linked": proves whether the ViewModel is
+        // fresh per entry or survives pops.
+        Timber.d("ClientLinkViewModel: created vm=%s", hashCode())
         viewModelScope.launch {
             connectionManager.state.collect { state ->
                 if (state is ClientConnectionState.Connected) {
@@ -102,6 +105,13 @@ class ClientLinkViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // TEMP-DIAG "Not linked": proves whether the ViewModel is
+    // destroyed when the screen is popped.
+    override fun onCleared() {
+        Timber.d("ClientLinkViewModel: cleared vm=%s", hashCode())
+        super.onCleared()
     }
 
     /**

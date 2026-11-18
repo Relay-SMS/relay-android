@@ -50,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
@@ -109,6 +110,7 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import timber.log.Timber
 import java.util.Date
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -462,6 +464,17 @@ private fun LinkedDevicesList(
 }
 
 /**
+ * TEMP-DIAG for the "Not linked" investigation: which fields of the
+ * collected link record are present — booleans only, never values.
+ * Mirrors ClientLinkStore.describeLink; remove together with it.
+ */
+private fun describeCollectedLink(link: ClientLink?): String =
+    "isLinked=${link?.isLinked} deviceId=${link?.deviceId != null} " +
+        "displayName=${link?.displayName != null} hubId=${link?.hubId != null} " +
+        "hubName=${link?.hubName != null} hubHost=${link?.hubHost != null} " +
+        "hubPort=${link?.hubPort != null}"
+
+/**
  * Client mode — the client branch of the Linked devices screen:
  * this device's identity, the hub link status, the pairing QR, and
  * Unlink. No server toggle, no device list, no scanner — those are
@@ -473,7 +486,17 @@ private fun ClientLinkedDevicesScreen(
     onBack: () -> Unit,
     viewModel: ClientLinkViewModel,
 ) {
-    val link by viewModel.link.collectAsStateWithLifecycle()
+    // TEMP-DIAG "Not linked" fix attempt (candidate A, a guess):
+    // collect the link directly instead of lifecycle-gated — the
+    // destination is only composed when visible, so the gating adds
+    // nothing, and the conditionally-composed child branch may not
+    // be delivering StateFlow updates.
+    val link by viewModel.link.collectAsState()
+    // TEMP-DIAG "Not linked": what the composition actually sees —
+    // presence only, never values. One line per collected value.
+    LaunchedEffect(link) {
+        Timber.d("ClientLinkedDevicesScreen: link collected %s", describeCollectedLink(link))
+    }
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val qrOpen by viewModel.qrOpen.collectAsStateWithLifecycle()
     val pairUri by viewModel.pairUri.collectAsStateWithLifecycle()
