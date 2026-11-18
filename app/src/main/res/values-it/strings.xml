@@ -28,6 +28,8 @@
     <string name="action_unpin">Togli da in alto</string>
     <string name="action_mute">Silenzia</string>
     <string name="action_unmute">Riattiva i suoni</string>
+    <string name="action_mark_read">Segna come letto</string>
+    <string name="action_mark_unread">Segna come non letto</string>
     <string name="action_block">Blocca</string>
     <string name="action_unblock">Sblocca</string>
     <string name="action_more">Altro</string>

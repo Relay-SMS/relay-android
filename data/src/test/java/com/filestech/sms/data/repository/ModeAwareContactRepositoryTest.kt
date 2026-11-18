@@ -232,6 +232,121 @@ class ModeAwareContactRepositoryTest {
         coVerify(exactly = 0) { f.local.listAllDetailed() }
     }
 
+    // -- Client mode: NANP-tolerant lookup -----------------------------------
+
+    @Test fun `client mode lookup matches a nationally stored number from a +1 sender`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("5145550123", "Alice"))
+        assertThat(f.repo.lookupByPhone("+15145550123")?.displayName).isEqualTo("Alice")
+    }
+
+    @Test fun `client mode lookup matches a +1 stored number from a national sender`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("+15145550123", "Alice"))
+        assertThat(f.repo.lookupByPhone("5145550123")?.displayName).isEqualTo("Alice")
+    }
+
+    @Test fun `client mode lookup matches an 11-digit stored number from a +1 sender`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("15145550123", "Alice"))
+        assertThat(f.repo.lookupByPhone("+15145550123")?.displayName).isEqualTo("Alice")
+    }
+
+    @Test fun `client mode lookup matches a +1 stored number from an 11-digit sender`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("+15145550123", "Alice"))
+        assertThat(f.repo.lookupByPhone("15145550123")?.displayName).isEqualTo("Alice")
+    }
+
+    @Test fun `client mode lookup matches a formatted +1 sender against a national row`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("5145550123", "Alice"))
+        assertThat(f.repo.lookupByPhone("+1 (514) 555-0123")?.displayName).isEqualTo("Alice")
+    }
+
+    @Test fun `client mode lookup keeps short codes exact-only`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("12345", "Shorty"))
+        f.dao.upsert(row("5145550123", "Alice"))
+        assertThat(f.repo.lookupByPhone("12345")?.displayName).isEqualTo("Shorty")
+        assertThat(f.repo.lookupByPhone("55512345")).isNull()
+        assertThat(f.repo.lookupByPhone("5550123")).isNull()
+    }
+
+    @Test fun `client mode lookup never matches across country codes`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("+33611111111", "Alice"))
+        // A +1 number sharing the French number's trailing digits is a
+        // different NANP number — its forms never include the +33 row.
+        assertThat(f.repo.lookupByPhone("+13611111111")).isNull()
+        val g = Fixture(DeviceMode.CLIENT)
+        g.dao.upsert(row("3611111111", "Bob"))
+        // The French number shares Bob's trailing 10 digits, but a
+        // non-NANP number stays exact-only.
+        assertThat(g.repo.lookupByPhone("+33611111111")).isNull()
+        assertThat(g.repo.lookupByPhone("33611111111")).isNull()
+    }
+
+    @Test fun `client mode lookup keeps a plus-prefixed 10-digit number exact-only`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("5145550123", "Alice"))
+        // "+5145550123" could be another country's number (51 is Peru),
+        // so it must not fall back to the NANP row.
+        assertThat(f.repo.lookupByPhone("+5145550123")).isNull()
+        val g = Fixture(DeviceMode.CLIENT)
+        g.dao.upsert(row("+5145550123", "Alice"))
+        assertThat(g.repo.lookupByPhone("+5145550123")?.displayName).isEqualTo("Alice")
+    }
+
+    @Test fun `client mode lookup prefers the exact form when both spellings exist`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.dao.upsert(row("5145550123", "Alice"))
+        f.dao.upsert(row("+15145550123", "Bob"))
+        assertThat(f.repo.lookupByPhone("+15145550123")?.displayName).isEqualTo("Bob")
+        assertThat(f.repo.lookupByPhone("5145550123")?.displayName).isEqualTo("Alice")
+    }
+
+    @Test fun `client mode openPhotoStream follows the NANP fallback`() = runTest {
+        val f = Fixture(DeviceMode.CLIENT)
+        f.seedAvatarFile("5145550123", byteArrayOf(4, 5, 6))
+        f.dao.upsert(
+            row("5145550123", "Alice", hasPhoto = true, photoUpdatedAt = 1L)
+                .copy(avatarLocalPath = "5145550123"),
+        )
+        val bytes = f.repo.openPhotoStream("+15145550123")?.use { it.readBytes() }
+        assertThat(bytes).isEqualTo(byteArrayOf(4, 5, 6))
+    }
+
+    // -- NANP equivalent forms -------------------------------------------------
+
+    @Test fun `nanpEquivalentForms lists the three NANP spellings exact first`() {
+        assertThat(nanpEquivalentForms("+15145550123")).containsExactly(
+            "+15145550123",
+            "5145550123",
+            "15145550123",
+        ).inOrder()
+        assertThat(nanpEquivalentForms("5145550123")).containsExactly(
+            "5145550123",
+            "+15145550123",
+            "15145550123",
+        ).inOrder()
+        assertThat(nanpEquivalentForms("15145550123")).containsExactly(
+            "15145550123",
+            "5145550123",
+            "+15145550123",
+        ).inOrder()
+    }
+
+    @Test fun `nanpEquivalentForms leaves non-NANP numbers exact-only`() {
+        assertThat(nanpEquivalentForms("12345")).containsExactly("12345")
+        assertThat(nanpEquivalentForms("+33611111111")).containsExactly("+33611111111")
+        assertThat(nanpEquivalentForms("33611111111")).containsExactly("33611111111")
+        assertThat(nanpEquivalentForms("+5145550123")).containsExactly("+5145550123")
+        assertThat(nanpEquivalentForms("+442071234567")).containsExactly("+442071234567")
+        assertThat(nanpEquivalentForms("")).containsExactly("")
+        assertThat(nanpEquivalentForms("*123#")).containsExactly("*123#")
+    }
+
     private companion object {
         fun row(
             number: String,

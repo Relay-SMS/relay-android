@@ -263,6 +263,16 @@ interface ConversationDao {
     suspend fun clearUnread(id: Long)
 
     /**
+     * "Mark unread" fallback — sets the counter directly, for a
+     * conversation with no incoming message to flip
+     * (outgoing-only). A count with no message behind it lasts
+     * only until the next recompute (cold start, mark-all, new
+     * message); the flip path above is the durable one.
+     */
+    @Query("UPDATE conversations SET unread_count = :count WHERE id = :id")
+    suspend fun setUnreadCount(id: Long, count: Int)
+
+    /**
      * v1.8.0 (post-audit fix badges après désinstallation) — retourne le
      * `threadId` système AOSP correspondant au `id` Room. Utilisé par
      * [com.filestech.sms.data.repository.ConversationRepositoryImpl.markRead]

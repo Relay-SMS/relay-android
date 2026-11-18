@@ -28,7 +28,7 @@ data class LinkedDeviceUi(
 
 /** Everything the Linked devices screen renders. */
 data class LinkedDevicesState(
-    val serverEnabled: Boolean = true,
+    val serverEnabled: Boolean = false,
     val serverRunning: Boolean = false,
     val lastStartError: String? = null,
     val devices: List<LinkedDeviceUi> = emptyList(),

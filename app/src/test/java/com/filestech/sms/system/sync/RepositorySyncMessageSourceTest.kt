@@ -484,7 +484,7 @@ class RepositorySyncMessageSourceTest {
         coVerify(exactly = 0) { sendReaction.invoke(any(), any(), any(), any()) }
     }
 
-    @Test fun `set_reaction on an outgoing message sets local state but sends no SMS`() = runTest {
+    @Test fun `set_reaction on an outgoing message sets local state and sends the SMS`() = runTest {
         coEvery { repository.findById(123L) } returns conversation()
         coEvery { repository.findMessageById(789L) } returns message(
             direction = Message.Direction.OUTGOING,
@@ -492,10 +492,20 @@ class RepositorySyncMessageSourceTest {
         )
         coEvery { repository.setReaction(789L, "❤️") } returns
             SetReactionResult.First(789L, "❤️")
+        coEvery { settings.hydratedOrNull() } returns AppSettings()
+        coEvery { sendReaction.invoke(any(), any(), any(), any()) } returns
+            Outcome.Success(report())
 
         assertThat(source.setReaction(123L, 789L, "❤️")).isEqualTo(ActionResult(ok = true))
         coVerify(exactly = 1) { repository.setReaction(789L, "❤️") }
-        coVerify(exactly = 0) { sendReaction.invoke(any(), any(), any(), any()) }
+        coVerify(exactly = 1) {
+            sendReaction.invoke(
+                789L,
+                "❤️",
+                AppSettings().sending.reactionFormat,
+                false,
+            )
+        }
     }
 
     @Test fun `set_reaction sends nothing when reactions-to-recipient is off`() = runTest {

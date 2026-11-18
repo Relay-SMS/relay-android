@@ -199,6 +199,57 @@ class ConversationRepositoryClientBranchTest {
     }
 
     @Test
+    fun `hub markUnread flips the latest incoming message and recomputes`() = runTest {
+        val h = harness(clientMode = false)
+        coEvery { h.messageDao.findLatestIncomingId(7L) } returns 11L
+
+        h.repo.markUnread(7L)
+
+        coVerify { h.messageDao.setRead(11L, false) }
+        coVerify { h.conversationDao.recomputeUnreadCount(7L) }
+        coVerify(exactly = 0) { h.conversationDao.setUnreadCount(any(), any()) }
+        verify(exactly = 0) { h.notifier.cancelAllForConversation(any()) }
+    }
+
+    @Test
+    fun `hub markUnread with no incoming message sets the count directly`() = runTest {
+        val h = harness(clientMode = false)
+        coEvery { h.messageDao.findLatestIncomingId(7L) } returns null
+
+        h.repo.markUnread(7L)
+
+        coVerify { h.conversationDao.setUnreadCount(7L, 1) }
+        coVerify(exactly = 0) { h.messageDao.setRead(any(), any()) }
+        coVerify(exactly = 0) { h.conversationDao.recomputeUnreadCount(any()) }
+    }
+
+    @Test
+    fun `client markUnread is local-only and sends no frame`() = runTest {
+        val h = harness(clientMode = true)
+        coEvery { h.messageDao.findLatestIncomingId(7L) } returns 11L
+
+        h.repo.markUnread(7L)
+
+        coVerify { h.messageDao.setRead(11L, false) }
+        coVerify { h.conversationDao.recomputeUnreadCount(7L) }
+        assertThat(h.gateway.actions).isEmpty()
+        verify(exactly = 0) { h.telephonyReader.markConversationReadInSystem(any()) }
+    }
+
+    @Test
+    fun `markUnread then markRead clears the badge again`() = runTest {
+        val h = harness(clientMode = false)
+        coEvery { h.messageDao.findLatestIncomingId(7L) } returns 11L
+
+        h.repo.markUnread(7L)
+        h.repo.markRead(7L)
+
+        coVerify { h.messageDao.setRead(11L, false) }
+        coVerify { h.messageDao.markConversationRead(7L) }
+        coVerify { h.conversationDao.clearUnread(7L) }
+    }
+
+    @Test
     fun `client markAllRead sends mark_all_read, no system propagation`() = runTest {
         val h = harness(clientMode = true)
 

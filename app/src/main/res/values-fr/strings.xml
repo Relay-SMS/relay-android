@@ -27,6 +27,8 @@
     <string name="action_unpin">Désépingler</string>
     <string name="action_mute">Mettre en sourdine</string>
     <string name="action_unmute">Réactiver le son</string>
+    <string name="action_mark_read">Marquer comme lu</string>
+    <string name="action_mark_unread">Marquer comme non lu</string>
     <string name="action_block">Bloquer</string>
     <string name="action_unblock">Débloquer</string>
     <string name="action_more">Plus</string>

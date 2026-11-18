@@ -56,11 +56,21 @@ interface LinkedDeviceLookup {
  * the TLS certificate's CN and the mDNS TXT record both derive from it.
  */
 @Singleton
-class LinkedDeviceStore @Inject constructor(
-    @ApplicationContext context: Context,
+class LinkedDeviceStore(
+    private val dataStore: DataStore<Preferences>,
 ) : LinkedDeviceLookup {
 
-    private val dataStore: DataStore<Preferences> = context.linkedDevicesDataStore
+    /**
+     * The application constructor: the single store for the process.
+     * The primary constructor takes the [DataStore] so a test can hand
+     * in its own (the [com.filestech.sms.sync.client.ClientLinkStore]
+     * pattern — the `preferencesDataStore` delegate keeps the first
+     * instance of the JVM, which shared one file across tests).
+     */
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+    ) : this(context.linkedDevicesDataStore)
 
     /** Linked devices, in pairing order. Empty when nothing is linked yet. */
     val devices: Flow<List<LinkedDevice>> = dataStore.data
@@ -71,16 +81,18 @@ class LinkedDeviceStore @Inject constructor(
         }
 
     /**
-     * Whether the LAN server runs. Default ON: the phone is the hub, and
-     * linking should just work out of the box; the toggle on the Linked
-     * devices screen stops it, and the app works fully standalone either
-     * way.
+     * Whether the LAN server runs. Default OFF: the server starts
+     * only when the user toggles it on — a fresh install (a SIM-less
+     * tablet, say) must never auto-run a server it cannot use as a
+     * hub. Upgrades from a build where the server defaulted ON keep
+     * it on when the user never toggled it; see
+     * [migrateServerDefaultOnce].
      */
     val serverEnabled: Flow<Boolean> = dataStore.data
-        .map { prefs -> prefs[KEY_SERVER_ENABLED] ?: true }
+        .map { prefs -> prefs[KEY_SERVER_ENABLED] ?: false }
         .catch { t ->
-            Timber.w(t, "LinkedDeviceStore: serverEnabled read failed, serving true")
-            emit(true)
+            Timber.w(t, "LinkedDeviceStore: serverEnabled read failed, serving false")
+            emit(false)
         }
 
     /**
@@ -121,6 +133,40 @@ class LinkedDeviceStore @Inject constructor(
             dataStore.edit { prefs -> prefs[KEY_SERVER_ENABLED] = enabled }
         }.onFailure { t ->
             Timber.w(t, "LinkedDeviceStore: setServerEnabled failed")
+        }
+    }
+
+    /**
+     * One-shot migration for the default-off change, run once at
+     * startup from [com.filestech.sms.MainApplication] with [isUpgrade] from the
+     * PackageManager (`firstInstallTime < lastUpdateTime`).
+     *
+     * The server used to default ON, so an upgrade must not silently
+     * switch it off for someone who linked a computer and never
+     * touched the toggle: when the key is absent (never explicitly
+     * toggled) on an upgrade, the server is written ON. An explicit
+     * off stays off, and a fresh install stays off — the key is
+     * left absent, which reads as off.
+     *
+     * The [KEY_SERVER_DEFAULT_MIGRATED] flag is what makes this
+     * one-shot: without it, a fresh install of this build would
+     * look like an upgrade at the NEXT update (install time <
+     * update time by then) and the server would silently switch
+     * on. Once the flag is set the migration never runs again, and
+     * a later toggle is the user's own. Idempotent, fail-soft — a
+     * failed edit simply retries at the next launch.
+     */
+    suspend fun migrateServerDefaultOnce(isUpgrade: Boolean) {
+        runCatching {
+            dataStore.edit { prefs ->
+                if (prefs[KEY_SERVER_DEFAULT_MIGRATED] == true) return@edit
+                if (prefs[KEY_SERVER_ENABLED] == null && isUpgrade) {
+                    prefs[KEY_SERVER_ENABLED] = true
+                }
+                prefs[KEY_SERVER_DEFAULT_MIGRATED] = true
+            }
+        }.onFailure { t ->
+            Timber.w(t, "LinkedDeviceStore: migrateServerDefaultOnce failed")
         }
     }
 
@@ -231,6 +277,8 @@ class LinkedDeviceStore @Inject constructor(
     companion object {
         private val KEY_HUB_ID = stringPreferencesKey("sync.hub_id")
         private val KEY_SERVER_ENABLED = booleanPreferencesKey("sync.server_enabled")
+        private val KEY_SERVER_DEFAULT_MIGRATED =
+            booleanPreferencesKey("sync.server_default_migrated")
         private val KEY_DEVICES = stringPreferencesKey("sync.devices_json")
         private val KEY_LAST_START_ERROR = stringPreferencesKey("sync_last_start_error")
 

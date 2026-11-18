@@ -149,7 +149,10 @@ private fun ClientSyncProgressRow(syncUi: ClientSyncUiState) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            // The row sits directly above the category tabs: 10 dp of
+            // breathing room below the bar, on top of the 8 dp the
+            // other sync rows share.
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -38,6 +38,8 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.MarkEmailRead
+import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.SearchOff
@@ -755,7 +757,10 @@ fun ConversationsScreen(
             // ViewModel, sur IO, avec le filtre et le tri.
             val duplicateDisplayNames = state.duplicateDisplayNames
             when {
-                state.isImporting -> ImportingPlaceholder(count = state.importedCount)
+                state.isImporting -> ImportingPlaceholder(
+                    count = state.importedCount,
+                    total = state.importTotalCount,
+                )
                 state.isLoading -> Unit
                 state.sansAucunResultat(messageHits) -> {
                     ConversationsEmptyContent(
@@ -842,6 +847,7 @@ fun ConversationsScreen(
                                 onTogglePin = { viewModel.togglePinned(conv) },
                                 onToggleArchive = { viewModel.toggleArchived(conv) },
                                 onToggleMute = { viewModel.toggleMuted(conv) },
+                                onToggleUnread = { viewModel.toggleUnread(conv) },
                                 // Client mode C3 — no rename frame (a
                                 // local rename would be overwritten by
                                 // the next sync), so the action is null
@@ -1933,6 +1939,7 @@ private fun SwipeableConversationRow(
             pinned = conversation.pinned,
             archived = conversation.archived,
             muted = conversation.muted,
+            unread = conversation.unreadCount > 0,
             onTogglePinRequested = rowActions?.let { a ->
                 {
                     actionsSheetOpen = false
@@ -1949,6 +1956,12 @@ private fun SwipeableConversationRow(
                 {
                     actionsSheetOpen = false
                     a.onToggleMute()
+                }
+            },
+            onToggleUnreadRequested = rowActions?.let { a ->
+                {
+                    actionsSheetOpen = false
+                    a.onToggleUnread()
                 }
             },
         )
@@ -2062,6 +2075,8 @@ class ConversationRowActions(
     val onTogglePin: () -> Unit,
     val onToggleArchive: () -> Unit,
     val onToggleMute: () -> Unit,
+    /** Long-press "Mark unread / Mark read" (desktop parity) — live in client mode too (local-only). */
+    val onToggleUnread: () -> Unit,
     /**
      * v1.28.3 — nom choisi (brut) d'un groupe ; normalisé plus bas.
      * Client mode C3 — null on a linked device (no rename frame).
@@ -2090,9 +2105,12 @@ private fun ConversationActionsSheet(
     pinned: Boolean = false,
     archived: Boolean = false,
     muted: Boolean = false,
+    /** Long-press "Mark unread / Mark read" (desktop parity): current state picks the label. */
+    unread: Boolean = false,
     onTogglePinRequested: (() -> Unit)? = null,
     onToggleArchiveRequested: (() -> Unit)? = null,
     onToggleMuteRequested: (() -> Unit)? = null,
+    onToggleUnreadRequested: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     RelaySheet(onDismissRequest = onDismiss) {
@@ -2176,6 +2194,28 @@ private fun ConversationActionsSheet(
                     modifier = Modifier.clickable(onClick = onToggleMuteRequested),
                 )
             }
+            // "Mark unread / Mark read" — same position as desktop
+            // (after Mute, before Select Multiple). The icon follows
+            // the action: open envelope to mark read, closed envelope
+            // to mark unread.
+            if (onToggleUnreadRequested != null) {
+                androidx.compose.material3.ListItem(
+                    leadingContent = {
+                        Icon(
+                            if (unread) Icons.Outlined.MarkEmailRead else Icons.Outlined.MarkEmailUnread,
+                            contentDescription = null,
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            stringResource(
+                                if (unread) R.string.action_mark_read else R.string.action_mark_unread,
+                            ),
+                        )
+                    },
+                    modifier = Modifier.clickable(onClick = onToggleUnreadRequested),
+                )
+            }
             // v1.13.1 — entrée mode sélection multiple via long-press menu.
             if (onSelectMultipleRequested != null) {
                 androidx.compose.material3.ListItem(
@@ -2229,17 +2269,13 @@ private fun ConversationActionsSheet(
 }
 
 @Composable
-private fun ImportingPlaceholder(count: Int) {
+private fun ImportingPlaceholder(count: Int, total: Int?) {
     val cs = MaterialTheme.colorScheme
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        androidx.compose.material3.CircularProgressIndicator(
-            color = cs.primary,
-            strokeWidth = 3.dp,
-        )
         // Round 4 — the column already centres its children, but a Text that wraps
         // grows to full width and its lines stay left-aligned by default — that is
         // why "Reading your existing SMS…" sat left. Full width + centred lines.
@@ -2248,19 +2284,12 @@ private fun ImportingPlaceholder(count: Int) {
             style = RelayText.ConvoName,
             color = cs.onSurface,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+            modifier = Modifier.fillMaxWidth(),
         )
-        Text(
-            text = if (count > 0) {
-                stringResource(R.string.conversations_importing_count, count)
-            } else {
-                stringResource(R.string.conversations_importing_body)
-            },
-            style = RelayText.Preview,
-            color = cs.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-        )
+        // The count line + progress bar live in [ImportProgressContent]:
+        // this screen sits at the Detekt complexity ceiling, so no
+        // branching lives here.
+        ImportProgressContent(imported = count, total = total)
     }
 }
 

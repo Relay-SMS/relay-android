@@ -30,6 +30,17 @@ class ToggleConversationStateUseCase @Inject constructor(
     suspend fun setMuted(id: Long, muted: Boolean) = repo.setMuted(id, muted)
 
     /**
+     * Long-press "Mark unread / Mark read" (desktop parity).
+     * `unread = true` re-opens the latest incoming message
+     * ([ConversationRepository.markUnread]); `false` is the
+     * plain mark-read. Client mode: the unread mark is
+     * local-only (no mark-unread frame exists); the read mark
+     * still writes back to the hub like every other mark-read.
+     */
+    suspend fun setUnread(id: Long, unread: Boolean) =
+        if (unread) repo.markUnread(id) else repo.markRead(id)
+
+    /**
      * Client mode C3 — blocks (or unblocks) every address of a
      * conversation from a linked device: the local block list is
      * updated optimistically, then the `set_blocked` frame goes to

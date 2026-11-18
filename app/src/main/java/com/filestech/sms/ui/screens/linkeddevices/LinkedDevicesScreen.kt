@@ -390,7 +390,9 @@ private fun LinkedDevicesList(
             }
             RelayHint(stringResource(R.string.linked_devices_server_hint))
             val startError = state.lastStartError
-            if (!state.serverRunning && startError != null) {
+            if (startError != null &&
+                shouldShowStartError(state.serverEnabled, state.serverRunning, startError)
+            ) {
                 StartErrorCard(
                     error = startError,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
@@ -904,6 +906,20 @@ private fun ModeSwitchConfirmDialog(
         },
     )
 }
+
+/**
+ * Whether the start-failure card shows: only while the server is
+ * enabled, not running, and a failure was recorded. A stale error
+ * must not linger after the user turns the server off — the card
+ * hides with the toggle, and a fresh failure shows again if the
+ * server is re-enabled and fails. Pure, so the rule is unit-tested
+ * without Compose.
+ */
+internal fun shouldShowStartError(
+    serverEnabled: Boolean,
+    serverRunning: Boolean,
+    startError: String?,
+): Boolean = serverEnabled && !serverRunning && startError != null
 
 /**
  * The start-failure diagnostic card (§6 of the release

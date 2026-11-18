@@ -5,6 +5,7 @@ import android.os.Build
 import com.filestech.sms.domain.clientmode.ClientActionGateway
 import com.filestech.sms.domain.clientmode.ClientAvatarGateway
 import com.filestech.sms.domain.clientmode.ClientSendGateway
+import com.filestech.sms.sync.client.AndroidNetworkAvailabilityMonitor
 import com.filestech.sms.sync.client.ClientActionSender
 import com.filestech.sms.sync.client.ClientConnectionManager
 import com.filestech.sms.sync.client.ClientContactSync
@@ -14,6 +15,7 @@ import com.filestech.sms.sync.client.ClientMirror
 import com.filestech.sms.sync.client.ClientSendManager
 import com.filestech.sms.sync.client.ClientSyncChannel
 import com.filestech.sms.sync.client.ConversationMirrorAdapter
+import com.filestech.sms.sync.client.NetworkAvailabilityMonitor
 import com.filestech.sms.sync.client.RoomSyncStateStore
 import com.filestech.sms.sync.client.SyncStateStore
 import com.filestech.sms.sync.client.TofuPinStore
@@ -80,6 +82,18 @@ object ClientSyncModule {
     @Provides
     @Singleton
     fun provideClientSyncChannel(manager: ClientConnectionManager): ClientSyncChannel = manager
+
+    /**
+     * The reconnect loop's network wakeup is the Android
+     * implementation; the manager depends on the narrow
+     * [NetworkAvailabilityMonitor] interface so its tests can use a
+     * fake that signals availability on demand.
+     */
+    @Provides
+    @Singleton
+    fun provideNetworkAvailabilityMonitor(
+        impl: AndroidNetworkAvailabilityMonitor,
+    ): NetworkAvailabilityMonitor = impl
 
     /** Client mode C2 — the sync-state store is the Room-backed one. */
     @Provides

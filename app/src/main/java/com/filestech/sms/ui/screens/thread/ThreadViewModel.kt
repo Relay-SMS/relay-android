@@ -1162,13 +1162,15 @@ class ThreadViewModel @Inject constructor(
             // (CorruptionException, IOException disque plein) ne doit pas remonter au
             // ViewModelScope (= crash process). Log + return safe.
             runCatching {
-                // v1.3.1 audit F1/F2 — defense-in-depth : le UseCase refuse déjà les
-                // messages outgoing et cible le sender unique, mais on garde un guard ici
-                // pour ne pas envoyer sur un cas invalide. Le repo a déjà mis à jour la
-                // colonne reaction_emoji ; on ne touche pas au badge local (cohérent
-                // avec la sémantique "réaction locale toujours possible").
+                // v1.3.1 audit F1/F2 — defense-in-depth : le UseCase résout les
+                // destinataires (expéditeur unique pour un message entrant, toute
+                // la conversation pour un de nos propres messages), mais on garde
+                // un guard ici pour ne pas envoyer sur un message disparu. Le repo
+                // a déjà mis à jour la colonne reaction_emoji ; on ne touche pas
+                // au badge local (cohérent avec la sémantique "réaction locale
+                // toujours possible").
                 val targetMessage = repo.findMessageById(targetMessageId)
-                if (targetMessage == null || targetMessage.isOutgoing) return@runCatching
+                if (targetMessage == null) return@runCatching
                 // Anti-race retrait : si une réaction est revenue entre-temps, le
                 // retrait n'a plus lieu d'être envoyé.
                 if (targetIsRemoval && targetMessage.reactionEmoji != null) return@runCatching
@@ -1196,8 +1198,9 @@ class ThreadViewModel @Inject constructor(
      * v1.3.1 — chemin commun d'envoi SMS d'une réaction, appelé directement
      * par [setReaction] (feedback round 5 : plus de dialog de confirmation,
      * l'envoi est immédiat). Propage les erreurs via [Event.SendError]
-     * (snack utilisateur), comme tout autre envoi. La cible (sender unique
-     * du message) est résolue dans [SendReactionUseCase].
+     * (snack utilisateur), comme tout autre envoi. Les cibles (expéditeur
+     * unique du message entrant, toute la conversation pour un de nos propres
+     * messages) sont résolues dans [SendReactionUseCase].
      *
      * **Dedup X2 (audit v1.3.1)** : un utilisateur qui hésite peut générer la séquence
      * `null → ❤️ → null → ❤️ → …`, chaque pose étant un `SetReactionResult.First` (donc

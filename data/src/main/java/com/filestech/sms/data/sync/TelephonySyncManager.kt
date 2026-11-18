@@ -92,7 +92,20 @@ class TelephonySyncManager @Inject constructor(
 
     sealed interface State {
         data object Idle : State
-        data class Running(val isFirstRun: Boolean, val importedSoFar: Int) : State
+        data class Running(
+            val isFirstRun: Boolean,
+            val importedSoFar: Int,
+            /**
+             * Total SMS rows the first-run import will read, counted
+             * up front (see [firstRunTotal]) so the import screen
+             * can show a determinate bar. Null when unknown — delta
+             * syncs never count, and a failed count query degrades
+             * to the indeterminate bar rather than blocking the
+             * import. SMS only, like [importedSoFar]: the MMS import
+             * has its own counter and never reports here.
+             */
+            val totalMessages: Int? = null,
+        ) : State
     }
 
     private val _state = MutableStateFlow<State>(State.Idle)
@@ -161,6 +174,31 @@ class TelephonySyncManager @Inject constructor(
         appScope.launch { runSync(reason = reason) }
     }
 
+    /**
+     * The first-run import total: the system store's SMS row count,
+     * from the cheap aggregate in [TelephonyReader.snapshotSmsFingerprint]
+     * (~1 ms for 50 k rows — metadata only, no row bodies). On a first
+     * run the cursor is 0, so the fingerprint counts exactly the
+     * universe [runSync]'s SMS loop imports (`_ID > 0`): SMS rows
+     * only — the MMS import has its own counter and never reports
+     * into `importedSoFar`. Two small divergences, both benign:
+     * blocked rows are counted here but skipped there, and
+     * unparseable rows are counted but never imported, so the bar
+     * can stop a hair short of full — the fraction is coerced and
+     * the screen disappears on completion either way.
+     *
+     * Null when there is nothing to count (a delta sync — the import
+     * screen never shows for those) or when the count fails or is
+     * empty: the UI renders an indeterminate bar instead. A failure
+     * here must never block the import itself.
+     */
+    private fun firstRunTotal(isFirstRun: Boolean): Int? {
+        if (!isFirstRun) return null
+        return runCatching { telephonyReader.snapshotSmsFingerprint().count }
+            .getOrNull()
+            ?.takeIf { it > 0 }
+    }
+
     private suspend fun runSync(reason: String) = withContext(io) {
         if (syncMutex.isLocked) {
             // A sync is already in-flight; the new call will await its turn. We log here so the
@@ -193,7 +231,12 @@ class TelephonySyncManager @Inject constructor(
             val advanced = settings.flow.first().advanced
             val current = advanced.lastSyncedSmsId
             val isFirstRun = current == 0L
-            _state.value = State.Running(isFirstRun = isFirstRun, importedSoFar = 0)
+            val totalMessages = firstRunTotal(isFirstRun)
+            _state.value = State.Running(
+                isFirstRun = isFirstRun,
+                importedSoFar = 0,
+                totalMessages = totalMessages,
+            )
             Timber.i("runSync(%s) starting; cursor=%d firstRun=%b", reason, current, isFirstRun)
 
             // MMS import : the SMS-cursor delta (below) doesn't catch `content://mms` rows
@@ -326,7 +369,11 @@ class TelephonySyncManager @Inject constructor(
                         mirror.bulkImportFromTelephony(entitiesForImport)
                         imported += filtered.size
                     }
-                    _state.value = State.Running(isFirstRun = isFirstRun, importedSoFar = imported)
+                    _state.value = State.Running(
+                        isFirstRun = isFirstRun,
+                        importedSoFar = imported,
+                        totalMessages = totalMessages,
+                    )
                 }
             } catch (t: Throwable) {
                 Timber.w(t, "runSync(%s) failed", reason)

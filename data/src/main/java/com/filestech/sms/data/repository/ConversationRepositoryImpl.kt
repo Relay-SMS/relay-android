@@ -837,6 +837,40 @@ class ConversationRepositoryImpl @Inject constructor(
         notifier.cancelAllForConversation(id)
     }
 
+    override suspend fun markUnread(id: Long) = withContext(io) {
+        // Long-press "Mark unread" (desktop parity). Unread is
+        // DERIVED — `unread_count` is recomputed from incoming
+        // `read = 0` rows — so the durable mark flips the latest
+        // incoming message back to unread and recomputes: the
+        // badge shows 1 and survives the cold-start recompute.
+        // A conversation with no incoming message
+        // (outgoing-only) has nothing to flip, so the count is
+        // set directly — that mark lasts only until the next
+        // recompute, the honest limit of a count with no message
+        // behind it.
+        //
+        // Same write in both modes: in client mode this is LOCAL
+        // ONLY — no mark-unread frame exists (protocol gap), so
+        // the hub never learns of it and a `conversation_updated`
+        // or re-sync may reset it. Deliberate, not an oversight.
+        //
+        // Room-only, never the system store: unlike mark-read
+        // (which propagates READ=1 so a badge can't resurrect
+        // after a reinstall), an unread mark is Relay-local state
+        // like a pin or a reaction — lost on reinstall, invisible
+        // to other SMS apps. And no notification is (re-)posted:
+        // the mark is silent by design.
+        database.withTransaction {
+            val latest = messageDao.findLatestIncomingId(id)
+            if (latest != null) {
+                messageDao.setRead(latest, false)
+                conversationDao.recomputeUnreadCount(id)
+            } else {
+                conversationDao.setUnreadCount(id, 1)
+            }
+        }
+    }
+
     // v1.14.8 H4 — Implémentation centralisée de "tout marquer comme lu". Encapsule la séquence
     // Room (markAllIncomingAsRead + recomputeAllUnreadCounts) + propagation content://sms+mms
     // pour que le badge ne ré-apparaisse pas après désinstall/reinstall. Avant : la VM

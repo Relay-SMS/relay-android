@@ -43,28 +43,39 @@ import com.filestech.sms.R
 import com.filestech.sms.core.ext.asEvents
 import com.filestech.sms.core.ext.oneShotEvents
 import com.filestech.sms.data.local.datastore.SettingsRepository
+import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.model.ScheduledMessage
+import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.usecase.CancelScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.DeleteScheduledMessageUseCase
 import com.filestech.sms.domain.usecase.RetryScheduledMessageUseCase
+import com.filestech.sms.ui.components.GroupMemberAvatar
 import com.filestech.sms.ui.components.RelayAvatar
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayEmptyState
+import com.filestech.sms.ui.components.RelayGroupAvatar
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.util.ChatFormatters
 import com.filestech.sms.ui.util.rememberChatFormatters
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
@@ -97,6 +108,10 @@ class ScheduledMessagesViewModel @Inject constructor(
     // them, and a hub-mode leftover must not be offered for cancel
     // here — cancelling it would only cancel the local record).
     settings: SettingsRepository,
+    // Scheduled avatars — the cached contacts lookup, the same
+    // mechanism as the conversation list's contact photos.
+    private val contacts: ContactRepository,
+    @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
     private val isClientMode: StateFlow<Boolean> = settings.flow
@@ -116,6 +131,60 @@ class ScheduledMessagesViewModel @Inject constructor(
     ) { list, client ->
         if (client) list.filter { it.clientMessageId != null } else list
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+
+    /**
+     * Bumped when contact lookups may newly succeed or return different
+     * results — on every resume ([refreshContactPhotos]). Same pattern
+     * as the conversation list's `contactPhotoTick`: a photo or name
+     * edited while the screen was away touches no scheduled row, so
+     * without the bump the rows would keep stale avatars until the
+     * process restarts.
+     */
+    private val contactPhotoTick = MutableStateFlow(0L)
+
+    /**
+     * Resolved recipients for every listed schedule, keyed by scheduled
+     * message id — the label (contact name or raw number), the unknown
+     * flag and the photo URI per address, in address order. Both
+     * sections (pending + failed) resolve through the same flow, so one
+     * lookup pass covers the whole screen. Same shape as the
+     * conversation list's `contactPhotos`: the keys projection +
+     * `distinctUntilChanged` keeps a re-emission with unchanged
+     * addresses from re-running the lookups, the tick forces a re-run
+     * on resume, and a denied `READ_CONTACTS` just yields unknown
+     * recipients — the rows fall back to the grey glyph, never crash.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val recipients: StateFlow<Map<Long, List<ScheduledRecipient>>> =
+        combine(pending, failed, contactPhotoTick) { p, f, tick ->
+            tick to (p + f)
+        }
+            .map { (tick, messages) ->
+                tick to messages.map { it.id to it.addresses.map { addr -> addr.raw } }
+            }
+            .distinctUntilChanged()
+            .mapLatest { (_, keys) ->
+                withContext(io) {
+                    keys.associate { (id, raws) ->
+                        id to raws.map { raw ->
+                            val contact = runCatching { contacts.lookupByPhone(raw) }.getOrNull()
+                            scheduledRecipient(raw, contact)
+                        }
+                    }
+                }
+            }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
+
+    /**
+     * Re-resolves [recipients]. Call from ON_RESUME, like the
+     * conversation list's refresh: a contact photo or name changed
+     * while the screen was away otherwise stays stale until the
+     * process restarts.
+     */
+    fun refreshContactPhotos() {
+        contactPhotoTick.update { it + 1 }
+    }
 
     /**
      * v1.28.3 (F20) — émet `false` quand l'annulation n'a PAS pu prendre.
@@ -159,6 +228,7 @@ fun ScheduledMessagesScreen(
 ) {
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val failed by viewModel.failed.collectAsStateWithLifecycle()
+    val recipients by viewModel.recipients.collectAsStateWithLifecycle()
     var confirmCancelFor by remember { mutableStateOf<ScheduledMessage?>(null) }
     var confirmDeleteFor by remember { mutableStateOf<ScheduledMessage?>(null) }
     val snackbarHost = remember { SnackbarHostState() }
@@ -181,6 +251,21 @@ fun ScheduledMessagesScreen(
     val cancelRefusedMessage = stringResource(R.string.scheduled_cancel_too_late)
     androidx.compose.runtime.LaunchedEffect(viewModel) {
         viewModel.cancelRefused.collect { snackbarHost.showSnackbar(cancelRefusedMessage) }
+    }
+
+    // Re-resolve the recipient avatars on resume: a contact photo or
+    // name changed while the screen was away touches no scheduled row,
+    // so without this the rows keep stale avatars until the process
+    // restarts. Same as the conversation list.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshContactPhotos()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Scaffold(
@@ -244,6 +329,7 @@ fun ScheduledMessagesScreen(
                     formatters = formatters,
                     todayLabel = todayLabel,
                     tomorrowLabel = tomorrowLabel,
+                    recipients = recipients,
                     onCancelRequest = { confirmCancelFor = it },
                 )
                 if (failed.isNotEmpty()) {
@@ -274,6 +360,7 @@ fun ScheduledMessagesScreen(
                     items(failed, key = { "failed-${it.id}" }) { msg ->
                         ScheduledRow(
                             message = msg,
+                            resolvedRecipients = recipients[msg.id] ?: emptyList(),
                             // v1.28.3 (F20) — un envoi interrompu n'est pas un envoi échoué, et
                             // le lui faire dire serait mentir dans le sens dangereux : il est
                             // peut-être parti. Il partage la section parce qu'il y trouve les
@@ -410,9 +497,17 @@ private fun ScheduledRow(
     whenLabelRes: Int,
     whenColor: Color,
     trailing: @Composable () -> Unit,
+    resolvedRecipients: List<ScheduledRecipient> = emptyList(),
 ) {
     val cs = MaterialTheme.colorScheme
-    val recipients = message.addresses.joinToString(", ") { it.toString() }
+    // The recipients line shows contact names once resolved (like the
+    // conversation list); until then — or with no contacts access — the
+    // raw numbers, exactly as before.
+    val recipients = if (resolvedRecipients.isNotEmpty()) {
+        resolvedRecipients.joinToString(", ") { it.label }
+    } else {
+        message.addresses.joinToString(", ") { it.toString() }
+    }
     val whenLabel = remember(message.scheduledAt) {
         // Format date+time locale system — pas de lib externe, DateFormat AOSP.
         val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
@@ -425,9 +520,10 @@ private fun ScheduledRow(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Conversation-row avatar: initials from the recipient text, same
-        // 48dp size and 17dp gap as the conversations list.
-        RelayAvatar(label = recipients)
+        ScheduledAvatar(
+            recipientsLabel = recipients,
+            resolvedRecipients = resolvedRecipients,
+        )
         Spacer(Modifier.width(17.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -452,6 +548,42 @@ private fun ScheduledRow(
         }
         Spacer(Modifier.width(12.dp))
         trailing()
+    }
+}
+
+/**
+ * The leading avatar of a scheduled row: the two overlapping member
+ * minis for a group (first two recipients), the single avatar
+ * otherwise — the contact photo when the contact has one, the grey
+ * person glyph for an unknown number, initials from the contact name
+ * otherwise. With no resolved recipients yet (the lookup hasn't
+ * emitted, or contacts are unreachable), the plain initials avatar
+ * from the recipient text — the rendering this screen had before.
+ */
+@Composable
+private fun ScheduledAvatar(
+    recipientsLabel: String,
+    resolvedRecipients: List<ScheduledRecipient>,
+) {
+    if (resolvedRecipients.size > 1) {
+        RelayGroupAvatar(
+            members = resolvedRecipients.take(2).map {
+                GroupMemberAvatar(
+                    label = it.label,
+                    isUnknownContact = it.isUnknownContact,
+                    photoUri = it.photoUri,
+                )
+            },
+        )
+    } else if (resolvedRecipients.size == 1) {
+        val recipient = resolvedRecipients[0]
+        RelayAvatar(
+            label = recipient.label,
+            customUri = recipient.photoUri,
+            isUnknownContact = recipient.isUnknownContact,
+        )
+    } else {
+        RelayAvatar(label = recipientsLabel)
     }
 }
 
@@ -532,6 +664,7 @@ private fun LazyListScope.pendingDayGroups(
     formatters: ChatFormatters,
     todayLabel: String,
     tomorrowLabel: String,
+    recipients: Map<Long, List<ScheduledRecipient>>,
     onCancelRequest: (ScheduledMessage) -> Unit,
 ) {
     val locale = formatters.locale
@@ -549,6 +682,7 @@ private fun LazyListScope.pendingDayGroups(
         items(rows, key = { "pending-${it.id}" }) { msg ->
             ScheduledRow(
                 message = msg,
+                resolvedRecipients = recipients[msg.id] ?: emptyList(),
                 whenLabelRes = R.string.scheduled_when,
                 whenColor = MaterialTheme.colorScheme.primary,
                 trailing = {

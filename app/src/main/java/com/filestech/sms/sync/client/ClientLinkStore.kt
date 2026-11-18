@@ -81,7 +81,12 @@ class ClientLinkStore(
 
     /** The current link, or null while no identity exists yet. */
     val link: Flow<ClientLink?> = dataStore.data
-        .map { prefs -> prefs.toClientLink() }
+        .map { prefs ->
+            val link = prefs.toClientLink()
+            // TEMP-DIAG "Not linked": one line per emission, presence only — never values.
+            Timber.d("ClientLinkStore: link emitted %s", describeLink(link))
+            link
+        }
         .catch { t ->
             Timber.w(t, "ClientLinkStore: link read failed, serving null")
             emit(null)
@@ -148,6 +153,15 @@ class ClientLinkStore(
                 if (!sameHub || prefs[KEY_LINKED_AT] == null) prefs[KEY_LINKED_AT] = nowMs
                 prefs[KEY_LAST_SEEN] = nowMs
             }
+        }.onSuccess {
+            // TEMP-DIAG "Not linked": catches WHEN hubId gets written.
+            Timber.d(
+                "ClientLinkStore: setHub succeeded hubId=%s hubName=%s hubHost=%s hubPort=%s",
+                hubId.isNotBlank(),
+                hubName.isNotBlank(),
+                host.isNotBlank(),
+                true,
+            )
         }.onFailure { t ->
             Timber.w(t, "ClientLinkStore: setHub failed")
         }
@@ -189,6 +203,8 @@ class ClientLinkStore(
      * it, and the hub treats the re-pair as a repair.
      */
     suspend fun clearHub() {
+        // TEMP-DIAG "Not linked": catches what removes hubId.
+        Timber.d("ClientLinkStore: clearHub called")
         runCatching {
             dataStore.edit { prefs ->
                 prefs.remove(KEY_HUB_ID)
@@ -202,6 +218,16 @@ class ClientLinkStore(
             Timber.w(t, "ClientLinkStore: clearHub failed")
         }
     }
+
+    /**
+     * TEMP-DIAG for the "Not linked" investigation: which fields of
+     * the link record are present — booleans only, never the values.
+     */
+    private fun describeLink(link: ClientLink?): String =
+        "isLinked=${link?.isLinked} deviceId=${link?.deviceId != null} " +
+            "displayName=${link?.displayName != null} hubId=${link?.hubId != null} " +
+            "hubName=${link?.hubName != null} hubHost=${link?.hubHost != null} " +
+            "hubPort=${link?.hubPort != null}"
 
     private fun Preferences.toClientLink(): ClientLink? {
         val deviceId = this[KEY_DEVICE_ID]?.takeIf { it.isNotBlank() } ?: return null

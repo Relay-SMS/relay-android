@@ -4,7 +4,6 @@ import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.sync.DeviceKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -78,6 +77,12 @@ fun reconnectDelayMs(backoffIndex: Int): Long =
  * address; a switch connects at once (no backoff sleep, counters
  * reset).
  *
+ * A network return during a backoff sleep (Wi-Fi back on) wakes the
+ * loop at once instead of waiting out the remaining delay, and resets
+ * the counters — see [NetworkAvailabilityMonitor]. Without a wakeup
+ * the table is unchanged, so a hub that is genuinely unreachable
+ * still costs only the capped backoff: no polling, no spin.
+ *
  * A `revoked` frame ends the session and stops reconnecting
  * entirely. A removed device that re-authenticates gets
  * `unknown_device` — the `revoked` auth reason is a dead constant
@@ -96,6 +101,7 @@ class ClientConnectionManager @Inject constructor(
     private val transport: ClientTransport,
     private val linkStore: ClientLinkStore,
     private val discovery: NsdDiscovery,
+    private val networkAvailability: NetworkAvailabilityMonitor,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ClientSyncChannel {
 
@@ -195,12 +201,20 @@ class ClientConnectionManager @Inject constructor(
     /**
      * Background task: connect, run the session, reconnect with
      * backoff. Runs until the hub is forgotten ([disconnect]), the
-     * device is revoked, or the task is cancelled.
+     * device is revoked, or the task is cancelled. The network
+     * monitor lives exactly as long as the loop: started here,
+     * unregistered in the `finally` whatever ends the task, so no
+     * callback ever leaks past a disconnect or mode switch.
      */
     private suspend fun runLoop(target: HubTarget, kind: DeviceKind) {
-        val loop = LoopState(current = target, nextRediscoveryAt = REDISCOVERY_AFTER_FAILURES)
-        while (true) {
-            if (!runOneCycle(loop, kind)) break
+        networkAvailability.start()
+        try {
+            val loop = LoopState(current = target, nextRediscoveryAt = REDISCOVERY_AFTER_FAILURES)
+            while (true) {
+                if (!runOneCycle(loop, kind)) break
+            }
+        } finally {
+            networkAvailability.stop()
         }
     }
 
@@ -211,6 +225,13 @@ class ClientConnectionManager @Inject constructor(
      * value so the reconnect logic stays flat.
      */
     private suspend fun runOneCycle(loop: LoopState, kind: DeviceKind): Boolean {
+        // Drop any wakeup that arrived before this cycle began (the
+        // registration echo for a network that was already up, or a
+        // return while the last session was still alive): only a
+        // network return DURING this cycle cuts the backoff sleep
+        // short. A return during the connect or the re-discovery
+        // scan below is kept — the drain already ran.
+        networkAvailability.wakeups.tryReceive()
         // Stop if the hub was forgotten while we were working.
         if (currentTarget != loop.current) return false
         if (state.value !is ClientConnectionState.Connecting) {
@@ -229,8 +250,22 @@ class ClientConnectionManager @Inject constructor(
         // the backoff below, and the next scan waits for more
         // failures — the loop never spins.
         if (rediscoverIfDue(loop)) return true
-        delay(reconnectDelayMs(loop.backoffIndex))
-        loop.backoffIndex++
+        // Reconnect with backoff — interruptible: a network return
+        // during the sleep (Wi-Fi back on) retries at once instead
+        // of waiting out the remaining delay, and resets the
+        // counters, so the next failure starts from 1 s again and a
+        // hub at a new address is re-found after 3 failures, like a
+        // fresh loop. Without a wakeup the table is unchanged.
+        val woken = withTimeoutOrNull(reconnectDelayMs(loop.backoffIndex)) {
+            networkAvailability.wakeups.receive()
+        } != null
+        if (woken) {
+            loop.backoffIndex = 0
+            loop.consecutiveFailures = 0
+            loop.nextRediscoveryAt = REDISCOVERY_AFTER_FAILURES
+        } else {
+            loop.backoffIndex++
+        }
         return true
     }
 

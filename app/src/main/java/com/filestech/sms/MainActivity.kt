@@ -26,6 +26,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.DeviceMode
+import com.filestech.sms.ownnumber.OwnNumberAutoFill
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.system.notifications.IncomingMessageNotifier
 import com.filestech.sms.system.notifications.PendingNavHolder
@@ -100,6 +101,16 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var telephonySyncManagerLazy: dagger.Lazy<com.filestech.sms.data.sync.TelephonySyncManager>
 
     /**
+     * Group-send own-number fix — fills "My phone number" from the
+     * SIM when blank. Injected here as well as in MainApplication so
+     * the fill can be retried once READ_PHONE_NUMBERS is granted: the
+     * startup attempt runs before the permission dialog on a fresh
+     * install. `runOnce()` is idempotent (hub-only, no-op once the
+     * number is set), so the call sites need no extra guards.
+     */
+    @Inject lateinit var ownNumberAutoFill: OwnNumberAutoFill
+
+    /**
      * v1.14.7 audit P1 — anti-spam `enqueueOneShot` WorkManager. Sans cooldown, un
      * user qui switche entre apps rapidement enqueue un OneShot à chaque onResume.
      * KEEP policy évite la dup d'exécution, mais chaque enqueue = 1 write WorkManager
@@ -159,6 +170,16 @@ class MainActivity : FragmentActivity() {
             // via Paramètres système. L'app reste fonctionnelle pour les paths qui ne
             // dépendent pas des perms denied (ex: SMS texte si seul RECEIVE_MMS est
             // denied).
+        }
+        // Own-number auto-fill — the startup attempt in MainApplication
+        // runs before this dialog on a fresh install, so a grant here
+        // is the first moment the SIM read can succeed. runOnce()
+        // no-ops when the number is already set or outside hub mode.
+        if (grantResults[Manifest.permission.READ_PHONE_NUMBERS] == true) {
+            lifecycleScope.launch(ioDispatcher) {
+                runCatching { ownNumberAutoFill.runOnce() }
+                    .onFailure { Timber.w(it, "permissions grant own-number auto-fill failed") }
+            }
         }
     }
 
@@ -418,6 +439,15 @@ class MainActivity : FragmentActivity() {
             if (settings.hydratedOrNull()?.mode == DeviceMode.CLIENT) return@launch
             runCatching { telephonySyncManagerLazy.get().requestSync(reason = "MainActivity.onResume") }
                 .onFailure { Timber.w(it, "onResume sync trigger failed") }
+            // Own-number auto-fill — retry while blank: the startup
+            // attempt runs before READ_PHONE_NUMBERS is granted on a
+            // fresh install, so a grant made later (denied in the
+            // dialog, then granted in system Settings) would otherwise
+            // never fill the number until a cold start. runOnce() is a
+            // no-op once the number is set, so this costs nothing on
+            // later resumes.
+            runCatching { ownNumberAutoFill.runOnce() }
+                .onFailure { Timber.w(it, "onResume own-number auto-fill failed") }
             if (shouldEnqueueOneShot) {
                 runCatching {
                     com.filestech.sms.system.scheduler.TelephonySyncWorker.enqueueOneShot(

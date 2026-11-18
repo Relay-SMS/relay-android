@@ -46,6 +46,8 @@ class ClientCacheWiper @Inject constructor(
      * so re-linking keeps the same identity.
      */
     suspend fun wipeHubState() {
+        // TEMP-DIAG "Not linked": catches what removes hubId.
+        Timber.d("ClientCacheWiper: wipeHubState called")
         wipeMessageCache()
         linkStore.clearHub()
         pinStore.clear()

@@ -28,6 +28,8 @@
     <string name="action_unpin">Loslösen</string>
     <string name="action_mute">Stummschalten</string>
     <string name="action_unmute">Stummschaltung aufheben</string>
+    <string name="action_mark_read">Als gelesen markieren</string>
+    <string name="action_mark_unread">Als ungelesen markieren</string>
     <string name="action_block">Blockieren</string>
     <string name="action_unblock">Blockierung aufheben</string>
     <string name="action_more">Mehr</string>

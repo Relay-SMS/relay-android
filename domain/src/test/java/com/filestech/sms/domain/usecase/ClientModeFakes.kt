@@ -171,12 +171,16 @@ internal class FakeClientActionGateway(
  * A [ConversationRepository] fake that only answers lookups: the
  * client-branch tests need [findById] / [findMessageById], nothing
  * else. Every other method fails loudly, so a use case that
- * reaches for more is caught, not silently satisfied.
+ * reaches for more is caught, not silently satisfied — except
+ * the read-mark methods, which record their calls for the
+ * unread-toggle tests.
  */
 internal class FakeConversationRepository(
     private val conversationsById: Map<Long, Conversation> = emptyMap(),
     private val messagesById: Map<Long, Message> = emptyMap(),
 ) : ConversationRepository {
+    val markReadIds = mutableListOf<Long>()
+    val markUnreadIds = mutableListOf<Long>()
     override fun observeAll(includeArchived: Boolean): Flow<List<Conversation>> = flowOf(emptyList())
     override fun observeVault(): Flow<List<Conversation>> = flowOf(emptyList())
     override fun observeOne(id: Long): Flow<Conversation?> = flowOf(conversationsById[id])
@@ -210,7 +214,12 @@ internal class FakeConversationRepository(
         TODO("not needed by this test")
 
     override suspend fun setCustomName(id: Long, name: String?) = TODO("not needed by this test")
-    override suspend fun markRead(id: Long) = TODO("not needed by this test")
+    override suspend fun markRead(id: Long) {
+        markReadIds += id
+    }
+    override suspend fun markUnread(id: Long) {
+        markUnreadIds += id
+    }
     override suspend fun markAllRead() = TODO("not needed by this test")
     override suspend fun delete(id: Long): ConversationDeleteResult = TODO("not needed by this test")
     override suspend fun deleteAllInVault(

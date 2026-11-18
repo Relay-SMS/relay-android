@@ -75,7 +75,13 @@ class ConversationMirror @Inject constructor(
      * et on retraduit en `null` dans [resolveDisplayName] — le cache négatif reste tout aussi
      * précieux (skip de la requête contacts au second tour).
      */
-    private val displayNameCache = android.util.LruCache<String, String>(DISPLAY_NAME_CACHE_MAX)
+    // Lazy so the mirror stays constructible on plain JVM (unit tests):
+    // `LruCache`'s constructor throws Stub! outside Android, and the
+    // reaction-fold path never touches the display-name cache. On device
+    // the cache is created on first use — identical behavior.
+    private val displayNameCache by lazy {
+        android.util.LruCache<String, String>(DISPLAY_NAME_CACHE_MAX)
+    }
 
     private suspend fun resolveDisplayName(rawAddress: String): String? {
         displayNameCache.get(rawAddress)?.let { return if (it.isEmpty()) null else it }
@@ -222,9 +228,13 @@ class ConversationMirror @Inject constructor(
      *     (when the remote reacted to a message with no text body, voice / image).
      *   - Own reactions ([isOwnReaction]) — our own outgoing tapback, imported
      *     from the sent box or found by the reparse: the target is one of
-     *     THEIR incoming messages, never one of ours (a preview that also
-     *     matches a message we sent must not win), and the conversation is
-     *     never bumped — reacting is our own action, not news.
+     *     THEIR incoming messages FIRST (a preview that also matches a
+     *     message we sent must not win); only when no incoming message
+     *     matches do our own outgoing messages become candidates — our own
+     *     reactions now send for our own texts too, so the sent-box tapback
+     *     must fold onto our message or it would surface as a stray bubble.
+     *     The conversation is never bumped — reacting is our own action,
+     *     not news.
      *   - [com.filestech.sms.domain.reaction.IncomingReactionDecoder.DecodedReaction
      *     .Kind.EmojiOnly] — bare emoji SMS, ambiguous with a real one-emoji message.
      *     The match requires an outgoing message strictly younger than
@@ -429,9 +439,11 @@ class ConversationMirror @Inject constructor(
      * already ran version 1 run once more.
      *
      * Outgoing rows — our own reactions, imported from the sent box — fold
-     * onto their target too (one of THEIR incoming messages), with no
-     * conversation bump and no notification: the reaction is our own
-     * action, not news. A removal clears our badge the same way.
+     * onto their target too (one of THEIR incoming messages first, then one
+     * of OUR outgoing messages when no incoming matches — a reaction to one
+     * of our own texts), with no conversation bump and no notification: the
+     * reaction is our own action, not news. A removal clears our badge the
+     * same way.
      *
      * Hard limits (by design, not bugs):
      *   - [Kind.EmojiOnly] is SKIPPED: its 5-minute window is anchored at
@@ -592,10 +604,23 @@ class ConversationMirror @Inject constructor(
         fun notExcluded(entity: MessageEntity): Boolean =
             entity.id != excludeMessageId
 
-        // Own tapback: the target is one of THEIR incoming messages.
+        // Own tapback: the target is one of THEIR incoming messages FIRST —
+        // a preview that also matches a message we sent must not win. Only
+        // when no incoming message matches do our own outgoing messages
+        // become candidates (second pass, `allowOutgoingTargets`): our own
+        // reactions now send for our own texts too, so the sent-box tapback
+        // `Liked "our text"` must fold onto our message on re-import, or it
+        // would surface as a stray bubble. Incoming tapbacks
+        // (`isOwnReaction = false`) match any direction on the first pass.
+        var allowOutgoingTargets = false
         fun directionOk(entity: MessageEntity): Boolean =
-            !isOwnReaction || entity.direction == MessageDirection.INCOMING
-        return when (kind) {
+            !isOwnReaction || allowOutgoingTargets ||
+                entity.direction == MessageDirection.INCOMING
+
+        // Local (not a member): this class is at its Detekt function-count
+        // limit. The two passes share the search; only the direction guard
+        // changes between them.
+        suspend fun search(): MessageEntity? = when (kind) {
             Kind.Tapback -> {
                 if (bodyPrefix != null) {
                     val normalizedPrefix = bodyPrefix.collapseWhitespace()
@@ -661,6 +686,14 @@ class ConversationMirror @Inject constructor(
                 messageDao.findMostRecentOutgoingAfter(conversationId, sinceMs)
             }
         }
+        search()?.let { return it }
+        // Own tapback with no incoming match: retry allowing our own
+        // outgoing messages (a reaction to one of our own texts). The
+        // EmojiOnly branch ignores the direction guard entirely, so a
+        // second pass would return the same answer — Tapback only.
+        if (!isOwnReaction || kind != Kind.Tapback) return null
+        allowOutgoingTargets = true
+        return search()
     }
 
     /**
@@ -1356,7 +1389,9 @@ class ConversationMirror @Inject constructor(
             // bare-emoji row would mis-attach to a message sent minutes ago.
             // Same rule as [reparseStoredReactions]. Outgoing rows (our own
             // reactions, from the sent box) fold onto their incoming target
-            // with no bump — see [applyIncomingReaction].
+            // first, then onto one of our own outgoing messages when no
+            // incoming matches (a reaction to one of our own texts) — with
+            // no bump either way. See [applyIncomingReaction].
             suspend fun foldImportedTapback(row: MessageEntity): Boolean {
                 val decoded = IncomingReactionDecoder.decode(row.body) ?: return false
                 if (decoded.kind == Kind.EmojiOnly) return false

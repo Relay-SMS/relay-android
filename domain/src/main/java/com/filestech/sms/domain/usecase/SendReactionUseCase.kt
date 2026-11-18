@@ -13,20 +13,32 @@ import com.filestech.sms.domain.sender.SenderNameProvider
 import javax.inject.Inject
 
 /**
- * v1.3.1 — envoie une réaction emoji à **l'expéditeur du message réagi** comme un SMS
- * texte standard contenant uniquement l'emoji (ex. "❤️"). Délègue à [SendSmsUseCase]
+ * v1.3.1 — envoie une réaction emoji comme un SMS texte standard. Pour un message
+ * reçu, le destinataire est **l'expéditeur du message réagi** ; pour un de nos
+ * propres messages, les destinataires sont ceux de la conversation (1-1 : l'autre
+ * correspondant ; groupe : tous les membres). Délègue à [SendSmsUseCase]
  * pour la dispatch réelle (mêmes guards : default SMS app, blocklist, side-effects
  * provider + Room mirror).
  *
  * Sécurité (audit v1.3.1) :
  *
- *   - **F1** : refuse les réactions sur messages **sortants**. Si l'utilisateur réagit
- *     à son propre message, on n'envoie RIEN au destinataire d'origine (ce serait un
- *     SMS sorti de nulle part pour lui : "❤️" sans contexte).
+ *   - **F1** : les réactions sur nos propres messages **sortants** partent elles
+ *     aussi — vers les destinataires de la conversation (l'autre correspondant
+ *     en 1-1, tous les membres en groupe). L'ancien refus datait du temps où le
+ *     format était un emoji seul sans contexte ; les formats avec citation
+ *     portent désormais l'aperçu du message d'origine, et le format
+ *     [ReactionFormat.EMOJI_ONLY] est promu en [ReactionFormat.EMOJI_WITH_QUOTE]
+ *     pour nos propres messages, pour que le destinataire ait toujours le
+ *     contexte. Réagir à son propre message est public pour le groupe, comme
+ *     sur iMessage / Signal — et le décodage entrant attache déjà un tapback
+ *     à n'importe quel message du fil, entrant ou sortant.
  *   - **F2** : cible **uniquement le numéro qui a envoyé le message réagi**
  *     ([com.filestech.sms.domain.model.Message.address]), pas toute la conversation.
  *     Sans cette garde, réagir à un message dans un groupe (Alice/Bob/Charlie) enverrait
  *     "❤️" aux 3 → spam + leak de comportement intra-groupe + facturation ×N.
+ *     F2 ne vaut que pour les messages ENTRANTS : pour un de nos propres messages
+ *     de groupe, il n'y a pas d'expéditeur unique à prévenir — tout le groupe
+ *     est l'audience.
  *   - **F3** : passe `appendSignature = false` à [SendSmsUseCase] pour qu'un emoji
  *     reste un emoji seul (sinon "❤️\n--\nPat" bascule en SMS multi-part et pollue
  *     le fil du correspondant).
@@ -63,34 +75,68 @@ class SendReactionUseCase @Inject constructor(
      */
     private val clientActions: ClientActionGateway = NoOpClientActionGateway,
 ) {
-    /** Message reacted to + validated recipient, resolved before any send. */
+    /** Message reacted to + validated recipients, resolved before any send. */
     private data class ReactionRecipient(
         val message: com.filestech.sms.domain.model.Message,
-        val target: PhoneAddress,
+        val targets: List<PhoneAddress>,
     )
 
     /**
-     * Resolves the message and its sender. Fails when the message is missing or
-     * is one of ours (F1 — no echo on our own messages: the recipient would only
-     * see a lone emoji with no link to anything).
+     * Resolves the message and its recipients.
+     *
+     * Incoming message (F2): the single sender — `message.address` — is
+     * notified, never the other group participants.
+     *
+     * Outgoing message (our own text, F1): see [resolveOutgoingRecipients].
      */
     private suspend fun resolveRecipient(messageId: Long): Outcome<ReactionRecipient> {
         val message = conversationRepo.findMessageById(messageId)
             ?: return Outcome.Failure(AppError.Validation("message not found: $messageId"))
-        if (message.isOutgoing) {
-            return Outcome.Failure(AppError.Validation("cannot send reaction for outgoing message"))
+        if (!message.isOutgoing) {
+            // F2 — the sender is `message.address`: for a 1-1 or group message, only
+            // that sender is notified, never the other group participants.
+            return validateSenderAddress(message.address.trim())
+                .map { target -> ReactionRecipient(message, listOf(target)) }
         }
-        // F2 — the sender is `message.address`: for a 1-1 or group message, only
-        // that sender is notified, never the other group participants.
-        return validateSenderAddress(message.address.trim())
-            .map { target -> ReactionRecipient(message, target) }
+        return resolveOutgoingRecipients(message)
+    }
+
+    /**
+     * Outgoing message (our own text, F1): the conversation's recipients —
+     * the other party in 1-1, all members in a group. The message's own
+     * `address` cannot be used here: a group echo row carries the members
+     * joined with `;`, which is not a dialable number. Stored conversations
+     * never contain our own number (the conversation resolution strips it),
+     * so the list is the audience as-is — the same list an ordinary group
+     * send uses. Every recipient passes the X1 validation; one invalid
+     * recipient fails the whole send (fail-closed: a silently skipped member
+     * would be worse than a visible failure).
+     */
+    private suspend fun resolveOutgoingRecipients(
+        message: com.filestech.sms.domain.model.Message,
+    ): Outcome<ReactionRecipient> {
+        val conversation = conversationRepo.findById(message.conversationId)
+            ?: return Outcome.Failure(
+                AppError.Validation("conversation not found: ${message.conversationId}"),
+            )
+        if (conversation.addresses.isEmpty()) {
+            return Outcome.Failure(AppError.Validation("conversation has no recipients"))
+        }
+        val targets = mutableListOf<PhoneAddress>()
+        for (address in conversation.addresses) {
+            when (val validated = validateSenderAddress(address.raw.trim())) {
+                is Outcome.Success -> targets += validated.value
+                is Outcome.Failure -> return validated
+            }
+        }
+        return Outcome.Success(ReactionRecipient(message, targets))
     }
 
     /**
      * Validates the raw sender address. X1 (CRITICAL audit v1.3.1) — refuse
      * alphanumeric senders (banks, Free, INFO, AMAZON…) and short codes under
-     * 4 digits: without this guard the send would go to an undefined recipient
-     * (SmsManager rejection) or a PREMIUM-billed notification short code.
+     * [REACTION_MIN_DIGITS] digits: without this guard the send would go to an undefined
+     * recipient (SmsManager rejection) or a PREMIUM-billed notification short code.
      */
     private fun validateSenderAddress(senderRaw: String): Outcome<PhoneAddress> {
         if (senderRaw.isEmpty()) {
@@ -109,10 +155,13 @@ class SendReactionUseCase @Inject constructor(
     }
 
     /**
-     * Envoie [emoji] à l'expéditeur du message [messageId]. Retourne :
+     * Envoie [emoji] à l'expéditeur du message [messageId] (message entrant), ou aux
+     * destinataires de sa conversation (message sortant : l'autre correspondant en
+     * 1-1, tous les membres en groupe). Retourne :
      *
      *   - [Outcome.Failure] avec [AppError.Validation] si le message n'existe plus
-     *     (purgé/supprimé entre-temps), s'il est sortant (cas F1), si son adresse est
+     *     (purgé/supprimé entre-temps), si la conversation est introuvable ou sans
+     *     destinataire (message sortant), si une adresse destinataire est
      *     vide/invalide, ou si [emoji] est vide.
      *   - Le [Outcome] de [SendSmsUseCase] (Success avec l'id Room du SMS envoyé, ou
      *     Failure propagée).
@@ -160,17 +209,29 @@ class SendReactionUseCase @Inject constructor(
 
         val resolved = resolveRecipient(messageId)
         if (resolved is Outcome.Failure) return resolved
-        val (message, target) = (resolved as Outcome.Success).value
+        val (message, targets) = (resolved as Outcome.Success).value
+
+        // Own-message reactions always carry context: a bare emoji
+        // (`EMOJI_ONLY`) would land on the recipient's phone with no
+        // link to anything — the exact case the old F1 guard refused.
+        // Quoted formats already carry the preview; only the bare form
+        // is upgraded, and only for our own messages. Removals ignore
+        // the format (always the quoted iPhone removal form).
+        val effectiveFormat = if (message.isOutgoing && format == ReactionFormat.EMOJI_ONLY) {
+            ReactionFormat.EMOJI_WITH_QUOTE
+        } else {
+            format
+        }
 
         return sendSms(
-            recipients = listOf(target),
+            recipients = targets,
             // v1.8.0 (bug 5 fix) — switch sur les formats de réaction. Le retrait
             // ignore [format] : seule la forme iPhone sait exprimer un retrait
             // sur le fil (voir KDoc de [invoke]).
             body = if (isRemoval) {
                 buildIosTapbackBody(emoji, message.body, isRemoval = true)
             } else {
-                when (format) {
+                when (effectiveFormat) {
                     ReactionFormat.EMOJI_ONLY -> emoji
                     ReactionFormat.TAPBACK_EN -> buildTapbackBody(emoji, message.body)
                     ReactionFormat.READABLE_FR -> buildReadableFrBody(

@@ -1,7 +1,9 @@
 package com.filestech.sms
 
 import android.app.Application
+import android.content.pm.PackageManager
 import android.database.ContentObserver
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -541,13 +543,28 @@ class MainApplication : Application(), Configuration.Provider {
                 .collect()
         }
 
+        // Server default-off — one-shot upgrade preserve, before the
+        // observer below reads the toggle: on an upgrade from a build
+        // where the server defaulted ON, keep it on for users who
+        // never toggled it; a fresh install stays off until the user
+        // turns it on. The store's migration flag makes it one-shot
+        // and idempotent; the observer is flow-driven, so it picks
+        // up the write whenever it lands. Fail-soft: a failed read
+        // treats the install as fresh (server stays off).
+        appScope.launch {
+            runCatching {
+                linkedDeviceStore.migrateServerDefaultOnce(isUpgradeInstall())
+            }.onFailure { Timber.w(it, "Server default migration failed") }
+        }
+
         // Slice 1 — same pattern for the LAN server: observe the toggle
         // in the linked-device store and start / stop the foreground
-        // [SyncService] in consequence. The toggle defaults ON, so a
-        // fresh install starts the server at first launch; turning it
-        // off on the Linked devices screen stops the service (and its
-        // notification) immediately, and the app works fully standalone.
-        // Boot is covered by BootReceiver, complementarily.
+        // [SyncService] in consequence. The toggle defaults OFF, so a
+        // fresh install never starts the server until the user turns
+        // it on; turning it off on the Linked devices screen stops
+        // the service (and its notification) immediately, and the app
+        // works fully standalone. Boot is covered by BootReceiver,
+        // complementarily.
         // Client mode — the server also needs the device to BE a hub:
         // the toggle value is kept across a mode switch but ignored
         // in client mode, so a linked device never serves.
@@ -679,6 +696,30 @@ class MainApplication : Application(), Configuration.Provider {
                 }
                 .collect()
         }
+    }
+
+    /**
+     * Whether this install was updated from an earlier version:
+     * the package was first installed before its last update. A
+     * read failure answers false (fresh install) — the safe
+     * direction for the server-default migration, which then
+     * leaves the server off. The `getPackageInfo(String, Int)`
+     * overload is deprecated on API 33+, so TIRAMISU+ uses the
+     * flags overload.
+     */
+    private fun isUpgradeInstall(): Boolean {
+        return runCatching {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(0),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            info.firstInstallTime < info.lastUpdateTime
+        }.getOrDefault(false)
     }
 
     /**

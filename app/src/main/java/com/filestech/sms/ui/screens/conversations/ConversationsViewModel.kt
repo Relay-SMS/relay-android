@@ -257,6 +257,8 @@ class ConversationsViewModel @Inject constructor(
         val duplicateDisplayNames: Set<String> = emptySet(),
         val isImporting: Boolean = false,
         val importedCount: Int = 0,
+        /** First-run import total, when the system store could be counted up front (null = unknown). */
+        val importTotalCount: Int? = null,
         /**
          * `true` when the session was unlocked via the panic code. The host screen uses this to
          * hide all vault entry points (top-bar icon, deep-link buttons). Combined with the
@@ -399,6 +401,7 @@ class ConversationsViewModel @Inject constructor(
             // delta syncs touch a handful of rows and complete in milliseconds, no banner needed.
             isImporting = syncState is TelephonySyncManager.State.Running && syncState.isFirstRun,
             importedCount = (syncState as? TelephonySyncManager.State.Running)?.importedSoFar ?: 0,
+            importTotalCount = (syncState as? TelephonySyncManager.State.Running)?.totalMessages,
             isPanicDecoy = isPanic,
             showIAmOkChip = showChip,
             selectedIds = effectiveSelection,
@@ -808,6 +811,17 @@ class ConversationsViewModel @Inject constructor(
 
     fun toggleMuted(conversation: Conversation) = viewModelScope.launch {
         toggle.setMuted(conversation.id, !conversation.muted)
+    }
+
+    /**
+     * Long-press "Mark unread / Mark read" (desktop parity): a
+     * read conversation (0 unread) becomes unread, an unread one
+     * becomes read. Client mode: the unread mark is local-only
+     * (no mark-unread frame exists); the read mark still writes
+     * back to the hub like every other mark-read.
+     */
+    fun toggleUnread(conversation: Conversation) = viewModelScope.launch {
+        toggle.setUnread(conversation.id, conversation.unreadCount == 0)
     }
 
     /**

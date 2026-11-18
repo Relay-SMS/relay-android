@@ -969,20 +969,19 @@ class RepositorySyncMessageSource @Inject constructor(
                 previousEmoji?.let { ReactionDispatch(messageId, it, true) }
             SetReactionResult.Noop -> null
         }
-        return dispatch?.let { dispatchReactionSms(it, message) } ?: ActionResult(ok = true)
+        return dispatch?.let { dispatchReactionSms(it) } ?: ActionResult(ok = true)
     }
 
     /**
      * The phone's reaction-dispatch rules, in the same order the
-     * thread screen applies them: no SMS for our own messages, no SMS
-     * when the user turned reactions-to-recipient off, no re-send of
-     * the same reaction within 60 s, and no removal SMS when a
-     * reaction came back between the set and the dispatch. The local
-     * reaction is already set in every case — only the SMS is gated.
+     * thread screen applies them: no SMS when the user turned
+     * reactions-to-recipient off, no re-send of the same reaction
+     * within 60 s, and no removal SMS when a reaction came back
+     * between the set and the dispatch. The local reaction is already
+     * set in every case — only the SMS is gated. Our own messages
+     * send too (the use case resolves the conversation's recipients).
      */
-    private suspend fun dispatchReactionSms(dispatch: ReactionDispatch, message: Message): ActionResult {
-        // Our own messages first: no SMS, and no settings read either.
-        if (message.isOutgoing) return ActionResult(ok = true)
+    private suspend fun dispatchReactionSms(dispatch: ReactionDispatch): ActionResult {
         val sending = (settings.hydratedOrNull() ?: AppSettings()).sending
         // The `when` short-circuits in order, so the anti-race re-read
         // only happens when the earlier gates passed.

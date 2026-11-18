@@ -105,6 +105,18 @@ interface ConversationRepository {
     suspend fun markRead(id: Long)
 
     /**
+     * Long-press "Mark unread" (desktop parity): re-opens the
+     * conversation as unread. Unread is derived — `unread_count`
+     * is recomputed from incoming `read = 0` rows — so the mark
+     * flips the latest incoming message back to unread and
+     * recomputes (badge shows 1). Client mode: local only, no
+     * frame exists for mark-unread, so the hub never learns of
+     * it and a re-sync may reset it. Room-only, never the system
+     * store, and silent — no notification is (re-)posted.
+     */
+    suspend fun markUnread(id: Long)
+
+    /**
      * v1.14.8 audit H4 — "Tout marquer comme lu" centralisé. Avant : la
      * [com.filestech.sms.ui.screens.conversations.ConversationsViewModel] injectait
      * `MessageDao` + `ConversationDao` + `TelephonyReader` et orchestrait elle-même

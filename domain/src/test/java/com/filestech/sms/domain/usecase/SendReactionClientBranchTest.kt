@@ -1,8 +1,9 @@
 package com.filestech.sms.domain.usecase
 
-import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.ReactionFormat
 import com.filestech.sms.domain.sender.SenderNameProvider
 import com.google.common.truth.Truth.assertThat
@@ -85,22 +86,40 @@ class SendReactionClientBranchTest {
         assertThat(sms.sentTexts).hasSize(1)
     }
 
-    /** Hub mode unchanged: a reaction on an outgoing message is still refused (F1). */
+    /** Hub mode: a reaction on an outgoing message now sends (F1 relaxed). */
     @Test
-    fun `hub mode reaction on an outgoing message is still refused`() = runBlocking {
+    fun `hub mode reaction on an outgoing message now sends to the other party`() = runBlocking {
         val reglages = FakeSettings()
         val outgoing = incomingMessage(12L).copy(direction = Message.Direction.OUTGOING)
+        val conv = Conversation(
+            id = 9L,
+            threadId = null,
+            addresses = listOf(PhoneAddress.of("+33600000001")),
+            displayName = null,
+            lastMessageAt = 0L,
+            lastMessagePreview = null,
+            unreadCount = 0,
+            pinned = false,
+            archived = false,
+            muted = false,
+            inVault = false,
+            draft = null,
+        )
         val useCase = SendReactionUseCase(
             sendSms = sendSmsUseCase(settings = reglages, sender = sms, mirror = miroir),
-            conversationRepo = FakeConversationRepository(messagesById = mapOf(12L to outgoing)),
+            conversationRepo = FakeConversationRepository(
+                conversationsById = mapOf(9L to conv),
+                messagesById = mapOf(12L to outgoing),
+            ),
             senderNameProvider = senderName,
             clientActions = FakeClientActionGateway(clientMode = false),
         )
 
         val res = useCase.invoke(12L, "❤️", ReactionFormat.EMOJI_ONLY)
 
-        assertThat(res).isInstanceOf(Outcome.Failure::class.java)
-        assertThat((res as Outcome.Failure).error).isInstanceOf(AppError.Validation::class.java)
-        assertThat(sms.sentTexts).isEmpty()
+        assertThat(res).isInstanceOf(Outcome.Success::class.java)
+        assertThat(sms.sentTexts).hasSize(1)
+        // EMOJI_ONLY upgrades to the quoted form for our own messages.
+        assertThat(sms.sentTexts).isEqualTo(listOf("❤️ «salut»"))
     }
 }

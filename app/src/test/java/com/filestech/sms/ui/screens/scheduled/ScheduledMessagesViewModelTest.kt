@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.ScheduledMessage
+import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.DeviceMode
@@ -72,6 +73,10 @@ class ScheduledMessagesViewModelTest {
             mockk<RetryScheduledMessageUseCase>(relaxed = true),
             mockk<DeleteScheduledMessageUseCase>(relaxed = true),
             settings,
+            // Scheduled avatars — the recipients flow is WhileSubscribed
+            // and these tests never collect it, so a relaxed mock is enough.
+            mockk<ContactRepository>(relaxed = true),
+            dispatcher,
         )
     }
 

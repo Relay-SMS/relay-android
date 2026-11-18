@@ -193,6 +193,25 @@ interface MessageDao {
     suspend fun findUnreadIds(conversationId: Long): List<Long>
 
     /**
+     * "Mark unread" — the latest incoming, non-hidden message of
+     * one conversation, or null when it has none (outgoing-only).
+     * The mark flips this row back to unread and recomputes the
+     * counter, so the badge survives the cold-start recompute.
+     * Same predicate as [ConversationDao.recomputeUnreadCount]:
+     * a folded reaction (`hidden = 1`) never counts as unread.
+     */
+    @Query(
+        """
+        SELECT id FROM messages
+        WHERE conversation_id = :conversationId
+          AND direction = 0
+          AND hidden = 0
+        ORDER BY date DESC, id DESC LIMIT 1
+        """,
+    )
+    suspend fun findLatestIncomingId(conversationId: Long): Long?
+
+    /**
      * Client mode — how many messages a conversation holds locally.
      * Fetch-on-open uses it for the complete-but-empty check: a
      * complete thread with cached messages needs no fetch, a
