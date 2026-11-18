@@ -65,9 +65,14 @@ object SyncProtocol {
     /** Fixed LAN port from the spec — discovery and the server agree on it. */
     const val PORT = 47831
 
-    /** mDNS service type, instance name and hub name from the spec. */
+    /** mDNS service type from the spec. */
     const val SERVICE_TYPE = "_relay._tcp."
-    const val SERVICE_NAME = "Relay"
+
+    /**
+     * The hub name when the device model is unknown: the fallback
+     * [LinkedDeviceStore.hubDisplayName] returns, and the name
+     * clients saw before hub names became the device model.
+     */
     const val HUB_NAME = "Relay"
 
     /** Protocol version carried in `hello` and in the mDNS TXT record. */

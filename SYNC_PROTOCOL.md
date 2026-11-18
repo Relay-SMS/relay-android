@@ -8,8 +8,11 @@ copy of this spec in `ARCHITECTURE.md` — keep the two in sync.
 
 ## Discovery (mDNS)
 
-- Service type `_relay._tcp.`, instance name `SMS Relay`, fixed port
-  **47831**.
+- Service type `_relay._tcp.`, instance name the phone's device model
+  (e.g. `Pixel 8`), fixed port **47831**. The model (not a constant)
+  so two hubs on one network are distinguishable; on an instance-name
+  clash Android renames the second one (`Pixel 8 (2)`, …) — clients
+  match on the service type and the `hub` TXT record, never the name.
 - TXT records: `v=1`, `hub=<hub-id>` (the phone's stable hub id, a UUID
   generated on first run and stored on the phone).
 - The phone advertises with `android.net.nsd` (NsdManager). The QR flow
@@ -35,8 +38,11 @@ copy of this spec in `ARCHITECTURE.md` — keep the two in sync.
   (2026-11-13); `SyncEngineTlsTest` pins the engine+TLS combination.
 - The phone generates a self-signed X.509 certificate on first run
   (CN = hub id, 10-year validity). The client pins its SHA-256 fingerprint
-  on first connect (TOFU). A fingerprint mismatch after pinning is a hard
-  refusal. There is no unencrypted fallback. TLS 1.2 minimum.
+  on first connect (TOFU) — one pin per hub, keyed by hub id
+  (`hub_fingerprint_<hub-id>.bin`; the legacy single
+  `hub_fingerprint.bin` is only the fallback when the hub id is
+  unknown). A fingerprint mismatch after pinning is a hard refusal.
+  There is no unencrypted fallback. TLS 1.2 minimum.
 - The TLS certificate is transport-only. Device authentication is the
   Ed25519 challenge/response below — two separate key systems by design.
 
@@ -50,7 +56,7 @@ first:
 | Client → server | `hello` | `{"type":"hello","protocol":1,"device_id":"...","kind":"desktop","name":"..."}` |
 | Server → client | `challenge` | `{"type":"challenge","challenge":"<base64url 32 random bytes>"}` |
 | Client → server | `auth` | `{"type":"auth","device_id":"...","signature":"<base64url 64-byte Ed25519 signature over the raw challenge bytes>"}` |
-| Server → client | `auth_ok` | `{"type":"auth_ok","hub_id":"...","hub_name":"SMS Relay"}` |
+| Server → client | `auth_ok` | `{"type":"auth_ok","hub_id":"...","hub_name":"Pixel 8"}` |
 | Server → client | `auth_failed` | `{"type":"auth_failed","reason":"unknown_device"\|"bad_signature"\|"revoked"\|"protocol"}` |
 | Either way | `ping` / `pong` | `{"type":"ping","t":<unix ms>}` / `{"type":"pong","t":<same t>}` |
 | Server → client | `revoked` | `{"type":"revoked"}` |

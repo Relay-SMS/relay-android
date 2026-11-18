@@ -43,6 +43,7 @@ class SyncSessionHandlerTest {
         val handler = SyncSessionHandler(
             lookup = lookup,
             hubId = HUB_ID,
+            hubName = HUB_NAME,
             send = { sent += it },
             close = { closes += it },
             engine = engine,
@@ -78,7 +79,7 @@ class SyncSessionHandlerTest {
         val ok = Json.parseToJsonElement(harness.sent.last()).jsonObject
         assertThat(ok["type"]?.jsonPrimitive?.content).isEqualTo("auth_ok")
         assertThat(ok["hub_id"]?.jsonPrimitive?.content).isEqualTo(HUB_ID)
-        assertThat(ok["hub_name"]?.jsonPrimitive?.content).isEqualTo("Relay")
+        assertThat(ok["hub_name"]?.jsonPrimitive?.content).isEqualTo(HUB_NAME)
         assertThat(harness.closes).isEmpty()
     }
 
@@ -600,6 +601,7 @@ class SyncSessionHandlerTest {
     companion object {
         private const val DEVICE_ID = "123e4567-e89b-12d3-a456-426614174000"
         private const val HUB_ID = "123e4567-e89b-12d3-a456-426614174099"
+        private const val HUB_NAME = "Pixel 8"
         private const val CLIENT_KEY = "3f2a1b00-0000-4000-8000-00000000c41d"
     }
 }

@@ -41,6 +41,8 @@ import java.util.Base64
 class SyncSessionHandler(
     private val lookup: LinkedDeviceLookup,
     private val hubId: String,
+    /** This hub's display name (the device model) — the `hub_name` in `auth_ok`. */
+    private val hubName: String,
     private val send: suspend (String) -> Unit,
     private val close: suspend (String) -> Unit,
     private val engine: SyncEngine? = null,
@@ -162,7 +164,7 @@ class SyncSessionHandler(
         engine?.start()
         send(
             SyncProtocol.encodeAuthOk(
-                SyncProtocol.AuthOk(hubId = hubId, hubName = SyncProtocol.HUB_NAME),
+                SyncProtocol.AuthOk(hubId = hubId, hubName = hubName),
             ),
         )
     }

@@ -3,8 +3,10 @@ package com.filestech.sms.sync
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
+import io.mockk.verify
 import io.netty.handler.ssl.util.SelfSignedCertificate
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -73,6 +75,7 @@ class SyncServerTest {
     @Test fun `a successful start clears a previously recorded error`() = runTest {
         val store = mockk<LinkedDeviceStore>(relaxed = true)
         coEvery { store.hubId() } returns "test-hub"
+        every { store.hubName() } returns "Pixel 8"
         val identity = testIdentity()
         val tlsProvider = mockk<TlsCertificateProvider>()
         coEvery { tlsProvider.ensureIdentity(any()) } returns TlsIdentity(
@@ -81,10 +84,11 @@ class SyncServerTest {
             identity.password,
             identity.password,
         )
+        val advertiser = mockk<MdnsAdvertiser>(relaxed = true)
         val server = SyncServer(
             store = store,
             tlsProvider = tlsProvider,
-            mdnsAdvertiser = mockk(relaxed = true),
+            mdnsAdvertiser = advertiser,
             messageSource = FakeSyncMessageSource(),
         )
         try {
@@ -94,6 +98,10 @@ class SyncServerTest {
             runCatching { server.stop() }
         }
         coVerify { store.clearStartError() }
+        // The mDNS instance name is the hub's display name (the
+        // device model), so two hubs on one network are
+        // distinguishable.
+        verify { advertiser.start("test-hub", "Pixel 8") }
     }
 
     private fun serverWith(source: FakeSyncMessageSource): SyncServer = SyncServer(

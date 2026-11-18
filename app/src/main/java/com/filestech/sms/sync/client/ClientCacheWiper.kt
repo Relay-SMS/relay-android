@@ -41,16 +41,20 @@ class ClientCacheWiper @Inject constructor(
 ) {
 
     /**
-     * Drops the hub link and the pinned hub certificate, plus the
+     * Drops the hub link and that hub's pinned certificate, plus the
      * whole message cache. The device id and display name survive,
-     * so re-linking keeps the same identity.
+     * so re-linking keeps the same identity — and other hubs' pins
+     * survive too, so re-pairing to a hub this device already
+     * trusted does not re-pin. The hub id is read BEFORE the link
+     * goes: it is the key of the pin file.
      */
     suspend fun wipeHubState() {
         // TEMP-DIAG "Not linked": catches what removes hubId.
         Timber.d("ClientCacheWiper: wipeHubState called")
+        val hubId = linkStore.snapshot()?.hubId
         wipeMessageCache()
         linkStore.clearHub()
-        pinStore.clear()
+        pinStore.clear(hubId.orEmpty())
     }
 
     /**

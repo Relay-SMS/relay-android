@@ -144,6 +144,7 @@ class SyncServer @Inject constructor(
                 // failure is visible in logcat instead of vanishing silently.
                 installNettyTimberLogging()
                 val hubId = store.hubId()
+                val hubName = store.hubName()
                 val identity = tlsProvider.ensureIdentity(hubId)
                 step = STEP_ENGINE
                 val server = embeddedServer(
@@ -154,14 +155,14 @@ class SyncServer @Inject constructor(
                     install(WebSockets)
                     routing {
                         webSocket("/sync") {
-                            handleSession(this, hubId)
+                            handleSession(this, hubId, hubName)
                         }
                     }
                 }
                 server.start(wait = false)
                 engine = server
                 step = STEP_MDNS
-                mdnsAdvertiser.start(hubId)
+                mdnsAdvertiser.start(hubId, hubName)
                 startWatchdog()
                 _running.value = true
                 store.clearStartError()
@@ -372,6 +373,7 @@ class SyncServer @Inject constructor(
     private suspend fun handleSession(
         session: WebSocketServerSession,
         hubId: String,
+        hubName: String,
     ) {
         val engine = SyncEngine(
             source = messageSource,
@@ -381,6 +383,7 @@ class SyncServer @Inject constructor(
         val handler = SyncSessionHandler(
             lookup = store,
             hubId = hubId,
+            hubName = hubName,
             send = { text -> session.send(Frame.Text(text)) },
             close = { reason -> session.close(CloseReason(CloseReason.Codes.NORMAL, reason)) },
             engine = engine,

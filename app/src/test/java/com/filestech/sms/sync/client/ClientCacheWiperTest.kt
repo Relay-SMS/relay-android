@@ -146,6 +146,12 @@ class ClientCacheWiperTest {
 
     @Test fun `wipeHubState wipes the cache and clears the link and pin`() = runTest {
         val f = Fixture()
+        coEvery { f.linkStore.snapshot() } returns ClientLink(
+            deviceId = "device-1",
+            displayName = "Tablet",
+            hubId = "hub-1",
+            hubName = "Pixel 8",
+        )
         f.wiper.wipeHubState()
         coVerify(exactly = 1) { f.attachmentDao.findLocalUrisForSynced() }
         coVerify(exactly = 1) { f.conversationDao.deleteSynced() }
@@ -153,6 +159,15 @@ class ClientCacheWiperTest {
         coVerify(exactly = 1) { f.contactSync.onCacheWiped() }
         coVerify(exactly = 1) { f.downloader.onCacheWiped() }
         coVerify(exactly = 1) { f.linkStore.clearHub() }
-        verify(exactly = 1) { f.pinStore.clear() }
+        // Only the linked hub's pin goes — other hubs' pins survive.
+        verify(exactly = 1) { f.pinStore.clear("hub-1") }
+    }
+
+    @Test fun `wipeHubState with no link clears the legacy pin`() = runTest {
+        val f = Fixture()
+        // No stored link (the relaxed mock returns null): the only
+        // pin that could exist is the pre-multi-hub legacy file.
+        f.wiper.wipeHubState()
+        verify(exactly = 1) { f.pinStore.clear("") }
     }
 }

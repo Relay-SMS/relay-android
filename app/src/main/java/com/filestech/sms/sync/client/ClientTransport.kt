@@ -35,12 +35,17 @@ import javax.net.ssl.TrustManager
 
 /**
  * Client mode — where to connect: a hub's host (IP or mDNS hostname)
- * and port (47831). The URL is always `wss://` — there is no
- * unencrypted fallback.
+ * and port (47831), plus the hub id expected there (from the mDNS
+ * TXT record or the stored link — empty when unknown, an old phone
+ * whose record carries none). The id is part of the target's
+ * identity: a DHCP reassignment to a different phone is a different
+ * target, and the TLS pin is keyed by it (one pin per hub). The URL
+ * is always `wss://` — there is no unencrypted fallback.
  */
 data class HubTarget(
     val host: String,
     val port: Int = SyncProtocol.PORT,
+    val hubId: String = "",
 ) {
     /** `wss://<host>:<port>/sync`, bracketing IPv6 literals (desktop rule). */
     fun wsUrl(): String {
@@ -193,7 +198,7 @@ class ClientTransport @Inject constructor(
             return OpenSocketResult.Failed("cannot load this device's identity: ${t.message}")
         }
         val client = try {
-            buildClient()
+            buildClient(target.hubId)
         } catch (ce: CancellationException) {
             rethrowCancellation(ce)
         } catch (t: Throwable) {
@@ -219,8 +224,8 @@ class ClientTransport @Inject constructor(
         }
     }
 
-    private fun buildClient(): HttpClient {
-        val trustManager = TofuTrustManager(pinStore)
+    private fun buildClient(hubId: String): HttpClient {
+        val trustManager = TofuTrustManager(pinStore, hubId)
         val sslContext = SSLContext.getInstance("TLS").apply {
             init(null, arrayOf<TrustManager>(trustManager), null)
         }

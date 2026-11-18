@@ -12,14 +12,18 @@ import javax.inject.Singleton
 /**
  * Advertises the phone on the local network so a linking device can
  * find it without the user typing an address: mDNS service type
- * `_relay._tcp.`, instance `Relay`, port 47831, TXT `v=1` and
- * `hub=<hub-id>` (SYNC_PROTOCOL.md). Plain `android.net.nsd` — no
- * third-party discovery library, no cloud.
+ * `_relay._tcp.`, instance name the device model (e.g. "Pixel 8"),
+ * port 47831, TXT `v=1` and `hub=<hub-id>` (SYNC_PROTOCOL.md).
+ * Plain `android.net.nsd` — no third-party discovery library, no
+ * cloud.
  *
- * If another device on the network already advertises the same
- * instance name, Android renames ours (`Relay (2)`, …) — that is
- * logged, not fought: the desktop matches on the service type and the
- * `hub` TXT record, not on the exact instance name.
+ * The instance name is the model so two hubs on one network are
+ * distinguishable (in the desktop's phone picker, and in the
+ * auto-link status). If another device on the network already
+ * advertises the same instance name, Android renames ours
+ * (`Pixel 8 (2)`, …) — that is logged, not fought: clients match
+ * on the service type and the `hub` TXT record, not on the exact
+ * instance name.
  */
 @Singleton
 class MdnsAdvertiser @Inject constructor(
@@ -35,9 +39,17 @@ class MdnsAdvertiser @Inject constructor(
     @Volatile
     private var advertising = false
 
+    /**
+     * The instance name [start] requested: the rename check in the
+     * registration listener compares against it (the name is the
+     * device model now, not a constant).
+     */
+    @Volatile
+    private var requestedName: String? = null
+
     private val listener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(info: NsdServiceInfo) {
-            if (info.serviceName != SyncProtocol.SERVICE_NAME) {
+            if (info.serviceName != requestedName) {
                 Timber.w(
                     "MdnsAdvertiser: instance renamed to '%s' (name clash on this network)",
                     info.serviceName,
@@ -64,17 +76,20 @@ class MdnsAdvertiser @Inject constructor(
     /**
      * Starts advertising. No-op if already advertising or if this
      * device has no NSD service (it should not happen, but discovery
-     * failing must never take the server down with it).
+     * failing must never take the server down with it). The instance
+     * name is [hubName] — the device model, so two hubs on one
+     * network are distinguishable.
      */
-    fun start(hubId: String) {
+    fun start(hubId: String, hubName: String) {
         val manager = nsdManager ?: run {
             Timber.w("MdnsAdvertiser: no NsdManager on this device, not advertising")
             return
         }
         if (advertising) return
         advertising = true
+        requestedName = hubName
         val info = NsdServiceInfo().apply {
-            serviceName = SyncProtocol.SERVICE_NAME
+            serviceName = hubName
             serviceType = SyncProtocol.SERVICE_TYPE
             port = SyncProtocol.PORT
             setAttribute("v", SyncProtocol.PROTOCOL_VERSION.toString())
@@ -84,6 +99,7 @@ class MdnsAdvertiser @Inject constructor(
             manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
         }.onFailure { t ->
             advertising = false
+            requestedName = null
             Timber.w(t, "MdnsAdvertiser: registerService failed")
         }
     }
@@ -92,6 +108,7 @@ class MdnsAdvertiser @Inject constructor(
     fun stop() {
         if (!advertising) return
         advertising = false
+        requestedName = null
         val manager = nsdManager ?: return
         runCatching {
             manager.unregisterService(listener)

@@ -1,6 +1,7 @@
 package com.filestech.sms.sync
 
 import android.content.Context
+import android.os.Build
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -124,6 +125,18 @@ class LinkedDeviceStore(
             Timber.w(t, "LinkedDeviceStore: lastStartError read failed, serving null")
             emit(null)
         }
+
+    /**
+     * This hub's display name — the device model (`Build.MODEL`),
+     * e.g. "Pixel 8" or "SM-T720": the name clients see in `auth_ok`
+     * and the mDNS instance name, so two hubs on one network are
+     * distinguishable. The model is the same default the client's
+     * display name uses (its DI module passes `Build.MODEL`); unlike
+     * the client's name there is nothing to persist — the model never
+     * changes for a device. A blank or unknown model falls back to
+     * "Relay" (the old constant).
+     */
+    fun hubName(): String = hubDisplayName(Build.MODEL)
 
     /**
      * The phone's stable hub id, generated on first read. The
@@ -309,6 +322,15 @@ class LinkedDeviceStore(
 
         /** Minimum gap between `last_seen` writes for one device. */
         private const val TOUCH_THROTTLE_MS = 60_000L
+
+        /**
+         * The hub display name for a device model: the model itself,
+         * or "Relay" when it is blank or unknown. Pure, so the
+         * fallback is unit-tested without an Android device
+         * (`Build.MODEL` is null on the plain JVM).
+         */
+        fun hubDisplayName(model: String?): String =
+            model?.takeIf { it.isNotBlank() } ?: SyncProtocol.HUB_NAME
     }
 }
 

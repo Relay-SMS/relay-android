@@ -50,6 +50,18 @@ class LinkedDeviceStoreTest {
         assertThat(formatted).isEqualTo("1970-01-01T00:00:00Z | mdns | IllegalStateException")
     }
 
+    @Test fun `hubDisplayName returns the model`() {
+        assertThat(LinkedDeviceStore.hubDisplayName("Pixel 8")).isEqualTo("Pixel 8")
+    }
+
+    @Test fun `hubDisplayName falls back to Relay for a blank model`() {
+        assertThat(LinkedDeviceStore.hubDisplayName("   ")).isEqualTo("Relay")
+    }
+
+    @Test fun `hubDisplayName falls back to Relay for a null model`() {
+        assertThat(LinkedDeviceStore.hubDisplayName(null)).isEqualTo("Relay")
+    }
+
     @Test fun `server is off by default on a fresh store`() = runTest {
         val store = linkedStore()
         assertThat(store.serverEnabled.first()).isFalse()

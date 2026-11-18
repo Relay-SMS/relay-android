@@ -128,7 +128,7 @@ class ClientSyncService : Service() {
             // beginning (prompt on first connect, delta resume on
             // reconnect) and no frame arrives unobserved.
             syncEngine.get().start()
-            connectionManager.connect(HubTarget(host, port), kind)
+            connectionManager.connect(HubTarget(host, port, link.hubId.orEmpty()), kind)
         }
         // START_STICKY: if the system kills the service, Android
         // restarts it and the link comes back. A user-initiated stop

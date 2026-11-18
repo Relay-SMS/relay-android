@@ -260,7 +260,10 @@ class AutoLinker @Inject constructor(
                         phase = AutoLinkPhase.CONNECTING,
                         phoneName = phone.serviceName,
                     )
-                    val status = connectionManager.connect(HubTarget(phone.host, phone.port), kind)
+                    val status = connectionManager.connect(
+                        HubTarget(phone.host, phone.port, phone.hubId),
+                        kind,
+                    )
                     started = true
                     lastTriedHubId = phone.hubId
                     when (status) {

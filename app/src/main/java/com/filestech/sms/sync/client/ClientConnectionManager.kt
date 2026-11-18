@@ -391,7 +391,7 @@ class ClientConnectionManager @Inject constructor(
         _state.value = ClientConnectionState.Failed(
             "found your phone at a new address (${found.host}:${found.port}) — reconnecting",
         )
-        return HubTarget(found.host, found.port)
+        return HubTarget(found.host, found.port, found.hubId)
     }
 
     companion object {
