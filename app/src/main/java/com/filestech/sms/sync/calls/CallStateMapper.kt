@@ -14,6 +14,12 @@ package com.filestech.sms.sync.calls
  * it. A RINGING that arrives while a call is active (call
  * waiting) IS a transition, so it announces the new caller.
  *
+ * Off-hook means two different things, and the mapper tells them
+ * apart by what came before: RINGING → OFFHOOK is an answered
+ * incoming call ([CallEvent.Active]); IDLE → OFFHOOK is an
+ * outgoing dial ([CallEvent.Dialing]) — the other person has not
+ * answered yet, and the platform never says when they do.
+ *
  * Pure Kotlin, no Android imports: the unit tests drive it
  * directly, and [TelephonyCallStateObserver] feeds it the
  * platform callbacks.
@@ -51,8 +57,13 @@ class CallStateMapper {
             if (lastState == TelephonyState.OFFHOOK) {
                 null
             } else {
+                val wasRinging = lastState == TelephonyState.RINGING
                 lastState = TelephonyState.OFFHOOK
-                CallEvent.Active(number = lastNumber, timestampMs = nowMs)
+                if (wasRinging) {
+                    CallEvent.Active(number = lastNumber, timestampMs = nowMs)
+                } else {
+                    CallEvent.Dialing(number = lastNumber, timestampMs = nowMs)
+                }
             }
         }
         TelephonyState.IDLE -> {

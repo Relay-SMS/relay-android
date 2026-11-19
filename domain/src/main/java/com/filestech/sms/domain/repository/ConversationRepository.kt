@@ -61,6 +61,12 @@ interface ConversationRepository {
      */
     fun observeMedia(conversationId: Long): Flow<List<Attachment>>
 
+    /**
+     * Details panel — Files tab: the attachments that are neither photos nor videos, most recent
+     * first. Same vault rule as [observeMedia].
+     */
+    fun observeFiles(conversationId: Long): Flow<List<Attachment>>
+
     fun observeUnreadConversationCount(): Flow<Int>
 
     suspend fun findOrCreate(addresses: List<PhoneAddress>): Outcome<Conversation>

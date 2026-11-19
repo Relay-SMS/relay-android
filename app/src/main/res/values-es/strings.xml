@@ -134,13 +134,19 @@
     <string name="thread_update_contact">Actualizar un contacto</string>
     <string name="action_create_contact">Crear contacto</string>
     <string name="action_create_group">Crear grupo</string>
-    <string name="action_details">Detalles de la conversación</string>
 
-    <string name="thread_details_messages">%1$d mensajes</string>
-    <string name="thread_details_first">Primer mensaje: %1$s</string>
-    <string name="thread_details_last">Último mensaje: %1$s</string>
-    <string name="thread_details_participants">Participantes: %1$d</string>
-    <string name="thread_details_number">Número: %1$s</string>
+    <!-- Details side panel -->
+    <string name="details_panel_title">Detalles</string>
+    <string name="details_schedule">Programar</string>
+    <string name="details_add_to_contacts">Añadir a contactos</string>
+    <string name="details_member_count">%1$d miembros</string>
+    <string name="details_change_photo">Cambiar foto de contacto</string>
+    <string name="details_tab_photos">Fotos</string>
+    <string name="details_tab_videos">Vídeos</string>
+    <string name="details_tab_files">Archivos</string>
+    <string name="details_empty_photos">No hay fotos en esta conversación.</string>
+    <string name="details_empty_videos">No hay vídeos en esta conversación.</string>
+    <string name="details_empty_files">No hay archivos en esta conversación.</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archivadas</string>
@@ -316,10 +322,8 @@
     <string name="vault_biometric_subtitle">Confirme su identidad para abrir la carpeta privada.</string>
     <string name="vault_biometric_pending">Esperando la huella…</string>
     <!-- v1.11.0 — Sujet 5 apparence par contact -->
-    <string name="thread_overflow_appearance">Apariencia…</string>
-    <string name="appearance_dialog_title">Apariencia de la conversación</string>
+    <string name="appearance_dialog_title">Colores del chat</string>
     <string name="appearance_section_bubble_color">Color del globo enviado</string>
-    <string name="appearance_section_avatar">Imagen del contacto</string>
     <string name="appearance_pick_avatar">Elegir de la galería</string>
     <string name="appearance_reset_avatar">Usar la imagen predeterminada</string>
     <string name="appearance_saved">Apariencia actualizada</string>
@@ -1194,8 +1198,10 @@
     <string name="linked_devices_section_server">Servidor</string>
     <string name="linked_devices_section_devices">Dispositivos</string>
     <string name="linked_devices_server_title">Activar el servidor</string>
-    <string name="linked_devices_server_subtitle">Al activarlo, este dispositivo se convierte en el servidor al que se conectan los demás dispositivos</string>
-    <string name="linked_devices_server_hint">Cuando está activado, su dispositivo puede encontrar este teléfono en la red local y vincularse a él. Nada sale de su red Wi-Fi.</string>
+    <string name="linked_devices_server_subtitle">Permitir que otros dispositivos se conecten a este dispositivo.</string>
+    <string name="linked_devices_server_hint">Otros dispositivos pueden descubrir este dispositivo en su red local. Sus datos permanecen en su red Wi-Fi.</string>
+    <string name="linked_devices_encryption_title">Cifrado de extremo a extremo</string>
+    <string name="linked_devices_encryption_subtitle">La sincronización entre sus dispositivos usa TLS con un certificado fijado y claves de dispositivo Ed25519.</string>
     <string name="linked_devices_contacts_write_title">Cambiar fotos de contactos</string>
     <string name="linked_devices_contacts_write_subtitle">Permitir que un dispositivo vinculado cambie la foto de un contacto. Toque para permitirlo.</string>
     <string name="linked_devices_calls_title">Llamadas en dispositivos vinculados</string>
@@ -1233,10 +1239,11 @@
     <string name="sync_notification_text">Listo para dispositivos vinculados en esta red Wi-Fi.</string>
     <!-- Client mode — la rama de dispositivo vinculado de la pantalla de dispositivos vinculados,
          el código QR de vinculación, el cambio de modo, el aviso sin SIM y el servicio en primer plano. -->
-    <string name="client_mode_section">Modo de dispositivo</string>
+    <string name="client_mode_section">Cliente</string>
     <string name="client_this_device_section">Este dispositivo</string>
     <string name="client_link_section">Su teléfono</string>
-    <string name="client_mode_link_title">Vincular este dispositivo a otro teléfono que es el servidor</string>
+    <string name="client_mode_link_title">Vincular a otro dispositivo</string>
+    <string name="client_mode_link_subtitle">Conecte este dispositivo a otro teléfono que actúe como servidor.</string>
     <string name="client_mode_switch_back_title">Usar este dispositivo como teléfono</string>
     <string name="client_mode_switch_title">Cambiar el modo de dispositivo</string>
     <string name="client_mode_switch_to_client_body">Al cambiar se borrarán los mensajes guardados en este dispositivo. No se eliminará nada de su teléfono.</string>

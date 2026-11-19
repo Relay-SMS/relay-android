@@ -32,10 +32,10 @@ class CallStateMapperTest {
             .isEqualTo(CallEvent.Ended(number = "+15551234567", timestampMs = 2000L))
     }
 
-    @Test fun `an outgoing call has no number`() {
+    @Test fun `an outgoing call dials with no number`() {
         val mapper = CallStateMapper()
         assertThat(mapper.onState(TelephonyState.OFFHOOK, "", 1000L))
-            .isEqualTo(CallEvent.Active(number = "", timestampMs = 1000L))
+            .isEqualTo(CallEvent.Dialing(number = "", timestampMs = 1000L))
         assertThat(mapper.onState(TelephonyState.IDLE, "", 2000L))
             .isEqualTo(CallEvent.Ended(number = "", timestampMs = 2000L))
     }
@@ -84,7 +84,7 @@ class CallStateMapperTest {
         mapper.onState(TelephonyState.RINGING, "+15551234567", 1000L)
         mapper.onState(TelephonyState.IDLE, "", 2000L)
         assertThat(mapper.onState(TelephonyState.OFFHOOK, "", 3000L))
-            .isEqualTo(CallEvent.Active(number = "", timestampMs = 3000L))
+            .isEqualTo(CallEvent.Dialing(number = "", timestampMs = 3000L))
     }
 
     @Test fun `reset forgets the call in progress`() {
@@ -93,6 +93,6 @@ class CallStateMapperTest {
         mapper.reset()
         assertThat(mapper.onState(TelephonyState.IDLE, "", 2000L)).isNull()
         assertThat(mapper.onState(TelephonyState.OFFHOOK, "", 3000L))
-            .isEqualTo(CallEvent.Active(number = "", timestampMs = 3000L))
+            .isEqualTo(CallEvent.Dialing(number = "", timestampMs = 3000L))
     }
 }

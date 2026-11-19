@@ -109,7 +109,7 @@ class ClientActionSender @Inject constructor(
      * Client mode — tablet calls: sends `dial_request` and awaits
      * the hub's `dial_result` (up to 10 s). Success means the phone
      * placed the call — the off-hook transition follows as
-     * `call_state` `active`, and the audio stays on the phone.
+     * `call_state` `dialing`, and the audio stays on the phone.
      * Failure carries the hub's short error code
      * (`permission_denied`, `no_number`, `failed`) as the
      * [AppError.Validation] message, so the caller can explain it.

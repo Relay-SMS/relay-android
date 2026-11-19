@@ -87,6 +87,23 @@ interface AttachmentDao {
     )
     fun observeMediaForConversation(conversationId: Long): Flow<List<AttachmentEntity>>
 
+    /**
+     * Details panel — Files tab: every attachment that is neither a
+     * photo nor a video (documents, audio, vCards…), newest first.
+     * Same hidden-message rule as [observeMediaForConversation].
+     */
+    @Query(
+        """
+        SELECT a.* FROM attachments a
+        JOIN messages m ON m.id = a.message_id
+        WHERE m.conversation_id = :conversationId
+          AND m.hidden = 0
+          AND a.mime_type NOT LIKE 'image/%' AND a.mime_type NOT LIKE 'video/%'
+        ORDER BY m.date DESC, m.id DESC, a.id ASC
+        """,
+    )
+    fun observeFilesForConversation(conversationId: Long): Flow<List<AttachmentEntity>>
+
     @Query("DELETE FROM attachments WHERE message_id = :messageId")
     suspend fun deleteForMessage(messageId: Long)
 

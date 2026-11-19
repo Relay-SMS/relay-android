@@ -930,7 +930,10 @@ object SyncProtocol {
             /** The phone is ringing (an incoming call). */
             const val RINGING = "ringing"
 
-            /** A call is off-hook (answered, or dialed out). */
+            /** The phone dialed out (off-hook, not yet answered). */
+            const val DIALING = "dialing"
+
+            /** A call is off-hook (an incoming call answered). */
             const val ACTIVE = "active"
 
             /** The call ended (hung up, missed, or rejected). */
@@ -942,8 +945,10 @@ object SyncProtocol {
      * Client → server: place a cellular call on the phone. The
      * phone dials [number] with ACTION_CALL + CALL_PHONE and
      * answers `dial_result`. The resulting off-hook transition
-     * also arrives as `call_state` `active`, so the desktop sees
-     * its own dial land.
+     * also arrives as `call_state` `dialing`, so the desktop sees
+     * its own dial land (the answer itself comes over Bluetooth
+     * HFP, or never — Android reports no answer moment for a
+     * dialed call).
      */
     @Serializable
     data class DialRequest(

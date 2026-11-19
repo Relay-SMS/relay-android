@@ -133,13 +133,19 @@
     <string name="thread_update_contact">Update a contact</string>
     <string name="action_create_contact">Create contact</string>
     <string name="action_create_group">Create a group</string>
-    <string name="action_details">Conversation details</string>
 
-    <string name="thread_details_messages">%1$d messages</string>
-    <string name="thread_details_first">First message: %1$s</string>
-    <string name="thread_details_last">Last message: %1$s</string>
-    <string name="thread_details_participants">Participants: %1$d</string>
-    <string name="thread_details_number">Number: %1$s</string>
+    <!-- Details side panel -->
+    <string name="details_panel_title">Details</string>
+    <string name="details_schedule">Schedule</string>
+    <string name="details_add_to_contacts">Add to contacts</string>
+    <string name="details_member_count">%1$d members</string>
+    <string name="details_change_photo">Change contact photo</string>
+    <string name="details_tab_photos">Photos</string>
+    <string name="details_tab_videos">Videos</string>
+    <string name="details_tab_files">Files</string>
+    <string name="details_empty_photos">No photos in this conversation.</string>
+    <string name="details_empty_videos">No videos in this conversation.</string>
+    <string name="details_empty_files">No files in this conversation.</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archived</string>
@@ -315,10 +321,8 @@
     <string name="vault_biometric_subtitle">Confirm your identity to open the private folder.</string>
     <string name="vault_biometric_pending">Waiting for fingerprint…</string>
     <!-- v1.11.0 — Sujet 5 apparence par contact -->
-    <string name="thread_overflow_appearance">Appearance…</string>
-    <string name="appearance_dialog_title">Conversation appearance</string>
+    <string name="appearance_dialog_title">Chat colors</string>
     <string name="appearance_section_bubble_color">Outgoing bubble color</string>
-    <string name="appearance_section_avatar">Contact avatar</string>
     <string name="appearance_pick_avatar">Choose from gallery</string>
     <string name="appearance_reset_avatar">Use default avatar</string>
     <string name="appearance_saved">Appearance updated</string>
@@ -1183,8 +1187,10 @@
     <string name="linked_devices_section_server">Server</string>
     <string name="linked_devices_section_devices">Devices</string>
     <string name="linked_devices_server_title">Enable server</string>
-    <string name="linked_devices_server_subtitle">Enabling this sets this device to be the server other devices connect to</string>
-    <string name="linked_devices_server_hint">When on, your device can find this phone on the local network and link to it. Nothing leaves your Wi-Fi network.</string>
+    <string name="linked_devices_server_subtitle">Allow other devices to connect to this device.</string>
+    <string name="linked_devices_server_hint">Other devices can discover this device on your local network. Your data stays on your Wi-Fi network.</string>
+    <string name="linked_devices_encryption_title">End-to-end encrypted</string>
+    <string name="linked_devices_encryption_subtitle">Sync between your devices uses TLS with a pinned certificate and Ed25519 device keys.</string>
     <string name="linked_devices_contacts_write_title">Contact photo changes</string>
     <string name="linked_devices_contacts_write_subtitle">Let a linked device set a contact\'s photo. Tap to allow.</string>
     <string name="linked_devices_calls_title">Calls on linked devices</string>
@@ -1222,10 +1228,11 @@
     <string name="sync_notification_text">Ready for linked devices on this Wi-Fi network.</string>
     <!-- Client mode — the linked-device branch of the Linked devices screen, the pairing QR,
          the mode switch, the no-SIM nudge, and the client foreground service. -->
-    <string name="client_mode_section">Device mode</string>
+    <string name="client_mode_section">Client</string>
     <string name="client_this_device_section">This device</string>
     <string name="client_link_section">Your phone</string>
-    <string name="client_mode_link_title">Link this device to another phone that is the server</string>
+    <string name="client_mode_link_title">Link to another device</string>
+    <string name="client_mode_link_subtitle">Connect this device to another phone acting as a server.</string>
     <string name="client_mode_switch_back_title">Use this device as a phone</string>
     <string name="client_mode_switch_title">Switch device mode</string>
     <string name="client_mode_switch_to_client_body">Switching clears the messages stored on this device. Nothing is deleted from your phone.</string>

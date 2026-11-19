@@ -150,8 +150,12 @@ internal fun MediaGalleryContent(
     }
 }
 
+/**
+ * Shared with the details panel: the same tile, its download badge and its
+ * tap-to-download behaviour, laid out in the panel's media rows.
+ */
 @Composable
-private fun MediaTile(
+internal fun MediaTile(
     attachment: Attachment,
     onClick: () -> Unit,
     downloadState: ClientDownloadState? = null,

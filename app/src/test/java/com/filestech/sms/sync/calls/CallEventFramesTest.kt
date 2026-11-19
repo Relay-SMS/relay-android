@@ -30,6 +30,17 @@ class CallEventFramesTest {
         assertThat(state["number"]?.jsonPrimitive?.content).isEqualTo("+15551234567")
     }
 
+    @Test fun `dialing encodes one call_state dialing`() {
+        val frames = encodeCallEventFrames(
+            CallEvent.Dialing(number = "", timestampMs = 1794000001000L),
+        )
+        assertThat(frames).hasSize(1)
+        val state = Json.parseToJsonElement(frames.first()).jsonObject
+        assertThat(state["type"]?.jsonPrimitive?.content).isEqualTo("call_state")
+        assertThat(state["state"]?.jsonPrimitive?.content).isEqualTo("dialing")
+        assertThat(state["number"]?.jsonPrimitive?.content).isEqualTo("")
+    }
+
     @Test fun `active encodes one call_state active`() {
         val frames = encodeCallEventFrames(
             CallEvent.Active(number = "+15551234567", timestampMs = 1794000001000L),

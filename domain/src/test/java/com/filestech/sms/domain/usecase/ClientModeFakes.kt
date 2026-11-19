@@ -195,6 +195,7 @@ internal class FakeConversationRepository(
         flowOf(emptyList())
 
     override fun observeMedia(conversationId: Long): Flow<List<Attachment>> = flowOf(emptyList())
+    override fun observeFiles(conversationId: Long): Flow<List<Attachment>> = flowOf(emptyList())
     override fun observeUnreadConversationCount(): Flow<Int> = flowOf(0)
     override suspend fun findOrCreate(addresses: List<PhoneAddress>): Outcome<Conversation> =
         TODO("not needed by this test")

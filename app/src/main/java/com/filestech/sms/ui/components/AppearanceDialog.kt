@@ -1,10 +1,5 @@
 package com.filestech.sms.ui.components
 
-import android.content.Intent
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,22 +8,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -50,99 +39,34 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.filestech.sms.R
 import com.filestech.sms.ui.theme.BubbleColorPalette
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.onBrandBlue
-import timber.log.Timber
 
 /**
- * v1.11.0 — Sujet 5 apparence : dialog "Personnaliser l'apparence" pour
- * une conversation. Permet à l'utilisateur de :
- *  - choisir une couleur de bulle sortante parmi [BubbleColorPalette.OPTIONS]
- *    (palette WCAG-safe, pas de free picker pour garantir contraste blanc)
- *  - choisir un avatar custom via le `PickVisualMedia` système (galerie ou
- *    fichier image), persisté en `content://` URI via
- *    `takePersistableUriPermission`
- *  - réinitialiser (couleur = null + avatar = null) pour revenir au défaut
+ * Chat colors — the per-conversation outgoing-bubble colour picker,
+ * the desktop picker's mobile twin (same name, same swatch
+ * presentation). The user picks one of [BubbleColorPalette.OPTIONS]
+ * (a WCAG-safe palette, no free picker, so white text always
+ * contrasts); BRAND_BLUE means "default" and saves as `null`.
  *
- * **Politique d'URI persistante** : on demande `FLAG_GRANT_READ_URI_PERMISSION`
- * + `takePersistableUriPermission` lors du pick pour que l'URI reste lisible
- * après reboot device. Sinon Android révoque l'accès au prochain process
- * restart et l'avatar devient un `Icons.Outlined.BrokenImage` silencieux.
- *
- * **Limites acceptées** :
- *  - Si l'user déplace/supprime l'image source dans sa galerie, le rendu
- *    Coil échoue silencieusement → fallback au contact natif. Pas de copie
- *    en interne pour rester minimal et FLOSS-friendly (pas de FileProvider).
- *  - Pas de crop. L'image est rendue dans un cercle `CircleShape` avec
- *    `ContentScale.Crop` automatique par Coil.
+ * The contact avatar used to live here too (v1.11.0); it moved to
+ * the camera badge on the details side panel's avatar, which owns
+ * the gallery pick + persistable-URI flow now.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppearanceDialog(
     currentBubbleColorArgb: Int?,
-    currentAvatarUri: String?,
     onDismiss: () -> Unit,
-    onConfirm: (bubbleColorArgb: Int?, avatarUri: String?) -> Unit,
+    onConfirm: (bubbleColorArgb: Int?) -> Unit,
 ) {
-    val ctx = LocalContext.current
     val palette = BubbleColorPalette.OPTIONS
     // BRAND_BLUE en première position = sélection équivalente à reset (null
     // → bleu marque). On normalise le state local au défaut si current=null.
     var pickedColor by remember(currentBubbleColorArgb) {
         mutableStateOf(currentBubbleColorArgb?.let { Color(it) } ?: BubbleColorPalette.BRAND_BLUE)
-    }
-    var pickedAvatarUri by remember(currentAvatarUri) {
-        mutableStateOf(currentAvatarUri)
-    }
-
-    // Picker avatar : retourne Uri? (null si l'user annule).
-    val avatarPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val newUriStr = uri.toString()
-            // v1.11.0 audit SEC-V3 — persister la permission READ avant TOUT
-            // changement d'état. Si le take échoue (provider révoqué entre
-            // pick et take, PhotoPicker scope-restricted Android 14+), on
-            // NE stocke PAS l'URI : sinon Room contient une URI invalide,
-            // Coil échoue silencieusement, l'user croit avoir un avatar
-            // configuré mais ne voit que le fallback. Mieux vaut signaler
-            // l'échec en gardant l'ancien (ou null) que polluer la DB.
-            val takeResult = runCatching {
-                ctx.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }
-            if (takeResult.isFailure) {
-                Timber.w(
-                    takeResult.exceptionOrNull(),
-                    "AppearanceDialog: takePersistableUriPermission failed for %s — keeping previous avatar",
-                    uri,
-                )
-                return@rememberLauncherForActivityResult
-            }
-            // v1.11.0 audit S6 — release l'ANCIENNE URI persisted APRÈS la
-            // prise réussie de la nouvelle (anti-accumulation grants). Ordre
-            // important : si le take réussit mais le release échoue, on a
-            // un grant en plus mais l'avatar fonctionne. L'inverse (release
-            // d'abord) laisserait potentiellement l'user sans avatar si le
-            // take échouait après.
-            pickedAvatarUri?.let { oldStr ->
-                if (oldStr != newUriStr) {
-                    runCatching {
-                        ctx.contentResolver.releasePersistableUriPermission(
-                            Uri.parse(oldStr),
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    }
-                }
-            }
-            pickedAvatarUri = newUriStr
-        }
     }
 
     AlertDialog(
@@ -150,7 +74,6 @@ fun AppearanceDialog(
         title = { Text(stringResource(R.string.appearance_dialog_title)) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // ─── Section couleur bulle ───
                 Text(
                     text = stringResource(R.string.appearance_section_bubble_color),
                     style = MaterialTheme.typography.titleSmall,
@@ -183,56 +106,6 @@ fun AppearanceDialog(
                         )
                     }
                 }
-                Spacer(Modifier.height(20.dp))
-
-                // ─── Section avatar ───
-                Text(
-                    text = stringResource(R.string.appearance_section_avatar),
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AvatarPreview(uri = pickedAvatarUri)
-                    Spacer(Modifier.size(16.dp))
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            shape = RoundedCornerShape(50),
-                            onClick = {
-                                avatarPicker.launch(
-                                    PickVisualMediaRequest(
-                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                    ),
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(Icons.Outlined.Image, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text(stringResource(R.string.appearance_pick_avatar))
-                        }
-                        if (pickedAvatarUri != null) {
-                            Spacer(Modifier.height(4.dp))
-                            TextButton(
-                                shape = RoundedCornerShape(50),
-                                onClick = {
-                                    // Release la persistable permission pour ne pas
-                                    // accumuler les permissions inutiles côté provider.
-                                    pickedAvatarUri?.let { uriStr ->
-                                        runCatching {
-                                            ctx.contentResolver.releasePersistableUriPermission(
-                                                Uri.parse(uriStr),
-                                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                                            )
-                                        }
-                                    }
-                                    pickedAvatarUri = null
-                                },
-                            ) {
-                                Text(stringResource(R.string.appearance_reset_avatar))
-                            }
-                        }
-                    }
-                }
             }
         },
         confirmButton = {
@@ -246,7 +119,7 @@ fun AppearanceDialog(
                     } else {
                         pickedColor.toArgb()
                     }
-                    onConfirm(argbToSave, pickedAvatarUri)
+                    onConfirm(argbToSave)
                 },
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(
@@ -321,31 +194,3 @@ private fun ColorChip(
         }
     }
 }
-
-@Composable
-private fun AvatarPreview(uri: String?) {
-    val cs = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .background(cs.surfaceVariant, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (uri != null) {
-            AsyncImage(
-                model = uri,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(cs.surfaceVariant, CircleShape),
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Outlined.Image,
-                contentDescription = null,
-                tint = cs.onSurfaceVariant,
-            )
-        }
-    }
-}
-

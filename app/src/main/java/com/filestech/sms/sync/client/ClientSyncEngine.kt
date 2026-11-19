@@ -416,7 +416,7 @@ class ClientSyncEngine @Inject constructor(
     /**
      * Client mode — tablet calls: this device asked the hub to dial
      * [number]. Shows the outgoing state at once — the phone's
-     * `call_state` follows (`active` when the dial lands, `ended`
+     * `call_state` follows (`dialing` when the dial lands, `ended`
      * when it is over). Called BEFORE the frame goes out, so the
      * state is visible while the dial is still in flight.
      */
@@ -1207,8 +1207,10 @@ class ClientSyncEngine @Inject constructor(
      * `ringing` shows the popup even when `incoming_call` never
      * arrived (a frame dropped, or a reconnect mid-ring);
      * `active` moves the tracked call off-hook (an incoming call
-     * answered elsewhere, or our own dial landing); `ended`
-     * dismisses it. An `active` with no tracked call is ignored —
+     * answered elsewhere); `dialing` moves it off-hook too — the
+     * tablet never has Bluetooth, so the hub's dial signal is the
+     * only "our own dial landed" it gets; `ended` dismisses it.
+     * An `active`/`dialing` with no tracked call is ignored —
      * a call dialed or answered on the phone itself is nothing to
      * show on the tablet. A blank number keeps the tracked number
      * (the platform reports no number off-hook).
@@ -1225,7 +1227,9 @@ class ClientSyncEngine @Inject constructor(
                 )
             }
 
-            SyncProtocol.CallState.ACTIVE -> updateUi {
+            SyncProtocol.CallState.DIALING,
+            SyncProtocol.CallState.ACTIVE,
+            -> updateUi {
                 val current = it.call ?: return@updateUi it
                 it.copy(
                     call = current.copy(

@@ -27,7 +27,20 @@ sealed interface CallEvent {
         override val timestampMs: Long,
     ) : CallEvent
 
-    /** A call went off-hook: the user answered, or dialed out. */
+    /**
+     * The phone went off-hook on an outgoing call (idle straight to
+     * off-hook) — the dial is out, but the other person has not
+     * answered yet. Android reports no answer moment for a dialed
+     * call (off-hook covers dialing and talking alike), so the
+     * desktops learn the answer from Bluetooth HFP instead; without
+     * it they treat the dial as connected, the best available.
+     */
+    data class Dialing(
+        override val number: String,
+        override val timestampMs: Long,
+    ) : CallEvent
+
+    /** A call went off-hook on an answered incoming call. */
     data class Active(
         override val number: String,
         override val timestampMs: Long,

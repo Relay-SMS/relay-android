@@ -40,8 +40,9 @@ fun Avatar(
     sizeDp: Int = 44,
     /**
      * v1.11.0 — Sujet 5 apparence : URI `content://` d'un avatar custom posé
-     * par l'user via [com.filestech.sms.ui.components.AppearanceDialog]. Si
-     * non-null, AsyncImage Coil rend l'image au lieu du gradient initiales.
+     * par l'user via le badge appareil photo de l'avatar du panneau latéral
+     * de détails. Si non-null, AsyncImage Coil rend l'image au lieu du
+     * gradient initiales.
      * Si l'URI est inaccessible (révoquée, fichier supprimé), Coil échoue
      * silencieusement et on garde le placeholder ; le rendu reste défensif.
      */

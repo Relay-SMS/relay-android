@@ -1399,6 +1399,38 @@ class ClientSyncEngineTest {
         )
     }
 
+    @Test fun `call_state dialing marks the dialed call active`() = runTest {
+        // The tablet dialed; the hub's off-hook transition arrives
+        // as `dialing` (no Bluetooth on a tablet, so this is the
+        // only "the dial landed" signal it gets).
+        val h = harness()
+        runCurrent()
+        h.engine.noteDialRequested("+33612345678")
+        advanceUntilIdle()
+        assertThat(h.engine.ui.value.call?.phase).isEqualTo(ClientCallPhase.DIALING)
+
+        h.channel.emit(
+            ServerFrame.CallState(SyncProtocol.CallState(SyncProtocol.CallState.DIALING, "")),
+        )
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isEqualTo(
+            ClientCallState("+33612345678", incoming = false, phase = ClientCallPhase.ACTIVE),
+        )
+    }
+
+    @Test fun `call_state dialing without a call is ignored`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.channel.emit(
+            ServerFrame.CallState(SyncProtocol.CallState(SyncProtocol.CallState.DIALING, "")),
+        )
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isNull()
+    }
+
     @Test fun `call_state active without a call is ignored`() = runTest {
         val h = harness()
         runCurrent()

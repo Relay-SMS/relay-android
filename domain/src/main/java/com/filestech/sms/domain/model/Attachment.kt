@@ -26,4 +26,5 @@ data class Attachment(
 ) {
     val isAudio: Boolean get() = mimeType.startsWith("audio/", ignoreCase = true)
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)
+    val isVideo: Boolean get() = mimeType.startsWith("video/", ignoreCase = true)
 }

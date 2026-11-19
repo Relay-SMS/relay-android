@@ -132,14 +132,19 @@
     <string name="thread_update_contact">Kontakt aktualisieren</string>
     <string name="action_create_contact">Kontakt erstellen</string>
     <string name="action_create_group">Gruppe erstellen</string>
-    <string name="action_details">Details der Unterhaltung</string>
 
-
-    <string name="thread_details_messages">%1$d Nachrichten</string>
-    <string name="thread_details_first">Erste Nachricht: %1$s</string>
-    <string name="thread_details_last">Letzte Nachricht: %1$s</string>
-    <string name="thread_details_participants">Teilnehmer: %1$d</string>
-    <string name="thread_details_number">Nummer: %1$s</string>
+    <!-- Details side panel -->
+    <string name="details_panel_title">Details</string>
+    <string name="details_schedule">Planen</string>
+    <string name="details_add_to_contacts">Zu Kontakten hinzufügen</string>
+    <string name="details_member_count">%1$d Mitglieder</string>
+    <string name="details_change_photo">Kontaktfoto ändern</string>
+    <string name="details_tab_photos">Fotos</string>
+    <string name="details_tab_videos">Videos</string>
+    <string name="details_tab_files">Dateien</string>
+    <string name="details_empty_photos">Keine Fotos in dieser Unterhaltung.</string>
+    <string name="details_empty_videos">Keine Videos in dieser Unterhaltung.</string>
+    <string name="details_empty_files">Keine Dateien in dieser Unterhaltung.</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archiviert</string>
@@ -315,10 +320,8 @@
     <string name="vault_biometric_subtitle">Bestätigen Sie Ihre Identität, um den privaten Ordner zu öffnen.</string>
     <string name="vault_biometric_pending">Warten auf Fingerabdruck…</string>
     <!-- v1.11.0 — Sujet 5 apparence par contact -->
-    <string name="thread_overflow_appearance">Darstellung…</string>
-    <string name="appearance_dialog_title">Darstellung der Unterhaltung</string>
+    <string name="appearance_dialog_title">Chatfarben</string>
     <string name="appearance_section_bubble_color">Farbe der gesendeten Sprechblase</string>
-    <string name="appearance_section_avatar">Kontaktbild</string>
     <string name="appearance_pick_avatar">Aus der Galerie wählen</string>
     <string name="appearance_reset_avatar">Standardbild verwenden</string>
     <string name="appearance_saved">Darstellung aktualisiert</string>
@@ -1168,8 +1171,10 @@
     <string name="linked_devices_section_server">Server</string>
     <string name="linked_devices_section_devices">Geräte</string>
     <string name="linked_devices_server_title">Server aktivieren</string>
-    <string name="linked_devices_server_subtitle">Wenn Sie dies aktivieren, wird dieses Gerät zum Server, mit dem sich andere Geräte verbinden</string>
-    <string name="linked_devices_server_hint">Wenn aktiviert, kann Ihr Gerät dieses Telefon im lokalen Netzwerk finden und sich damit verknüpfen. Nichts verlässt Ihr WLAN.</string>
+    <string name="linked_devices_server_subtitle">Anderen Geräten erlauben, sich mit diesem Gerät zu verbinden.</string>
+    <string name="linked_devices_server_hint">Andere Geräte können dieses Gerät in Ihrem lokalen Netzwerk finden. Ihre Daten bleiben in Ihrem WLAN.</string>
+    <string name="linked_devices_encryption_title">Ende-zu-Ende verschlüsselt</string>
+    <string name="linked_devices_encryption_subtitle">Die Synchronisierung zwischen Ihren Geräten nutzt TLS mit einem gepinnten Zertifikat und Ed25519-Geräteschlüsseln.</string>
     <string name="linked_devices_contacts_write_title">Kontaktfotos ändern</string>
     <string name="linked_devices_contacts_write_subtitle">Einem verknüpften Gerät erlauben, das Foto eines Kontakts zu ändern. Zum Erlauben tippen.</string>
     <string name="linked_devices_calls_title">Anrufe auf verknüpften Geräten</string>
@@ -1207,10 +1212,11 @@
     <string name="sync_notification_text">Bereit für verknüpfte Geräte in diesem WLAN.</string>
     <!-- Client mode — der Zweig für verknüpfte Geräte im Bildschirm „Verknüpfte Geräte“, der
          Kopplungs-QR-Code, der Moduswechsel, der Hinweis ohne SIM und der Vordergrunddienst. -->
-    <string name="client_mode_section">Gerätemodus</string>
+    <string name="client_mode_section">Client</string>
     <string name="client_this_device_section">Dieses Gerät</string>
     <string name="client_link_section">Ihr Telefon</string>
-    <string name="client_mode_link_title">Dieses Gerät mit einem anderen Telefon verknüpfen, das der Server ist</string>
+    <string name="client_mode_link_title">Mit einem anderen Gerät verknüpfen</string>
+    <string name="client_mode_link_subtitle">Dieses Gerät mit einem anderen Telefon verbinden, das als Server fungiert.</string>
     <string name="client_mode_switch_back_title">Dieses Gerät als Telefon verwenden</string>
     <string name="client_mode_switch_title">Gerätemodus wechseln</string>
     <string name="client_mode_switch_to_client_body">Beim Wechsel werden die auf diesem Gerät gespeicherten Nachrichten gelöscht. Auf Ihrem Telefon wird nichts gelöscht.</string>

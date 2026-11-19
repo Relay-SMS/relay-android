@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Contacts
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -413,6 +414,20 @@ private fun LinkedDevicesList(
                             onCheckedChange = onToggleServer,
                         )
                     }
+                    // The device link is encrypted end to end (TLS with
+                    // a pinned certificate + Ed25519 device keys, no
+                    // server in the middle on the local network) —
+                    // stated here so it is visible on the page that
+                    // manages the link. It says nothing about the
+                    // messages' trip to the other person: SMS/MMS
+                    // travel the carrier network as plain text.
+                    item {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.Lock,
+                            title = stringResource(R.string.linked_devices_encryption_title),
+                            subtitle = stringResource(R.string.linked_devices_encryption_subtitle),
+                        )
+                    }
                     // Round 3, item 9 — WRITE_CONTACTS, so a linked
                     // device can set a contact's photo (the camera
                     // badge on the desktop detail pane). The grant
@@ -518,6 +533,7 @@ private fun LinkedDevicesList(
                     RelaySettingRow(
                         icon = Icons.Outlined.Link,
                         title = stringResource(R.string.client_mode_link_title),
+                        subtitle = stringResource(R.string.client_mode_link_subtitle),
                         chevron = true,
                     )
                 }
@@ -746,6 +762,16 @@ private fun ClientLinkedDevicesList(
                                 title = link.hubName
                                     ?: stringResource(R.string.linked_devices_kind_phone),
                                 subtitle = linkStatusText(connectionState),
+                            )
+                        }
+                        // The device link is encrypted end to end —
+                        // same row as the hub branch (see the server
+                        // group above for what the claim covers).
+                        item {
+                            RelaySettingRow(
+                                icon = Icons.Outlined.Lock,
+                                title = stringResource(R.string.linked_devices_encryption_title),
+                                subtitle = stringResource(R.string.linked_devices_encryption_subtitle),
                             )
                         }
                         // Removed: the hub deleted this device, so the QR

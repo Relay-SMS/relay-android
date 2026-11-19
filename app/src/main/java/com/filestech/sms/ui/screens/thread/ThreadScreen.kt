@@ -61,21 +61,12 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.PersonSearch
-import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
@@ -186,7 +177,6 @@ import com.filestech.sms.ui.theme.BrandDanger
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.MessageTextSize
 import com.filestech.sms.ui.theme.RelayText
-import com.filestech.sms.ui.theme.blockedTextColor
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.brandBluePressed
 import com.filestech.sms.ui.theme.onBrandBlue
@@ -230,7 +220,6 @@ fun ThreadScreen(
      * .ComposeScreen] which then funnels back into a thread once a contact is picked.
      */
     onForwardToNewContact: () -> Unit = {},
-    onOpenMedia: () -> Unit = {},
     viewModel: ThreadViewModel = hiltViewModel(),
 ) {
     // Client mode — tablet calls: the dial + call-state ViewModel,
@@ -358,11 +347,10 @@ fun ThreadScreen(
     // open through `consumeIncomingShareIfAny`.
     var forwardingMessage by remember { mutableStateOf<Message?>(null) }
 
-    var menuOpen by remember { mutableStateOf(false) }
-    var detailsOpen by remember { mutableStateOf(false) }
-    // v1.11.0 — Sujet 5 apparence : dialog ouvert depuis l'overflow menu.
+    var detailsPanelOpen by remember { mutableStateOf(false) }
+    // v1.11.0 — Sujet 5 apparence : dialog ouvert depuis le panneau latéral de détails.
     var appearanceOpen by remember { mutableStateOf(false) }
-    // v1.28.3 — nommer le groupe (menu du fil).
+    // v1.28.3 — nommer le groupe (panneau latéral de détails).
     var renameOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Message?>(null) }
     // Round 17 — unpin confirmation: non-null = the "Remove the pin?"
@@ -1016,72 +1004,11 @@ fun ThreadScreen(
                         viewModel.requestCall()
                     }
                 },
-                onDetails = { detailsOpen = true },
+                // The ⋮ opens the details side panel directly (no
+                // overflow menu any more) — same as tapping the name.
+                onDetails = { detailsPanelOpen = true },
                 onSearchClick = { threadSearchOpen = true },
-                onMoreClick = { menuOpen = true },
-                menu = {
-                    ThreadActionsMenu(
-                        expanded = menuOpen,
-                        hasContact = state.hasContact,
-                        isExporting = state.isExporting,
-                        canExport = state.messages.isNotEmpty(),
-                        // v1.12.0 — vault overflow item, masqué en PanicDecoy.
-                        inVault = state.conversation?.inVault == true,
-                        onMoveVault = if (state.isPanicDecoy) null else {
-                            {
-                                menuOpen = false
-                                viewModel.moveCurrentConversationToVault(
-                                    intoVault = state.conversation?.inVault != true,
-                                )
-                            }
-                        },
-                        onDismiss = { menuOpen = false },
-                        onCreateContact = { menuOpen = false; viewModel.requestCreateContact() },
-                        onAddContact = { menuOpen = false; viewModel.requestAddContact() },
-                        onDetails = { menuOpen = false; detailsOpen = true },
-                        onMedia = { menuOpen = false; onOpenMedia() },
-                        onExportPdf = { menuOpen = false; viewModel.exportToPdf() },
-                        onAppearance = { menuOpen = false; appearanceOpen = true },
-                        isGroup = state.conversation?.isGroup == true,
-                        // Client mode C3 — Schedule and Block are wired
-                        // on a linked device (wire frames); Rename and
-                        // Delete stay hidden (no rename frame — a local
-                        // rename would be overwritten by the next sync;
-                        // no delete frame at all).
-                        isClientMode = state.isClientMode,
-                        hubActions = if (state.isClientMode) {
-                            ThreadHubActions(
-                                onRename = null,
-                                onBlock = { menuOpen = false; askBlock = true },
-                                onDelete = null,
-                                canSchedule = state.draft.isNotBlank() || state.pendingAttachments.isNotEmpty(),
-                                onScheduleSend = {
-                                    menuOpen = false
-                                    scheduleStep = "date"
-                                },
-                            )
-                        } else {
-                            ThreadHubActions(
-                                onRename = { menuOpen = false; renameOpen = true },
-                                onBlock = { menuOpen = false; askBlock = true },
-                                onDelete = { menuOpen = false; askDelete = true },
-                                // v1.15.1 — Programmer le draft pour plus tard. Grisé tant qu'il
-                                // n'y a rien à programmer — évite le tunnel date/heure → snackbar
-                                // "Tape un message avant" frustrant.
-                                // v1.26.0 — une pièce jointe suffit désormais, même sans texte : un MMS
-                                // ne portant qu'une image est un envoi normal, et la programmation les
-                                // transporte maintenant. Auparavant ce test ne regardait que le texte, si
-                                // bien qu'on pouvait programmer un message avec photo et voir partir le
-                                // texte seul.
-                                canSchedule = state.draft.isNotBlank() || state.pendingAttachments.isNotEmpty(),
-                                onScheduleSend = {
-                                    menuOpen = false
-                                    scheduleStep = "date"
-                                },
-                            )
-                        },
-                    )
-                },
+                onMoreClick = { detailsPanelOpen = true },
             )
                 }
                 AnimatedVisibility(
@@ -1883,28 +1810,89 @@ fun ThreadScreen(
     // de PJ qu'il veut, écrit éventuellement du texte, et tape Envoyer une seule fois
     // pour tout dispatcher en 1 MMS multipart.
 
-    if (detailsOpen) {
-        ConversationDetailsDialog(
-            title = title,
-            // v1.22.x — numéro affiché uniquement pour une conversation 1-to-1 (une seule
-            // adresse). `singleOrNull` renvoie null pour un groupe → pas de ligne numéro.
-            phoneNumber = state.conversation?.addresses?.singleOrNull()?.raw,
-            participants = state.conversation?.addresses?.size ?: 0,
-            messages = state.messageCount,
-            firstAt = state.firstMessageAt,
-            lastAt = state.lastMessageAt,
-            formatters = formatters,
-            onDismiss = { detailsOpen = false },
-        )
+    // Details side panel (replaces the old stats dialog): big avatar,
+    // action rows, group members, and the Photos / Videos / Files tabs.
+    // The panel keeps its own media ViewModel; everything else here is
+    // the same flows the old overflow menu wired.
+    if (detailsPanelOpen) {
+        val detailsConversation = state.conversation
+        if (detailsConversation != null) {
+            com.filestech.sms.ui.screens.details.ConversationDetailsPanel(
+                conversation = detailsConversation,
+                title = title,
+                subtitleNumber = headerSubtitleNumber,
+                contactPhotoUri = state.contactPhotoUri,
+                isUnknownContact = !detailsConversation.isGroup &&
+                    detailsConversation.displayName == null,
+                memberNames = state.memberNames,
+                showAddToContacts = !detailsConversation.isGroup &&
+                    !state.hasContact && !state.isClientMode,
+                // v1.15.1 — Programmer le draft pour plus tard. Grisé tant qu'il
+                // n'y a rien à programmer — évite le tunnel date/heure → snackbar
+                // "Tape un message avant" frustrant.
+                // v1.26.0 — une pièce jointe suffit désormais, même sans texte : un MMS
+                // ne portant qu'une image est un envoi normal, et la programmation les
+                // transporte maintenant. Auparavant ce test ne regardait que le texte, si
+                // bien qu'on pouvait programmer un message avec photo et voir partir le
+                // texte seul.
+                canSchedule = state.draft.isNotBlank() ||
+                    state.pendingAttachments.isNotEmpty(),
+                canExport = state.messages.isNotEmpty(),
+                isExporting = state.isExporting,
+                actions = com.filestech.sms.ui.screens.details.ConversationDetailsActions(
+                    onSchedule = { scheduleStep = "date" },
+                    onExportPdf = { viewModel.exportToPdf() },
+                    onChatColors = { appearanceOpen = true },
+                    onBlock = { askBlock = true },
+                    // Client mode C3 — Schedule and Block are wired
+                    // on a linked device (wire frames); Rename and
+                    // Delete stay hidden (no rename frame — a local
+                    // rename would be overwritten by the next sync;
+                    // no delete frame at all).
+                    onDelete = if (state.isClientMode) {
+                        null
+                    } else {
+                        { askDelete = true }
+                    },
+                    onRename = if (state.isClientMode) {
+                        null
+                    } else {
+                        { renameOpen = true }
+                    },
+                    onCreateContact = { viewModel.requestCreateContact() },
+                    onAddContact = { viewModel.requestAddContact() },
+                    // v1.12.0 — vault row, hidden in PanicDecoy.
+                    onMoveVault = if (state.isPanicDecoy) {
+                        null
+                    } else {
+                        {
+                            viewModel.moveCurrentConversationToVault(
+                                intoVault = state.conversation?.inVault != true,
+                            )
+                        }
+                    },
+                    // The panel only changes the avatar — the bubble
+                    // colour passes through untouched.
+                    onSetAvatar = { uri ->
+                        viewModel.setAppearance(
+                            state.conversation?.bubbleColorArgb,
+                            uri,
+                        )
+                    },
+                ),
+                onDismiss = { detailsPanelOpen = false },
+            )
+        }
     }
-    // v1.11.0 — Sujet 5 apparence : dialog couleur bulle + avatar.
+    // v1.11.0 — Sujet 5 apparence : dialog couleur bulle (Chat colors).
     if (appearanceOpen) {
         com.filestech.sms.ui.components.AppearanceDialog(
             currentBubbleColorArgb = state.conversation?.bubbleColorArgb,
-            currentAvatarUri = state.conversation?.avatarUri,
             onDismiss = { appearanceOpen = false },
-            onConfirm = { color, avatar ->
-                viewModel.setAppearance(color, avatar)
+            onConfirm = { color ->
+                // The dialog only changes the colour — the avatar
+                // passes through untouched.
+                viewModel.setAppearance(color, state.conversation?.avatarUri)
                 appearanceOpen = false
             },
         )
@@ -2193,8 +2181,8 @@ private fun PinnedMessageBanner(
  * on-surface) + 37dp avatar + name; the search, call and ⋮ glyphs are 24dp
  * on-surface-variant, and the ⋮ uses `ic_more_vert_tall` so its DRAWN height
  * (19.4dp) matches the search and call glyphs. The 36dp hit areas leave the
- * ⋮ centre 27dp from the edge, like the home screen. Tapping the avatar or
- * the name opens the conversation details; the overflow menu is unchanged.
+ * ⋮ centre 27dp from the edge, like the home screen. Tapping the avatar,
+ * the name, or the ⋮ opens the details side panel.
  */
 @Composable
 private fun ThreadHeader(
@@ -2210,8 +2198,8 @@ private fun ThreadHeader(
     onDetails: () -> Unit,
     /** Feedback round 5 — opens the in-conversation search pill. */
     onSearchClick: () -> Unit,
+    /** The ⋮ opens the details side panel directly (no overflow menu). */
     onMoreClick: () -> Unit,
-    menu: @Composable () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     Column(
@@ -2320,14 +2308,14 @@ private fun ThreadHeader(
                 // Feedback round 6 — 5dp between the search and the call
                 // icon, so the magnifier sits a touch further left.
                 Spacer(Modifier.width(5.dp))
-                // Feedback round 10 — Kristin's solid call icon
-                // (`ic_call_solid`, solid handset) replaces the outline
-                // handset. Tinted on-surface-variant at the call site,
-                // like the search magnifier and the ⋮ next to it. The call
-                // action itself is unchanged. The 22dp size is kept:
-                // the solid glyph fills its 19x19 viewBox like the
-                // outline did, so it renders at the same ~50px as the
-                // search and ⋮ glyphs. The 36dp touch box is unchanged.
+                // The outlined call icon (`ic_call_outline`, outline
+                // handset), like the desktop thread header. Tinted
+                // on-surface-variant at the call site, like the search
+                // magnifier and the ⋮ next to it. The call action
+                // itself is unchanged. The 22dp size is kept: the
+                // outline glyph fills its 19x19 viewBox, so it
+                // renders at the same ~50px as the search and ⋮
+                // glyphs. The 36dp touch box is unchanged.
                 Box(
                     modifier = Modifier
                         // Feedback round 5 — 44dp -> 36dp, as the search box.
@@ -2338,7 +2326,7 @@ private fun ThreadHeader(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_call_solid),
+                        painter = painterResource(R.drawable.ic_call_outline),
                         contentDescription = stringResource(R.string.action_call),
                         tint = cs.onSurfaceVariant,
                         modifier = Modifier.size(22.dp),
@@ -2364,7 +2352,6 @@ private fun ThreadHeader(
                     tint = cs.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
                 )
-                menu()
             }
         }
     }
@@ -2469,254 +2456,6 @@ private fun ThreadSearchHeader(
             }
         }
     }
-}
-
-/**
- * Client mode C2 — the overflow actions that write to the hub
- * (schedule, rename, block, delete). Null on a linked device: the
- * menu hides them instead of offering writes the next sync would
- * revert (no write-back frames in C2).
- */
-private data class ThreadHubActions(
-    val canSchedule: Boolean,
-    val onScheduleSend: () -> Unit,
-    /** Client mode C3 — null on a linked device (no rename frame). */
-    val onRename: (() -> Unit)?,
-    val onBlock: () -> Unit,
-    /** Client mode C3 — null on a linked device (no delete frame). */
-    val onDelete: (() -> Unit)?,
-)
-
-@Composable
-private fun ThreadActionsMenu(
-    expanded: Boolean,
-    hasContact: Boolean,
-    isExporting: Boolean,
-    canExport: Boolean,
-    // v1.12.0 — vault move-in/out via overflow ; `null` = item absent (PanicDecoy).
-    inVault: Boolean,
-    onMoveVault: (() -> Unit)?,
-    onDismiss: () -> Unit,
-    onCreateContact: () -> Unit,
-    onAddContact: () -> Unit,
-    onDetails: () -> Unit,
-    onMedia: () -> Unit,
-    onExportPdf: () -> Unit,
-    onAppearance: () -> Unit,
-    /** v1.28.3 — « Renommer le groupe… », présent sur un groupe seulement. */
-    isGroup: Boolean,
-    /** Client mode C3 — contact editing/creation stays hidden on a linked device. */
-    isClientMode: Boolean = false,
-    /**
-     * The hub-side write actions (schedule, rename, block,
-     * delete). Null only when the caller has no hub actions at
-     * all; on a linked device the actions carry nulls for the
-     * unwired ones (rename, delete) and the menu hides those
-     * items. Details, Media, Export PDF, Appearance and Move to
-     * vault stay.
-     */
-    hubActions: ThreadHubActions?,
-) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(28.dp),
-        // Feedback round 6 — 10dp more breathing room on each side than the
-        // Material default, like the bubble menu and the home overflow menu.
-        modifier = Modifier.padding(horizontal = 10.dp),
-    ) {
-        if (!hasContact && !isClientMode) {
-            // Choix clair, sans passer par le sélecteur système + défilement :
-            //  - "Créer un contact"       → fiche vierge pré-remplie (ACTION_INSERT)
-            //  - "Mettre à jour un contact" → sélecteur pour rattacher à un existant (INSERT_OR_EDIT)
-            DropdownMenuItem(
-                leadingIcon = { Icon(painterResource(R.drawable.ic_add_contact), contentDescription = null) },
-                text = { Text(stringResource(R.string.thread_create_contact)) },
-                onClick = onCreateContact,
-            )
-            DropdownMenuItem(
-                leadingIcon = { Icon(Icons.Outlined.PersonSearch, contentDescription = null) },
-                text = { Text(stringResource(R.string.thread_update_contact)) },
-                onClick = onAddContact,
-            )
-        }
-        // Hub actions — scheduling goes via the `schedule_message`
-        // frame on a linked device (C3), so the item is live there too.
-        hubActions?.let { actions ->
-            // v1.15.1 — Programme l'envoi pour plus tard. Place en haut pour visibilité
-            // (action constructive, contraste avec les actions destructives en bas).
-            // Grisé tant qu'il n'y a rien à programmer (draft vide).
-            DropdownMenuItem(
-                leadingIcon = { Icon(painterResource(R.drawable.ic_schedule), contentDescription = null) },
-                text = { Text(stringResource(R.string.thread_schedule_action)) },
-                enabled = actions.canSchedule,
-                onClick = actions.onScheduleSend,
-            )
-        }
-        DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
-            text = { Text(stringResource(R.string.action_details)) },
-            onClick = onDetails,
-        )
-        DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, contentDescription = null) },
-            text = { Text(stringResource(R.string.media_gallery_title)) },
-            onClick = onMedia,
-        )
-        DropdownMenuItem(
-            leadingIcon = { Icon(painterResource(R.drawable.ic_export_pdf), contentDescription = null) },
-            text = { Text(stringResource(R.string.action_export_pdf)) },
-            enabled = canExport && !isExporting,
-            onClick = onExportPdf,
-        )
-        // v1.11.0 — Sujet 5 apparence par contact.
-        DropdownMenuItem(
-            leadingIcon = { Icon(Icons.Outlined.Palette, contentDescription = null) },
-            text = { Text(stringResource(R.string.thread_overflow_appearance)) },
-            onClick = onAppearance,
-        )
-        // Hub actions — renaming is a hub-side write (no rename
-        // frame), and a local rename would be overwritten by the
-        // next sync, so the item is absent on a linked device
-        // (`onRename == null`).
-        val renameAction = hubActions?.onRename
-        if (isGroup && renameAction != null) {
-            DropdownMenuItem(
-                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                text = { Text(stringResource(R.string.action_rename_group)) },
-                onClick = renameAction,
-            )
-        }
-        // v1.12.0 — Déplacer vers le coffre / sortir du coffre.
-        // Absent en PanicDecoy (onMoveVault == null).
-        if (onMoveVault != null) {
-            DropdownMenuItem(
-                leadingIcon = {
-                    Icon(
-                        if (inVault) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
-                        contentDescription = null,
-                    )
-                },
-                text = {
-                    Text(
-                        stringResource(
-                            if (inVault) R.string.vault_move_out
-                            else R.string.vault_move_in,
-                        ),
-                    )
-                },
-                onClick = onMoveVault,
-            )
-        }
-        // Hub actions — blocking goes via the `set_blocked` frame
-        // on a linked device (C3); deleting has no frame, so the
-        // item is absent there (`onDelete == null`).
-        if (hubActions != null) {
-            DropdownMenuItem(
-                leadingIcon = {
-                    Icon(
-                        painterResource(R.drawable.ic_block),
-                        contentDescription = null,
-                        // v1.25.3 — orange « blocage », distinct du rouge de « Supprimer » juste en
-                        // dessous : bloquer se défait, supprimer non.
-                        tint = com.filestech.sms.ui.theme.BrandBlocked,
-                    )
-                },
-                text = {
-                    Text(
-                        stringResource(R.string.action_block),
-                        // Phase 8 — l'orange [BrandBlocked] ne donnait que 3.79:1 sur fond clair
-                        // pour du texte ; voir [blockedTextColor]. L'icône garde [BrandBlocked].
-                        color = blockedTextColor(MaterialTheme.colorScheme),
-                    )
-                },
-                onClick = hubActions.onBlock,
-            )
-            val deleteAction = hubActions.onDelete
-            if (deleteAction != null) {
-                DropdownMenuItem(
-                    leadingIcon = {
-                        Icon(
-                            painterResource(R.drawable.ic_trash),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                    text = {
-                        Text(
-                            stringResource(R.string.action_delete),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                    onClick = deleteAction,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConversationDetailsDialog(
-    title: String,
-    /**
-     * v1.22.x — numéro du correspondant pour une conversation 1-to-1 (`null` pour un groupe :
-     * le compteur de participants suffit alors). Permet de distinguer deux conversations d'un
-     * même contact portant des numéros différents (ex. FR vs LU).
-     */
-    phoneNumber: String?,
-    participants: Int,
-    messages: Int,
-    firstAt: Long?,
-    lastAt: Long?,
-    formatters: com.filestech.sms.ui.util.ChatFormatters,
-    onDismiss: () -> Unit,
-) {
-    RelayDialog(
-        onDismissRequest = onDismiss,
-        title = stringResource(R.string.action_details),
-        content = {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.padding(top = 8.dp))
-            if (!phoneNumber.isNullOrBlank()) {
-                Text(
-                    stringResource(R.string.thread_details_number, phoneNumber),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            Text(
-                stringResource(R.string.thread_details_participants, participants),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                stringResource(R.string.thread_details_messages, messages),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (firstAt != null) {
-                Text(
-                    stringResource(
-                        R.string.thread_details_first,
-                        formatters.fullDay.format(Date(firstAt)),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            if (lastAt != null) {
-                Text(
-                    stringResource(
-                        R.string.thread_details_last,
-                        formatters.fullDay.format(Date(lastAt)),
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        },
-        confirmButton = {
-            RelayTextButton(
-                text = stringResource(R.string.action_close),
-                onClick = onDismiss,
-            )
-        },
-    )
 }
 
 @Composable

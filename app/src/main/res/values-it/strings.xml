@@ -133,13 +133,19 @@
     <string name="thread_update_contact">Aggiorna un contatto</string>
     <string name="action_create_contact">Crea contatto</string>
     <string name="action_create_group">Crea gruppo</string>
-    <string name="action_details">Dettagli della conversazione</string>
 
-    <string name="thread_details_messages">%1$d messaggi</string>
-    <string name="thread_details_first">Primo messaggio: %1$s</string>
-    <string name="thread_details_last">Ultimo messaggio: %1$s</string>
-    <string name="thread_details_participants">Partecipanti: %1$d</string>
-    <string name="thread_details_number">Numero: %1$s</string>
+    <!-- Details side panel -->
+    <string name="details_panel_title">Dettagli</string>
+    <string name="details_schedule">Programma</string>
+    <string name="details_add_to_contacts">Aggiungi ai contatti</string>
+    <string name="details_member_count">%1$d membri</string>
+    <string name="details_change_photo">Cambia la foto del contatto</string>
+    <string name="details_tab_photos">Foto</string>
+    <string name="details_tab_videos">Video</string>
+    <string name="details_tab_files">File</string>
+    <string name="details_empty_photos">Nessuna foto in questa conversazione.</string>
+    <string name="details_empty_videos">Nessun video in questa conversazione.</string>
+    <string name="details_empty_files">Nessun file in questa conversazione.</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archiviate</string>
@@ -316,10 +322,8 @@
     <string name="vault_biometric_subtitle">Confermi la sua identità per aprire la cartella privata.</string>
     <string name="vault_biometric_pending">In attesa dell\'impronta…</string>
     <!-- v1.11.0 — Sujet 5 apparence par contact -->
-    <string name="thread_overflow_appearance">Aspetto…</string>
-    <string name="appearance_dialog_title">Aspetto della conversazione</string>
+    <string name="appearance_dialog_title">Colori chat</string>
     <string name="appearance_section_bubble_color">Colore del fumetto inviato</string>
-    <string name="appearance_section_avatar">Immagine del contatto</string>
     <string name="appearance_pick_avatar">Scegli dalla galleria</string>
     <string name="appearance_reset_avatar">Usa l\'immagine predefinita</string>
     <string name="appearance_saved">Aspetto aggiornato</string>
@@ -1194,8 +1198,10 @@
     <string name="linked_devices_section_server">Server</string>
     <string name="linked_devices_section_devices">Dispositivi</string>
     <string name="linked_devices_server_title">Attivare il server</string>
-    <string name="linked_devices_server_subtitle">Attivandolo, questo dispositivo diventa il server a cui si collegano gli altri dispositivi</string>
-    <string name="linked_devices_server_hint">Quando attivo, il dispositivo può trovare questo telefono nella rete locale e collegarsi ad esso. Nulla lascia la tua rete Wi-Fi.</string>
+    <string name="linked_devices_server_subtitle">Consenti ad altri dispositivi di connettersi a questo dispositivo.</string>
+    <string name="linked_devices_server_hint">Altri dispositivi possono rilevare questo dispositivo nella tua rete locale. I tuoi dati restano nella tua rete Wi-Fi.</string>
+    <string name="linked_devices_encryption_title">Crittografato end-to-end</string>
+    <string name="linked_devices_encryption_subtitle">La sincronizzazione tra i tuoi dispositivi usa TLS con un certificato fissato e chiavi dispositivo Ed25519.</string>
     <string name="linked_devices_contacts_write_title">Modificare le foto dei contatti</string>
     <string name="linked_devices_contacts_write_subtitle">Consentire a un dispositivo collegato di impostare la foto di un contatto. Tocca per consentire.</string>
     <string name="linked_devices_calls_title">Chiamate sui dispositivi collegati</string>
@@ -1233,10 +1239,11 @@
     <string name="sync_notification_text">Pronto per i dispositivi collegati su questa rete Wi-Fi.</string>
     <!-- Client mode — il ramo dispositivo collegato della schermata dispositivi collegati, il QR
          di abbinamento, il cambio di modalità, il promemoria senza SIM e il servizio in primo piano. -->
-    <string name="client_mode_section">Modalità dispositivo</string>
+    <string name="client_mode_section">Client</string>
     <string name="client_this_device_section">Questo dispositivo</string>
     <string name="client_link_section">Il tuo telefono</string>
-    <string name="client_mode_link_title">Collega questo dispositivo a un altro telefono che è il server</string>
+    <string name="client_mode_link_title">Collega a un altro dispositivo</string>
+    <string name="client_mode_link_subtitle">Collega questo dispositivo a un altro telefono che fa da server.</string>
     <string name="client_mode_switch_back_title">Usa questo dispositivo come telefono</string>
     <string name="client_mode_switch_title">Cambia modalità dispositivo</string>
     <string name="client_mode_switch_to_client_body">Il passaggio cancella i messaggi salvati su questo dispositivo. Non viene eliminato nulla dal tuo telefono.</string>

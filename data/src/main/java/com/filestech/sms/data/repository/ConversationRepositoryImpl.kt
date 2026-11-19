@@ -295,6 +295,21 @@ class ConversationRepositoryImpl @Inject constructor(
             }
         }.flowOn(io)
 
+    /** Details panel — Files tab: same vault masking as [observeMedia]. */
+    override fun observeFiles(conversationId: Long): Flow<List<Attachment>> =
+        combine(
+            conversationDao.observeById(conversationId).map { it?.inVault == true }.distinctUntilChanged(),
+            attachmentDao.observeFilesForConversation(conversationId),
+            appLock.state,
+            vaultSession.unlocked,
+        ) { inVault, rows, lockState, vaultOpen ->
+            if (inVault && (lockState is AppLockManager.LockState.PanicDecoy || !vaultOpen)) {
+                emptyList()
+            } else {
+                rows.map { it.toDomain() }
+            }
+        }.flowOn(io)
+
     /**
      * Bounded counterpart of [observeMessages] — see [MessageDao.observeWindowForConversation] for
      * why the thread UI must not read the whole history on every emission.

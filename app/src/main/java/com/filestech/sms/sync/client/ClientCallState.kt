@@ -26,10 +26,10 @@ enum class ClientCallPhase {
  * its phase. Null in [ClientSyncUiState] when no call is live.
  *
  * The engine owns this: `incoming_call` / `call_state` `ringing`
- * set it, `call_state` `active` moves it off-hook, `call_state`
- * `ended` (or a dropped session) clears it, and a dial this device
- * asked for sets it to [ClientCallPhase.DIALING] until the phone's
- * `call_state` follows.
+ * set it, `call_state` `active` / `dialing` moves it off-hook,
+ * `call_state` `ended` (or a dropped session) clears it, and a dial
+ * this device asked for sets it to [ClientCallPhase.DIALING] until
+ * the phone's `call_state` follows.
  */
 data class ClientCallState(
     val number: String,

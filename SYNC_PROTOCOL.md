@@ -793,8 +793,14 @@ every addition is additive.
 with a `call_state` `ringing` for the same transition — the
 announcement carries the `timestamp` (epoch millis, when the
 ring was observed), the state frame carries the state.
-`call_state` is sent on EVERY transition (`ringing`, `active`,
-`ended`), broadcast to every authenticated session. The number
+`call_state` is sent on EVERY transition (`ringing`, `dialing`,
+`active`, `ended`), broadcast to every authenticated session.
+`dialing` is an outgoing call going off-hook — the other person
+has not answered yet, and Android reports no answer moment for a
+dialed call (off-hook covers dialing and talking alike), so a
+desktop with Bluetooth learns the answer from HFP, and one
+without treats the dial as connected. `active` is an incoming
+call answered. The number
 is `""` when unknown: a withheld number, an outgoing call dialed
 on the phone (the platform only reports a number while ringing),
 or a phone without READ_CALL_LOG — since Android 9 the platform
@@ -813,7 +819,7 @@ devices screen), `no_number` (the request carried no usable
 number), `failed` (anything else: no dialer installed, or the
 OS refused). A refused dial is never a protocol violation — the
 socket stays up. The resulting off-hook transition also arrives
-as `call_state` `active`, so the desktop sees its own dial
+as `call_state` `dialing`, so the desktop sees its own dial
 land. A `dial_request` before auth is a protocol violation,
 like any other post-auth frame.
 

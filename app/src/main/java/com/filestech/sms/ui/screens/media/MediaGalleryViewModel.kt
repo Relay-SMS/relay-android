@@ -34,6 +34,10 @@ class MediaGalleryViewModel @Inject constructor(
     val media: StateFlow<List<Attachment>?> = repo.observeMedia(conversationId)
         .stateIn<List<Attachment>?>(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
+    /** Details panel — Files tab: the non-photo, non-video attachments (`null` while loading). */
+    val files: StateFlow<List<Attachment>?> = repo.observeFiles(conversationId)
+        .stateIn<List<Attachment>?>(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
     /** Le Coffre s'est refermé : l'écran sort, comme le fil, au lieu de prétendre qu'il n'y a rien. */
     val vaultHidden: StateFlow<Boolean> = repo.observeVaultHidden(conversationId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), false)

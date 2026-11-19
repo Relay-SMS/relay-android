@@ -23,6 +23,14 @@ fun encodeCallEventFrames(event: CallEvent): List<String> = when (event) {
             ),
         ),
     )
+    is CallEvent.Dialing -> listOf(
+        SyncProtocol.encodeCallState(
+            SyncProtocol.CallState(
+                state = SyncProtocol.CallState.DIALING,
+                number = event.number,
+            ),
+        ),
+    )
     is CallEvent.Active -> listOf(
         SyncProtocol.encodeCallState(
             SyncProtocol.CallState(

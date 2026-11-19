@@ -131,13 +131,19 @@
     <string name="thread_update_contact">Mettre à jour un contact</string>
     <string name="action_create_contact">Créer un contact</string>
     <string name="action_create_group">Créer un groupe</string>
-    <string name="action_details">Détails de la conversation</string>
 
-    <string name="thread_details_messages">%1$d messages</string>
-    <string name="thread_details_first">Premier message : %1$s</string>
-    <string name="thread_details_last">Dernier message : %1$s</string>
-    <string name="thread_details_participants">Participants : %1$d</string>
-    <string name="thread_details_number">Numéro : %1$s</string>
+    <!-- Details side panel -->
+    <string name="details_panel_title">Détails</string>
+    <string name="details_schedule">Programmer</string>
+    <string name="details_add_to_contacts">Ajouter aux contacts</string>
+    <string name="details_member_count">%1$d membres</string>
+    <string name="details_change_photo">Changer la photo du contact</string>
+    <string name="details_tab_photos">Photos</string>
+    <string name="details_tab_videos">Vidéos</string>
+    <string name="details_tab_files">Fichiers</string>
+    <string name="details_empty_photos">Aucune photo dans cette conversation.</string>
+    <string name="details_empty_videos">Aucune vidéo dans cette conversation.</string>
+    <string name="details_empty_files">Aucun fichier dans cette conversation.</string>
 
     <string name="tab_archived">Archivées</string>
     <string name="tab_vault">Coffre-fort</string>
@@ -307,10 +313,8 @@
     <string name="vault_biometric_subtitle">Confirmez votre identité pour ouvrir le dossier privé.</string>
     <string name="vault_biometric_pending">En attente de l\'empreinte…</string>
     <!-- v1.11.0 — Sujet 5 apparence par contact -->
-    <string name="thread_overflow_appearance">Apparence…</string>
-    <string name="appearance_dialog_title">Apparence de la conversation</string>
+    <string name="appearance_dialog_title">Couleurs de la discussion</string>
     <string name="appearance_section_bubble_color">Couleur de bulle sortante</string>
-    <string name="appearance_section_avatar">Avatar du contact</string>
     <string name="appearance_pick_avatar">Choisir depuis la galerie</string>
     <string name="appearance_reset_avatar">Utiliser l\'avatar par défaut</string>
     <string name="appearance_saved">Apparence mise à jour</string>
@@ -1169,8 +1173,10 @@
     <string name="linked_devices_section_server">Serveur</string>
     <string name="linked_devices_section_devices">Appareils</string>
     <string name="linked_devices_server_title">Activer le serveur</string>
-    <string name="linked_devices_server_subtitle">En l\'activant, cet appareil devient le serveur auquel les autres appareils se connectent</string>
-    <string name="linked_devices_server_hint">Quand c\'est activé, votre appareil peut trouver ce téléphone sur le réseau local et s\'y lier. Rien ne quitte votre réseau Wi-Fi.</string>
+    <string name="linked_devices_server_subtitle">Autoriser d\'autres appareils à se connecter à cet appareil.</string>
+    <string name="linked_devices_server_hint">D\'autres appareils peuvent découvrir cet appareil sur votre réseau local. Vos données restent sur votre réseau Wi-Fi.</string>
+    <string name="linked_devices_encryption_title">Chiffré de bout en bout</string>
+    <string name="linked_devices_encryption_subtitle">La synchronisation entre vos appareils utilise TLS avec un certificat épinglé et des clés d\'appareil Ed25519.</string>
     <string name="linked_devices_contacts_write_title">Modifier les photos de contacts</string>
     <string name="linked_devices_contacts_write_subtitle">Autoriser un appareil lié à modifier la photo d\'un contact. Appuyez pour autoriser.</string>
     <string name="linked_devices_calls_title">Appels sur les appareils liés</string>
@@ -1208,10 +1214,11 @@
     <string name="sync_notification_text">Prêt pour les appareils liés sur ce réseau Wi-Fi.</string>
     <!-- Client mode — la branche appareil lié de l'écran des appareils liés, le QR d'appariement,
          le changement de mode, le rappel sans SIM et le service au premier plan. -->
-    <string name="client_mode_section">Mode de l\'appareil</string>
+    <string name="client_mode_section">Client</string>
     <string name="client_this_device_section">Cet appareil</string>
     <string name="client_link_section">Votre téléphone</string>
-    <string name="client_mode_link_title">Lier cet appareil à un autre téléphone qui est le serveur</string>
+    <string name="client_mode_link_title">Lier à un autre appareil</string>
+    <string name="client_mode_link_subtitle">Connectez cet appareil à un autre téléphone faisant office de serveur.</string>
     <string name="client_mode_switch_back_title">Utiliser cet appareil comme téléphone</string>
     <string name="client_mode_switch_title">Changer de mode d\'appareil</string>
     <string name="client_mode_switch_to_client_body">Le changement efface les messages enregistrés sur cet appareil. Rien n\'est supprimé de votre téléphone.</string>
