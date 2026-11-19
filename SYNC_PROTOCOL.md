@@ -14,7 +14,10 @@ copy of this spec in `ARCHITECTURE.md` — keep the two in sync.
   clash Android renames the second one (`Pixel 8 (2)`, …) — clients
   match on the service type and the `hub` TXT record, never the name.
 - TXT records: `v=1`, `hub=<hub-id>` (the phone's stable hub id, a UUID
-  generated on first run and stored on the phone).
+  generated on first run and stored on the phone), and — while a VPN
+  tunnel is the phone's active network — `tip=<tunnel-ipv4>` (the
+  phone's tunnel address; see "VPN / tunnel" below). Absent means no
+  tunnel path right now.
 - The phone advertises with `android.net.nsd` (NsdManager). The QR flow
   does not carry an address — discovery finds it.
 
@@ -147,6 +150,11 @@ not the default SMS app, new messages only reach its mirror on app
 open or the periodic import — so the desktop shows a persistent
 banner above the conversation search until the phone reports it is
 the default again.
+
+`hub_status` also carries the tunnel address: when the phone's VPN
+tunnel comes up or goes down mid-session, the phone pushes
+`hub_status` with `tunnel_ip` (see "VPN / tunnel" below), so the
+desktop learns the tunnel address without a re-scan.
 
 CONVERSATION: `id`, `thread_id` (may be null), `addresses`,
 `display_name`, `custom_name`, `title` (the phone's computed title —
@@ -815,6 +823,109 @@ state); without it the observer stays off and no call frames
 are sent. The observer runs while the server runs — one
 listener for the whole server, not one per session — and stops
 with it.
+
+Android clients consume the same four frames: a linked tablet
+shows a small incoming-call dropdown on `incoming_call` /
+`call_state` `ringing` (avatar + name from its synced contacts,
+one chat button that opens the conversation with that number),
+dismisses it on `call_state` `ended` (or `active`, answered
+elsewhere), and dials from a 1:1 thread with `dial_request`.
+No answer/hangup frames exist: a linked Android device cannot
+answer or end a call, and call audio stays on the phone.
+
+## VPN / tunnel (protocol version 1)
+
+When the user runs a VPN tunnel on the phone (WireGuard to their
+home router, for example), a linked device that dials the phone's
+LAN address never connects: the phone's replies route via the
+tunnel with the tunnel address as their source, so the desktop's
+TCP stack drops the SYN-ACK (it expects an answer from the LAN
+address it dialed). The fix is to dial the phone's tunnel address
+instead — the reply then carries the address the desktop dialed,
+and the connection establishes. The phone is the server either
+way (it listens on 0.0.0.0:47831, tunnel interface included); only
+the address the desktop dials changes. No protocol bump: every
+addition is additive, and old clients ignore the new fields.
+
+The phone learns its tunnel address from `ConnectivityManager`
+(`VpnAddressProvider`): the IPv4 address of the VPN network that
+IS the phone's active (default) network — first non-loopback,
+non-link-local IPv4 from its link addresses, with a `tun`/`wg`
+interface-name fallback if the `ConnectivityManager` read fails.
+IPv4 only. Absent (null) means "no tunnel path right now" —
+tunnel down, tunnel not the default route, or IPv6-only tunnel —
+and the feature degrades to LAN-only. The tunnel IP is never
+shown in the phone's UI: it is learned and used internally only.
+
+| Direction | Message | Shape |
+|---|---|---|
+| mDNS TXT | (advertisement) | `tip=10.6.0.2` (present only while a tunnel is up) |
+| Server → client | `sync_started` (extended) | `{"type":"sync_started","mode":"full","total_conversations":87,"total_messages":12340,"cursor_message_id":"98765","hub_is_default_sms":true,"hub_tunnel_ip":"10.6.0.2"}` |
+| Server → client | `hub_status` (extended) | `{"type":"hub_status","is_default_sms":true,"tunnel_ip":"10.6.0.2"}` |
+
+Three channels carry the address, each with a distinct role:
+
+- **mDNS TXT `tip`** (primary, at home): the phone advertises its
+  tunnel address in the discovery record, so a scan returns it
+  alongside the LAN address. NSD TXT records are fixed at
+  registration, so a tunnel change re-registers the service
+  (`MdnsAdvertiser.restart`) — a sub-second window in which the
+  phone is not advertised.
+- **`sync_started.hub_tunnel_ip`**: the desktop learns the current
+  tunnel address on every sync start, i.e. on every connect.
+  Built in `SyncEngine` from the `SyncMessageSource.tunnelIp()`
+  seam.
+- **`hub_status.tunnel_ip`**: pushed on change mid-session, exactly
+  like the default-SMS flag — so a desktop connected on the LAN
+  learns the tunnel address when the tunnel comes up, and can
+  reach the phone later when remote.
+
+Change detection mirrors the default-SMS pattern: a
+`ConnectivityManager.NetworkCallback` filtered to `TRANSPORT_VPN`,
+registered in `SyncService` while the server runs, fires on tunnel
+up/down and calls `SyncServer.refreshTunnelAdvertisement()`; the
+30 s watchdog tick calls it too, as a safety net. On change only,
+the server re-advertises mDNS and pushes `hub_status` with the new
+value. Absent on the wire means "no tunnel right now"; the desktop
+does NOT delete its stored tunnel address on absent (the tunnel IP
+is static per tunnel config — the tunnel may come back with the
+same address).
+
+The tunnel address is an RFC1918 address: useless without the
+tunnel keys, the router's forwarding, and Relay's own pairing +
+Ed25519 auth. It is visible to anyone on the LAN the phone is on
+(the TXT record) — it reveals that a VPN exists and its subnet,
+nothing more. The address never reaches the log (only whether one
+is present). Needs `ACCESS_NETWORK_STATE` (normal-level, granted
+at install) — declared explicitly in the manifest, reviewed in
+PERMISSIONS.md.
+
+Router requirement (setup, not Relay): the home router must
+forward packets between the LAN subnet and the tunnel subnet, in
+both directions — otherwise the tunnel dial fails the same way the
+LAN dial fails today. The check, from the desktop: `ping
+<tunnel-ip>` (the address is in the tunnel app, since Relay never
+shows it). If it answers, the path works; if not, the router is
+not forwarding.
+
+Dial order is the same on the desktop and on an Android client
+(tablet): fresh discovery dials the tunnel first iff the TXT
+record carries a `tip`, else LAN only; with no fresh info the
+last-known store dials last-working first, then the other known
+address. Attempts are sequential, never a race (one device, one
+session), 8 s per attempt. A hub refusal (`unknown_device`,
+`bad_signature`, `revoked`, `protocol`, a hub error during auth,
+or a changed TLS certificate) stops the walk — the phone answered,
+so another address would refuse identically; a path failure
+(timeout, refused, dropped) tries the next candidate. When every
+candidate fails, the error names each attempted address with its
+kind and outcome, plus the router hint (ping the tunnel IP) and
+the per-app exclusion workaround, failure-only. The reconnect loop
+re-scans mDNS after 2 consecutive failed rounds and switches to a
+fresh target for the same hub id — a new address, or a tunnel
+address that appeared at the same address. No VPN UI on either
+client: the status just says Connected, and the winning kind stays
+internal (logs + the last-working record).
 
 ## Key storage (phone)
 

@@ -261,7 +261,12 @@ class AutoLinker @Inject constructor(
                         phoneName = phone.serviceName,
                     )
                     val status = connectionManager.connect(
-                        HubTarget(phone.host, phone.port, phone.hubId),
+                        HubTarget.fromDiscovery(
+                            phone.host,
+                            phone.port,
+                            phone.hubId,
+                            phone.tunnelIp,
+                        ),
                         kind,
                     )
                     started = true

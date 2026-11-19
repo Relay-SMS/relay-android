@@ -150,7 +150,9 @@ import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Message
+import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendErrorCode
+import com.filestech.sms.sync.client.ClientCallState
 import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.components.AttachmentPickerSheet
 import com.filestech.sms.ui.components.AudioMessageBubble
@@ -177,6 +179,8 @@ import com.filestech.sms.ui.components.showError
 import com.filestech.sms.ui.components.stickerSendUri
 import com.filestech.sms.ui.components.toPlaybackUri
 import com.filestech.sms.ui.components.toggleReaction
+import com.filestech.sms.ui.screens.clientcall.ClientCallStatusRow
+import com.filestech.sms.ui.screens.clientcall.ClientCallViewModel
 import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.BrandDanger
 import com.filestech.sms.ui.theme.FixedTypeSize
@@ -229,7 +233,16 @@ fun ThreadScreen(
     onOpenMedia: () -> Unit = {},
     viewModel: ThreadViewModel = hiltViewModel(),
 ) {
+    // Client mode — tablet calls: the dial + call-state ViewModel,
+    // resolved in the body (not a parameter — the signature is
+    // Detekt-baselined). A separate owner from the AppRoot popup's
+    // instance; both read the same engine flow, so they never
+    // disagree.
+    val clientCallViewModel: ClientCallViewModel = hiltViewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Client mode — tablet calls: the live call, for the outgoing
+    // dial state below the header (null in hub mode).
+    val clientCall by clientCallViewModel.call.collectAsStateWithLifecycle()
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     // Round 12 — recent reaction emojis for the quick-reaction bar on a
     // bubble tap (most recent first; empty until the first reaction).
@@ -872,6 +885,32 @@ fun ThreadScreen(
         }
     }
 
+    // Client mode — tablet calls: a dial that did not go through
+    // explains itself in the thread's snackbar (the phone's
+    // permission case says so — a generic failure would send the
+    // user retrying a dial that cannot succeed until it is fixed).
+    // A dial that went through needs no snackbar: the status row
+    // below the header shows it instead.
+    LaunchedEffect(clientCallViewModel) {
+        clientCallViewModel.events.collect { event ->
+            val failed = event as? ClientCallViewModel.Event.DialFailed ?: return@collect
+            snackbarHost.showSnackbar(
+                context.getString(
+                    when (failed.reason) {
+                        ClientCallViewModel.DialFailure.Offline ->
+                            R.string.client_call_dial_offline
+
+                        ClientCallViewModel.DialFailure.NoPermission ->
+                            R.string.client_call_dial_no_permission
+
+                        ClientCallViewModel.DialFailure.Failed ->
+                            R.string.client_call_dial_failed
+                    },
+                ),
+            )
+        }
+    }
+
     // v1.28.3 — la règle de titre vit sur le modèle (nom choisi > nom résolu > numéros).
     // Feedback round 10 — the header title is the phone number itself for a
     // 1-to-1 non-contact, so it is formatted for display (`(xxx) xxx-xxxx`).
@@ -885,6 +924,20 @@ fun ThreadScreen(
         ?.takeIf { it.displayName != null && it.addresses.size == 1 }
         ?.addresses?.firstOrNull()?.raw?.formatPhoneNumberForDisplay()
     val canCall = state.conversation?.addresses?.size == 1
+
+    // Client mode — tablet calls: the outgoing call for THIS
+    // thread (matched on the normalized number), for the status row
+    // floating over the list. An incoming call never renders here —
+    // the AppRoot dropdown owns it. The last value is remembered so
+    // the row's exit animation has something to draw (the pinned
+    // banner's `lastPinned` pattern).
+    val outgoingCall = clientCall?.takeIf { call ->
+        !call.incoming && state.conversation?.addresses?.any {
+            it.normalized == PhoneAddress.of(call.number).normalized
+        } == true
+    }
+    var lastOutgoingCall by remember { mutableStateOf<ClientCallState?>(null) }
+    if (outgoingCall != null) lastOutgoingCall = outgoingCall
 
     // #8 contextual reply — index messages by id so each bubble can resolve its quoted target
     // in O(1) during recomposition. `remember(state.messages)` cap rebuilds to the actual list
@@ -945,7 +998,20 @@ fun ThreadScreen(
                 } == true,
                 canCall = canCall,
                 onBack = onBack,
-                onCall = { viewModel.requestCall() },
+                // Client mode — tablet calls: the header call button
+                // dials through the hub (the phone places the call,
+                // the audio stays there) instead of opening this
+                // device's dialer, which has no SIM to call with.
+                // Hub mode keeps the system dialer.
+                onCall = {
+                    if (state.isClientMode) {
+                        state.conversation?.addresses?.firstOrNull()?.raw?.let {
+                            clientCallViewModel.dial(it)
+                        }
+                    } else {
+                        viewModel.requestCall()
+                    }
+                },
                 onDetails = { detailsOpen = true },
                 onSearchClick = { threadSearchOpen = true },
                 onMoreClick = { menuOpen = true },
@@ -1478,6 +1544,18 @@ fun ThreadScreen(
         // the `ColumnScope` overload and failed. Wrapping in a `Column`
         // gives it the scope it needs.
         Column(modifier = Modifier.fillMaxWidth()) {
+            // Client mode — tablet calls: the outgoing dial state
+            // floats over the top of the list, above the pinned
+            // banner — "Calling…" while the dial is in flight, "On
+            // call" once the phone reports it off-hook. The list
+            // stays usable underneath: the call is on the phone.
+            AnimatedVisibility(
+                visible = outgoingCall != null,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            ) {
+                lastOutgoingCall?.let { ClientCallStatusRow(phase = it.phase) }
+            }
             AnimatedVisibility(
                 visible = pinnedMessage != null && pinnedAt != null && !threadSearchOpen,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),

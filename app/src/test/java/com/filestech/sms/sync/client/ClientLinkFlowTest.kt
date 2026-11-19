@@ -247,6 +247,87 @@ class ClientLinkFlowTest {
         assertThat(text).contains(HUB_HOST)
     }
 
+    // -- Tunnel address + last-working (VPN dial) -------------------
+
+    @Test fun `noteTunnelIp stores the tunnel address`() = runTest {
+        val linkStore = linkStore()
+        populateFullLink(linkStore)
+        linkStore.noteTunnelIp(TUNNEL_IP)
+        val link = linkStore.snapshot()
+        assertThat(link).isNotNull()
+        assertThat(link!!.hubTunnelIp).isEqualTo(TUNNEL_IP)
+    }
+
+    @Test fun `a null or blank tunnel report never forgets the stored address`() = runTest {
+        val linkStore = linkStore()
+        populateFullLink(linkStore)
+        linkStore.noteTunnelIp(TUNNEL_IP)
+        linkStore.noteTunnelIp(null)
+        linkStore.noteTunnelIp("   ")
+        val link = linkStore.snapshot()
+        assertThat(link).isNotNull()
+        assertThat(link!!.hubTunnelIp).isEqualTo(TUNNEL_IP)
+    }
+
+    @Test fun `noteTunnelIp writes nothing before a hub is linked`() = runTest {
+        val linkStore = linkStore()
+        populateIdentityOnly(linkStore)
+        linkStore.noteTunnelIp(TUNNEL_IP)
+        val link = linkStore.snapshot()
+        assertThat(link).isNotNull()
+        assertThat(link!!.hubTunnelIp).isNull()
+    }
+
+    @Test fun `noteConnected records a tunnel win without touching the lan host`() = runTest {
+        val linkStore = linkStore()
+        populateFullLink(linkStore)
+        linkStore.noteConnected(HUB_ID, HUB_NAME, AddressKind.TUNNEL, TUNNEL_IP, HUB_PORT, NOW_MS)
+        val link = linkStore.snapshot()
+        assertThat(link).isNotNull()
+        assertThat(link!!.hubTunnelIp).isEqualTo(TUNNEL_IP)
+        assertThat(link.hubHost).isEqualTo(HUB_HOST)
+        assertThat(link.lastWorking).isEqualTo(AddressKind.TUNNEL)
+    }
+
+    @Test fun `noteConnected records a lan win without forgetting the tunnel address`() = runTest {
+        val linkStore = linkStore()
+        populateFullLink(linkStore)
+        linkStore.noteTunnelIp(TUNNEL_IP)
+        linkStore.noteConnected(HUB_ID, HUB_NAME, AddressKind.LAN, "192.168.1.9", HUB_PORT, NOW_MS)
+        val link = linkStore.snapshot()
+        assertThat(link).isNotNull()
+        assertThat(link!!.hubHost).isEqualTo("192.168.1.9")
+        assertThat(link.hubTunnelIp).isEqualTo(TUNNEL_IP)
+        assertThat(link.lastWorking).isEqualTo(AddressKind.LAN)
+    }
+
+    @Test fun `noteConnected to a different hub clears the old hub addresses`() = runTest {
+        val linkStore = linkStore()
+        populateFullLink(linkStore)
+        linkStore.noteTunnelIp(TUNNEL_IP)
+        linkStore.noteConnected("hub-999", "Other", AddressKind.TUNNEL, "10.7.0.2", HUB_PORT, NOW_MS)
+        val link = linkStore.snapshot()
+        assertThat(link).isNotNull()
+        assertThat(link!!.hubId).isEqualTo("hub-999")
+        assertThat(link.hubHost).isNull()
+        assertThat(link.hubTunnelIp).isEqualTo("10.7.0.2")
+        assertThat(link.lastWorking).isEqualTo(AddressKind.TUNNEL)
+        assertThat(link.linkedAt).isEqualTo(NOW_MS)
+    }
+
+    @Test fun `clearHub removes the tunnel fields too`() = runTest {
+        val linkStore = linkStore()
+        populateFullLink(linkStore)
+        linkStore.noteTunnelIp(TUNNEL_IP)
+        linkStore.noteConnected(HUB_ID, HUB_NAME, AddressKind.TUNNEL, TUNNEL_IP, HUB_PORT, NOW_MS)
+        linkStore.clearHub()
+        val link = linkStore.snapshot()
+        assertThat(link).isNotNull()
+        assertThat(link!!.hubTunnelIp).isNull()
+        assertThat(link.lastWorking).isNull()
+        assertThat(link.hubId).isNull()
+    }
+
     // NOTE (2026-11-17): a fresh DataStore instance on the same file
     // while the first is still alive is NOT tested here — DataStore
     // 1.3 throws IllegalStateException ("There are multiple
@@ -296,6 +377,7 @@ class ClientLinkFlowTest {
         private const val HUB_NAME = "Relay"
         private const val HUB_HOST = "192.168.1.2"
         private const val HUB_PORT = 47831
+        private const val TUNNEL_IP = "10.6.0.2"
         private const val NOW_MS = 1_792_000_000_000L
     }
 }

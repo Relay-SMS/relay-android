@@ -180,6 +180,10 @@ class ClientSyncEngineTest {
         val store: FakeStateStore,
         val conversationDao: ConversationDao,
         val messageDao: MessageDao,
+        // VPN dial (D7) — the link store is a relaxed mock: the wire
+        // freshness tests verify the engine records the tunnel
+        // address into it.
+        val linkStore: ClientLinkStore,
         // Client mode C3 — the send/action managers are relaxed mocks:
         // the routing tests verify the engine calls them.
         val sendManager: ClientSendManager,
@@ -284,6 +288,7 @@ class ClientSyncEngineTest {
             store,
             conversationDao,
             messageDao,
+            linkStore,
             sendManager,
             actionSender,
             notificationRelay,
@@ -714,6 +719,45 @@ class ClientSyncEngineTest {
         h.channel.emit(ServerFrame.HubStatus(SyncProtocol.HubStatus(isDefaultSms = true)))
         advanceUntilIdle()
         assertThat(h.engine.ui.value.hubIsDefaultSms).isTrue()
+    }
+
+    // -- VPN dial: wire freshness (D7) ------------------------------
+
+    @Test fun `sync_started records the hub tunnel address`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.channel.connect()
+        advanceUntilIdle()
+        h.engine.chooseMode(SyncProtocol.SyncRequest.FULL)
+        advanceUntilIdle()
+        h.channel.emit(
+            ServerFrame.SyncStarted(
+                SyncProtocol.SyncStarted(
+                    mode = "full",
+                    totalConversations = 0,
+                    totalMessages = 0,
+                    cursorMessageId = "0",
+                    hubIsDefaultSms = true,
+                    hubTunnelIp = "10.6.0.2",
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        coVerify { h.linkStore.noteTunnelIp("10.6.0.2") }
+    }
+
+    @Test fun `hub_status records the tunnel address`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.channel.connect()
+        advanceUntilIdle()
+        h.channel.emit(
+            ServerFrame.HubStatus(
+                SyncProtocol.HubStatus(isDefaultSms = true, tunnelIp = "10.6.0.2"),
+            ),
+        )
+        advanceUntilIdle()
+        coVerify { h.linkStore.noteTunnelIp("10.6.0.2") }
     }
 
     @Test fun `a pending pin lands when its message arrives`() = runTest {
@@ -1305,6 +1349,156 @@ class ClientSyncEngineTest {
         advanceUntilIdle()
 
         coVerify(exactly = 1) { h.actionSender.onSessionEnded() }
+    }
+
+    // -- Client mode: tablet calls ----------------------------------
+
+    @Test fun `incoming_call shows the ringing call`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.channel.emit(ServerFrame.IncomingCall(SyncProtocol.IncomingCall("+33612345678", 1L)))
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isEqualTo(
+            ClientCallState("+33612345678", incoming = true, phase = ClientCallPhase.RINGING),
+        )
+    }
+
+    @Test fun `call_state ringing shows the popup even without incoming_call`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.channel.emit(
+            ServerFrame.CallState(
+                SyncProtocol.CallState(SyncProtocol.CallState.RINGING, "+33612345678"),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isEqualTo(
+            ClientCallState("+33612345678", incoming = true, phase = ClientCallPhase.RINGING),
+        )
+    }
+
+    @Test fun `call_state active marks the ringing call active`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.channel.emit(ServerFrame.IncomingCall(SyncProtocol.IncomingCall("+33612345678", 1L)))
+        advanceUntilIdle()
+
+        h.channel.emit(
+            ServerFrame.CallState(SyncProtocol.CallState(SyncProtocol.CallState.ACTIVE, "")),
+        )
+        advanceUntilIdle()
+
+        // The platform reports no number off-hook, so the tracked
+        // number is kept.
+        assertThat(h.engine.ui.value.call).isEqualTo(
+            ClientCallState("+33612345678", incoming = true, phase = ClientCallPhase.ACTIVE),
+        )
+    }
+
+    @Test fun `call_state active without a call is ignored`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.channel.emit(
+            ServerFrame.CallState(SyncProtocol.CallState(SyncProtocol.CallState.ACTIVE, "")),
+        )
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isNull()
+    }
+
+    @Test fun `call_state ended clears the call`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.channel.emit(ServerFrame.IncomingCall(SyncProtocol.IncomingCall("+33612345678", 1L)))
+        advanceUntilIdle()
+        assertThat(h.engine.ui.value.call).isNotNull()
+
+        h.channel.emit(
+            ServerFrame.CallState(SyncProtocol.CallState(SyncProtocol.CallState.ENDED, "")),
+        )
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isNull()
+    }
+
+    @Test fun `an unknown call state is ignored`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.channel.emit(ServerFrame.CallState(SyncProtocol.CallState("holding", "+33612345678")))
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isNull()
+    }
+
+    @Test fun `dial_result routes to the action sender`() = runTest {
+        val h = harness()
+        runCurrent()
+        val result = SyncProtocol.DialResult(ok = true)
+
+        h.channel.emit(ServerFrame.DialResult(result))
+        advanceUntilIdle()
+
+        coVerify { h.actionSender.onDialResult(result) }
+    }
+
+    @Test fun `a refused dial_result clears the outgoing dialing state`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.engine.noteDialRequested("+33612345678")
+        assertThat(h.engine.ui.value.call?.phase).isEqualTo(ClientCallPhase.DIALING)
+
+        h.channel.emit(
+            ServerFrame.DialResult(
+                SyncProtocol.DialResult(ok = false, error = SyncProtocol.DialResult.FAILED),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isNull()
+    }
+
+    @Test fun `a disconnect clears the tracked call`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.channel.connect()
+        advanceUntilIdle()
+        h.channel.emit(ServerFrame.IncomingCall(SyncProtocol.IncomingCall("+33612345678", 1L)))
+        advanceUntilIdle()
+        assertThat(h.engine.ui.value.call).isNotNull()
+
+        h.channel.disconnect()
+        advanceUntilIdle()
+
+        assertThat(h.engine.ui.value.call).isNull()
+    }
+
+    @Test fun `noteDialRequested shows the outgoing dialing state`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.engine.noteDialRequested("+33612345678")
+
+        assertThat(h.engine.ui.value.call).isEqualTo(
+            ClientCallState("+33612345678", incoming = false, phase = ClientCallPhase.DIALING),
+        )
+    }
+
+    @Test fun `noteDialFailed clears only the matching dial`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.engine.noteDialRequested("+33612345678")
+
+        h.engine.noteDialFailed("+33699999999")
+        assertThat(h.engine.ui.value.call).isNotNull()
+
+        h.engine.noteDialFailed("+33612345678")
+        assertThat(h.engine.ui.value.call).isNull()
     }
 
     // -- Client mode C4: notifications + contacts routing -----------

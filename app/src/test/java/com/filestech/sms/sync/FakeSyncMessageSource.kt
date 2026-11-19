@@ -66,6 +66,10 @@ internal class FakeSyncMessageSource : SyncMessageSource {
 
     override suspend fun isDefaultSmsApp(): Boolean = isDefaultSms
 
+    var tunnelIp: String? = null
+
+    override suspend fun tunnelIp(): String? = tunnelIp
+
     // -- Slice 3: send + write-back -----------------------------------
     // Each records its call and answers from a configurable result, so
     // engine tests can pin the routing without the real send path.

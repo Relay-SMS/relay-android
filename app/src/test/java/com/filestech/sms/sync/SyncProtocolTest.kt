@@ -214,6 +214,39 @@ class SyncProtocolTest {
         assertThat(obj["hub_is_default_sms"]?.jsonPrimitive?.content).isEqualTo("false")
     }
 
+    @Test fun `sync_started encodes the tunnel IP when present`() {
+        val encoded = SyncProtocol.encodeSyncStarted(
+            SyncProtocol.SyncStarted(
+                mode = "full",
+                totalConversations = 87,
+                totalMessages = 12340,
+                cursorMessageId = "98765",
+                hubIsDefaultSms = true,
+                hubTunnelIp = "10.6.0.2",
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["hub_tunnel_ip"]?.jsonPrimitive?.content).isEqualTo("10.6.0.2")
+        val decoded = SyncProtocol.json.decodeFromString<SyncProtocol.SyncStarted>(encoded)
+        assertThat(decoded.hubTunnelIp).isEqualTo("10.6.0.2")
+    }
+
+    @Test fun `sync_started omits the tunnel IP when absent and decodes it as null`() {
+        val encoded = SyncProtocol.encodeSyncStarted(
+            SyncProtocol.SyncStarted(
+                mode = "full",
+                totalConversations = 87,
+                totalMessages = 12340,
+                cursorMessageId = "98765",
+                hubIsDefaultSms = true,
+            ),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj.containsKey("hub_tunnel_ip")).isFalse()
+        val decoded = SyncProtocol.json.decodeFromString<SyncProtocol.SyncStarted>(encoded)
+        assertThat(decoded.hubTunnelIp).isNull()
+    }
+
     @Test fun `hub_status encodes and decodes the default-SMS flag`() {
         val encoded = SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms = false))
         val obj = Json.parseToJsonElement(encoded).jsonObject
@@ -222,6 +255,24 @@ class SyncProtocolTest {
         // The `type` field is routing, not payload — the decoder ignores it.
         val decoded = SyncProtocol.json.decodeFromString<SyncProtocol.HubStatus>(encoded)
         assertThat(decoded.isDefaultSms).isFalse()
+    }
+
+    @Test fun `hub_status encodes and decodes the tunnel IP`() {
+        val encoded = SyncProtocol.encodeHubStatus(
+            SyncProtocol.HubStatus(isDefaultSms = true, tunnelIp = "10.6.0.2"),
+        )
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj["tunnel_ip"]?.jsonPrimitive?.content).isEqualTo("10.6.0.2")
+        val decoded = SyncProtocol.json.decodeFromString<SyncProtocol.HubStatus>(encoded)
+        assertThat(decoded.tunnelIp).isEqualTo("10.6.0.2")
+    }
+
+    @Test fun `hub_status omits the tunnel IP when absent and decodes it as null`() {
+        val encoded = SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms = true))
+        val obj = Json.parseToJsonElement(encoded).jsonObject
+        assertThat(obj.containsKey("tunnel_ip")).isFalse()
+        val decoded = SyncProtocol.json.decodeFromString<SyncProtocol.HubStatus>(encoded)
+        assertThat(decoded.tunnelIp).isNull()
     }
 
     @Test fun `conversations encodes the batch and has_more`() {

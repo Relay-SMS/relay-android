@@ -527,6 +527,7 @@ class SyncEngine(
                     totalMessages = totalMessages,
                     cursorMessageId = cursor.toString(),
                     hubIsDefaultSms = source.isDefaultSmsApp(),
+                    hubTunnelIp = source.tunnelIp(),
                     totalContacts = totalContacts,
                 ),
             ),

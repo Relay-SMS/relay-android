@@ -84,6 +84,29 @@ class SyncEngineTest {
         }
     }
 
+    @Test fun `sync_started reports the phone's tunnel IP when one is up`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.tunnelIp = "10.6.0.2"
+        source.snapshot = listOf(sampleConversation(id = 1, messageCount = 0))
+        runEngine(source) { engine, sent ->
+            engine.onSyncRequest(SyncProtocol.SyncRequest(mode = "full"))
+            advanceUntilIdle()
+            val started = sent.first { it.frameType() == "sync_started" }.asObject()
+            assertThat(started["hub_tunnel_ip"]?.jsonPrimitive?.content).isEqualTo("10.6.0.2")
+        }
+    }
+
+    @Test fun `sync_started omits the tunnel IP when no tunnel is up`() = runTest {
+        val source = FakeSyncMessageSource()
+        source.snapshot = listOf(sampleConversation(id = 1, messageCount = 0))
+        runEngine(source) { engine, sent ->
+            engine.onSyncRequest(SyncProtocol.SyncRequest(mode = "full"))
+            advanceUntilIdle()
+            val started = sent.first { it.frameType() == "sync_started" }.asObject()
+            assertThat(started.containsKey("hub_tunnel_ip")).isFalse()
+        }
+    }
+
     @Test fun `full sync pages a long thread at 200`() = runTest {
         val source = FakeSyncMessageSource()
         source.snapshot = listOf(sampleConversation(id = 1, messageCount = 250))

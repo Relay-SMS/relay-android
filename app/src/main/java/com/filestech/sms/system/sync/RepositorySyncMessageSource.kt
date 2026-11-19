@@ -49,6 +49,7 @@ import com.filestech.sms.sync.SyncedContact
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
 import com.filestech.sms.sync.UploadResult
+import com.filestech.sms.sync.VpnAddressProvider
 import com.filestech.sms.ui.components.stickerSendUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -145,6 +146,9 @@ class RepositorySyncMessageSource @Inject constructor(
     private val contactsRepository: ContactRepository,
     private val blockNumber: BlockNumberUseCase,
     private val unblockNumber: UnblockNumberUseCase,
+    // The tunnel-address provider, or null in tests (which never
+    // need a tunnel address — [tunnelIp] then answers null).
+    private val vpnAddressProvider: VpnAddressProvider? = null,
 ) : SyncMessageSource {
 
     /** Serializes all send handling — see the class KDoc. */
@@ -223,6 +227,8 @@ class RepositorySyncMessageSource @Inject constructor(
     }
 
     override suspend fun isDefaultSmsApp(): Boolean = defaultSmsAppChecker.isDefault()
+
+    override suspend fun tunnelIp(): String? = vpnAddressProvider?.currentTunnelIpv4()
 
     // -- Slice 5: contact sync ----------------------------------------
 

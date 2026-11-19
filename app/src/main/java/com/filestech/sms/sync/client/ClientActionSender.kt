@@ -37,7 +37,10 @@ import javax.inject.Singleton
  * (the frame carries no request id, so the next
  * `conversation_created` answers it), awaited up to 20 s. The engine
  * upserts the conversation before delivering the answer, so the local
- * row exists by the time the caller reads it.
+ * row exists by the time the caller reads it. `dial_request` follows
+ * the same shape (one dial at a time, awaited up to 10 s) — the
+ * tablet asks the hub to place a cellular call, and the audio stays
+ * on the phone.
  */
 @Singleton
 class ClientActionSender @Inject constructor(
@@ -56,6 +59,8 @@ class ClientActionSender @Inject constructor(
     private val pendingActions = mutableMapOf<ActionKey, (suspend () -> Unit)?>()
     private val createMutex = Mutex()
     private var pendingCreate: CompletableDeferred<Outcome<Long>>? = null
+    private val dialMutex = Mutex()
+    private var pendingDial: CompletableDeferred<Outcome<Unit>>? = null
 
     override suspend fun isClientMode(): Boolean =
         (settings.hydratedOrNull() ?: AppSettings()).mode == DeviceMode.CLIENT
@@ -100,6 +105,52 @@ class ClientActionSender @Inject constructor(
         }
     }
 
+    /**
+     * Client mode — tablet calls: sends `dial_request` and awaits
+     * the hub's `dial_result` (up to 10 s). Success means the phone
+     * placed the call — the off-hook transition follows as
+     * `call_state` `active`, and the audio stays on the phone.
+     * Failure carries the hub's short error code
+     * (`permission_denied`, `no_number`, `failed`) as the
+     * [AppError.Validation] message, so the caller can explain it.
+     * One dial at a time (the frame carries no request id, so the
+     * next `dial_result` answers it); a dial and a create may be in
+     * flight together — different frames, different answers.
+     */
+    suspend fun dial(number: String): Outcome<Unit> {
+        if (number.isBlank()) return Outcome.Failure(AppError.Validation("no number"))
+        return dialMutex.withLock {
+            val deferred = CompletableDeferred<Outcome<Unit>>()
+            mutex.withLock { pendingDial = deferred }
+            val sent = channel.send(
+                ClientFrames.encodeDialRequest(SyncProtocol.DialRequest(number)),
+            )
+            if (!sent) {
+                mutex.withLock { if (pendingDial === deferred) pendingDial = null }
+                return@withLock Outcome.Failure(AppError.ClientOffline)
+            }
+            val outcome = withTimeoutOrNull(DIAL_TIMEOUT_MS) { deferred.await() }
+                ?: Outcome.Failure(AppError.Network())
+            mutex.withLock { if (pendingDial === deferred) pendingDial = null }
+            outcome
+        }
+    }
+
+    /**
+     * The `dial_result` answer: completes the pending dial. A
+     * refused dial fails with the hub's error code — the engine
+     * clears the outgoing call state it set for the dial.
+     */
+    suspend fun onDialResult(result: SyncProtocol.DialResult) {
+        val deferred = mutex.withLock { pendingDial?.also { pendingDial = null } } ?: return
+        val outcome = if (result.ok) {
+            Outcome.Success(Unit)
+        } else {
+            Outcome.Failure(AppError.Validation(result.error ?: SyncProtocol.DialResult.FAILED))
+        }
+        deferred.complete(outcome)
+    }
+
     /** The `action_result` for a write-back (or a refused create): revert on `ok:false`. */
     suspend fun onActionResult(result: SyncProtocol.ActionResult) {
         if (result.action == ACTION_CREATE_CONVERSATION) {
@@ -138,13 +189,19 @@ class ClientActionSender @Inject constructor(
         deferred.complete(outcome)
     }
 
-    /** The session ended (disconnect, revocation): a create in flight can never answer. */
+    /** The session ended (disconnect, revocation): a create or dial in flight can never answer. */
     suspend fun onSessionEnded() {
         failPendingCreate(AppError.ClientOffline)
+        failPendingDial(AppError.ClientOffline)
     }
 
     private suspend fun failPendingCreate(error: AppError) {
         val deferred = mutex.withLock { pendingCreate?.also { pendingCreate = null } } ?: return
+        deferred.complete(Outcome.Failure(error))
+    }
+
+    private suspend fun failPendingDial(error: AppError) {
+        val deferred = mutex.withLock { pendingDial?.also { pendingDial = null } } ?: return
         deferred.complete(Outcome.Failure(error))
     }
 
@@ -224,6 +281,9 @@ class ClientActionSender @Inject constructor(
     companion object {
         /** A create that hears nothing back in 20 s fails (same as the desktop). */
         const val CREATE_TIMEOUT_MS: Long = 20_000L
+
+        /** A dial that hears no `dial_result` in 10 s fails (the phone answers at once). */
+        const val DIAL_TIMEOUT_MS: Long = 10_000L
 
         private const val ACTION_MARK_READ = "mark_read"
         private const val ACTION_MARK_ALL_READ = "mark_all_read"

@@ -42,15 +42,22 @@ sealed interface ClientConnectionState {
 }
 
 /**
- * Client mode — the re-discovery match: the same hub id at a
- * different address. Matching on the id (stable, carried in the
- * mDNS TXT record) rather than the instance name or IP is what makes
- * the switch safe when another hub is on the same network. An empty
- * id never matches.
+ * Client mode — the re-discovery match: the same hub id, with a
+ * fresh target that DIFFERS from the current one. Matching on the
+ * id (stable, carried in the mDNS TXT record) rather than the
+ * instance name or IP is what makes the switch safe when another
+ * hub is on the same network. An empty id never matches.
+ *
+ * "Differs" covers a move (new host/port) AND a tunnel change at
+ * the same address: when the phone's VPN comes up, the fresh
+ * sighting carries a `tip` the current target lacks, and the loop
+ * must switch to it — the LAN dial is the one hanging.
  */
-fun isSameHubAtNewAddress(phone: DiscoveredHub, hubId: String, target: HubTarget): Boolean =
-    hubId.isNotEmpty() && phone.hubId == hubId &&
-        (phone.host != target.host || phone.port != target.port)
+fun isRediscoveryTarget(phone: DiscoveredHub, hubId: String, target: HubTarget): Boolean {
+    if (hubId.isEmpty() || phone.hubId != hubId) return false
+    val fresh = HubTarget.fromDiscovery(phone.host, phone.port, phone.hubId, phone.tunnelIp)
+    return fresh != target
+}
 
 /** Reconnect backoff, in ms: 1 s, 2 s, 5 s, 10 s, then 30 s (capped). */
 private val BACKOFF_MS = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 30_000L)
@@ -71,11 +78,12 @@ fun reconnectDelayMs(backoffIndex: Int): Long =
  * [connect] starts the loop for a target and returns the status the
  * first attempt resolves to (connected, or failed with the reason);
  * the loop keeps retrying after that, with backoff `[1, 2, 5, 10,
- * 30]` s (capped at 30 s, reset on success). After 3 consecutive
+ * 30]` s (capped at 30 s, reset on success). After 2 consecutive
  * failures, then every 3 more, the loop re-runs mDNS discovery and
- * switches to the same hub — matched by its stable id — at a new
- * address; a switch connects at once (no backoff sleep, counters
- * reset).
+ * switches to the same hub — matched by its stable id — at a fresh
+ * target (a new address, or a tunnel address that appeared at the
+ * same address); a switch connects at once (no backoff sleep,
+ * counters reset).
  *
  * A network return during a backoff sleep (Wi-Fi back on) wakes the
  * loop at once instead of waiting out the remaining delay, and resets
@@ -238,7 +246,7 @@ class ClientConnectionManager @Inject constructor(
             _state.value = ClientConnectionState.Connecting
         }
         val keepGoing = when (val outcome = transport.connect(loop.current, kind)) {
-            is ConnectOutcome.Connected -> runConnectedSession(loop, outcome.session)
+            is ConnectOutcome.Connected -> runConnectedSession(loop, outcome)
             is ConnectOutcome.Failed -> handleConnectFailed(loop, outcome)
         }
         // Reconnect with backoff — but only while a hub is still known.
@@ -254,7 +262,7 @@ class ClientConnectionManager @Inject constructor(
         // during the sleep (Wi-Fi back on) retries at once instead
         // of waiting out the remaining delay, and resets the
         // counters, so the next failure starts from 1 s again and a
-        // hub at a new address is re-found after 3 failures, like a
+        // hub at a new address is re-found after 2 failures, like a
         // fresh loop. Without a wakeup the table is unchanged.
         val woken = withTimeoutOrNull(reconnectDelayMs(loop.backoffIndex)) {
             networkAvailability.wakeups.receive()
@@ -275,18 +283,26 @@ class ClientConnectionManager @Inject constructor(
      * hub revoked us, or the session closed for good. A dropped
      * session counts as a failure and the task reconnects.
      */
-    private suspend fun runConnectedSession(loop: LoopState, session: ClientSession): Boolean {
+    private suspend fun runConnectedSession(
+        loop: LoopState,
+        outcome: ConnectOutcome.Connected,
+    ): Boolean {
         loop.backoffIndex = 0
         loop.consecutiveFailures = 0
         loop.nextRediscoveryAt = REDISCOVERY_AFTER_FAILURES
+        val session = outcome.session
         // Remember the hub id: re-discovery matches a phone found at
         // a new address against it (the id is stable — the address
         // is not).
         knownHubId = session.hubId
-        linkStore.setHub(
+        // Record the win kind-keyed: a tunnel win never overwrites
+        // the LAN host, and the next reconnect without fresh info
+        // dials the winner first.
+        linkStore.noteConnected(
             session.hubId,
             session.hubName,
-            loop.current.host,
+            outcome.candidate.kind,
+            outcome.candidate.host,
             loop.current.port,
             System.currentTimeMillis(),
         )
@@ -341,8 +357,8 @@ class ClientConnectionManager @Inject constructor(
     }
 
     /**
-     * Re-runs discovery when failures pile up. True when the hub
-     * moved to a new address: the cycle returns at once so the next
+     * Re-runs discovery when failures pile up. True when re-discovery
+     * found a fresh target: the cycle returns at once so the next
      * attempt connects without a backoff sleep.
      */
     private suspend fun rediscoverIfDue(loop: LoopState): Boolean {
@@ -351,7 +367,6 @@ class ClientConnectionManager @Inject constructor(
         val moved = rediscover(loop.current) ?: return false
         loop.current = moved
         currentTarget = moved
-        linkStore.updateLastKnownAddress(moved.host, moved.port)
         loop.backoffIndex = 0
         loop.consecutiveFailures = 0
         loop.nextRediscoveryAt = REDISCOVERY_AFTER_FAILURES
@@ -367,31 +382,50 @@ class ClientConnectionManager @Inject constructor(
         knownHubId != null || linkStore.snapshot()?.hubId != null
 
     /**
-     * Re-runs mDNS discovery looking for the known hub at a new
-     * address. Returns the new target when the SAME hub id answers
-     * from a different host/port; null when the hub is not found,
-     * has not moved, has never authenticated, or the scan itself
-     * fails — the retry loop then just continues on the remembered
-     * address until the next scan. A failed scan is logged, never
-     * fatal.
+     * Re-runs mDNS discovery looking for the known hub. Returns a
+     * fresh target when the SAME hub id answers with a target that
+     * differs from the current one — a move to a new address, or a
+     * tunnel address that appeared at the same address; null when
+     * the hub is not found, its target is unchanged, it has never
+     * authenticated, or the scan itself fails — the retry loop then
+     * just continues on the remembered address until the next scan.
+     * A failed scan is logged, never fatal. Any sighting of the hub
+     * refreshes the store (the LAN host, and the tunnel address when
+     * the TXT record carries one), even when the target does not
+     * change.
      */
     private suspend fun rediscover(target: HubTarget): HubTarget? {
         val hubId = knownHubId ?: linkStore.snapshot()?.hubId ?: return null
-        val phones = runCatching { discovery.scan(REDISCOVERY_SCAN_MS) }.getOrNull()
-            ?: return null
-        val found = phones.firstOrNull { isSameHubAtNewAddress(it, hubId, target) }
-            ?: return null
-        Timber.i(
-            "ClientConnectionManager: hub moved: %s:%d -> %s:%d",
-            target.host,
-            target.port,
-            found.host,
-            found.port,
-        )
-        _state.value = ClientConnectionState.Failed(
-            "found your phone at a new address (${found.host}:${found.port}) — reconnecting",
-        )
-        return HubTarget(found.host, found.port, found.hubId)
+        val found = findHubSighting(hubId) ?: return null
+        linkStore.updateLastKnownAddress(found.host, found.port)
+        linkStore.noteTunnelIp(found.tunnelIp)
+        if (!isRediscoveryTarget(found, hubId, target)) return null
+        val fresh = HubTarget.fromDiscovery(found.host, found.port, found.hubId, found.tunnelIp)
+        val moved = fresh.lanHost != target.lanHost || fresh.port != target.port
+        if (moved) {
+            Timber.i(
+                "ClientConnectionManager: hub moved to %s:%d — reconnecting",
+                found.host,
+                found.port,
+            )
+            _state.value = ClientConnectionState.Failed(
+                "found your phone at a new address (${found.host}:${found.port}) — reconnecting",
+            )
+        } else {
+            Timber.i("ClientConnectionManager: hub tunnel address changed — reconnecting")
+            _state.value = ClientConnectionState.Failed("found your phone — reconnecting")
+        }
+        return fresh
+    }
+
+    /**
+     * One scan for the known hub: the sighting, or null when the
+     * scan fails or the hub is not on it. A failed scan is logged,
+     * never fatal.
+     */
+    private suspend fun findHubSighting(hubId: String): DiscoveredHub? {
+        val phones = runCatching { discovery.scan(REDISCOVERY_SCAN_MS) }.getOrNull() ?: return null
+        return phones.firstOrNull { it.hubId == hubId }
     }
 
     companion object {
@@ -399,7 +433,7 @@ class ClientConnectionManager @Inject constructor(
         const val FIRST_ATTEMPT_WAIT_MS = 20_000L
 
         /** Re-discovery runs after this many consecutive failures… */
-        private const val REDISCOVERY_AFTER_FAILURES = 3
+        private const val REDISCOVERY_AFTER_FAILURES = 2
 
         /** …then every this many more. */
         private const val REDISCOVERY_EVERY_FAILURES = 3

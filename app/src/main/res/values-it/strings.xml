@@ -1288,6 +1288,15 @@
     <string name="client_sync_error_default">Il telefono non è riuscito a sincronizzare i messaggi in questo momento.</string>
     <string name="client_sync_error_not_connected">Non connesso al telefono. Controlla che entrambi i dispositivi siano sulla stessa rete Wi-Fi.</string>
     <string name="client_sync_offline">Offline — in attesa del telefono.</string>
+    <string name="client_call_incoming">Chiamata in arrivo</string>
+    <string name="client_call_unknown_number">Numero sconosciuto</string>
+    <string name="client_call_chat">Apri la conversazione</string>
+    <string name="client_call_dialing">Chiamata in corso…</string>
+    <string name="client_call_active">In chiamata</string>
+    <string name="client_call_dial_failed">Impossibile effettuare la chiamata</string>
+    <string name="client_call_dial_no_permission">Il telefono deve avere l\'autorizzazione Telefono per chiamare</string>
+    <string name="client_call_dial_offline">Non connesso al telefono</string>
+    <string name="client_call_open_failed">Impossibile aprire la conversazione</string>
     <string name="client_sync_paused_title">Sincronizzazione in pausa</string>
     <string name="client_sync_paused_asleep">Questo dispositivo è andato in standby.</string>
     <string name="client_sync_paused_no_response">Nessuna risposta dal telefono.</string>

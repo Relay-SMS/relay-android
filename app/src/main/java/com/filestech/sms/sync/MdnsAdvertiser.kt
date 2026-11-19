@@ -13,7 +13,8 @@ import javax.inject.Singleton
  * Advertises the phone on the local network so a linking device can
  * find it without the user typing an address: mDNS service type
  * `_relay._tcp.`, instance name the device model (e.g. "Pixel 8"),
- * port 47831, TXT `v=1` and `hub=<hub-id>` (SYNC_PROTOCOL.md).
+ * port 47831, TXT `v=1`, `hub=<hub-id>` and — while a VPN tunnel is
+ * the phone's active network — `tip=<tunnel-ipv4>` (SYNC_PROTOCOL.md).
  * Plain `android.net.nsd` — no third-party discovery library, no
  * cloud.
  *
@@ -78,9 +79,12 @@ class MdnsAdvertiser @Inject constructor(
      * device has no NSD service (it should not happen, but discovery
      * failing must never take the server down with it). The instance
      * name is [hubName] — the device model, so two hubs on one
-     * network are distinguishable.
+     * network are distinguishable. [tunnelIp] is the phone's tunnel
+     * IPv4 address, advertised as the TXT `tip` record so a linked
+     * device can dial through the tunnel; absent (null) means no
+     * tunnel path right now and the record is omitted.
      */
-    fun start(hubId: String, hubName: String) {
+    fun start(hubId: String, hubName: String, tunnelIp: String? = null) {
         val manager = nsdManager ?: run {
             Timber.w("MdnsAdvertiser: no NsdManager on this device, not advertising")
             return
@@ -94,6 +98,7 @@ class MdnsAdvertiser @Inject constructor(
             port = SyncProtocol.PORT
             setAttribute("v", SyncProtocol.PROTOCOL_VERSION.toString())
             setAttribute("hub", hubId)
+            if (tunnelIp != null) setAttribute("tip", tunnelIp)
         }
         runCatching {
             manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
@@ -115,6 +120,21 @@ class MdnsAdvertiser @Inject constructor(
         }.onFailure { t ->
             Timber.w(t, "MdnsAdvertiser: unregisterService failed")
         }
+    }
+
+    /**
+     * Re-advertises with a new tunnel address: NSD TXT records are
+     * fixed at registration, so a tunnel change needs unregister +
+     * re-register. No-op if not advertising (nothing to
+     * re-advertise). The instance name is the one [start]
+     * requested. There is a sub-second window in which the phone
+     * is not advertised; a scan in that window just misses the
+     * phone once, and scans are user-initiated or periodic.
+     */
+    fun restart(hubId: String, tunnelIp: String?) {
+        val name = requestedName ?: return
+        stop()
+        start(hubId, name, tunnelIp)
     }
 
     /** True while a registration is requested (or confirmed). */

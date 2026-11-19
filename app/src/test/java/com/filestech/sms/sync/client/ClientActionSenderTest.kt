@@ -363,6 +363,77 @@ class ClientActionSenderTest {
 
         assertThat(result).isEqualTo(Outcome.Failure(AppError.ClientOffline))
     }
+
+    // -- dial -------------------------------------------------------
+
+    @Test fun `dial sends a dial_request frame and completes on dial_result`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.dial("+33612345678") }
+        runCurrent()
+        val frame = sentFrame(h)
+        assertThat(frame.actionType()).isEqualTo("dial_request")
+        assertThat(frame["number"]?.jsonPrimitive?.content).isEqualTo("+33612345678")
+
+        h.sender.onDialResult(SyncProtocol.DialResult(ok = true))
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Success(Unit))
+    }
+
+    @Test fun `a refused dial fails with the hub error code`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.dial("+33612345678") }
+        runCurrent()
+        h.sender.onDialResult(
+            SyncProtocol.DialResult(ok = false, error = SyncProtocol.DialResult.PERMISSION_DENIED),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(
+            Outcome.Failure(AppError.Validation(SyncProtocol.DialResult.PERMISSION_DENIED)),
+        )
+    }
+
+    @Test fun `a dial that hears nothing back times out`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.dial("+33612345678") }
+        runCurrent()
+        advanceTimeBy(ClientActionSender.DIAL_TIMEOUT_MS + 1)
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Failure(AppError.Network()))
+    }
+
+    @Test fun `a session end fails a pending dial offline`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.dial("+33612345678") }
+        runCurrent()
+        h.sender.onSessionEnded()
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Failure(AppError.ClientOffline))
+    }
+
+    @Test fun `dial with a blank number fails without a frame`() = runTest {
+        val h = harness()
+
+        val result = h.sender.dial("   ")
+
+        assertThat(result).isInstanceOf(Outcome.Failure::class.java)
+        assertThat(h.channel.sent).isEmpty()
+    }
+
+    @Test fun `an offline dial fails fast without waiting`() = runTest {
+        val h = harness(channelOnline = false)
+
+        val result = h.sender.dial("+33612345678")
+
+        assertThat(result).isEqualTo(Outcome.Failure(AppError.ClientOffline))
+    }
 }
 
 private fun String.asActionObject(): JsonObject = Json.parseToJsonElement(this).jsonObject

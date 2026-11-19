@@ -27,6 +27,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,30 +35,112 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 
 /**
- * Client mode — where to connect: a hub's host (IP or mDNS hostname)
- * and port (47831), plus the hub id expected there (from the mDNS
- * TXT record or the stored link — empty when unknown, an old phone
- * whose record carries none). The id is part of the target's
- * identity: a DHCP reassignment to a different phone is a different
- * target, and the TLS pin is keyed by it (one pin per hub). The URL
- * is always `wss://` — there is no unencrypted fallback.
+ * Client mode — which kind of address a dial candidate is: the
+ * phone's tunnel address (its VPN address, learned from the mDNS
+ * TXT `tip` record or the wire) or its LAN address. The kind is
+ * internal only (logs + the last-working record) — the UI never
+ * shows it.
  */
-data class HubTarget(
-    val host: String,
-    val port: Int = SyncProtocol.PORT,
-    val hubId: String = "",
-) {
+enum class AddressKind(val label: String) {
+    TUNNEL("tunnel"),
+    LAN("LAN");
+
+    companion object {
+        /** Parses the stored last-working value (`"tunnel"`/`"lan"`); anything else is unknown. */
+        fun fromStored(value: String?): AddressKind? = when (value?.lowercase(Locale.ROOT)) {
+            "tunnel" -> TUNNEL
+            "lan" -> LAN
+            else -> null
+        }
+    }
+}
+
+/** Client mode — one dial candidate: an address and its kind. */
+data class HubCandidate(val host: String, val kind: AddressKind) {
     /** `wss://<host>:<port>/sync`, bracketing IPv6 literals (desktop rule). */
-    fun wsUrl(): String {
+    fun wsUrl(port: Int): String {
         val bracketed = if (host.contains(':') && !host.startsWith("[")) "[$host]" else host
         return "wss://$bracketed:$port/sync"
     }
 }
 
+/**
+ * Client mode — where to connect: the hub's port (47831), the hub id
+ * expected there (from the mDNS TXT record or the stored link —
+ * empty when unknown, an old phone whose record carries none), and
+ * the ordered dial candidates. The id is part of the target's
+ * identity: a DHCP reassignment to a different phone is a different
+ * target, and the TLS pin is keyed by it (one pin per hub). The URL
+ * is always `wss://` — there is no unencrypted fallback.
+ *
+ * The candidate order is the dial order (the desktop's §5.2 rule):
+ * [fromDiscovery] builds it from a fresh mDNS sighting (tunnel
+ * first iff the TXT record carries a `tip`, else LAN only);
+ * [fromStored] builds it from the last-known store with no fresh
+ * info (last-working first, then the other known address). An
+ * address that is both the tunnel and the LAN host is dialed once,
+ * as the tunnel.
+ */
+data class HubTarget(
+    val port: Int = SyncProtocol.PORT,
+    val hubId: String = "",
+    val candidates: List<HubCandidate> = emptyList(),
+) {
+    /** The LAN candidate's address, or null for a tunnel-only target. */
+    val lanHost: String?
+        get() = candidates.firstOrNull { it.kind == AddressKind.LAN }?.host
+
+    companion object {
+        /** Fresh mDNS truth: tunnel first iff `tip` is present, else LAN only. */
+        fun fromDiscovery(host: String, port: Int, hubId: String, tunnelIp: String?): HubTarget {
+            val tip = tunnelIp?.trim().orEmpty()
+            val candidates = buildList {
+                if (tip.isNotEmpty()) add(HubCandidate(tip, AddressKind.TUNNEL))
+                if (host.isNotBlank() && host != tip) add(HubCandidate(host, AddressKind.LAN))
+            }
+            return HubTarget(port, hubId, candidates)
+        }
+
+        /**
+         * No fresh info: last-working first, then the other known
+         * address. With no history yet the tunnel goes first — it is
+         * the address that works when the phone's VPN is on, and a
+         * LAN-first attempt would burn the 8 s timeout on exactly
+         * that case.
+         */
+        fun fromStored(
+            host: String?,
+            port: Int,
+            hubId: String,
+            tunnelIp: String?,
+            lastWorking: AddressKind?,
+        ): HubTarget {
+            val lan = host?.trim().orEmpty().takeIf { it.isNotEmpty() }
+                ?.let { HubCandidate(it, AddressKind.LAN) }
+            val tunnel = tunnelIp?.trim().orEmpty().takeIf { it.isNotEmpty() }
+                ?.let { HubCandidate(it, AddressKind.TUNNEL) }
+            if (lan != null && tunnel != null && lan.host == tunnel.host) {
+                return HubTarget(port, hubId, listOf(tunnel))
+            }
+            val ordered = when {
+                lan == null -> listOfNotNull(tunnel)
+                tunnel == null -> listOf(lan)
+                lastWorking == AddressKind.LAN -> listOf(lan, tunnel)
+                else -> listOf(tunnel, lan)
+            }
+            return HubTarget(port, hubId, ordered)
+        }
+    }
+}
+
 /** The outcome of one connect + auth attempt. */
 sealed interface ConnectOutcome {
-    /** Authenticated: the session is live and heartbeating. */
-    data class Connected(val session: ClientSession) : ConnectOutcome
+    /**
+     * Authenticated: the session is live and heartbeating.
+     * [candidate] is the address that won, so the caller can record
+     * it as the last-working address.
+     */
+    data class Connected(val session: ClientSession, val candidate: HubCandidate) : ConnectOutcome
 
     /** The attempt failed; [error] is human-readable and, for auth
      * failures, leads with the reason code verbatim (so the auto-link
@@ -120,14 +203,70 @@ fun authFailedMessage(reason: String): String = when (reason) {
 }
 
 /**
+ * Client mode — a failure that ends the candidate walk (the
+ * desktop's `is_terminal_refusal`): the phone answered and refused,
+ * so another address would refuse identically. Auth timeouts and
+ * dropped sockets are NOT terminal — they mean the path failed, and
+ * the next candidate may work.
+ */
+fun isTerminalRefusal(error: String): Boolean = TERMINAL_REFUSAL_PREFIXES.any { error.startsWith(it) }
+
+private val TERMINAL_REFUSAL_PREFIXES = listOf(
+    "unknown_device:",
+    "bad_signature:",
+    "revoked:",
+    "protocol:",
+    "hub error during auth:",
+    "hub TLS certificate changed:",
+)
+
+/**
+ * Client mode — one failed attempt's outcome in a word (the
+ * desktop's `attempt_outcome`): "timed out", "connection refused",
+ * or the inner reason with the "cannot reach the hub" prefix
+ * stripped.
+ */
+fun attemptOutcome(error: String): String {
+    if ("timed out" in error) return "timed out"
+    if ("Connection refused" in error) return "connection refused"
+    if (error.startsWith("cannot reach the hub")) {
+        val inner = error.substringAfterLast(": ", "")
+        if (inner.isNotEmpty()) return inner
+    }
+    return error
+}
+
+/**
+ * Client mode — the all-candidates-failed error (the desktop's
+ * §5.5 shape): every attempted address with its kind and outcome,
+ * plus — only when a tunnel address was attempted — the router hint
+ * and the per-app exclusion workaround. The ping hint names a
+ * computer on the same network: a tablet has no terminal to ping
+ * from.
+ */
+fun allCandidatesFailedError(failures: List<Pair<HubCandidate, String>>): String {
+    val parts = failures.joinToString(" or ") { (candidate, error) ->
+        "${candidate.host} (${candidate.kind.label}, ${attemptOutcome(error)})"
+    }
+    var message = "couldn't reach the phone at $parts"
+    val tunnel = failures.firstOrNull { it.first.kind == AddressKind.TUNNEL }
+    if (tunnel != null) {
+        message += ". If the phone's VPN is on, check the router forwards between the LAN and " +
+            "the tunnel (from a computer on the same network: ping ${tunnel.first.host}) — " +
+            "or exclude Relay from the tunnel in the VPN app as a workaround"
+    }
+    return message
+}
+
+/**
  * Client mode — one connect + auth attempt over Ktor client +
  * OkHttp, the mirror of the desktop's `attempt_connect`:
  *
  * `wss://<host>:47831/sync`, TLS with the TOFU trust manager,
  * `hello` → `challenge` → `auth` (signing the RAW challenge bytes)
- * → `auth_ok` / `auth_failed`, all inside a 10 s connect timeout
- * and a 10 s auth budget (the hub closes unauthenticated sockets
- * after 10 s).
+ * → `auth_ok` / `auth_failed`, all inside an 8 s per-attempt
+ * connect timeout and a 10 s auth budget (the hub closes
+ * unauthenticated sockets after 10 s).
  *
  * OkHttp is the engine (not CIO): it is the battle-tested Android
  * TLS path, the custom TOFU `X509TrustManager` plugs straight into
@@ -135,8 +274,12 @@ fun authFailedMessage(reason: String): String = when (reason) {
  * verification is deliberately skipped — the TOFU fingerprint IS
  * the identity check.
  *
- * The transport owns one attempt only: the reconnect loop lives in
- * [ClientConnectionManager].
+ * The transport owns the candidate walk: [HubTarget.candidates] are
+ * dialed in order, one at a time (never a race — one device, one
+ * session), until one authenticates; a terminal refusal stops the
+ * walk, and when every candidate fails the error names each
+ * attempted address. The reconnect loop (backoff, re-discovery)
+ * lives in [ClientConnectionManager].
  */
 @Singleton
 class ClientTransport @Inject constructor(
@@ -145,12 +288,52 @@ class ClientTransport @Inject constructor(
 ) {
 
     /**
-     * One connect + auth attempt against [target]. Never throws (a
-     * caller cancellation still propagates): every failure comes back
-     * as [ConnectOutcome.Failed] with a human-readable reason.
+     * Connects to [target]: walks its candidates in order,
+     * sequentially, until one authenticates. Never throws (a caller
+     * cancellation still propagates): every failure comes back as
+     * [ConnectOutcome.Failed] with a human-readable reason. A
+     * terminal refusal (the phone answered and refused) stops the
+     * walk and surfaces verbatim; when every candidate fails, the
+     * error names each attempted address.
      */
     suspend fun connect(target: HubTarget, kind: DeviceKind): ConnectOutcome {
-        val ready = when (val opened = openSocket(target)) {
+        if (target.candidates.isEmpty()) {
+            return ConnectOutcome.Failed("no address to dial for this hub")
+        }
+        val failures = mutableListOf<Pair<HubCandidate, String>>()
+        for (candidate in target.candidates) {
+            // The kind only, never the address: the tunnel address
+            // never reaches the log (SYNC_PROTOCOL.md, "VPN /
+            // tunnel") — the all-failed error names the addresses to
+            // the user instead, where the ping hint needs them.
+            Timber.i("ClientTransport: dialing the %s address", candidate.kind.label)
+            when (val outcome = attemptCandidate(candidate, target, kind)) {
+                is ConnectOutcome.Connected -> {
+                    Timber.i(
+                        "ClientTransport: connected via %s",
+                        outcome.candidate.kind.label,
+                    )
+                    return outcome
+                }
+                is ConnectOutcome.Failed -> {
+                    if (isTerminalRefusal(outcome.error)) return outcome
+                    failures.add(candidate to outcome.error)
+                }
+            }
+        }
+        return ConnectOutcome.Failed(allCandidatesFailedError(failures))
+    }
+
+    /**
+     * One connect + auth attempt against one candidate of [target].
+     * Never throws (a caller cancellation still propagates).
+     */
+    private suspend fun attemptCandidate(
+        candidate: HubCandidate,
+        target: HubTarget,
+        kind: DeviceKind,
+    ): ConnectOutcome {
+        val ready = when (val opened = openSocket(candidate, target)) {
             is OpenSocketResult.Failed -> return ConnectOutcome.Failed(opened.error)
             is OpenSocketResult.Ready -> opened
         }
@@ -172,6 +355,7 @@ class ClientTransport @Inject constructor(
                 }
                 is AuthResult.Ok -> ConnectOutcome.Connected(
                     ClientSessionImpl(webSocket, client, auth.hubId, auth.hubName),
+                    candidate,
                 )
             }
         } catch (ce: CancellationException) {
@@ -189,7 +373,7 @@ class ClientTransport @Inject constructor(
      * one was built) and comes back as [OpenSocketResult.Failed];
      * a caller cancellation propagates untouched.
      */
-    private suspend fun openSocket(target: HubTarget): OpenSocketResult {
+    private suspend fun openSocket(candidate: HubCandidate, target: HubTarget): OpenSocketResult {
         val identity = try {
             identityStore.identity()
         } catch (ce: CancellationException) {
@@ -206,12 +390,12 @@ class ClientTransport @Inject constructor(
         }
         return try {
             val webSocket = withTimeoutOrNull(CONNECT_TIMEOUT_MS) {
-                client.webSocketSession(target.wsUrl())
+                client.webSocketSession(candidate.wsUrl(target.port))
             }
             if (webSocket == null) {
                 client.close()
                 return OpenSocketResult.Failed(
-                    "cannot reach the hub at ${target.host}:${target.port}: " +
+                    "cannot reach the hub at ${candidate.host}:${target.port}: " +
                         "connection timed out after ${CONNECT_TIMEOUT_MS / 1000}s",
                 )
             }
@@ -441,8 +625,13 @@ class ClientTransport @Inject constructor(
     }
 
     companion object {
-        /** A dead host must fail here in seconds, not after the OS TCP timeout (~2 min). */
-        const val CONNECT_TIMEOUT_MS = 10_000L
+        /**
+         * Per-attempt connect timeout: a dead host must fail here in
+         * seconds, not after the OS TCP timeout (~2 min). 8 s per
+         * candidate, so a two-candidate walk costs at most 16 s —
+         * inside the manager's 20 s first-attempt wait.
+         */
+        const val CONNECT_TIMEOUT_MS = 8_000L
     }
 }
 

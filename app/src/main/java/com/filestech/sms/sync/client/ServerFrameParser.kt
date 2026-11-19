@@ -54,6 +54,9 @@ sealed interface ServerFrame {
     data class ContactDeleted(val value: SyncProtocol.ContactDeleted) : ServerFrame
     data class ContactsError(val value: SyncProtocol.ContactsError) : ServerFrame
     data class ConversationCreated(val value: SyncProtocol.ConversationCreated) : ServerFrame
+    data class IncomingCall(val value: SyncProtocol.IncomingCall) : ServerFrame
+    data class CallState(val value: SyncProtocol.CallState) : ServerFrame
+    data class DialResult(val value: SyncProtocol.DialResult) : ServerFrame
     data class Unknown(val type: String?) : ServerFrame
     data object Malformed : ServerFrame
 }
@@ -161,6 +164,22 @@ object ServerFrameParser {
             ?: ServerFrame.Malformed
         "conversation_created" -> decode<SyncProtocol.ConversationCreated>(obj)
             ?.let(ServerFrame::ConversationCreated) ?: ServerFrame.Malformed
+        else -> parseCallFrames(type, obj)
+    }
+
+    /**
+     * The fourth part of [parse]: the live-call frames
+     * (`incoming_call`, `call_state`, `dial_result`). A well-formed
+     * message of an unknown type comes back as [ServerFrame.Unknown],
+     * like in [parse].
+     */
+    private fun parseCallFrames(type: String, obj: JsonObject): ServerFrame = when (type) {
+        "incoming_call" -> decode<SyncProtocol.IncomingCall>(obj)?.let(ServerFrame::IncomingCall)
+            ?: ServerFrame.Malformed
+        "call_state" -> decode<SyncProtocol.CallState>(obj)?.let(ServerFrame::CallState)
+            ?: ServerFrame.Malformed
+        "dial_result" -> decode<SyncProtocol.DialResult>(obj)?.let(ServerFrame::DialResult)
+            ?: ServerFrame.Malformed
         else -> ServerFrame.Unknown(type)
     }
 
@@ -259,6 +278,10 @@ object ClientFrames {
     /** Client mode C5 — encodes an `attachment_request` (one attachment's bytes, by id + message). */
     fun encodeAttachmentRequest(value: SyncProtocol.AttachmentRequest): String =
         withType(value, "attachment_request").toString()
+
+    /** Client mode — tablet calls: encodes a `dial_request` (place a cellular call on the hub). */
+    fun encodeDialRequest(value: SyncProtocol.DialRequest): String =
+        withType(value, "dial_request").toString()
 
     /** Client mode C5 — encodes an `attachment_upload_start` (begin an upload). */
     fun encodeAttachmentUploadStart(value: SyncProtocol.AttachmentUploadStart): String =

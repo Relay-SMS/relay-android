@@ -90,6 +90,17 @@ interface SyncMessageSource {
      */
     suspend fun isDefaultSmsApp(): Boolean
 
+    /**
+     * The phone's tunnel IPv4 address, when a VPN tunnel is the
+     * phone's active (default) network — the address a linked
+     * device dials to reach the phone through the tunnel. Null
+     * when no tunnel is up (or the tunnel is not the default
+     * route): the desktop then dials the LAN address only. Never
+     * an empty string. Rides on every `sync_started`, next to
+     * [isDefaultSmsApp].
+     */
+    suspend fun tunnelIp(): String?
+
     // -- Slice 3: send + write-back -----------------------------------
 
     /**

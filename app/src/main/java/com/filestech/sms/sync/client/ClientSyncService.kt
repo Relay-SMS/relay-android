@@ -16,6 +16,7 @@ import androidx.core.content.getSystemService
 import com.filestech.sms.MainActivity
 import com.filestech.sms.R
 import com.filestech.sms.crashlog.SessionMarkerTracker
+import com.filestech.sms.sync.SyncProtocol
 import dagger.Lazy
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -124,7 +125,7 @@ class ClientSyncService : Service() {
             }
             val host = link.hubHost
             val port = link.hubPort
-            if (host == null || port == null) {
+            if (host == null && link.hubTunnelIp == null) {
                 Timber.w("ClientSyncService: linked hub has no address, stopping service")
                 stopSelf()
                 return@launch
@@ -166,11 +167,15 @@ class ClientSyncService : Service() {
                             ui.connection is ClientConnectionState.Disconnected
                         ) {
                             val fresh = linkStore.snapshot()
-                            val freshHost = fresh?.hubHost
-                            val freshPort = fresh?.hubPort
-                            if (freshHost != null && freshPort != null) {
+                            if (fresh?.hubHost != null || fresh?.hubTunnelIp != null) {
                                 connectionManager.connect(
-                                    HubTarget(freshHost, freshPort, fresh.hubId.orEmpty()),
+                                    HubTarget.fromStored(
+                                        fresh?.hubHost,
+                                        fresh?.hubPort ?: SyncProtocol.PORT,
+                                        fresh?.hubId.orEmpty(),
+                                        fresh?.hubTunnelIp,
+                                        fresh?.lastWorking,
+                                    ),
                                     kind,
                                 )
                             }
@@ -178,7 +183,18 @@ class ClientSyncService : Service() {
                     }
                 }
             }
-            connectionManager.connect(HubTarget(host, port, link.hubId.orEmpty()), kind)
+            // No fresh discovery here: the candidates come from the
+            // last-known store, last-working first.
+            connectionManager.connect(
+                HubTarget.fromStored(
+                    host,
+                    port ?: SyncProtocol.PORT,
+                    link.hubId.orEmpty(),
+                    link.hubTunnelIp,
+                    link.lastWorking,
+                ),
+                kind,
+            )
         }
         // START_STICKY: if the system kills the service, Android
         // restarts it and the link comes back. A user-initiated stop

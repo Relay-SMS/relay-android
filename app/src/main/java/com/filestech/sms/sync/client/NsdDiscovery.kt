@@ -20,13 +20,17 @@ import javax.inject.Singleton
  * Client mode — one hub phone found on the LAN: its stable id (from
  * the mDNS TXT record), the address to connect to, and the service
  * name for display. [hubId] is empty when the TXT record carried no
- * `hub` entry — re-discovery never matches an empty id.
+ * `hub` entry — re-discovery never matches an empty id. [tunnelIp]
+ * is the phone's tunnel address from the TXT `tip` record when its
+ * VPN is up — the transport dials it first, with the LAN host as
+ * fallback.
  */
 data class DiscoveredHub(
     val hubId: String,
     val host: String,
     val port: Int,
     val serviceName: String,
+    val tunnelIp: String? = null,
 )
 
 /**
@@ -49,6 +53,14 @@ internal fun preferAddress(addresses: List<InetAddress>, hostname: String?): Str
     if (linkLocal != null) return linkLocal
     return hostname?.trimEnd('.')?.takeIf { it.isNotBlank() }
 }
+
+/**
+ * Client mode — the phone's tunnel address from the mDNS TXT
+ * record (`tip`), blank or absent when its VPN is down. Pure
+ * function (no Android APIs): unit-tested on the JVM.
+ */
+internal fun tunnelIpFromAttributes(attributes: Map<String, ByteArray>): String? =
+    attributes["tip"]?.let { String(it, Charsets.UTF_8) }?.trim()?.takeIf { it.isNotEmpty() }
 
 /**
  * Client mode — mDNS discovery of hub phones, wrapping the platform
@@ -176,6 +188,7 @@ class NsdDiscovery @Inject constructor(
                 host = host,
                 port = service.port,
                 serviceName = service.serviceName,
+                tunnelIp = tunnelIpFromAttributes(service.attributes),
             )
         }
     }

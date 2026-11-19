@@ -10,6 +10,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import android.provider.Telephony
@@ -71,6 +75,16 @@ import javax.inject.Inject
  * computer's "Find your phone" finds nothing on a locked phone
  * even though the server keeps listening. Acquired when the
  * service starts, released when it is destroyed.
+ *
+ * While it runs, the service also watches for VPN network changes
+ * (a `ConnectivityManager.NetworkCallback` filtered to
+ * `TRANSPORT_VPN`) and answers them with an immediate tunnel
+ * re-advertisement, so the mDNS TXT `tip` and the `hub_status`
+ * tunnel field track the tunnel coming up or going down instead
+ * of waiting for the server's 30 s watchdog tick (which stays as
+ * the safety net in case the callback is ever missed on some
+ * device). Needs `ACCESS_NETWORK_STATE` (normal-level, granted at
+ * install).
  */
 @AndroidEntryPoint
 class SyncService : Service() {
@@ -101,6 +115,33 @@ class SyncService : Service() {
     private var defaultSmsReceiverRegistered = false
 
     /**
+     * Fires when a VPN network appears or disappears, so the
+     * tunnel advertisement tracks the tunnel instead of waiting
+     * for the watchdog tick. The callback is only a trigger: the
+     * re-read in [SyncServer.refreshTunnelAdvertisement] is the
+     * single source of truth — the callback never carries the
+     * address itself. Null until registered in [onCreate].
+     */
+    private val vpnNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            onVpnNetworkChanged()
+        }
+
+        override fun onLost(network: Network) {
+            onVpnNetworkChanged()
+        }
+    }
+
+    /** Whether [vpnNetworkCallback] is currently registered. */
+    private var vpnNetworkCallbackRegistered = false
+
+    private fun onVpnNetworkChanged() {
+        scope.launch {
+            runCatching { syncServer.refreshTunnelAdvertisement() }
+        }
+    }
+
+    /**
      * The multicast lock, held while the service runs so a linked
      * computer can find a locked phone. Built in [onCreate],
      * acquired in [onStartCommand], released in [onDestroy].
@@ -113,6 +154,7 @@ class SyncService : Service() {
         super.onCreate()
         ensureChannel()
         registerDefaultSmsReceiver()
+        registerVpnNetworkCallback()
         multicastLockGuard = MulticastLockGuard.from(this)
     }
 
@@ -178,6 +220,12 @@ class SyncService : Service() {
             defaultSmsReceiverRegistered = false
             runCatching { unregisterReceiver(defaultSmsReceiver) }
         }
+        if (vpnNetworkCallbackRegistered) {
+            vpnNetworkCallbackRegistered = false
+            runCatching {
+                getSystemService<ConnectivityManager>()?.unregisterNetworkCallback(vpnNetworkCallback)
+            }
+        }
         scope.launch {
             runCatching { syncServer.stop() }
             scope.cancel()
@@ -203,6 +251,30 @@ class SyncService : Service() {
             defaultSmsReceiverRegistered = true
         }.onFailure { t ->
             Timber.w(t, "SyncService: default-SMS receiver not registered — 30 s re-check still applies")
+        }
+    }
+
+    /**
+     * Registers [vpnNetworkCallback] for VPN network changes, so a
+     * tunnel coming up or going down re-advertises immediately.
+     * Filtered to `TRANSPORT_VPN`: no other network change wakes
+     * it. If registration fails (or this device has no
+     * `ConnectivityManager`), the server's 30 s watchdog re-check
+     * still covers the tunnel change.
+     */
+    private fun registerVpnNetworkCallback() {
+        val manager = getSystemService<ConnectivityManager>() ?: run {
+            Timber.w("SyncService: no ConnectivityManager on this device — 30 s tunnel re-check still applies")
+            return
+        }
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+            .build()
+        runCatching {
+            manager.registerNetworkCallback(request, vpnNetworkCallback)
+            vpnNetworkCallbackRegistered = true
+        }.onFailure { t ->
+            Timber.w(t, "SyncService: VPN network callback not registered — 30 s re-check still applies")
         }
     }
 

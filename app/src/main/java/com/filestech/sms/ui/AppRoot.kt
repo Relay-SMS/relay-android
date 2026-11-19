@@ -56,6 +56,7 @@ import com.filestech.sms.ui.screens.about.AboutScreen
 import com.filestech.sms.ui.screens.about.HelpScreen
 import com.filestech.sms.ui.screens.backup.BackupScreen
 import com.filestech.sms.ui.screens.blocked.BlockedNumbersScreen
+import com.filestech.sms.ui.screens.clientcall.ClientCallPopupOverlay
 import com.filestech.sms.ui.screens.compose.ComposeScreen
 import com.filestech.sms.ui.screens.conversations.ConversationsScreen
 import com.filestech.sms.ui.screens.linkeddevices.LinkedDevicesScreen
@@ -637,6 +638,17 @@ fun AppRoot() {
             )
         }
     }
+
+    // Client mode — tablet calls: the incoming-call dropdown,
+    // rendered as an overlay AFTER the `NavHost` (the same pattern
+    // as the Safety call ack below), so a ringing call is visible
+    // from any screen — a thread, Settings, the list — not just the
+    // list. Hub mode renders nothing (the overlay's ViewModel gates
+    // on the device mode).
+    ClientCallPopupOverlay(
+        showLock = showLock,
+        onOpenThread = { id -> nav.navigate(Thread(id)) { launchSingleTop = true } },
+    )
 
     // v1.27.4 — CONFIRMATION D'UN GESTE SAFETY CALL VENU D'UNE NOTIFICATION.
     //

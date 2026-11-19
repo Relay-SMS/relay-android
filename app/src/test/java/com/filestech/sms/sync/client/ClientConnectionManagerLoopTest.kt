@@ -125,8 +125,8 @@ class ClientConnectionManagerLoopTest {
         val h = harness()
         h.manager.connect(TARGET, DeviceKind.TABLET)
         // Attempt 1 fails at t=0 (backoff 1 s), attempt 2 at t=1000
-        // (backoff 2 s), attempt 3 at t=3000 (backoff 5 s — the
-        // re-discovery scan at 3 failures finds nothing).
+        // (backoff 2 s — the re-discovery scan at 2 failures finds
+        // nothing), attempt 3 at t=3000 (backoff 5 s).
         advanceTimeBy(1_000)
         runCurrent()
         advanceTimeBy(2_000)
@@ -190,7 +190,7 @@ class ClientConnectionManagerLoopTest {
 
     @Test fun `network signal is a no-op while connected`() = runTest {
         val session = FakeSession()
-        val h = harness { ConnectOutcome.Connected(session) }
+        val h = harness { ConnectOutcome.Connected(session, LAN_CANDIDATE) }
         val state = h.manager.connect(TARGET, DeviceKind.TABLET)
         assertThat(state).isEqualTo(ClientConnectionState.Connected(HUB_ID, HUB_NAME))
         assertThat(h.attemptTimes).containsExactly(0L).inOrder()
@@ -239,26 +239,25 @@ class ClientConnectionManagerLoopTest {
         h.manager.connect(TARGET, DeviceKind.TABLET)
         advanceTimeBy(1_000)
         runCurrent()
+        // Attempt 2 fails: 2 consecutive failures, first scan.
+        coVerify(exactly = 1) { h.discovery.scan(any()) }
         advanceTimeBy(2_000)
         runCurrent()
-        // Attempt 3 fails: 3 consecutive failures, first scan.
-        coVerify(exactly = 1) { h.discovery.scan(any()) }
         advanceTimeBy(2_000)
         runCurrent()
         h.network.signalAvailable()
         runCurrent()
-        // Wakeup retry (attempt 4) fails, then two more: 3 failures
+        // Wakeup retry (attempt 4) fails, then one more: 2 failures
         // since the wakeup, so the second scan runs — without the
-        // reset it would wait for 6.
+        // reset it would wait for 5.
         advanceTimeBy(1_000)
-        runCurrent()
-        advanceTimeBy(2_000)
         runCurrent()
         coVerify(exactly = 2) { h.discovery.scan(any()) }
     }
 
     private companion object {
-        val TARGET = HubTarget("192.168.1.2")
+        val TARGET = HubTarget.fromDiscovery("192.168.1.2", 47831, "", null)
+        val LAN_CANDIDATE = HubCandidate("192.168.1.2", AddressKind.LAN)
         const val HUB_ID = "hub-1"
         const val HUB_NAME = "Relay"
     }

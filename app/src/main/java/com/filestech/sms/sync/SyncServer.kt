@@ -95,6 +95,20 @@ import javax.inject.Singleton
  * the shared [CallDialer] and answers its own session's
  * `dial_request` with `dial_result`.
  *
+ * Tunnel — the server also owns the tunnel advertisement: when a
+ * VPN tunnel is the phone's active network, the phone's tunnel
+ * IPv4 address rides the mDNS TXT `tip` record and the
+ * `hub_status` / `sync_started` tunnel fields, so a linked device
+ * can dial through the tunnel (SYNC_PROTOCOL.md, "VPN / tunnel").
+ * [refreshTunnelAdvertisement] re-reads the address and, on
+ * change, re-advertises mDNS and pushes the new value; the
+ * instant trigger is the VPN network callback in [SyncService]
+ * and the 30 s watchdog tick is the safety net, mirroring the
+ * default-SMS re-check.
+ *
+ * @param vpnAddressProvider the tunnel-address reader, or null
+ * when the server has none (tests): the tunnel advertisement is
+ * then simply never refreshed.
  * @param callStateObserver the phone's call-state observer, or
  * null when the server has none (tests): call events are then
  * simply never broadcast.
@@ -109,6 +123,7 @@ class SyncServer @Inject constructor(
     private val mdnsAdvertiser: MdnsAdvertiser,
     private val messageSource: SyncMessageSource,
     private val syncWakelock: SyncWakelock,
+    private val vpnAddressProvider: VpnAddressProvider? = null,
     private val callStateObserver: CallStateObserver? = null,
     private val callDialer: CallDialer? = null,
 ) {
@@ -136,6 +151,17 @@ class SyncServer @Inject constructor(
 
     /** Last default-SMS status broadcast (null = never checked). */
     private var lastHubStatus: Boolean? = null
+
+    /** The hub id, cached at [start] for the mDNS re-advertisement in [refreshTunnelAdvertisement]. */
+    private var hubId: String? = null
+
+    /**
+     * Last-advertised tunnel IPv4 address (null = no tunnel path
+     * when last checked — or never checked). The comparison in
+     * [refreshTunnelAdvertisement] is against this, so a first
+     * check with no tunnel up is correctly "no change".
+     */
+    private var lastTunnelIp: String? = null
 
     /**
      * Slice 5 — last-broadcast contact snapshot, keyed by CONTACT_ID
@@ -173,6 +199,7 @@ class SyncServer @Inject constructor(
                 // failure is visible in logcat instead of vanishing silently.
                 installNettyTimberLogging()
                 val hubId = store.hubId()
+                this.hubId = hubId
                 val hubName = store.hubName()
                 val identity = tlsProvider.ensureIdentity(hubId)
                 step = STEP_ENGINE
@@ -191,7 +218,15 @@ class SyncServer @Inject constructor(
                 server.start(wait = false)
                 engine = server
                 step = STEP_MDNS
-                mdnsAdvertiser.start(hubId, hubName)
+                // The tunnel address rides the first advertisement
+                // too — a desktop scanning right after the server
+                // starts must see it, not wait for a change. The
+                // read never throws (the provider is fail-soft),
+                // but a throw here would fail the whole start, so
+                // it is guarded anyway.
+                val tunnelIp = runCatching { vpnAddressProvider?.currentTunnelIpv4() }.getOrNull()
+                lastTunnelIp = tunnelIp
+                mdnsAdvertiser.start(hubId, hubName, tunnelIp)
                 startWatchdog()
                 _running.value = true
                 startCallObserver()
@@ -219,6 +254,8 @@ class SyncServer @Inject constructor(
             contactsDebounceJob?.cancel()
             contactsDebounceJob = null
             lastContacts = null
+            hubId = null
+            lastTunnelIp = null
             mdnsAdvertiser.stop()
             engine?.stopSuspend(GRACE_PERIOD_MS, TIMEOUT_MS)
             engine = null
@@ -247,10 +284,14 @@ class SyncServer @Inject constructor(
      * Tells every authenticated session whether this app is the
      * phone's default SMS app — the desktop shows (or clears) its
      * live-sync warning from this. Called from [refreshHubStatus]
-     * when the role changes; a dead socket just skips.
+     * when the role changes; a dead socket just skips. [tunnelIp]
+     * rides along when the tunnel address changed too (see
+     * [refreshTunnelAdvertisement]); absent (null) means the push
+     * carries no tunnel news, and the desktop keeps any tunnel
+     * address it stored earlier.
      */
-    suspend fun broadcastHubStatus(isDefaultSms: Boolean) {
-        broadcast(SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms)))
+    suspend fun broadcastHubStatus(isDefaultSms: Boolean, tunnelIp: String? = null) {
+        broadcast(SyncProtocol.encodeHubStatus(SyncProtocol.HubStatus(isDefaultSms, tunnelIp)))
     }
 
     /**
@@ -402,6 +443,9 @@ class SyncServer @Inject constructor(
                     }
                 }
                 refreshHubStatus()
+                // The tunnel safety net: a missed network callback
+                // converges within 30 s.
+                refreshTunnelAdvertisement()
                 // Slice 5 — the contacts safety net: a missed
                 // observer notification converges within 30 s.
                 recheckContacts()
@@ -430,6 +474,36 @@ class SyncServer @Inject constructor(
         if (current != lastHubStatus) {
             lastHubStatus = current
             runCatching { broadcastHubStatus(current) }
+        }
+    }
+
+    /**
+     * Re-reads the phone's tunnel address and, only on change,
+     * re-advertises mDNS with the new TXT `tip` and pushes
+     * `hub_status` with the new value to every authenticated
+     * session, so a linked device learns the tunnel address (or
+     * its disappearance) without a re-scan. No change → no work
+     * (the check itself is cheap: one network lookup). The
+     * instant path is the VPN network callback in [SyncService];
+     * the watchdog's 30 s tick calls this too, as a safety net in
+     * case the callback is ever missed on some device. A no-op
+     * when the server is not running, or has no tunnel provider
+     * (tests). The address itself never reaches the log — only
+     * whether one is present.
+     */
+    suspend fun refreshTunnelAdvertisement() {
+        val provider = vpnAddressProvider ?: return
+        if (!_running.value) return
+        val hub = hubId ?: return
+        val current = runCatching { provider.currentTunnelIpv4() }.getOrNull()
+        if (current == lastTunnelIp) return
+        lastTunnelIp = current
+        Timber.i("SyncServer: tunnel address %s", if (current == null) "gone" else "present")
+        runCatching { mdnsAdvertiser.restart(hub, current) }
+        val isDefault = lastHubStatus
+            ?: runCatching { messageSource.isDefaultSmsApp() }.getOrNull()
+        if (isDefault != null) {
+            runCatching { broadcastHubStatus(isDefault, current) }
         }
     }
 

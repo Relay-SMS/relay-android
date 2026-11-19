@@ -1262,6 +1262,15 @@
     <string name="client_sync_error_default">Ihr Telefon konnte die Nachrichten gerade nicht synchronisieren.</string>
     <string name="client_sync_error_not_connected">Nicht mit Ihrem Telefon verbunden. Prüfen Sie, ob beide Geräte im selben WLAN sind.</string>
     <string name="client_sync_offline">Offline — wartet auf Ihr Telefon.</string>
+    <string name="client_call_incoming">Eingehender Anruf</string>
+    <string name="client_call_unknown_number">Unbekannte Nummer</string>
+    <string name="client_call_chat">Unterhaltung öffnen</string>
+    <string name="client_call_dialing">Anrufen…</string>
+    <string name="client_call_active">Im Gespräch</string>
+    <string name="client_call_dial_failed">Anruf konnte nicht aufgebaut werden</string>
+    <string name="client_call_dial_no_permission">Ihr Telefon benötigt die Telefonberechtigung zum Anrufen</string>
+    <string name="client_call_dial_offline">Nicht mit Ihrem Telefon verbunden</string>
+    <string name="client_call_open_failed">Unterhaltung konnte nicht geöffnet werden</string>
     <string name="client_sync_paused_title">Synchronisierung pausiert</string>
     <string name="client_sync_paused_asleep">Dieses Gerät ist in den Ruhezustand gewechselt.</string>
     <string name="client_sync_paused_no_response">Keine Antwort von Ihrem Telefon.</string>

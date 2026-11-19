@@ -1277,6 +1277,15 @@
     <string name="client_sync_error_default">Your phone couldn\'t sync messages right now.</string>
     <string name="client_sync_error_not_connected">Not connected to your phone. Check that both devices are on the same Wi-Fi network.</string>
     <string name="client_sync_offline">Offline — waiting for your phone.</string>
+    <string name="client_call_incoming">Incoming call</string>
+    <string name="client_call_unknown_number">Unknown number</string>
+    <string name="client_call_chat">Open conversation</string>
+    <string name="client_call_dialing">Calling…</string>
+    <string name="client_call_active">On call</string>
+    <string name="client_call_dial_failed">Couldn\'t place the call</string>
+    <string name="client_call_dial_no_permission">Your phone needs the Phone permission to place calls</string>
+    <string name="client_call_dial_offline">Not connected to your phone</string>
+    <string name="client_call_open_failed">Couldn\'t open the conversation</string>
     <string name="client_sync_paused_title">Sync paused</string>
     <string name="client_sync_paused_asleep">This device went to sleep.</string>
     <string name="client_sync_paused_no_response">No response from your phone.</string>

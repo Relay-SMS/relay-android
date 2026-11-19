@@ -28,6 +28,11 @@ import java.security.KeyStore
  * investigation): a failed start records its step + exception in
  * the store (and still rethrows, so the service stops itself), and
  * a successful start clears the recorded error.
+ *
+ * Plus the tunnel re-check ([SyncServer.refreshTunnelAdvertisement]):
+ * re-advertise + push on a change, silence when nothing changed —
+ * the same shape as the role re-check, driven by the VPN network
+ * callback and the watchdog tick.
  */
 class SyncServerTest {
 
@@ -54,6 +59,85 @@ class SyncServerTest {
         server.refreshHubStatus()
         coVerify(exactly = 1) { server.broadcastHubStatus(true) }
         coVerify(exactly = 1) { server.broadcastHubStatus(false) }
+    }
+
+    @Test fun `refreshTunnelAdvertisement is a no-op when the server never started`() = runTest {
+        val provider = mockk<VpnAddressProvider>()
+        val server = serverWith(FakeSyncMessageSource(), provider)
+        server.refreshTunnelAdvertisement()
+        verify(exactly = 0) { provider.currentTunnelIpv4() }
+    }
+
+    @Test fun `start advertises the tunnel IP when one is up`() = runTest {
+        val store = mockk<LinkedDeviceStore>(relaxed = true)
+        coEvery { store.hubId() } returns "test-hub"
+        every { store.hubName() } returns "Pixel 8"
+        val identity = testIdentity()
+        val tlsProvider = mockk<TlsCertificateProvider>()
+        coEvery { tlsProvider.ensureIdentity(any()) } returns TlsIdentity(
+            identity.keyStore,
+            identity.alias,
+            identity.password,
+            identity.password,
+        )
+        val advertiser = mockk<MdnsAdvertiser>(relaxed = true)
+        val provider = mockk<VpnAddressProvider>()
+        every { provider.currentTunnelIpv4() } returns "10.6.0.2"
+        val server = SyncServer(
+            store = store,
+            tlsProvider = tlsProvider,
+            mdnsAdvertiser = advertiser,
+            messageSource = FakeSyncMessageSource(),
+            syncWakelock = NoOpSyncWakelock,
+            vpnAddressProvider = provider,
+        )
+        try {
+            server.start()
+            assertThat(server.running.value).isTrue()
+        } finally {
+            runCatching { server.stop() }
+        }
+        verify { advertiser.start("test-hub", "Pixel 8", "10.6.0.2") }
+    }
+
+    @Test fun `refreshTunnelAdvertisement re-advertises and pushes hub_status on change`() = runTest {
+        val store = mockk<LinkedDeviceStore>(relaxed = true)
+        coEvery { store.hubId() } returns "test-hub"
+        every { store.hubName() } returns "Pixel 8"
+        val identity = testIdentity()
+        val tlsProvider = mockk<TlsCertificateProvider>()
+        coEvery { tlsProvider.ensureIdentity(any()) } returns TlsIdentity(
+            identity.keyStore,
+            identity.alias,
+            identity.password,
+            identity.password,
+        )
+        val advertiser = mockk<MdnsAdvertiser>(relaxed = true)
+        val provider = mockk<VpnAddressProvider>()
+        every { provider.currentTunnelIpv4() } returns null
+        val server = spyk(
+            SyncServer(
+                store = store,
+                tlsProvider = tlsProvider,
+                mdnsAdvertiser = advertiser,
+                messageSource = FakeSyncMessageSource(),
+                syncWakelock = NoOpSyncWakelock,
+                vpnAddressProvider = provider,
+            ),
+        )
+        try {
+            server.start()
+            every { provider.currentTunnelIpv4() } returns "10.6.0.2"
+            server.refreshTunnelAdvertisement()
+            verify { advertiser.restart("test-hub", "10.6.0.2") }
+            coVerify(exactly = 1) { server.broadcastHubStatus(true, "10.6.0.2") }
+            // No change on the second refresh: silence.
+            server.refreshTunnelAdvertisement()
+            verify(exactly = 1) { advertiser.restart("test-hub", "10.6.0.2") }
+            coVerify(exactly = 1) { server.broadcastHubStatus(true, "10.6.0.2") }
+        } finally {
+            runCatching { server.stop() }
+        }
     }
 
     @Test fun `a failed identity step records the step and exception`() = runTest {
@@ -139,12 +223,16 @@ class SyncServerTest {
         assertThat(server.running.value).isFalse()
     }
 
-    private fun serverWith(source: FakeSyncMessageSource): SyncServer = SyncServer(
+    private fun serverWith(
+        source: FakeSyncMessageSource,
+        provider: VpnAddressProvider? = null,
+    ): SyncServer = SyncServer(
         store = mockk(),
         tlsProvider = mockk(),
         mdnsAdvertiser = mockk(),
         messageSource = source,
         syncWakelock = NoOpSyncWakelock,
+        vpnAddressProvider = provider,
     )
 
     /** A real TLS identity (Netty's self-signed certificate), as in [SyncEngineTlsTest]. */

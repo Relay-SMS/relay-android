@@ -223,7 +223,13 @@ object SyncProtocol {
      * cursor. [hubIsDefaultSms] tells the desktop whether the hub app
      * is the phone's default SMS app: when it is not, new messages
      * only reach the mirror on app open or the periodic import, so
-     * the desktop warns that live sync will lag.
+     * the desktop warns that live sync will lag. [hubTunnelIp] is
+     * the phone's tunnel IPv4 address, when a VPN tunnel is the
+     * phone's active network — the address the desktop dials to
+     * reach the phone through the tunnel; absent (null) means no
+     * tunnel path right now, and the desktop keeps dialing the LAN
+     * address (and keeps any tunnel address it stored earlier — the
+     * tunnel may come back with the same address).
      *
      * Slice 5 — [totalContacts] is the contact snapshot size (the
      * `contacts` batches that follow `sync_started` carry that many
@@ -239,6 +245,7 @@ object SyncProtocol {
         @SerialName("total_messages") val totalMessages: Long,
         @SerialName("cursor_message_id") val cursorMessageId: String,
         @SerialName("hub_is_default_sms") val hubIsDefaultSms: Boolean,
+        @SerialName("hub_tunnel_ip") val hubTunnelIp: String? = null,
         @SerialName("total_contacts") val totalContacts: Int = 0,
     )
 
@@ -328,11 +335,16 @@ object SyncProtocol {
      * appears — without waiting for the next sync; the server
      * re-checks the role every 30 s and pushes on change. The same
      * value rides on every `sync_started`, which is how a fresh
-     * connection learns it first.
+     * connection learns it first. [tunnelIp] is the phone's tunnel
+     * IPv4 address, pushed the same way when the tunnel comes up or
+     * goes down mid-session; absent (null) means no tunnel path
+     * right now, and the desktop keeps any tunnel address it stored
+     * earlier.
      */
     @Serializable
     data class HubStatus(
         @SerialName("is_default_sms") val isDefaultSms: Boolean,
+        @SerialName("tunnel_ip") val tunnelIp: String? = null,
     )
 
     // -- Slice 3: send + write-back types (SYNC_PROTOCOL.md, Slice 3) --

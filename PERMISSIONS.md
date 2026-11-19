@@ -28,11 +28,12 @@ permissions "just in case", and degrades gracefully if any of them is refused.
 | `INTERNET`                                   | Three uses. (1) GIF search: the GIF tab sends the words you type to Klipy (`api.klipy.com`), shows GIF thumbnails from Klipy, and downloads the GIF you tap. (2) Link previews: a message containing a URL shows a preview card — Relay fetches that page once, on the device, and reads its Open Graph title and image for display only; the image is never sent as an attachment. (3) Linked devices: the phone runs a TLS server on the local network (port 47831, advertised via mDNS as `_relay._tcp.`) so a computer you linked can connect — no cloud, no Relay server, the traffic never leaves your Wi-Fi network. That is the only network use in the app — no analytics, no crash reporter, no update check. If it is blocked, everything else still works; GIF search just returns nothing, links show no preview, and no computer can link. |
 | `CHANGE_WIFI_MULTICAST_STATE`                | Linked devices only: lets the phone hold a Wi-Fi multicast lock while the server runs, so a linked computer can still find the phone when the screen is off — the Wi-Fi stack filters multicast packets (mDNS discovery) on a locked phone without it. Protection level `normal`: granted at install, no prompt. It grants access to no data; it only asks the Wi-Fi stack to deliver multicast packets. The lock is released when the server stops. |
 | `WAKE_LOCK`                                  | Linked devices only: lets the phone hold a partial wakelock while a sync run is actively streaming, so a brief screen-off doesn't freeze the sync. Protection level `normal`: granted at install, no prompt. It grants access to no data; it only keeps the CPU running with the screen off (it never turns the screen on). The lock is released when the sync run ends, errors, pauses, or disconnects. WorkManager also uses it briefly to finish background jobs. |
+| `ACCESS_NETWORK_STATE`                       | Linked devices only: lets Relay read the phone's own connection state — whether the active network is a VPN tunnel, and what its address is — so a linked computer can reach the phone through the tunnel when the VPN is up (see SYNC_PROTOCOL.md, "VPN / tunnel"). It opens no connection and sees no traffic content. Protection level `normal`: granted at install, no prompt. WorkManager also uses it for its own connectivity checks. |
 
-Two more permissions are declared by AndroidX libraries, not by SMS Relay's own manifest:
-`ACCESS_NETWORK_STATE` (WorkManager, which can read whether a connection exists; it opens none)
-and `USE_FINGERPRINT` (the Biometric library, for Android 8). All are install-time permissions
-that give access to no data.
+One more permission is declared by an AndroidX library, not by Relay's own manifest:
+`USE_FINGERPRINT` (the Biometric library, for Android 8). It is an install-time permission
+that gives access to no data. (`ACCESS_NETWORK_STATE` also arrives via WorkManager, but
+Relay declares it explicitly in its own manifest — see the table above.)
 
 ## What we do **not** request
 

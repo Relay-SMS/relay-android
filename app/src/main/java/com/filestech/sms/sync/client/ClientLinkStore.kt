@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
+import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,6 +30,12 @@ private val Context.clientLinkDataStore by preferencesDataStore(name = "client_l
  * reconnects without a scan. [linkedAt] is the pairing time (not
  * reset by later reconnects to the same hub); [lastSeen] is the last
  * authenticated contact, throttled to one write a minute.
+ * [hubTunnelIp] is the phone's tunnel address (its VPN address),
+ * learned from the mDNS TXT `tip` record or the wire — the address
+ * that still works when the phone's VPN is on and its LAN replies
+ * route into the tunnel. [lastWorking] is which kind of address won
+ * the last connect, so a reconnect without fresh info dials the
+ * winner first.
  */
 data class ClientLink(
     val deviceId: String,
@@ -39,6 +46,8 @@ data class ClientLink(
     val hubPort: Int? = null,
     val linkedAt: Long? = null,
     val lastSeen: Long? = null,
+    val hubTunnelIp: String? = null,
+    val lastWorking: AddressKind? = null,
 ) {
     /** True once a hub has authenticated (not merely been scanned). */
     val isLinked: Boolean get() = hubId != null
@@ -167,6 +176,78 @@ class ClientLinkStore(
         }
     }
 
+    /**
+     * Records a tunnel address learned from the mDNS TXT `tip`
+     * record or the wire (`sync_started` / `hub_status`). A null or
+     * blank report is a no-op — it means "no tunnel right now", never
+     * "forget the stored address" (the tunnel address is static per
+     * config, and the tunnel may return). Writes only for a linked
+     * hub: the callers are connected to it, or verified the sighting
+     * is it.
+     */
+    suspend fun noteTunnelIp(tunnelIp: String?) {
+        val tip = tunnelIp?.trim().orEmpty().takeIf { it.isNotEmpty() } ?: return
+        runCatching {
+            dataStore.edit { prefs ->
+                if (prefs[KEY_HUB_ID].isNullOrBlank()) return@edit
+                prefs[KEY_HUB_TUNNEL_IP] = tip
+            }
+        }.onFailure { t ->
+            Timber.w(t, "ClientLinkStore: noteTunnelIp failed")
+        }
+    }
+
+    /**
+     * Records a successful connect: which kind of address won, and
+     * the address itself (the desktop's `note_connected`). The win
+     * is recorded kind-keyed — a tunnel win never overwrites the LAN
+     * host, and a LAN win never forgets the tunnel address — and
+     * [lastWorking] flips to the winner, so the next reconnect
+     * without fresh info dials it first. A different hub than the
+     * stored one clears the old hub's addresses first (its tunnel
+     * and LAN addresses belong to another phone). [linkedAt] is set
+     * only when the hub is new, as in [setHub].
+     */
+    suspend fun noteConnected(
+        hubId: String,
+        hubName: String,
+        kind: AddressKind,
+        address: String,
+        port: Int,
+        nowMs: Long,
+    ) {
+        runCatching {
+            dataStore.edit { prefs ->
+                val sameHub = prefs[KEY_HUB_ID] == hubId
+                if (!sameHub) {
+                    prefs.remove(KEY_HUB_HOST)
+                    prefs.remove(KEY_HUB_TUNNEL_IP)
+                    prefs.remove(KEY_LAST_WORKING)
+                }
+                prefs[KEY_HUB_ID] = hubId
+                prefs[KEY_HUB_NAME] = hubName
+                prefs[KEY_HUB_PORT] = port
+                when (kind) {
+                    AddressKind.TUNNEL -> prefs[KEY_HUB_TUNNEL_IP] = address
+                    AddressKind.LAN -> prefs[KEY_HUB_HOST] = address
+                }
+                prefs[KEY_LAST_WORKING] = kind.name.lowercase(Locale.ROOT)
+                if (!sameHub || prefs[KEY_LINKED_AT] == null) prefs[KEY_LINKED_AT] = nowMs
+                prefs[KEY_LAST_SEEN] = nowMs
+            }
+        }.onSuccess {
+            // TEMP-DIAG "Not linked": catches WHEN hubId gets written.
+            Timber.d(
+                "ClientLinkStore: noteConnected succeeded hubId=%s hubName=%s kind=%s",
+                hubId.isNotBlank(),
+                hubName.isNotBlank(),
+                kind.label,
+            )
+        }.onFailure { t ->
+            Timber.w(t, "ClientLinkStore: noteConnected failed")
+        }
+    }
+
     /** Updates the last-known address after re-discovery moved the hub. */
     suspend fun updateLastKnownAddress(host: String, port: Int) {
         runCatching {
@@ -213,6 +294,8 @@ class ClientLinkStore(
                 prefs.remove(KEY_HUB_PORT)
                 prefs.remove(KEY_LINKED_AT)
                 prefs.remove(KEY_LAST_SEEN)
+                prefs.remove(KEY_HUB_TUNNEL_IP)
+                prefs.remove(KEY_LAST_WORKING)
             }
         }.onFailure { t ->
             Timber.w(t, "ClientLinkStore: clearHub failed")
@@ -241,6 +324,8 @@ class ClientLinkStore(
             hubPort = this[KEY_HUB_PORT],
             linkedAt = this[KEY_LINKED_AT],
             lastSeen = this[KEY_LAST_SEEN],
+            hubTunnelIp = this[KEY_HUB_TUNNEL_IP]?.takeIf { it.isNotBlank() },
+            lastWorking = AddressKind.fromStored(this[KEY_LAST_WORKING]),
         )
     }
 
@@ -253,6 +338,8 @@ class ClientLinkStore(
         private val KEY_HUB_PORT = intPreferencesKey("client.hub_port")
         private val KEY_LINKED_AT = longPreferencesKey("client.linked_at")
         private val KEY_LAST_SEEN = longPreferencesKey("client.last_seen")
+        private val KEY_HUB_TUNNEL_IP = stringPreferencesKey("client.hub_tunnel_ip")
+        private val KEY_LAST_WORKING = stringPreferencesKey("client.last_working")
 
         /** Minimum gap between `last_seen` writes. */
         private const val TOUCH_THROTTLE_MS = 60_000L

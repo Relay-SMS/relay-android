@@ -238,4 +238,49 @@ class ServerFrameParserTest {
         assertThat(obj["data_base64url"]?.jsonPrimitive?.content).isEqualTo("aGVsbG8")
         assertThat(obj["final"]?.jsonPrimitive?.content).isEqualTo("true")
     }
+
+    @Test fun `incoming_call parses with number and timestamp`() {
+        val frame = ServerFrameParser.parse(
+            """{"type":"incoming_call","number":"+33612345678","timestamp":1700000000000}""",
+        )
+        assertThat(frame).isInstanceOf(ServerFrame.IncomingCall::class.java)
+        val value = (frame as ServerFrame.IncomingCall).value
+        assertThat(value.number).isEqualTo("+33612345678")
+        assertThat(value.timestamp).isEqualTo(1700000000000L)
+    }
+
+    @Test fun `call_state parses with state and number`() {
+        val frame = ServerFrameParser.parse(
+            """{"type":"call_state","state":"ringing","number":"+33612345678"}""",
+        )
+        assertThat(frame).isInstanceOf(ServerFrame.CallState::class.java)
+        val value = (frame as ServerFrame.CallState).value
+        assertThat(value.state).isEqualTo(SyncProtocol.CallState.RINGING)
+        assertThat(value.number).isEqualTo("+33612345678")
+    }
+
+    @Test fun `dial_result parses ok and error`() {
+        val ok = ServerFrameParser.parse("""{"type":"dial_result","ok":true}""")
+        assertThat(ok).isInstanceOf(ServerFrame.DialResult::class.java)
+        assertThat((ok as ServerFrame.DialResult).value.ok).isTrue()
+        val refused = ServerFrameParser.parse(
+            """{"type":"dial_result","ok":false,"error":"permission_denied"}""",
+        )
+        assertThat(refused).isInstanceOf(ServerFrame.DialResult::class.java)
+        val value = (refused as ServerFrame.DialResult).value
+        assertThat(value.ok).isFalse()
+        assertThat(value.error).isEqualTo(SyncProtocol.DialResult.PERMISSION_DENIED)
+    }
+
+    @Test fun `a malformed incoming_call is Malformed`() {
+        val frame = ServerFrameParser.parse("""{"type":"incoming_call","number":"+33612345678"}""")
+        assertThat(frame).isEqualTo(ServerFrame.Malformed)
+    }
+
+    @Test fun `encodeDialRequest carries type and number`() {
+        val json = ClientFrames.encodeDialRequest(SyncProtocol.DialRequest("+33612345678"))
+        val obj: JsonObject = SyncProtocol.json.parseToJsonElement(json).jsonObject
+        assertThat(obj["type"]?.jsonPrimitive?.content).isEqualTo("dial_request")
+        assertThat(obj["number"]?.jsonPrimitive?.content).isEqualTo("+33612345678")
+    }
 }

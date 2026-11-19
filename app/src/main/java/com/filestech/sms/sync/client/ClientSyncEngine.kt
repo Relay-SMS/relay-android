@@ -105,6 +105,13 @@ data class ClientSyncUiState(
     val connection: ClientConnectionState = ClientConnectionState.Disconnected,
     val hubId: String? = null,
     val hubName: String? = null,
+    /**
+     * Client mode — tablet calls: the live call, or null when no
+     * call is live. The incoming-call popup renders from this (an
+     * incoming call in [ClientCallPhase.RINGING]); a thread shows
+     * its outgoing dial state from it too.
+     */
+    val call: ClientCallState? = null,
 )
 
 /**
@@ -407,6 +414,47 @@ class ClientSyncEngine @Inject constructor(
     }
 
     /**
+     * Client mode — tablet calls: this device asked the hub to dial
+     * [number]. Shows the outgoing state at once — the phone's
+     * `call_state` follows (`active` when the dial lands, `ended`
+     * when it is over). Called BEFORE the frame goes out, so the
+     * state is visible while the dial is still in flight.
+     */
+    suspend fun noteDialRequested(number: String) {
+        mutex.withLock {
+            updateUi {
+                it.copy(
+                    call = ClientCallState(
+                        number = number,
+                        incoming = false,
+                        phase = ClientCallPhase.DIALING,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Client mode — tablet calls: the dial for [number] did not go
+     * out (offline, or no `dial_result` in time), so no `call_state`
+     * will ever follow it. Clears the outgoing state — but only
+     * when it is still THIS dial: a ringing incoming call that
+     * arrived meanwhile stays on screen.
+     */
+    suspend fun noteDialFailed(number: String) {
+        mutex.withLock {
+            updateUi {
+                it.copy(
+                    call = it.call?.takeUnless { current ->
+                        !current.incoming && current.phase == ClientCallPhase.DIALING &&
+                            current.number == number
+                    },
+                )
+            }
+        }
+    }
+
+    /**
      * "Re-sync messages": wipes the message cache, forgets the sync
      * state, and re-prompts for the mode. The link + TOFU pin are
      * untouched (this is not an unlink), and the schedules this
@@ -436,6 +484,7 @@ class ClientSyncEngine @Inject constructor(
                     hubIsDefaultSms = null,
                     contactsErrorCode = null,
                     contactsErrorMessage = null,
+                    call = null,
                 )
             }
         }
@@ -549,6 +598,12 @@ class ClientSyncEngine @Inject constructor(
                         pauseReason = null,
                         contactsErrorCode = null,
                         contactsErrorMessage = null,
+                        // Client mode — tablet calls: the link is
+                        // gone, so a tracked call can never resolve
+                        // — its `call_state` `ended` will never
+                        // arrive. Clear it instead of stranding the
+                        // popup on screen.
+                        call = null,
                     )
                 }
             }
@@ -561,7 +616,7 @@ class ClientSyncEngine @Inject constructor(
                     resetRunState()
                     updateUi { it.copy(phase = ClientSyncPhase.Idle) }
                 }
-                updateUi { it.copy(hubIsDefaultSms = null) }
+                updateUi { it.copy(hubIsDefaultSms = null, call = null) }
                 // Client mode C3 — a create in flight can never answer
                 // once the session is down (a reconnect starts a new
                 // session; the hub's answer to the old one never
@@ -1106,7 +1161,102 @@ class ClientSyncEngine @Inject constructor(
 
             is ServerFrame.SyncError -> onSyncError(frame.value)
             is ServerFrame.HubStatus -> onHubStatus(frame.value)
+
+            // Client mode — tablet calls: one branch for all three
+            // call frames (keeps this `when` under the complexity
+            // cap); the split lives in [onCallFrame].
+            is ServerFrame.IncomingCall,
+            is ServerFrame.CallState,
+            is ServerFrame.DialResult,
+            -> onCallFrame(frame)
+
             else -> onOtherFrame(frame)
+        }
+    }
+
+    /**
+     * Client mode — tablet calls: the live-call frames. The phone
+     * reports every transition; the tablet shows the call and can
+     * text or dial back — it never answers or ends one.
+     */
+    private suspend fun onCallFrame(frame: ServerFrame) {
+        when (frame) {
+            is ServerFrame.IncomingCall -> onIncomingCall(frame.value)
+            is ServerFrame.CallState -> onCallState(frame.value)
+            is ServerFrame.DialResult -> onDialResult(frame.value)
+            else -> Unit
+        }
+    }
+
+    /** Client mode — tablet calls: the phone started ringing — show the incoming-call popup. */
+    private fun onIncomingCall(value: SyncProtocol.IncomingCall) {
+        Timber.i("ClientSyncEngine: incoming call")
+        updateUi {
+            it.copy(
+                call = ClientCallState(
+                    number = value.number,
+                    incoming = true,
+                    phase = ClientCallPhase.RINGING,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Client mode — tablet calls: the phone's call state changed.
+     * `ringing` shows the popup even when `incoming_call` never
+     * arrived (a frame dropped, or a reconnect mid-ring);
+     * `active` moves the tracked call off-hook (an incoming call
+     * answered elsewhere, or our own dial landing); `ended`
+     * dismisses it. An `active` with no tracked call is ignored —
+     * a call dialed or answered on the phone itself is nothing to
+     * show on the tablet. A blank number keeps the tracked number
+     * (the platform reports no number off-hook).
+     */
+    private fun onCallState(value: SyncProtocol.CallState) {
+        when (value.state) {
+            SyncProtocol.CallState.RINGING -> updateUi {
+                it.copy(
+                    call = ClientCallState(
+                        number = value.number.ifBlank { it.call?.number.orEmpty() },
+                        incoming = true,
+                        phase = ClientCallPhase.RINGING,
+                    ),
+                )
+            }
+
+            SyncProtocol.CallState.ACTIVE -> updateUi {
+                val current = it.call ?: return@updateUi it
+                it.copy(
+                    call = current.copy(
+                        number = value.number.ifBlank { current.number },
+                        phase = ClientCallPhase.ACTIVE,
+                    ),
+                )
+            }
+
+            SyncProtocol.CallState.ENDED -> updateUi { it.copy(call = null) }
+            else -> Timber.d("ClientSyncEngine: ignoring unknown call state %s", value.state)
+        }
+    }
+
+    /**
+     * Client mode — tablet calls: the ack to our `dial_request`.
+     * The sender completes the waiting dial; a refusal also clears
+     * the outgoing state (the phone never dialed, so no
+     * `call_state` will follow). A success leaves the state in
+     * place — the off-hook transition arrives as `call_state`.
+     */
+    private suspend fun onDialResult(value: SyncProtocol.DialResult) {
+        actionSender.onDialResult(value)
+        if (!value.ok) {
+            updateUi {
+                it.copy(
+                    call = it.call?.takeUnless { current ->
+                        !current.incoming && current.phase == ClientCallPhase.DIALING
+                    },
+                )
+            }
         }
     }
 
@@ -1206,6 +1356,11 @@ class ClientSyncEngine @Inject constructor(
                 hubIsDefaultSms = value.hubIsDefaultSms,
             )
         }
+        // Wire freshness (D7): the hub reports its tunnel address on
+        // every run — record it, so a later reconnect without fresh
+        // discovery still knows the tunnel. A null report is a no-op
+        // in the store (never forgets the stored address).
+        linkStore.noteTunnelIp(value.hubTunnelIp)
         if (mode == SyncProtocol.SyncRequest.NEW_ONLY) {
             // The "now" baseline: save the cursor immediately —
             // there are no batches to advance it, and everything
@@ -1503,6 +1658,10 @@ class ClientSyncEngine @Inject constructor(
 
     private fun onHubStatus(value: SyncProtocol.HubStatus) {
         updateUi { it.copy(hubIsDefaultSms = value.isDefaultSms) }
+        // Wire freshness (D7), as in onSyncStarted: the hub's status
+        // carries its tunnel address too. Non-suspend handler, so the
+        // store write runs in the app scope.
+        appScope.launch { linkStore.noteTunnelIp(value.tunnelIp) }
     }
 
     // -- Shared frame helpers ---------------------------------------

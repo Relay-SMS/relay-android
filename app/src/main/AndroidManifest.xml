@@ -110,9 +110,25 @@
          History: INTERNET was removed in v1.28.13 (it had been declared "for MMS
          transport", which was never true); it returns here deliberately, reviewed
          in PERMISSIONS.md and allowed by .github/scripts/permissions-manifeste.py.
-         ACCESS_NETWORK_STATE remains in the APK, brought by androidx.work: it
-         READS the connection state, it opens no connection. -->
+         ACCESS_NETWORK_STATE is declared explicitly below (it also arrives
+         via androidx.work): it READS the connection state, it opens no
+         connection. -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Linked devices — `ACCESS_NETWORK_STATE`, for the tunnel
+         address (VpnAddressProvider reads the active network's
+         transport and addresses, and SyncService registers a VPN
+         network callback so the tunnel advertisement tracks the
+         tunnel): a linked computer dials the tunnel address to
+         reach the phone when a VPN is up (SYNC_PROTOCOL.md,
+         "VPN / tunnel"). Protection level `normal`: granted at
+         install, no prompt, no data access — it only reads the
+         device's own connection state; it opens no connection and
+         sees no traffic content. Declared explicitly here rather
+         than relied on transitively via androidx.work (which also
+         uses it for its own connectivity checks): a transitive
+         permission is not a dependency to build on. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Linked devices — `CHANGE_WIFI_MULTICAST_STATE`, for the
          multicast lock SyncService holds while the server runs

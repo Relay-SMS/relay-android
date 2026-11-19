@@ -1263,6 +1263,15 @@
     <string name="client_sync_error_default">Votre téléphone n\'a pas pu synchroniser les messages pour le moment.</string>
     <string name="client_sync_error_not_connected">Non connecté à votre téléphone. Vérifiez que les deux appareils sont sur le même réseau Wi-Fi.</string>
     <string name="client_sync_offline">Hors ligne — en attente de votre téléphone.</string>
+    <string name="client_call_incoming">Appel entrant</string>
+    <string name="client_call_unknown_number">Numéro inconnu</string>
+    <string name="client_call_chat">Ouvrir la conversation</string>
+    <string name="client_call_dialing">Appel en cours…</string>
+    <string name="client_call_active">En appel</string>
+    <string name="client_call_dial_failed">L\'appel n\'a pas abouti</string>
+    <string name="client_call_dial_no_permission">Votre téléphone a besoin de l\'autorisation Téléphone pour appeler</string>
+    <string name="client_call_dial_offline">Non connecté à votre téléphone</string>
+    <string name="client_call_open_failed">Impossible d\'ouvrir la conversation</string>
     <string name="client_sync_paused_title">Synchronisation en pause</string>
     <string name="client_sync_paused_asleep">Cet appareil s\'est mis en veille.</string>
     <string name="client_sync_paused_no_response">Aucune réponse de votre téléphone.</string>
