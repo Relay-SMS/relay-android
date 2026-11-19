@@ -945,6 +945,10 @@ fun ThreadScreen(
     // — playback ticker, draft typing — do not re-run this).
     val youLabel = stringResource(R.string.chat_you)
     val deletedLabel = stringResource(R.string.thread_reply_deleted)
+    // Hoisted (not `context.getString` in the `onMicPermissionDenied` lambda):
+    // `LocalContext.current` reads are not configuration-aware, and lint fails
+    // the build on them inside a lambda passed to a composable.
+    val voicePermissionDenied = stringResource(R.string.voice_permission_denied)
     val contactDisplayName = state.conversation?.displayName
     val messageById = remember(state.messages) {
         state.messages.associateBy { it.id }
@@ -1239,9 +1243,7 @@ fun ThreadScreen(
                         onMicPermissionDenied = {
                             // v1.3.7 — refus de permission = erreur utilisateur visible → rouge.
                             scope.launch {
-                                snackbarHost.showError(
-                                    context.getString(R.string.voice_permission_denied),
-                                )
+                                snackbarHost.showError(voicePermissionDenied)
                             }
                         },
                     )
