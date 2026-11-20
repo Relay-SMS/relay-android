@@ -112,6 +112,12 @@ fun NoteThreadScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // Round 34 — CI lint (LocalContextGetResourceValueCall) : les messages
+    // lus dans les lambdas (collect d'evenements, ouverture de piece
+    // jointe) sont resolus a la composition, comme dans BackupScreen.
+    val exportSuccessFmt = stringResource(R.string.thread_export_success)
+    val openFailedMsg = stringResource(R.string.note_open_failed)
+
     // The note is gone (deleted from the list while this thread was
     // open, or from its own panel): pop. Gated on `isLoading` so the
     // first paint — note still null — never pops.
@@ -134,9 +140,7 @@ fun NoteThreadScreen(
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     runCatching { context.startActivity(Intent.createChooser(shareIntent, "PDF")) }
-                    snackbarHost.showSnackbar(
-                        context.getString(R.string.thread_export_success, e.pages),
-                    )
+                    snackbarHost.showSnackbar(exportSuccessFmt.format(e.pages))
                 }
                 // The state-based pop above handles the exit; the
                 // event exists for the ViewModel test, not the screen.
@@ -244,7 +248,7 @@ fun NoteThreadScreen(
             scope.launch {
                 snackbarHost.showSnackbar(
                     SmsTechSnackbarVisuals(
-                        message = context.getString(R.string.note_open_failed),
+                        message = openFailedMsg,
                         isError = true,
                     ),
                 )
