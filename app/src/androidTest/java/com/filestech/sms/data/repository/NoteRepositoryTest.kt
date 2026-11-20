@@ -413,8 +413,8 @@ class NoteRepositoryTest {
             val m1 = repository.insertMessage(first.id, "one")
             val m2 = repository.insertMessage(first.id, "two")
             repository.insertMessage(second.id, "three")
-            addPhoto(m1)
-            addPhoto(m2)
+            addPhoto(m1.id)
+            addPhoto(m2.id)
 
             assertThat(repository.listAllNotes()).hasSize(2)
             val messages = repository.listAllMessages()
