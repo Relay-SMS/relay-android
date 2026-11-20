@@ -277,6 +277,11 @@ private fun DetailsPanelContent(
     // has no snackbar host.
     val scope = rememberCoroutineScope()
     var pendingSave by remember { mutableStateOf<Attachment?>(null) }
+    // Hoisted (not `context.getString` in the launcher callback):
+    // `LocalContext.current` reads are not configuration-aware, and
+    // lint fails the build on them (LocalContextGetResourceValueCall).
+    val fileSavedText = stringResource(R.string.details_file_saved)
+    val fileSaveFailedText = stringResource(R.string.details_file_save_failed)
     val saveLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*"),
     ) { uri: Uri? ->
@@ -287,13 +292,7 @@ private fun DetailsPanelContent(
                 val saved = saveAttachmentCopy(context, target, uri)
                 Toast.makeText(
                     context,
-                    context.getString(
-                        if (saved) {
-                            R.string.details_file_saved
-                        } else {
-                            R.string.details_file_save_failed
-                        },
-                    ),
+                    if (saved) fileSavedText else fileSaveFailedText,
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -1148,7 +1147,7 @@ private fun DetailsFileRow(
                     if (downloadState == null || downloadState is ClientDownloadState.NotDownloaded ||
                         downloadState is ClientDownloadState.Failed
                     ) {
-                        onRequestDownload?.invoke(attachment.id)
+                        onRequestDownload(attachment.id)
                     }
                 } else {
                     onOpen(attachment)
@@ -1207,7 +1206,7 @@ private fun DetailsFileRow(
                                 downloadState is ClientDownloadState.NotDownloaded ||
                                 downloadState is ClientDownloadState.Failed
                             ) {
-                                onRequestDownload?.invoke(attachment.id)
+                                onRequestDownload(attachment.id)
                             }
                         } else {
                             onSaveCopy(attachment)

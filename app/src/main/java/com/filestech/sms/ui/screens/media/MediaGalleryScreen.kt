@@ -210,7 +210,7 @@ internal fun MediaTile(
                     if (downloadState == null || downloadState is ClientDownloadState.NotDownloaded ||
                         downloadState is ClientDownloadState.Failed
                     ) {
-                        onRequestDownload?.invoke(attachment.id)
+                        onRequestDownload(attachment.id)
                     }
                 } else {
                     onClick()
@@ -258,7 +258,7 @@ internal fun MediaTile(
                                 downloadState is ClientDownloadState.NotDownloaded ||
                                 downloadState is ClientDownloadState.Failed
                             ) {
-                                onRequestDownload?.invoke(attachment.id)
+                                onRequestDownload(attachment.id)
                             }
                         } else {
                             onSaveCopy?.invoke(attachment)
