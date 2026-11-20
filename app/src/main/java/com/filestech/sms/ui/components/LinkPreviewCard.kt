@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -125,14 +127,9 @@ private fun LinkPreviewCardContent(
             .background(cs.surface)
             .clickable { uriHandler.openUri(preview.url) },
     ) {
-        if (preview.imageUrl != null) {
-            AsyncImage(
-                model = preview.imageUrl,
-                // Decorative: the title below carries the meaning.
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().aspectRatio(LINK_PREVIEW_IMAGE_RATIO),
-            )
+        val imageUrl = preview.imageUrl
+        if (imageUrl != null) {
+            LinkPreviewCachedImage(imageUrl = imageUrl)
         }
         Column(modifier = Modifier.padding(LINK_PREVIEW_TEXT_PADDING_DP.dp)) {
             if (headline != null) {
@@ -165,9 +162,48 @@ internal fun String.hostOrNull(): String? =
     runCatching { java.net.URI(this).host?.removePrefix("www.") }
         .getOrNull()?.takeIf { it.isNotBlank() }
 
+/**
+ * Round 33 — the preview image, from the on-disk cache
+ * ([LinkPreviewImageCache]): a cached file renders on first
+ * composition, so a re-entered thread shows its preview images
+ * immediately instead of re-fetching them on every open (the
+ * reload that made scrolling glitchy). The 16:9 box is always
+ * reserved, so a first-time download never grows the card when it
+ * lands.
+ */
+@Composable
+private fun LinkPreviewCachedImage(imageUrl: String) {
+    val context = LocalContext.current
+    val cache = remember(context) {
+        LinkPreviewImageCache(java.io.File(context.cacheDir, LINK_PREVIEW_CACHE_DIR))
+    }
+    val file by produceState<java.io.File?>(
+        initialValue = remember(imageUrl) { cache.cachedFile(imageUrl) },
+        imageUrl,
+    ) {
+        if (value == null) value = cache.fetch(imageUrl)
+    }
+    Box(
+        modifier = Modifier.fillMaxWidth().aspectRatio(LINK_PREVIEW_IMAGE_RATIO),
+    ) {
+        if (file != null) {
+            AsyncImage(
+                model = file,
+                // Decorative: the title below carries the meaning.
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
 private const val LINK_PREVIEW_CORNER_DP = 12
 private const val LINK_PREVIEW_BELOW_GAP_DP = 8
 private const val LINK_PREVIEW_TEXT_PADDING_DP = 12
 private const val LINK_PREVIEW_HEADLINE_LINES = 2
 private const val LINK_PREVIEW_IMAGE_RATIO = 16f / 9f
 private const val LINK_PREVIEW_PLACEHOLDER_DP = 96
+
+/** The preview-image cache directory, under `cacheDir` (the system may clear it). */
+private const val LINK_PREVIEW_CACHE_DIR = "link_previews"

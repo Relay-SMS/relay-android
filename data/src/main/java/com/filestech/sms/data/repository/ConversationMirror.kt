@@ -11,6 +11,7 @@ import com.filestech.sms.data.local.db.dao.ScheduledMessageDao
 import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
+import com.filestech.sms.data.media.probePngDimensions
 import com.filestech.sms.data.sms.PhoneIdentity
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.mms.MediaAttachmentSpec
@@ -1161,14 +1162,25 @@ class ConversationMirror @Inject constructor(
             if (pieces.isNotEmpty()) {
                 attachmentDao.insertAll(
                     pieces.map { piece ->
+                        // Round 33 — probe PNG dimensions at import:
+                        // the sticker filter needs real dimensions,
+                        // and a received sticker's row used to store
+                        // null here, so the 512×512 arm could never
+                        // fire for it. A 24-byte header read,
+                        // fail-soft (`null` when unprobed).
+                        val pngSize = if (piece.mimeType.equals("image/png", ignoreCase = true)) {
+                            probePngDimensions(piece.file)
+                        } else {
+                            null
+                        }
                         AttachmentEntity(
                             messageId = msgId,
                             mimeType = piece.mimeType,
                             fileName = piece.file.name,
                             sizeBytes = piece.file.length(),
                             localUri = piece.file.absolutePath,
-                            width = null,
-                            height = null,
+                            width = pngSize?.first,
+                            height = pngSize?.second,
                             durationMs = piece.durationMs,
                         )
                     },

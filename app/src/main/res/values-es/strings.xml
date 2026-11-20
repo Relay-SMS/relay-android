@@ -147,6 +147,15 @@
     <string name="details_empty_photos">Las fotos compartidas en esta conversación se mostrarán aquí.</string>
     <string name="details_empty_videos">Los vídeos compartidos en esta conversación se mostrarán aquí.</string>
     <string name="details_empty_files">Los archivos compartidos en esta conversación se mostrarán aquí.</string>
+    <string name="details_file_saved">Guardado</string>
+    <string name="details_file_save_failed">No se pudo guardar el archivo</string>
+    <string name="details_save_copy">Guardar una copia</string>
+    <string name="viewer_picker_title">Abrir con</string>
+    <string name="viewer_just_once">Solo una vez</string>
+    <string name="viewer_always">Siempre</string>
+    <string name="viewer_kind_images">Imágenes</string>
+    <string name="viewer_kind_videos">Vídeos</string>
+    <string name="viewer_kind_audio">Audio</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archivadas</string>
@@ -744,6 +753,9 @@
     <string name="settings_set_default">Establecer como predeterminada</string>
     <string name="settings_is_default">Relay es la app de SMS predeterminada.</string>
     <string name="settings_reset_all">Restablecer todos los ajustes</string>
+    <string name="settings_viewer_title">Aplicaciones guardadas</string>
+    <string name="settings_viewer_none">Sin elecciones guardadas</string>
+    <string name="settings_viewer_cleared">Aplicaciones guardadas eliminadas</string>
     <string name="settings_nuke_data">Eliminar todos mis datos</string>
     <string name="settings_nuke_confirm">Se borrarán todas las conversaciones en Relay Y en el almacén de mensajes del teléfono, junto con los archivos adjuntos, los envíos programados y todos los ajustes. La caja fuerte también se borra. Esta acción no se puede deshacer, y en la siguiente sincronización no vuelve nada.</string>
     <string name="settings_nuke_confirm_not_default">⚠️ Relay no es su app de SMS predeterminada: el sistema se negará a eliminar los mensajes del teléfono. Se quedarán donde están y volverán en la siguiente sincronización. Solo se borrarán los datos propios de Relay.</string>
@@ -946,6 +958,7 @@
     <string name="schedule_preset_in_1_hour">En 1 hora · %1$s</string>
     <string name="schedule_preset_day_time">%1$s, %2$s</string>
     <string name="schedule_pick_date_time">Elegir fecha y hora</string>
+    <string name="schedule_preset_title">Hora de envío</string>
     <string name="emoji_picker_search_emoji">Buscar emoji</string>
     <string name="emoji_picker_search_gif">Search KLIPY</string>
     <string name="emoji_picker_search_sticker">Buscar sticker</string>

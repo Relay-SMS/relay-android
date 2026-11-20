@@ -156,7 +156,6 @@ fun MediaAttachmentBubble(
      */
     onRequestDownload: ((Long) -> Unit)? = null,
 ) {
-    val context = LocalContext.current
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
     // Outgoing : [brandBlue] (cohérent avec [MessageBubble] et
@@ -169,9 +168,9 @@ fun MediaAttachmentBubble(
     val shape = RoundedCornerShape(24.dp)
 
     // X-04 — une seule fonction d'ouverture, paramétrée par la pièce jointe touchée.
-    val ouvrir: (Attachment) -> Unit = remember(message.id) {
-        fun(cible: Attachment) = ouvrirPieceJointe(context, cible)
-    }
+    // Round 33 — Relay's own viewer picker ([rememberAttachmentOpener]):
+    // media opens resolve the remembered viewer or raise the picker.
+    val ouvrir: (Attachment) -> Unit = rememberAttachmentOpener()
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe ;
@@ -745,7 +744,17 @@ internal fun Attachment.modeleImage(): Any =
  * L'ancien code wrappait aveuglément `File(localUri)` → FileProvider throw sur (2)
  * = aucun MMS image historique ne pouvait s'ouvrir. On détecte le scheme avant.
  */
-internal fun ouvrirPieceJointe(context: android.content.Context, cible: Attachment) {
+internal fun ouvrirPieceJointe(
+    context: android.content.Context,
+    cible: Attachment,
+    /**
+     * Round 33 — the viewer to open with (Relay's remembered
+     * "Always" choice): `setPackage`, so the intent goes straight
+     * to that app with no resolver. `null` = the plain intent,
+     * which lets Android offer its own Just once / Always.
+     */
+    packageName: String? = null,
+) {
     runCatching {
         val targetUri = cible.toShareableUri(context)
         if (targetUri == null) {
@@ -754,13 +763,18 @@ internal fun ouvrirPieceJointe(context: android.content.Context, cible: Attachme
         }
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(targetUri, cible.mimeType)
+            if (packageName != null) setPackage(packageName)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         // Round 32 — the plain intent, NOT createChooser: a chooser
         // forces the pick every time and never offers "Always". The
         // plain intent lets Android offer "Just once" / "Always", so
-        // a default sticks after the first tap.
+        // a default sticks after the first tap. Round 33 — the
+        // system resolver still cannot be trusted to offer "Always"
+        // for a non-top app, so media opens go through Relay's own
+        // picker ([rememberAttachmentOpener]) instead; this stays
+        // the low-level open, with or without a remembered package.
         context.startActivity(intent)
     }.onFailure { Timber.w(it, "Failed to open attachment %d", cible.id) }
 }
@@ -772,8 +786,12 @@ internal fun ouvrirPieceJointe(context: android.content.Context, cible: Attachme
  * exposer un `file://` direct (Android 7+ refuse).
  *
  * Retourne `null` si le fichier n'existe pas (cas path stale après nettoyage cache).
+ *
+ * Round 33 — internal, not private: the viewer picker
+ * ([rememberAttachmentOpener]) resolves the URI itself to query
+ * the handlers for it before opening.
  */
-private fun com.filestech.sms.domain.model.Attachment.toShareableUri(
+internal fun com.filestech.sms.domain.model.Attachment.toShareableUri(
     context: android.content.Context,
 ): Uri? {
     if (localUri.isBlank()) return null
@@ -795,13 +813,17 @@ private fun com.filestech.sms.domain.model.Attachment.toShareableUri(
         runCatching { context.cacheDir.canonicalPath }.getOrNull(),
     ).filterNotNull()
     val absolutePath = canonicalFile.absolutePath
-    if (allowedPrefixes.none { absolutePath.startsWith(it + File.separator) || absolutePath == it }) {
+    return if (allowedPrefixes.none {
+            absolutePath.startsWith(it + File.separator) || absolutePath == it
+        }
+    ) {
         Timber.w("Attachment.toShareableUri: path outside app sandbox, refusing")
-        return null
+        null
+    } else {
+        runCatching {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", canonicalFile)
+        }.getOrNull()
     }
-    return runCatching {
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", canonicalFile)
-    }.getOrNull()
 }
 
 /** Icône + nom + taille pour vidéo / fichier. Tap = ACTION_VIEW ; round 22 —

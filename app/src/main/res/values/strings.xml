@@ -146,6 +146,15 @@
     <string name="details_empty_photos">Photos shared in this conversation will show here.</string>
     <string name="details_empty_videos">Videos shared in this conversation will show here.</string>
     <string name="details_empty_files">Files shared in this conversation will show here.</string>
+    <string name="details_file_saved">Saved</string>
+    <string name="details_file_save_failed">Couldn\'t save the file</string>
+    <string name="details_save_copy">Save a copy</string>
+    <string name="viewer_picker_title">Open with</string>
+    <string name="viewer_just_once">Just once</string>
+    <string name="viewer_always">Always</string>
+    <string name="viewer_kind_images">Images</string>
+    <string name="viewer_kind_videos">Videos</string>
+    <string name="viewer_kind_audio">Audio</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archived</string>
@@ -740,6 +749,9 @@
     <string name="settings_set_default">Set as default</string>
     <string name="settings_is_default">Relay is the default SMS app.</string>
     <string name="settings_reset_all">Reset all settings</string>
+    <string name="settings_viewer_title">Saved app choices</string>
+    <string name="settings_viewer_none">No saved choices</string>
+    <string name="settings_viewer_cleared">Saved app choices cleared</string>
     <string name="settings_nuke_data">Delete all my data</string>
     <string name="settings_nuke_confirm">All conversations will be erased in Relay AND in the phone’s message store, along with attachments, scheduled sends and every setting. The vault is erased too. This cannot be undone, and nothing comes back at the next sync.</string>
     <string name="settings_nuke_confirm_not_default">⚠️ Relay is not your default SMS app: the system will refuse to delete the phone’s messages. They will stay in place and come back at the next sync. Only Relay’s own data will be erased.</string>
@@ -941,6 +953,7 @@
     <string name="schedule_preset_in_1_hour">In 1 hour · %1$s</string>
     <string name="schedule_preset_day_time">%1$s, %2$s</string>
     <string name="schedule_pick_date_time">Pick date and time</string>
+    <string name="schedule_preset_title">Send time</string>
     <string name="emoji_picker_search_emoji">Search emoji</string>
     <string name="emoji_picker_search_gif">Search KLIPY</string>
     <string name="emoji_picker_search_sticker">Search sticker</string>

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material.icons.outlined.Sync
@@ -38,12 +39,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -51,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.data.local.datastore.ViewerChoices
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayPrimaryButton
@@ -59,7 +63,11 @@ import com.filestech.sms.ui.components.RelaySettingsGroup
 import com.filestech.sms.ui.components.RelaySwitchRow
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
+import com.filestech.sms.ui.components.ViewerChoiceStoreEntryPoint
+import com.filestech.sms.ui.components.appLabelFor
 import com.filestech.sms.ui.theme.RelayColors
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.launch
 
 /**
  * Advanced screen, reached from Settings ("Advanced", between "App Language"
@@ -105,6 +113,8 @@ fun AdvancedScreen(
     // @Composable, so it cannot be called from the LaunchedEffect coroutine below).
     // Reading it here also keeps it configuration-aware: a locale change re-reads it.
     val resyncStarted = stringResource(R.string.settings_resync_started)
+
+    val viewerState = rememberViewerChoicesState(snackbarHost)
 
     // Only the two events this screen's actions can emit: the re-sync
     // confirmation snackbar and the erase-data report dialog. The other
@@ -278,6 +288,17 @@ fun AdvancedScreen(
                         icon = Icons.Outlined.BugReport,
                         title = stringResource(R.string.error_log_title),
                         chevron = true,
+                    )
+                }
+                // Round 33 — the viewers remembered with "Always" in
+                // Relay's own picker, per media type; tapping clears
+                // them all (see [rememberViewerChoicesState]).
+                item(onClick = { viewerState.clearIfAny() }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.OpenInNew,
+                        title = stringResource(R.string.settings_viewer_title),
+                        subtitle = viewerState.subtitle,
+                        chevron = viewerState.choices.anyRemembered,
                     )
                 }
                 // v1.8.0 — dialog de confirmation (les préférences reviennent
@@ -478,4 +499,57 @@ fun AdvancedScreen(
             },
         )
     }
+}
+
+/** Round 33 — the Advanced row's view of the remembered viewers. */
+private class ViewerChoicesState(
+    val choices: ViewerChoices,
+    val subtitle: String,
+    val clearIfAny: () -> Unit,
+)
+
+/**
+ * Round 33 — the viewers remembered with "Always" in Relay's own
+ * picker, per media type. Reached through the entry point, like
+ * the attachment opener — the SettingsViewModel is not involved.
+ * Clearing needs no confirm: the picker simply shows again on
+ * the next open, so the choice is one tap away. Nothing to
+ * clear, nothing happens — no snackbar for a no-op.
+ */
+@Composable
+private fun rememberViewerChoicesState(snackbarHost: SnackbarHostState): ViewerChoicesState {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val viewerStore = remember(context) {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            ViewerChoiceStoreEntryPoint::class.java,
+        ).viewerChoiceStore()
+    }
+    val viewerChoices by viewerStore.flow.collectAsStateWithLifecycle(ViewerChoices())
+    val imagesLabel = stringResource(R.string.viewer_kind_images)
+    val videosLabel = stringResource(R.string.viewer_kind_videos)
+    val audioLabel = stringResource(R.string.viewer_kind_audio)
+    val noneLabel = stringResource(R.string.settings_viewer_none)
+    val clearedMessage = stringResource(R.string.settings_viewer_cleared)
+    val subtitle = remember(viewerChoices) {
+        val parts = listOfNotNull(
+            viewerChoices.image?.let { "$imagesLabel: ${appLabelFor(context, it)}" },
+            viewerChoices.video?.let { "$videosLabel: ${appLabelFor(context, it)}" },
+            viewerChoices.audio?.let { "$audioLabel: ${appLabelFor(context, it)}" },
+        )
+        if (parts.isEmpty()) noneLabel else parts.joinToString(" · ")
+    }
+    return ViewerChoicesState(
+        choices = viewerChoices,
+        subtitle = subtitle,
+        clearIfAny = {
+            if (viewerChoices.anyRemembered) {
+                scope.launch {
+                    viewerStore.clearAll()
+                    snackbarHost.showSnackbar(clearedMessage)
+                }
+            }
+        },
+    )
 }

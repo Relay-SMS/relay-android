@@ -7,6 +7,7 @@ package com.filestech.sms.ui.screens.details
 import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,6 +62,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,8 +76,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,13 +92,14 @@ import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.GroupMemberAvatar
 import com.filestech.sms.ui.components.RelayAvatar
 import com.filestech.sms.ui.components.RelayGroupAvatar
-import com.filestech.sms.ui.components.ouvrirPieceJointe
+import com.filestech.sms.ui.components.rememberAttachmentOpener
 import com.filestech.sms.ui.screens.media.MediaGalleryViewModel
 import com.filestech.sms.ui.screens.media.MediaTile
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.onBrandBlue
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -165,6 +166,8 @@ fun ConversationDetailsPanel(
     contactPhotoUri: String?,
     isUnknownContact: Boolean,
     memberNames: Map<String, String>,
+    /** Group member contact photos by raw address (round 33). */
+    memberPhotos: Map<String, String>,
     /** 1:1 thread, no saved contact, hub mode — the Add to contacts row. */
     showAddToContacts: Boolean,
     canSchedule: Boolean,
@@ -224,6 +227,7 @@ fun ConversationDetailsPanel(
                     contactPhotoUri = contactPhotoUri,
                     isUnknownContact = isUnknownContact,
                     memberNames = memberNames,
+                    memberPhotos = memberPhotos,
                     showAddToContacts = showAddToContacts,
                     canSchedule = canSchedule,
                     canExport = canExport,
@@ -245,6 +249,7 @@ private fun DetailsPanelContent(
     contactPhotoUri: String?,
     isUnknownContact: Boolean,
     memberNames: Map<String, String>,
+    memberPhotos: Map<String, String>,
     showAddToContacts: Boolean,
     canSchedule: Boolean,
     canExport: Boolean,
@@ -260,6 +265,44 @@ private fun DetailsPanelContent(
     val files by mediaViewModel.files.collectAsStateWithLifecycle()
     val downloadStates by mediaViewModel.downloadStates.collectAsStateWithLifecycle()
     var mediaTab by remember { mutableStateOf(DetailsMediaTab.Photos) }
+    // Round 33 — Relay's own viewer picker: media opens resolve the
+    // remembered viewer or raise the picker.
+    val openAttachment = rememberAttachmentOpener()
+    // Round 33 — the "Save as" flow behind the download icon on
+    // tiles and audio rows (hub mode: the file is local, so
+    // "download" saves a copy out of Relay; client mode fetches
+    // from the hub instead). One launcher for the whole panel; the
+    // pending attachment is cleared on result, like the avatar
+    // picker's grant flow. A toast confirms the save — the panel
+    // has no snackbar host.
+    val scope = rememberCoroutineScope()
+    var pendingSave by remember { mutableStateOf<Attachment?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*"),
+    ) { uri: Uri? ->
+        val target = pendingSave
+        pendingSave = null
+        if (uri != null && target != null) {
+            scope.launch {
+                val saved = saveAttachmentCopy(context, target, uri)
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        if (saved) {
+                            R.string.details_file_saved
+                        } else {
+                            R.string.details_file_save_failed
+                        },
+                    ),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+    fun requestSaveCopy(attachment: Attachment) {
+        pendingSave = attachment
+        saveLauncher.launch(saveFileNameFor(attachment))
+    }
     Column(
         modifier = Modifier
             .statusBarsPadding()
@@ -312,6 +355,7 @@ private fun DetailsPanelContent(
                     contactPhotoUri = contactPhotoUri,
                     isUnknownContact = isUnknownContact,
                     memberNames = memberNames,
+                    memberPhotos = memberPhotos,
                     onSetAvatar = actions.onSetAvatar,
                 )
             }
@@ -330,6 +374,7 @@ private fun DetailsPanelContent(
                     DetailsMembersSection(
                         conversation = conversation,
                         memberNames = memberNames,
+                        memberPhotos = memberPhotos,
                     )
                 }
             }
@@ -354,10 +399,11 @@ private fun DetailsPanelContent(
                             tabKey = "photos",
                             items = photos,
                             downloadStates = downloadStates,
-                            onOpen = { ouvrirPieceJointe(context, it) },
+                            onOpen = openAttachment,
                             onRequestDownload = { id ->
                                 mediaViewModel.requestDownload(id)
                             },
+                            onSaveCopy = { requestSaveCopy(it) },
                         )
                     }
                 }
@@ -375,10 +421,11 @@ private fun DetailsPanelContent(
                             tabKey = "videos",
                             items = videos,
                             downloadStates = downloadStates,
-                            onOpen = { ouvrirPieceJointe(context, it) },
+                            onOpen = openAttachment,
                             onRequestDownload = { id ->
                                 mediaViewModel.requestDownload(id)
                             },
+                            onSaveCopy = { requestSaveCopy(it) },
                         )
                     }
                 }
@@ -397,10 +444,11 @@ private fun DetailsPanelContent(
                         else -> detailsGroupedFiles(
                             files = fileRows,
                             downloadStates = downloadStates,
-                            onOpen = { ouvrirPieceJointe(context, it) },
+                            onOpen = openAttachment,
                             onRequestDownload = { id ->
                                 mediaViewModel.requestDownload(id)
                             },
+                            onSaveCopy = { requestSaveCopy(it) },
                         )
                     }
                 }
@@ -413,19 +461,21 @@ private fun DetailsPanelContent(
 }
 
 /**
- * Big avatar (80dp, like the desktop pane) with the camera badge at
- * its bottom-right, the name, and the number — or the member count
- * for a group. The badge changes the conversation photo: with no
- * custom avatar yet it opens the gallery picker straight away; with
- * one set, a small menu offers picking a new one or going back to
- * the default. 1:1 only — a group has no single contact photo to
- * change (the desktop pane's rule); a group with a custom avatar
- * still shows it, it just can't be changed from here.
+ * Big avatar (96dp, measured ~99px on Kristin's mockup) with the
+ * camera badge at its bottom-right, the name, and the number — or
+ * the member count for a group. The badge changes the conversation
+ * photo: with no custom avatar yet it opens the gallery picker
+ * straight away; with one set, a small menu offers picking a new
+ * one or going back to the default. 1:1 only — a group has no
+ * single contact photo to change (the desktop pane's rule); a group
+ * with a custom avatar still shows it, it just can't be changed
+ * from here.
  *
  * A group without a custom avatar shows the first two members as
  * overlapping minis ([RelayGroupAvatar], the same geometry as the
  * main list and the desktop pane header), not the single Group-icon
- * disc.
+ * disc. Round 33 — the minis show the members' real contact photos
+ * ([memberPhotos]), falling back to initials like the main list.
  */
 @Composable
 private fun DetailsAvatarBlock(
@@ -435,6 +485,7 @@ private fun DetailsAvatarBlock(
     contactPhotoUri: String?,
     isUnknownContact: Boolean,
     memberNames: Map<String, String>,
+    memberPhotos: Map<String, String>,
     onSetAvatar: (String?) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -495,13 +546,13 @@ private fun DetailsAvatarBlock(
         Box {
             if (conversation.isGroup && conversation.avatarUri == null) {
                 RelayGroupAvatar(
-                    members = groupMemberAvatars(conversation, memberNames),
-                    size = 80.dp,
+                    members = groupMemberAvatars(conversation, memberNames, memberPhotos),
+                    size = HEADER_AVATAR_SIZE,
                 )
             } else {
                 RelayAvatar(
                     label = title,
-                    size = 80.dp,
+                    size = HEADER_AVATAR_SIZE,
                     customUri = conversation.avatarUri ?: contactPhotoUri,
                     isGroup = conversation.isGroup,
                     isUnknownContact = isUnknownContact,
@@ -595,18 +646,21 @@ private fun DetailsAvatarBlock(
  * The first two members of a group, for the header's overlapping
  * minis: the thread's resolved name when known, else the raw number
  * (an unknown number renders the grey glyph, like the main list).
- * No photos — the thread state carries names only, so the minis
- * show initials; the main list resolves photos separately.
+ * Round 33 — the member's contact photo when the thread resolved
+ * one ([memberPhotos]); a member without a photo renders initials,
+ * like the main list.
  */
 private fun groupMemberAvatars(
     conversation: Conversation,
     memberNames: Map<String, String>,
+    memberPhotos: Map<String, String>,
 ): List<GroupMemberAvatar> {
     return conversation.addresses.take(2).map { address ->
         val name = memberNames[address.raw]
         GroupMemberAvatar(
             label = name ?: address.raw,
             isUnknownContact = name == null,
+            photoUri = memberPhotos[address.raw],
         )
     }
 }
@@ -663,8 +717,8 @@ private fun DetailsActionRows(
         )
         // The icon shows the current state (the plain speaker while
         // unmuted, the muted speaker once muted) and the label names
-        // the action; a muted conversation reads blue, like the
-        // desktop pane's primary row.
+        // the action. Round 33 — no blue pill: the mute row looks
+        // like every other row; the icon alone carries the state.
         DetailsActionRow(
             label = stringResource(
                 if (conversation.muted) R.string.action_unmute else R.string.action_mute,
@@ -679,11 +733,10 @@ private fun DetailsActionRows(
                         },
                     ),
                     contentDescription = null,
-                    tint = if (conversation.muted) onBrandBlue() else cs.onSurfaceVariant,
+                    tint = cs.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
                 )
             },
-            highlighted = conversation.muted,
             onClick = actions.onToggleMute,
         )
         if (showAddToContacts) {
@@ -785,40 +838,30 @@ private fun DetailsActionRows(
     }
 }
 
+/**
+ * One action row. Round 33 — every row is rounded (16dp, the tiles'
+ * and file cards' corner) with the ripple clipped to it: the mute
+ * row used to be the only rounded one, and only because it was a
+ * blue pill. The pill is gone; the rounding stays, on all rows.
+ * The 8dp outer + 8dp inner padding keeps the text aligned exactly
+ * where the old full-width rows put it (16dp from the panel edge).
+ */
 @Composable
 private fun DetailsActionRow(
     label: String,
     icon: @Composable () -> Unit,
     onClick: () -> Unit,
     enabled: Boolean = true,
-    /**
-     * The active state (a muted conversation): the row becomes a
-     * brand-blue pill with white content, like the desktop pane's
-     * primary row. The icon lambda tints itself; the label follows
-     * here. Inset 8dp so the pill sits inside the row padding, with
-     * the text still aligned with the plain rows.
-     */
-    highlighted: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
-    val highlightModifier = if (highlighted) {
-        Modifier
-            .padding(horizontal = 8.dp)
-            .clip(RoundedCornerShape(50))
-            .background(brandBlue())
-    } else {
-        Modifier
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(highlightModifier)
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(ACTION_ROW_CORNER))
             .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(
-                horizontal = if (highlighted) 8.dp else 16.dp,
-                vertical = 12.dp,
-            ),
+            .padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -831,7 +874,7 @@ private fun DetailsActionRow(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
-            color = if (highlighted) onBrandBlue() else cs.onSurface,
+            color = cs.onSurface,
         )
     }
 }
@@ -840,13 +883,17 @@ private fun DetailsActionRow(
 private fun DetailsMembersSection(
     conversation: Conversation,
     memberNames: Map<String, String>,
+    memberPhotos: Map<String, String>,
 ) {
     val cs = MaterialTheme.colorScheme
     Column(modifier = Modifier.padding(top = 16.dp)) {
+        // Round 33 — the home screen's date-header style, exactly
+        // (RelayText.SectionHeader + onSurfaceVariant): the Members
+        // header must read like the home list's Today / Yesterday.
         Text(
             text = stringResource(R.string.compose_group_members),
-            style = MaterialTheme.typography.titleSmall,
-            color = cs.onSurface,
+            style = RelayText.SectionHeader,
+            color = cs.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
         )
         conversation.addresses.forEach { address ->
@@ -858,9 +905,12 @@ private fun DetailsMembersSection(
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Round 33 — the member's real contact photo when
+                // the thread resolved one; initials when not.
                 RelayAvatar(
                     label = name,
                     size = 32.dp,
+                    customUri = memberPhotos[address.raw],
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
@@ -915,13 +965,15 @@ private fun DetailsMediaTabs(
 /**
  * An empty media tab, like the desktop pane: the tab's icon in the
  * mockup's mid grey (56dp) above the same line of text, centred.
+ * Round 33 — the space BELOW the text doubles (8dp → 16dp); the
+ * 32dp above the icon stays as-is.
  */
 @Composable
 private fun DetailsEmptyMedia(@DrawableRes iconRes: Int, text: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 32.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
+            .padding(top = 32.dp, bottom = 16.dp, start = 16.dp, end = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -942,12 +994,19 @@ private fun DetailsEmptyMedia(@DrawableRes iconRes: Int, text: String) {
     }
 }
 
-/** A date-group header inside a media tab: 13sp semibold, like the desktop pane. */
+/**
+ * A date-group header inside a media tab. Round 33 — the home
+ * screen's date-header style, exactly (RelayText.SectionHeader +
+ * onSurfaceVariant: RelayFont, 13sp semibold, 16sp line height,
+ * 0.4sp letter spacing): round 32 used the desktop style (13sp
+ * semibold, no font family, no letter spacing), which read
+ * different next to the home list's Today / Yesterday.
+ */
 @Composable
 private fun DetailsMediaGroupHeader(group: DetailsDateGroup) {
     Text(
         text = stringResource(group.labelRes),
-        style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+        style = RelayText.SectionHeader,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 12.dp),
     )
@@ -964,6 +1023,7 @@ private fun LazyListScope.detailsGroupedTiles(
     downloadStates: Map<Long, ClientDownloadState>,
     onOpen: (Attachment) -> Unit,
     onRequestDownload: (Long) -> Unit,
+    onSaveCopy: (Attachment) -> Unit,
 ) {
     items.groupByDetailsDate().forEach { (group, groupItems) ->
         item(key = "$tabKey-header-${group.name}") {
@@ -978,6 +1038,7 @@ private fun LazyListScope.detailsGroupedTiles(
                 downloadStates = downloadStates,
                 onOpen = onOpen,
                 onRequestDownload = onRequestDownload,
+                onSaveCopy = onSaveCopy,
             )
         }
     }
@@ -989,6 +1050,7 @@ private fun LazyListScope.detailsGroupedFiles(
     downloadStates: Map<Long, ClientDownloadState>,
     onOpen: (Attachment) -> Unit,
     onRequestDownload: (Long) -> Unit,
+    onSaveCopy: (Attachment) -> Unit,
 ) {
     files.groupByDetailsDate().forEach { (group, groupFiles) ->
         item(key = "files-header-${group.name}") {
@@ -1000,6 +1062,7 @@ private fun LazyListScope.detailsGroupedFiles(
                 downloadState = downloadStates[attachment.id],
                 onRequestDownload = onRequestDownload,
                 onOpen = onOpen,
+                onSaveCopy = onSaveCopy,
             )
         }
     }
@@ -1012,6 +1075,7 @@ private fun DetailsMediaRow(
     downloadStates: Map<Long, ClientDownloadState>,
     onOpen: (Attachment) -> Unit,
     onRequestDownload: (Long) -> Unit,
+    onSaveCopy: (Attachment) -> Unit,
 ) {
     Row(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -1028,6 +1092,7 @@ private fun DetailsMediaRow(
                     onClick = { onOpen(attachment) },
                     downloadState = downloadStates[attachment.id],
                     onRequestDownload = onRequestDownload,
+                    onSaveCopy = onSaveCopy,
                 )
             }
         }
@@ -1047,6 +1112,15 @@ private fun DetailsMediaRow(
  * The icon follows the desktop Files tab's four categories: a vCard
  * gets the person-in-a-circle, text and application MIME types the
  * document, audio the mic, anything else the photos mark.
+ *
+ * Round 33 — geometry from Kristin's mockup (390px wide, 1px =
+ * 1dp): the card is 67dp tall with 26dp side margins, a 10dp gap
+ * between cards, a 16dp corner, the icon 22dp in from the left
+ * edge, and the download icon 29dp in from the right edge. The
+ * 16dp top + 15dp bottom padding plus the two text lines (20sp +
+ * 16sp) make exactly 67dp. Audio rows always carry the download
+ * icon at the far right: client mode fetches the bytes from the
+ * hub, hub mode saves a copy out of Relay ([onSaveCopy]).
  */
 @Composable
 private fun DetailsFileRow(
@@ -1054,6 +1128,7 @@ private fun DetailsFileRow(
     downloadState: ClientDownloadState?,
     onRequestDownload: ((Long) -> Unit)?,
     onOpen: (Attachment) -> Unit,
+    onSaveCopy: (Attachment) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -1065,7 +1140,7 @@ private fun DetailsFileRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 5.dp)
+            .padding(horizontal = FILE_CARD_MARGIN, vertical = 5.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(cs.surfaceContainerHigh)
             .clickable(onClick = {
@@ -1079,14 +1154,19 @@ private fun DetailsFileRow(
                     onOpen(attachment)
                 }
             })
-            .padding(12.dp),
+            .padding(start = 22.dp, top = 12.dp, bottom = 13.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 42dp box: the document vector's ink fills 0.625 x 0.8125 of
+        // its box, so 42dp renders a ~26x34 glyph — the mockup's
+        // 27x34. The other type icons share the box so every row
+        // lines up, and with 12/13dp of vertical padding the card is
+        // 67dp tall — the mockup's height.
         Icon(
             painter = painterResource(fileIconFor(attachment)),
             contentDescription = null,
             tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(42.dp),
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -1105,31 +1185,67 @@ private fun DetailsFileRow(
                 )
             }
         }
-        if (needsDownload) {
+        // The far-right slot: the fetch state on a linked device
+        // whose bytes have not landed, the download icon on every
+        // audio row (fetch in client mode, save-a-copy in hub mode).
+        // A 40dp touch target with 2dp of end padding puts the
+        // download glyph 29dp in from the card's right edge (16dp row
+        // padding + 2dp + 5dp centring slack + ~6dp of empty vector
+        // space — the download vector's ink fills only 0.625 of its
+        // box width) — the mockup's right inset. The 30dp icon
+        // renders a ~19x24 glyph, the mockup's 20x24.
+        if (needsDownload || attachment.isAudio) {
             Spacer(Modifier.width(8.dp))
-            when (downloadState) {
-                is ClientDownloadState.Downloading -> CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                )
-                is ClientDownloadState.Failed -> Icon(
-                    Icons.Outlined.Refresh,
-                    contentDescription = stringResource(R.string.client_attachment_failed),
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-                is ClientDownloadState.Empty -> Icon(
-                    Icons.Outlined.AttachFile,
-                    contentDescription = stringResource(R.string.client_attachment_empty),
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-                else -> Icon(
-                    painter = painterResource(R.drawable.ic_download_outline),
-                    contentDescription = stringResource(R.string.client_attachment_tap_download),
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
+            Box(
+                modifier = Modifier
+                    .padding(end = 2.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = {
+                        if (needsDownload) {
+                            if (downloadState == null ||
+                                downloadState is ClientDownloadState.NotDownloaded ||
+                                downloadState is ClientDownloadState.Failed
+                            ) {
+                                onRequestDownload?.invoke(attachment.id)
+                            }
+                        } else {
+                            onSaveCopy(attachment)
+                        }
+                    }),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    needsDownload && downloadState is ClientDownloadState.Downloading ->
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    needsDownload && downloadState is ClientDownloadState.Failed -> Icon(
+                        Icons.Outlined.Refresh,
+                        contentDescription = stringResource(R.string.client_attachment_failed),
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    needsDownload && downloadState is ClientDownloadState.Empty -> Icon(
+                        Icons.Outlined.AttachFile,
+                        contentDescription = stringResource(R.string.client_attachment_empty),
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    else -> Icon(
+                        painter = painterResource(R.drawable.ic_download_outline),
+                        contentDescription = stringResource(
+                            if (needsDownload) {
+                                R.string.client_attachment_tap_download
+                            } else {
+                                R.string.details_save_copy
+                            },
+                        ),
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(30.dp),
+                    )
+                }
             }
         }
     }
@@ -1176,6 +1292,15 @@ private const val PANEL_WIDTH_DP = 315
 
 /** Gallery tiles per row, like the gallery screen. */
 private const val MEDIA_COLUMNS = 3
+
+/** Action-row corner — 16dp, the tiles' and file cards' corner. */
+private val ACTION_ROW_CORNER = 16.dp
+
+/** Header avatar diameter — 96dp (the mockup measures ~99px). */
+private val HEADER_AVATAR_SIZE = 96.dp
+
+/** File-card side margin — 26dp (the mockup measures 25/27px). */
+private val FILE_CARD_MARGIN = 26.dp
 
 /** Disabled-row opacity (Material disabled content). */
 private const val DISABLED_ALPHA = 0.38f

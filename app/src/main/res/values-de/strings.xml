@@ -145,6 +145,15 @@
     <string name="details_empty_photos">Fotos, die in dieser Unterhaltung geteilt werden, werden hier angezeigt.</string>
     <string name="details_empty_videos">Videos, die in dieser Unterhaltung geteilt werden, werden hier angezeigt.</string>
     <string name="details_empty_files">Dateien, die in dieser Unterhaltung geteilt werden, werden hier angezeigt.</string>
+    <string name="details_file_saved">Gespeichert</string>
+    <string name="details_file_save_failed">Datei konnte nicht gespeichert werden</string>
+    <string name="details_save_copy">Kopie speichern</string>
+    <string name="viewer_picker_title">Öffnen mit</string>
+    <string name="viewer_just_once">Nur einmal</string>
+    <string name="viewer_always">Immer</string>
+    <string name="viewer_kind_images">Bilder</string>
+    <string name="viewer_kind_videos">Videos</string>
+    <string name="viewer_kind_audio">Audio</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archiviert</string>
@@ -741,6 +750,9 @@
     <string name="settings_set_default">Als Standard festlegen</string>
     <string name="settings_is_default">Relay ist die Standard-SMS-App.</string>
     <string name="settings_reset_all">Alle Einstellungen zurücksetzen</string>
+    <string name="settings_viewer_title">Gespeicherte App-Auswahl</string>
+    <string name="settings_viewer_none">Keine gespeicherte Auswahl</string>
+    <string name="settings_viewer_cleared">Gespeicherte App-Auswahl gelöscht</string>
     <string name="settings_nuke_data">Alle meine Daten löschen</string>
     <string name="settings_nuke_confirm">Alle Unterhaltungen werden in Relay UND im Nachrichtenspeicher des Telefons gelöscht, dazu Anhänge, geplante Sendungen und sämtliche Einstellungen. Der Tresor wird ebenfalls gelöscht. Das lässt sich nicht rückgängig machen, und bei der nächsten Synchronisierung kommt nichts zurück.</string>
     <string name="settings_nuke_confirm_not_default">⚠️ Relay ist nicht Ihre Standard-SMS-App: das System wird sich weigern, die Nachrichten des Telefons zu löschen. Sie bleiben bestehen und kommen bei der nächsten Synchronisierung zurück. Nur die eigenen Daten von Relay werden gelöscht.</string>
@@ -943,6 +955,7 @@
     <string name="schedule_preset_in_1_hour">In 1 Stunde · %1$s</string>
     <string name="schedule_preset_day_time">%1$s, %2$s</string>
     <string name="schedule_pick_date_time">Datum und Uhrzeit wählen</string>
+    <string name="schedule_preset_title">Sendezeit</string>
     <string name="emoji_picker_search_emoji">Emoji suchen</string>
     <string name="emoji_picker_search_gif">Search KLIPY</string>
     <string name="emoji_picker_search_sticker">Sticker suchen</string>

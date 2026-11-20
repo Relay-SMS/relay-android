@@ -444,6 +444,9 @@ fun ThreadScreen(
     // Round 32 — "message" = le dialogue de saisie du texte, en premier quand
     // le brouillon est vide (depuis le panneau latéral) ; le texte saisi part
     // dans `scheduledBodyOverride` et ne touche jamais au brouillon.
+    // Round 33 — "presets" = la liste radio des heures rapides (comme le
+    // popup du bureau) ; un preset programme aussitôt, "Pick a date and
+    // time" mène aux pickers "date" puis "time".
     var scheduleStep by remember { mutableStateOf<String?>(null) }
     var scheduledBodyOverride by remember { mutableStateOf<String?>(null) }
     var scheduledEpochMidnight by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
@@ -1653,7 +1656,25 @@ fun ThreadScreen(
             },
             onConfirm = { text ->
                 scheduledBodyOverride = text
-                scheduleStep = "date"
+                scheduleStep = "presets"
+            },
+        )
+    }
+    // Round 33 — preset step (the desktop popup's radio list): four
+    // quick times, or "Pick a date and time" for the pickers below. A
+    // preset schedules straight away through the existing `scheduleSend`
+    // path, with the message step's body override when there is one.
+    if (scheduleStep == "presets") {
+        com.filestech.sms.ui.components.SchedulePresetDialog(
+            onPresetSelected = { epoch ->
+                scheduleStep = null
+                viewModel.scheduleSend(epoch, scheduledBodyOverride)
+                scheduledBodyOverride = null
+            },
+            onPickCustom = { scheduleStep = "date" },
+            onDismiss = {
+                scheduleStep = null
+                scheduledBodyOverride = null
             },
         )
     }
@@ -1694,11 +1715,13 @@ fun ThreadScreen(
         }
     }
     // v1.15.1 — TimePicker (étape 2) : compose la date choisie + l'heure pour obtenir l'epoch.
+    // Round 33 — 12-hour with the AM/PM selector, not 24-hour: the
+    // schedule flow must offer AM/PM, like the desktop popup.
     if (scheduleStep == "time") {
         val timePickerState = androidx.compose.material3.rememberTimePickerState(
             initialHour = 9,
             initialMinute = 0,
-            is24Hour = true,
+            is24Hour = false,
         )
         AlertDialog(
             onDismissRequest = {
@@ -1863,6 +1886,7 @@ fun ThreadScreen(
                 isUnknownContact = !detailsConversation.isGroup &&
                     detailsConversation.displayName == null,
                 memberNames = state.memberNames,
+                memberPhotos = state.memberPhotos,
                 showAddToContacts = !detailsConversation.isGroup &&
                     !state.hasContact && !state.isClientMode,
                 // Round 32 — Schedule is always available from the
@@ -1875,10 +1899,11 @@ fun ThreadScreen(
                 isExporting = state.isExporting,
                 actions = com.filestech.sms.ui.screens.details.ConversationDetailsActions(
                     onSchedule = {
-                        // Draft non-blank: schedule it, like the
-                        // composer button. Blank: type the message
-                        // first, then the usual date/time pickers.
-                        scheduleStep = if (state.draft.isNotBlank()) "date" else "message"
+                        // Draft non-blank: straight to the preset
+                        // times. Blank: type the message first, then
+                        // the presets (a preset schedules it, "Pick a
+                        // date and time" opens the pickers).
+                        scheduleStep = if (state.draft.isNotBlank()) "presets" else "message"
                     },
                     onExportPdf = { viewModel.exportToPdf() },
                     onChatColors = { appearanceOpen = true },

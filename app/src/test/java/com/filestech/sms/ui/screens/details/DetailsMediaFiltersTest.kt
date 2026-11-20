@@ -37,6 +37,19 @@ class DetailsMediaFiltersTest {
     }
 
     @Test
+    fun `a filename containing sticker anywhere is a sticker`() {
+        val sticker = photo(fileName = "my-sticker-pack.png", mimeType = "image/png")
+        assertThat(sticker.isStickerAttachment()).isTrue()
+        assertThat(sticker.isPhotosTabItem()).isFalse()
+    }
+
+    @Test
+    fun `the sticker filename match is case-insensitive`() {
+        val sticker = photo(fileName = "STICKER_1.PNG", mimeType = "image/png")
+        assertThat(sticker.isStickerAttachment()).isTrue()
+    }
+
+    @Test
     fun `a 512x512 PNG with no caption is a sticker`() {
         val sticker = photo(
             mimeType = "image/png",

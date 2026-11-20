@@ -391,6 +391,14 @@ class ThreadViewModel @Inject constructor(
          * que chaque bulle reçue d'un GROUPE affiche. Inutilisé pour une conversation ordinaire.
          */
         val memberNames: Map<String, String> = emptyMap(),
+        /**
+         * Round 33 — group member contact photos (`PHOTO_THUMBNAIL_URI`),
+         * by raw address: the details panel's Members rows and the
+         * group header's overlapping minis show real photos, falling
+         * back to initials when a member has none. Empty for 1:1
+         * threads — the header uses [contactPhotoUri] there.
+         */
+        val memberPhotos: Map<String, String> = emptyMap(),
         val draftSeeded: Boolean = false,
         val hasContact: Boolean = false,
         /**
@@ -752,30 +760,45 @@ class ThreadViewModel @Inject constructor(
         }.launchIn(viewModelScope)
         combine(
             convFlow.map { conv ->
-                conv?.let { it.addresses.firstOrNull()?.raw to it.isGroup }
+                conv?.let { it.addresses.map { a -> a.raw } to it.isGroup }
             }.distinctUntilChanged(),
             contactPhotoTick,
         ) { address, _ -> address }
             .onEach { address ->
-                val firstNumber = address?.first
+                val numbers = address?.first.orEmpty()
                 val isGroup = address?.second == true
                 // v1.28.13 (MR F-Droid !38458) — sans `READ_CONTACTS`, la recherche lève
                 // `SecurityException` ; non rattrapée dans `viewModelScope`, ouvrir n'importe quelle
                 // conversation faisait planter l'app (jumeau de `ComposeViewModel.chargerContacts`).
                 // « Contact introuvable » est le bon repli ICI : il ne fait que proposer « Ajouter
                 // aux contacts », que l'appli Contacts du système traite sans notre permission.
-                val contact = firstNumber?.let { numero ->
+                // Round 33 — every address is looked up, not just the
+                // first: a group needs each member's photo for the
+                // details panel (Members rows + header minis), the
+                // same lookup the main list uses for its group
+                // avatars. A 1:1 thread has one address, so its
+                // behaviour is unchanged.
+                val contacts = numbers.mapNotNull { numero ->
                     com.filestech.sms.core.result
                         .runCatchingCancellable { contactRepo.lookupByPhone(numero) }
-                        .getOrNull()
-                }
+                        .getOrNull()?.let { numero to it }
+                }.toMap()
+                val firstContact = numbers.firstOrNull()?.let { contacts[it] }
                 _state.update {
                     it.copy(
-                        hasContact = contact != null,
+                        hasContact = firstContact != null,
                         // Feedback round 7 — header avatar photo, same lookup
                         // as the main list. Groups keep the group glyph, so
                         // the photo is only resolved for 1:1 threads.
-                        contactPhotoUri = if (isGroup) null else contact?.photoUri,
+                        contactPhotoUri = if (isGroup) null else firstContact?.photoUri,
+                        memberPhotos = if (!isGroup) {
+                            emptyMap()
+                        } else {
+                            contacts.entries.mapNotNull { (numero, contact) ->
+                                contact.photoUri?.takeIf { it.isNotBlank() }
+                                    ?.let { numero to it }
+                            }.toMap()
+                        },
                     )
                 }
             }

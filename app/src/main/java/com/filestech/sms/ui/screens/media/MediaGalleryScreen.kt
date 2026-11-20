@@ -31,6 +31,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,15 +48,18 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.withResumed
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.RelayEmptyState
 import com.filestech.sms.ui.components.modeleImage
-import com.filestech.sms.ui.components.ouvrirPieceJointe
+import com.filestech.sms.ui.components.rememberAttachmentOpener
 import com.filestech.sms.ui.theme.RelayText
+import timber.log.Timber
 
 /** Issue #59 — la grille des photos et vidéos. Toucher une vignette ouvre le fichier comme depuis la bulle. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,7 +73,9 @@ fun MediaGalleryScreen(
     // Client mode C5 — the download states for tiles whose bytes have
     // not landed yet (empty in hub mode).
     val downloadStates by viewModel.downloadStates.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    // Round 33 — Relay's own viewer picker: media opens resolve the
+    // remembered viewer or raise the picker.
+    val openAttachment = rememberAttachmentOpener()
     // `withResumed`, comme `ThreadScreen` : dépiler pendant qu'un autre écran est devant viserait le voisin.
     val navOwner = LocalLifecycleOwner.current
     LaunchedEffect(vaultHidden) {
@@ -96,7 +104,7 @@ fun MediaGalleryScreen(
         MediaGalleryContent(
             media,
             padding,
-            onOpen = { ouvrirPieceJointe(context, it) },
+            onOpen = openAttachment,
             downloadStates = downloadStates,
             onRequestDownload = { id -> viewModel.requestDownload(id) },
         )
@@ -159,6 +167,14 @@ internal fun MediaGalleryContent(
  * aspect (not square), 14dp between columns and 12dp between rows.
  * The rounding applies here and in the panel alike — one component,
  * one look.
+ *
+ * Round 33 — video tiles show their first frame (the thread bubble's
+ * [VideoFrameDecoder] loader), not just the play icon; and every tile
+ * carries the download icon top-right ([onSaveCopy] in the panel —
+ * hub mode saves a copy out of Relay, client mode fetches the bytes
+ * from the hub when they have not landed yet). The gallery passes no
+ * [onSaveCopy], so its hub-mode tiles show no icon and its
+ * client-mode tiles show it only while bytes are missing.
  */
 @Composable
 internal fun MediaTile(
@@ -166,6 +182,8 @@ internal fun MediaTile(
     onClick: () -> Unit,
     downloadState: ClientDownloadState? = null,
     onRequestDownload: ((Long) -> Unit)? = null,
+    /** Round 33 — saves a copy of a local file (the panel's SAF "Save as"). */
+    onSaveCopy: ((Attachment) -> Unit)? = null,
 ) {
     val fond = MaterialTheme.colorScheme.surfaceVariant
     // Client mode C5 — a synced tile without bytes: it auto-requests
@@ -216,13 +234,51 @@ internal fun MediaTile(
                 fallback = ColorPainter(fond),
             )
         } else {
-            // Comme la bulle : pas d'image extraite de la vidéo.
-            Icon(
-                Icons.Outlined.PlayCircleOutline,
-                contentDescription = stringResource(R.string.attachment_video_label),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(VIDEO_ICON_SIZE),
-            )
+            // Round 33 — the video's first frame, like the thread
+            // bubble (the Videos tab used to show only the play icon
+            // while the thread showed the frame).
+            VideoTileThumbnail(attachment)
+        }
+        // Round 33 — the download icon, top-right on every tile in
+        // the panel: client mode fetches the bytes from the hub
+        // (like the tile tap); hub mode saves a copy out of Relay.
+        // Its own tap target, so it never opens the attachment.
+        val showDownloadIcon = onSaveCopy != null || needsDownload
+        if (showDownloadIcon) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(DOWNLOAD_BADGE_SIZE)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable(onClick = {
+                        if (needsDownload) {
+                            if (downloadState == null ||
+                                downloadState is ClientDownloadState.NotDownloaded ||
+                                downloadState is ClientDownloadState.Failed
+                            ) {
+                                onRequestDownload?.invoke(attachment.id)
+                            }
+                        } else {
+                            onSaveCopy?.invoke(attachment)
+                        }
+                    }),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_download_outline),
+                    contentDescription = stringResource(
+                        if (needsDownload) {
+                            R.string.client_attachment_tap_download
+                        } else {
+                            R.string.details_save_copy
+                        },
+                    ),
+                    tint = Color.White,
+                    modifier = Modifier.size(DOWNLOAD_BADGE_ICON_SIZE),
+                )
+            }
         }
         if (needsDownload) {
             Box(
@@ -272,3 +328,78 @@ private val VIDEO_ICON_SIZE = 40.dp
 private val DOWNLOAD_BADGE_SIZE = 32.dp
 private val DOWNLOAD_BADGE_ICON_SIZE = 18.dp
 private const val THUMBNAIL_PX = 360
+
+/** Play disc on a loaded video frame — the bubble's 48/56dp, scaled to the tile. */
+private val VIDEO_PLAY_DISC_SIZE = 28.dp
+private val VIDEO_PLAY_HALO_SIZE = 36.dp
+
+/**
+ * Round 33 — a video tile's first frame, the thread bubble's
+ * mechanism (`VideoPreview`): a local loader with Coil's
+ * [VideoFrameDecoder], the outlined play icon underneath while the
+ * frame loads, and the play disc on top once it lands (so a video
+ * tile never reads as a photo). A frame that cannot be decoded
+ * leaves the plain icon — never a blank hole.
+ */
+@Composable
+private fun VideoTileThumbnail(attachment: Attachment) {
+    val context = LocalContext.current
+    val videoImageLoader = remember(context) {
+        ImageLoader.Builder(context)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .build()
+    }
+    var thumbLoaded by remember(attachment.localUri) { mutableStateOf(false) }
+    var thumbFailed by remember(attachment.localUri) { mutableStateOf(false) }
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Outlined.PlayCircleOutline,
+            contentDescription = stringResource(R.string.attachment_video_label),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(VIDEO_ICON_SIZE),
+        )
+        if (!thumbFailed) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(attachment.modeleImage())
+                    .size(THUMBNAIL_PX)
+                    .crossfade(true)
+                    .build(),
+                imageLoader = videoImageLoader,
+                contentDescription = attachment.fileName
+                    ?: stringResource(R.string.attachment_video_label),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                onSuccess = { thumbLoaded = true },
+                onError = {
+                    Timber.w(
+                        "Video tile thumbnail load failed for attachment %d",
+                        attachment.id,
+                    )
+                    thumbFailed = true
+                },
+            )
+        }
+        if (thumbLoaded) {
+            // The bubble's play disc, scaled down: a white disc on a
+            // dark scrim halo, readable on any frame.
+            Box(
+                modifier = Modifier
+                    .size(VIDEO_PLAY_HALO_SIZE)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_play_circle),
+                    contentDescription = stringResource(R.string.attachment_video_label),
+                    tint = Color.White,
+                    modifier = Modifier.size(VIDEO_PLAY_DISC_SIZE),
+                )
+            }
+        }
+    }
+}

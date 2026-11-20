@@ -30,10 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
 import com.filestech.sms.R
-import com.filestech.sms.ui.util.ChatFormatters
 import com.filestech.sms.ui.util.rememberChatFormatters
-import java.util.Calendar
-import java.util.Date
 
 /**
  * Round 13 — the long-press schedule menu on the send button. A small popup with
@@ -155,29 +152,6 @@ fun SchedulePresetMenu(
             )
         }
     }
-}
-
-/** The menu label for one preset: "In 1 hour · 5:50 PM", or "Today, 8:00 PM" / "Tomorrow, 9:00 AM". */
-private fun presetLabel(
-    preset: SchedulePreset,
-    nowMillis: Long,
-    formatters: ChatFormatters,
-    todayLabel: String,
-    tomorrowLabel: String,
-    inOneHourFormat: String,
-    dayTimeFormat: String,
-): String {
-    val timeStr = formatters.time.format(Date(preset.epochMillis))
-    if (preset.isInOneHour) return inOneHourFormat.format(timeStr)
-    val dayLabel = if (isSameDay(preset.epochMillis, nowMillis)) todayLabel else tomorrowLabel
-    return dayTimeFormat.format(dayLabel, timeStr)
-}
-
-private fun isSameDay(aMillis: Long, bMillis: Long): Boolean {
-    val a = Calendar.getInstance().apply { timeInMillis = aMillis }
-    val b = Calendar.getInstance().apply { timeInMillis = bMillis }
-    return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
-        a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
 }
 
 /** Enter/exit animation length: quick and subtle, so the menu feels snappy. */

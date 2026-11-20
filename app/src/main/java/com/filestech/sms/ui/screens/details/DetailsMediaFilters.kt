@@ -13,11 +13,20 @@ import com.filestech.sms.ui.components.isEmojiOnlyMessage
  * 512px and sent bare). A real 512×512 square PNG with no caption
  * is also hidden — rare, and accepted.
  *
- * The dimensions arm reads the part metadata the phone stored at
- * import; the desktop additionally classifies by the downloaded
- * file's real dimensions, which the phone never needs — its own
- * metadata already carries width/height. When the metadata has no
- * dimensions (`null`), only the filename arm applies.
+ * Round 33 — the dimensions arm could never fire for a RECEIVED
+ * sticker: incoming MMS rows store `width`/`height` as `null`
+ * (see `ConversationMirror.inscrireMmsRecu` and the system import)
+ * and their filenames are generated (`in-<ts>-<uuid>.png`), so
+ * neither arm matched and the sticker stayed in Images. The
+ * dimensions now arrive two ways: probed at import for new MMS,
+ * and probed from the bytes at read time for existing rows (see
+ * `MediaGalleryViewModel`), so the metadata the filter sees is
+ * complete by the time it runs. The filename arm also widens
+ * from a `sticker-` prefix to any name CONTAINING "sticker"
+ * (other apps name their sticker files differently).
+ *
+ * When the metadata has no dimensions (`null`) — a file that could
+ * not be probed — only the filename arm applies.
  */
 internal fun Attachment.isPhotosTabItem(): Boolean {
     return isImage &&
@@ -26,7 +35,7 @@ internal fun Attachment.isPhotosTabItem(): Boolean {
 }
 
 internal fun Attachment.isStickerAttachment(): Boolean {
-    val fileNameMatch = (fileName ?: "").startsWith("sticker-")
+    val fileNameMatch = (fileName ?: "").contains("sticker", ignoreCase = true)
     // No message body to judge the caption arm — only hide on
     // evidence, never on its absence.
     val body = messageBody

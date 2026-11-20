@@ -1,6 +1,8 @@
 package com.filestech.sms.ui.components
 
+import com.filestech.sms.ui.util.ChatFormatters
 import java.util.Calendar
+import java.util.Date
 import kotlin.math.abs
 
 /**
@@ -66,6 +68,34 @@ private fun nextClockTime(nowMillis: Long, hour: Int, minute: Int): Long {
         if (timeInMillis <= nowMillis) add(Calendar.DAY_OF_YEAR, 1)
     }
     return cal.timeInMillis
+}
+
+/**
+ * Round 33 — the menu label for one preset: "In 1 hour · 5:50 PM", or
+ * "Today, 8:00 PM" / "Tomorrow, 9:00 AM". Shared by the long-press menu
+ * ([SchedulePresetMenu]) and the schedule flow's preset dialog
+ * ([SchedulePresetDialog]).
+ */
+internal fun presetLabel(
+    preset: SchedulePreset,
+    nowMillis: Long,
+    formatters: ChatFormatters,
+    todayLabel: String,
+    tomorrowLabel: String,
+    inOneHourFormat: String,
+    dayTimeFormat: String,
+): String {
+    val timeStr = formatters.time.format(Date(preset.epochMillis))
+    if (preset.isInOneHour) return inOneHourFormat.format(timeStr)
+    val dayLabel = if (isSameDay(preset.epochMillis, nowMillis)) todayLabel else tomorrowLabel
+    return dayTimeFormat.format(dayLabel, timeStr)
+}
+
+internal fun isSameDay(aMillis: Long, bMillis: Long): Boolean {
+    val a = Calendar.getInstance().apply { timeInMillis = aMillis }
+    val b = Calendar.getInstance().apply { timeInMillis = bMillis }
+    return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+        a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
 }
 
 private const val PRESET_COUNT = 4
