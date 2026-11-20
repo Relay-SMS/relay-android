@@ -45,6 +45,10 @@ class SyncEngineTest {
                 "messages_batch",
                 "messages_batch",
                 "sync_complete",
+                // Category mutes — the full muted set rides right
+                // after the snapshot (empty here: the fake mutes
+                // nothing).
+                "category_mutes",
             ).inOrder()
 
             val started = sent.first { it.frameType() == "sync_started" }.asObject()
@@ -141,6 +145,9 @@ class SyncEngineTest {
                 "contacts",
                 "conversations",
                 "sync_complete",
+                // Category mutes — the full muted set rides right
+                // after the snapshot, in both modes.
+                "category_mutes",
             ).inOrder()
             val started = sent.first { it.frameType() == "sync_started" }.asObject()
             assertThat(started["mode"]?.jsonPrimitive?.content).isEqualTo("new_only")
@@ -268,6 +275,81 @@ class SyncEngineTest {
                 .isEqualTo("12")
             assertThat(newMessage["message"]!!.jsonObject["body"]?.jsonPrimitive?.content)
                 .isEqualTo("fresh")
+        }
+    }
+
+    @Test fun `live push sends message_new for a new conversation's first message`() = runTest {
+        val source = FakeSyncMessageSource()
+        val existing = sampleConversation(id = 1, lastMessageAt = 1000, messageCount = 1)
+        source.store(sampleMessage(id = 11, conversationId = 1))
+        assertThat(source.conversationsFlow.tryEmit(listOf(existing))).isTrue()
+        runEngine(source) { engine, sent ->
+            engine.start()
+            advanceUntilIdle()
+            assertThat(sent).isEmpty()
+
+            // A first text from a new number (the OTP case): the
+            // conversation appears with its first message already
+            // in it — the desktop must hear about the message, not
+            // just the thread, or it never notifies for it.
+            source.store(sampleMessage(id = 12, conversationId = 2, body = "Your code is 123456"))
+            val fresh = sampleConversation(
+                id = 2,
+                lastMessageAt = 2000,
+                lastMessagePreview = "Your code is 123456",
+                unread = 1,
+                messageCount = 1,
+            )
+            assertThat(source.conversationsFlow.tryEmit(listOf(fresh, existing))).isTrue()
+            advanceUntilIdle()
+            assertThat(sent.map { it.frameType() })
+                .containsExactly("conversation_updated", "message_new").inOrder()
+            val newMessage = sent.first { it.frameType() == "message_new" }.asObject()
+            assertThat(newMessage["message"]!!.jsonObject["id"]?.jsonPrimitive?.content)
+                .isEqualTo("12")
+            assertThat(newMessage["message"]!!.jsonObject["body"]?.jsonPrimitive?.content)
+                .isEqualTo("Your code is 123456")
+        }
+    }
+
+    @Test fun `a new conversation pushes each of its new messages oldest first`() = runTest {
+        val source = FakeSyncMessageSource()
+        assertThat(source.conversationsFlow.tryEmit(emptyList())).isTrue()
+        runEngine(source) { engine, sent ->
+            engine.start()
+            advanceUntilIdle()
+            assertThat(sent).isEmpty()
+
+            source.store(sampleMessage(id = 11, conversationId = 2, body = "one"))
+            source.store(sampleMessage(id = 12, conversationId = 2, body = "two"))
+            val conv = sampleConversation(id = 2, lastMessageAt = 2000, messageCount = 2)
+            assertThat(source.conversationsFlow.tryEmit(listOf(conv))).isTrue()
+            advanceUntilIdle()
+            assertThat(sent.map { it.frameType() })
+                .containsExactly("conversation_updated", "message_new", "message_new").inOrder()
+            val bodies = sent.filter { it.frameType() == "message_new" }
+                .map { it.asObject()["message"]!!.jsonObject["body"]?.jsonPrimitive?.content }
+            assertThat(bodies).containsExactly("one", "two").inOrder()
+        }
+    }
+
+    @Test fun `a new conversation never re-pushes messages from before the session baseline`() = runTest {
+        val source = FakeSyncMessageSource()
+        // The message predates the session (its id is at the
+        // baseline the collector seeds at start); only its
+        // conversation row appears now — the message itself must
+        // not be re-pushed.
+        source.store(sampleMessage(id = 11, conversationId = 2, body = "old"))
+        assertThat(source.conversationsFlow.tryEmit(emptyList())).isTrue()
+        runEngine(source) { engine, sent ->
+            engine.start()
+            advanceUntilIdle()
+            assertThat(sent).isEmpty()
+
+            val conv = sampleConversation(id = 2, lastMessageAt = 1000, messageCount = 1)
+            assertThat(source.conversationsFlow.tryEmit(listOf(conv))).isTrue()
+            advanceUntilIdle()
+            assertThat(sent.map { it.frameType() }).containsExactly("conversation_updated").inOrder()
         }
     }
 

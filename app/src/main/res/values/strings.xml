@@ -1321,4 +1321,37 @@
     <string name="client_contacts_error_title">Couldn\'t sync contacts</string>
     <string name="client_contacts_error_no_access">Your phone can\'t access its contacts. Allow contacts access on your phone, then retry.</string>
     <string name="client_contacts_error_default">Your phone couldn\'t sync contacts right now.</string>
+    <string name="backup_notes_export_title">Notes backup</string>
+    <string name="backup_notes_export_explainer">Back up your notes — including photos and files — into one encrypted file. Pick a strong passphrase — without it the file cannot be recovered.</string>
+    <string name="backup_notes_export_button">Back up notes</string>
+    <string name="backup_notes_export_success">Notes backup saved.</string>
+    <string name="backup_notes_export_failed">Notes backup failed.</string>
+    <string name="backup_notes_restore_title">Restore notes</string>
+    <string name="backup_notes_restore_explainer">Pick a .notebk file then enter its passphrase. Notes already on this device are merged with your current ones; existing entries are kept (no duplicates).</string>
+    <string name="backup_notes_restore_pick_file">Pick a .notebk file</string>
+    <string name="backup_notes_restore_in_progress">Restoring notes…</string>
+    <string name="backup_notes_restore_success">%1$d notes (%2$d new), %3$d entries imported (%4$d already present)</string>
+
+    <!-- Notes — the note feature's strings (phase 1: phone notes). -->
+    <string name="action_new_note">New note</string>
+    <string name="note_name_title">Name your note</string>
+    <string name="note_name_placeholder">Note name</string>
+    <string name="note_explainer">Notes stay on this device and are never sent over the internet. They are encrypted, and they live in Relay — if you remove the app, your notes go with it. Back them up anytime from Settings → Backups.</string>
+    <string name="note_empty_title">Nothing here yet</string>
+    <string name="note_empty_body">Write your first entry below.</string>
+    <string name="note_delete_title">Delete note?</string>
+    <string name="note_delete_body">This note and all its entries will be permanently deleted.</string>
+    <string name="note_delete_message_title">Delete entry?</string>
+    <string name="note_delete_message_body">This entry will be permanently deleted.</string>
+    <string name="note_rename_title">Rename note</string>
+    <string name="note_rename_placeholder">Note name</string>
+    <string name="note_save_failed">Couldn\'t save this entry</string>
+    <string name="note_attachment_failed">Couldn\'t add this attachment</string>
+    <string name="note_open_failed">Couldn\'t open this file</string>
+    <string name="note_compose_placeholder">Write a note…</string>
+    <string name="note_attach_sheet_subtitle">Photos, videos and files are stored encrypted in this note.</string>
+    <string name="note_pdf_header_subtitle">Exported %1$s</string>
+    <string name="note_empty_photos">Photos saved in this note will show here.</string>
+    <string name="note_empty_videos">Videos saved in this note will show here.</string>
+    <string name="note_empty_files">Files saved in this note will show here.</string>
 </resources>

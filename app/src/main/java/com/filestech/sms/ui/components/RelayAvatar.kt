@@ -23,7 +23,9 @@ import com.filestech.sms.R
 import com.filestech.sms.core.ext.avatarInitials
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.brandBlueTint
+import com.filestech.sms.ui.theme.noteTint
 import com.filestech.sms.ui.theme.onBrandBlueTint
+import com.filestech.sms.ui.theme.onNoteTint
 import com.filestech.sms.ui.theme.scaledBy
 
 /**
@@ -54,6 +56,12 @@ fun RelayAvatar(
      * in both themes.
      */
     isUnknownContact: Boolean = false,
+    /**
+     * Notes — a note avatar: the soft-green note tint with the note
+     * glyph instead of initials. A note has no photo and no members,
+     * so this wins over [customUri], [isGroup] and [isUnknownContact].
+     */
+    isNote: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val initials = remember(label) { label.avatarInitials() }
@@ -66,10 +74,10 @@ fun RelayAvatar(
     val surface = cs.surface
     val surfaceLuma = 0.2126f * surface.red + 0.7152f * surface.green + 0.0722f * surface.blue
     val unknownGrey = if (surfaceLuma < 0.5f) Color(0xFF424242) else Color(0xFFE6E6E6)
-    val avatarBg = if (isUnknownContact && customUri == null && !isGroup) {
-        unknownGrey
-    } else {
-        avatarBackground
+    val avatarBg = when {
+        isNote -> noteTint()
+        isUnknownContact && customUri == null && !isGroup -> unknownGrey
+        else -> avatarBackground
     }
     Box(
         modifier = modifier
@@ -78,7 +86,14 @@ fun RelayAvatar(
             .background(avatarBg),
         contentAlignment = Alignment.Center,
     ) {
-        if (customUri != null) {
+        if (isNote) {
+            Icon(
+                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_note),
+                contentDescription = null,
+                tint = onNoteTint(),
+                modifier = Modifier.size(size * 0.55f),
+            )
+        } else if (customUri != null) {
             // The custom image covers the tint in CircleShape + crop. The tint stays as a
             // backdrop while Coil loads and if the URI fails (revoked, file deleted) — the
             // user never sees an empty bubble.

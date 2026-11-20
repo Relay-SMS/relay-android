@@ -16,4 +16,14 @@ interface PdfExporter {
 
     /** Rend [conversation] + [messages] en PDF, renvoie l'URI de partage + le nombre de pages. */
     suspend fun export(conversation: Conversation, messages: List<Message>): Outcome<PdfExportResult>
+
+    /**
+     * Notes — renders a note to PDF: [title] is the note's title
+     * (the header + the filename stem), [messages] are the note's
+     * entries mapped with `NoteMessage.toDisplayMessage()`. Same
+     * layout as [export]; the header names no participants, and the
+     * file is prefixed `smsrelay_note_` instead of
+     * `smsrelay_conversation_`.
+     */
+    suspend fun exportNote(title: String, messages: List<Message>): Outcome<PdfExportResult>
 }

@@ -44,6 +44,13 @@ import java.io.InputStream
  * desktop's address strings to the phone's `PhoneAddress` values
  * and the created row to the wire DTO.
  *
+ * Category mutes add the muted-category surface below
+ * ([observeMutedCategories], [mutedCategories],
+ * [setCategoryMuted]), same argument: the phone's own
+ * AppSettings holds the set, the glue only maps the domain enum
+ * to the lowercase wire strings — the sync package never sees the
+ * enum itself.
+ *
  * The function count is the one-seam decision, not bloat: splitting
  * this interface would mean a second implementation, a second Hilt
  * binding, and a second seam to re-implement on a port, for no
@@ -317,6 +324,36 @@ interface SyncMessageSource {
      * converges to the synced photo.
      */
     suspend fun setContactPhoto(address: String, photoBytes: ByteArray): ActionResult
+
+    // -- Category mutes ----------------------------------------------
+
+    /**
+     * Live set of muted categories, as lowercase wire strings
+     * (`"personal"`, `"otp"`, `"promotional"`, `"transactions"`,
+     * `"other"`) — the `category_mutes` payload. Re-emitted
+     * whenever `conversations.mutedCategories` changes (and on
+     * unrelated settings writes — the engine dedupes).
+     */
+    fun observeMutedCategories(): Flow<Set<String>>
+
+    /**
+     * One-shot snapshot of the muted categories, as lowercase wire
+     * strings — or null when the settings can't be read (the engine
+     * then skips the `category_mutes` frame after the snapshot; the
+     * collector sends the set on the next change instead). Never an
+     * empty set on failure: an empty set means "nothing muted".
+     */
+    suspend fun mutedCategories(): Set<String>?
+
+    /**
+     * Mutes / unmutes one category ([category] is a lowercase wire
+     * string). An unknown category answers `ok: false` with
+     * `invalid_request` — nothing is applied, and the desktop
+     * reverts its optimistic change. A successful apply goes through
+     * AppSettings, so every session's collector sees the change and
+     * broadcasts the updated set back via `category_mutes`.
+     */
+    suspend fun setCategoryMuted(category: String, muted: Boolean): ActionResult
 }
 
 /**

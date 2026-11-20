@@ -65,6 +65,11 @@ import kotlinx.serialization.serializer
  * envelope; the audio itself travels over Bluetooth HFP on the
  * desktop side — these frames are signaling + dial only. The
  * protocol version stays 1.
+ *
+ * Category mutes add the mute-sync types (`category_mutes`,
+ * `set_category_muted`) in the same envelope, plus one optional
+ * field on `action_result` (`category`, the echo for
+ * `set_category_muted`). The protocol version stays 1.
  */
 object SyncProtocol {
 
@@ -531,10 +536,13 @@ object SyncProtocol {
      * (round 3): the reply echoes the number, so the desktop
      * attributes it to exactly one in-flight pick — and unlike a
      * write-back, a refusal does NOT revert the desktop's local
-     * photo choice. Codes reuse the [MessageFailed] set where they
-     * apply, plus `send_failed` for a reaction whose SMS didn't go out
-     * (the local reaction state stays set on the phone in that case,
-     * matching the phone's own behavior).
+     * photo choice. [category] is present for `set_category_muted`
+     * (category mutes): the reply echoes the category, so the
+     * desktop attributes it to the category it changed. Codes reuse
+     * the [MessageFailed] set where they apply, plus `send_failed`
+     * for a reaction whose SMS didn't go out (the local reaction
+     * state stays set on the phone in that case, matching the
+     * phone's own behavior).
      */
     @Serializable
     data class ActionResult(
@@ -545,6 +553,11 @@ object SyncProtocol {
         @SerialName("ok") val ok: Boolean,
         @SerialName("code") val code: String? = null,
         @SerialName("message") val message: String? = null,
+        // Last on purpose: the client tests construct this type
+        // positionally, and a new field ahead of `ok` would
+        // rebind their arguments. (JSON key order is irrelevant
+        // to the desktop — it reads by key.)
+        @SerialName("category") val category: String? = null,
     )
 
     // -- Slice 4: attachment bytes (SYNC_PROTOCOL.md, Slice 4) --------
@@ -978,6 +991,40 @@ object SyncProtocol {
         }
     }
 
+    // -- Category mutes (SYNC_PROTOCOL.md, Category mutes) ------------
+
+    /**
+     * Server → client: the FULL set of muted categories, as
+     * lowercase wire strings (`"personal"`, `"otp"`,
+     * `"promotional"`, `"transactions"`, `"other"`). Sent after
+     * every snapshot (right after `sync_complete`) and whenever
+     * the set changes on the phone — the phone is the source of
+     * truth, so the desktop replaces its own list with this one
+     * wholesale (an empty list means nothing is muted). Sorted,
+     * so the frame is stable.
+     */
+    @Serializable
+    data class CategoryMutes(
+        @SerialName("muted_categories") val mutedCategories: List<String>,
+    )
+
+    /**
+     * Client → server: mute / unmute one category. [category] is
+     * a lowercase wire string; [muted] is REQUIRED (like
+     * `set_muted`'s `value` — a missing flag is malformed, never
+     * a silent unmute). An unknown category is refused with
+     * `action_result` `ok: false` `invalid_request` — the phone
+     * applies nothing and the desktop reverts its optimistic
+     * change. A successful apply goes through AppSettings, so
+     * every session's collector sees the change and broadcasts
+     * the updated set back via `category_mutes`.
+     */
+    @Serializable
+    data class SetCategoryMuted(
+        @SerialName("category") val category: String,
+        @SerialName("muted") val muted: Boolean,
+    )
+
     /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
@@ -996,6 +1043,7 @@ object SyncProtocol {
         data class SetPin(val value: SyncProtocol.SetPin) : Parsed
         data class SetArchived(val value: SyncProtocol.SetArchived) : Parsed
         data class SetMuted(val value: SyncProtocol.SetMuted) : Parsed
+        data class SetCategoryMuted(val value: SyncProtocol.SetCategoryMuted) : Parsed
         data class SetBlocked(val value: SyncProtocol.SetBlocked) : Parsed
         data class SetReaction(val value: SyncProtocol.SetReaction) : Parsed
         data class SetPinnedMessage(val value: SyncProtocol.SetPinnedMessage) : Parsed
@@ -1047,14 +1095,15 @@ object SyncProtocol {
      * The second half of [parse]: the Slice 3 write-back actions, the
      * Slice 4 attachment frames, the Phase 2 schedule frames, the
      * Slice 5 contact frames, the create-conversation frame, the
-     * round-3 contact-photo frame, and the live-calls dial frame. A
-     * well-formed message of an unknown type comes back as
-     * [Parsed.Unknown], like in [parse].
+     * round-3 contact-photo frame, the live-calls dial frame, and
+     * the category-mute frame. A well-formed message of an unknown
+     * type comes back as [Parsed.Unknown], like in [parse].
      */
     private fun parseRemaining(type: String, obj: JsonObject): Parsed = when (type) {
         "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
         "set_archived" -> decode<SetArchived>(obj)?.let(Parsed::SetArchived) ?: Parsed.Malformed
         "set_muted" -> decode<SetMuted>(obj)?.let(Parsed::SetMuted) ?: Parsed.Malformed
+        "set_category_muted" -> decode<SetCategoryMuted>(obj)?.let(Parsed::SetCategoryMuted) ?: Parsed.Malformed
         "set_blocked" -> decode<SetBlocked>(obj)?.let(Parsed::SetBlocked) ?: Parsed.Malformed
         "set_reaction" -> decode<SetReaction>(obj)?.let(Parsed::SetReaction) ?: Parsed.Malformed
         "set_pinned_message" -> decode<SetPinnedMessage>(obj)?.let(Parsed::SetPinnedMessage) ?: Parsed.Malformed
@@ -1113,6 +1162,9 @@ object SyncProtocol {
     fun encodeSyncError(value: SyncError): String = withType(value, "sync_error").toString()
 
     fun encodeHubStatus(value: HubStatus): String = withType(value, "hub_status").toString()
+
+    fun encodeCategoryMutes(value: CategoryMutes): String =
+        withType(value, "category_mutes").toString()
 
     fun encodeMessageSent(value: MessageSent): String = withType(value, "message_sent").toString()
 

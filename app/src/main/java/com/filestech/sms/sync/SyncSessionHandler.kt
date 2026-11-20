@@ -31,6 +31,8 @@ import java.util.Base64
  * frame, dispatched the same way. Round 3 adds the contact-photo
  * frame (`set_contact_photo`), dispatched the same way. Live calls
  * add the dial frame (`dial_request`), dispatched the same way.
+ * Category mutes add the `set_category_muted` frame, dispatched
+ * the same way.
  *
  * @param send carries one outbound text frame to the client.
  * @param close closes the socket; [reason] is a short human-readable
@@ -79,6 +81,7 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.SetPin -> onSetPin(parsed.value)
             is SyncProtocol.Parsed.SetArchived -> onSetArchived(parsed.value)
             is SyncProtocol.Parsed.SetMuted -> onSetMuted(parsed.value)
+            is SyncProtocol.Parsed.SetCategoryMuted -> onSetCategoryMuted(parsed.value)
             is SyncProtocol.Parsed.SetBlocked -> onSetBlocked(parsed.value)
             is SyncProtocol.Parsed.SetReaction -> onSetReaction(parsed.value)
             is SyncProtocol.Parsed.SetPinnedMessage -> onSetPinnedMessage(parsed.value)
@@ -222,6 +225,16 @@ class SyncSessionHandler(
 
     private suspend fun onSetMuted(request: SyncProtocol.SetMuted) {
         withEngine { it.onSetMuted(request) }
+    }
+
+    /**
+     * Category mutes — the category-mute frame needs auth too: an
+     * unauthenticated frame is a protocol violation, like an
+     * unauthenticated send. The engine runs it in its own job,
+     * never on the frame loop.
+     */
+    private suspend fun onSetCategoryMuted(request: SyncProtocol.SetCategoryMuted) {
+        withEngine { it.onSetCategoryMuted(request) }
     }
 
     private suspend fun onSetBlocked(request: SyncProtocol.SetBlocked) {

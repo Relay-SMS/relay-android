@@ -8,7 +8,9 @@ import org.junit.jupiter.api.Test
  * Round 32 — the Photos tab is real photos only: no GIFs, no
  * stickers (the desktop detail pane's rule). The sticker heuristic
  * is the `sticker-` filename, or a 512×512 PNG sent with no
- * caption (blank or emoji-only body).
+ * caption (blank or emoji-only body). Round 33 follow-up — the
+ * dimensions arm gains 72×72, the bundled-PNG fallback size
+ * `stickerSendUri` produces when the SVG render fails.
  */
 class DetailsMediaFiltersTest {
 
@@ -103,6 +105,66 @@ class DetailsMediaFiltersTest {
         val noBody = photo(mimeType = "image/png", width = 512, height = 512, body = null)
         assertThat(noBody.isStickerAttachment()).isFalse()
         assertThat(noBody.isPhotosTabItem()).isTrue()
+    }
+
+    @Test
+    fun `a 72x72 PNG with no caption is a sticker`() {
+        val sticker = photo(
+            mimeType = "image/png",
+            width = 72,
+            height = 72,
+            body = "",
+        )
+        assertThat(sticker.isStickerAttachment()).isTrue()
+        assertThat(sticker.isPhotosTabItem()).isFalse()
+    }
+
+    @Test
+    fun `a 72x72 PNG with an emoji-only caption is a sticker`() {
+        val sticker = photo(
+            mimeType = "image/png",
+            width = 72,
+            height = 72,
+            body = "😀",
+        )
+        assertThat(sticker.isStickerAttachment()).isTrue()
+    }
+
+    @Test
+    fun `a 72x72 PNG with a real caption is a photo`() {
+        val captioned = photo(
+            mimeType = "image/png",
+            width = 72,
+            height = 72,
+            body = "look at this",
+        )
+        assertThat(captioned.isStickerAttachment()).isFalse()
+        assertThat(captioned.isPhotosTabItem()).isTrue()
+    }
+
+    @Test
+    fun `a 72x72 JPEG with no caption is a photo`() {
+        val jpeg = photo(
+            mimeType = "image/jpeg",
+            width = 72,
+            height = 72,
+            body = "",
+        )
+        assertThat(jpeg.isStickerAttachment()).isFalse()
+        assertThat(jpeg.isPhotosTabItem()).isTrue()
+    }
+
+    @Test
+    fun `a desktop-sent sticker filename is caught whatever the caption`() {
+        val sticker = photo(
+            fileName = "sticker-0.png",
+            mimeType = "image/png",
+            width = 512,
+            height = 512,
+            body = "hello",
+        )
+        assertThat(sticker.isStickerAttachment()).isTrue()
+        assertThat(sticker.isPhotosTabItem()).isFalse()
     }
 
     private fun photo(

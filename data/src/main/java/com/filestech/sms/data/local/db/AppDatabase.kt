@@ -9,6 +9,9 @@ import com.filestech.sms.data.local.db.dao.ClientConversationStateDao
 import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
+import com.filestech.sms.data.local.db.dao.NoteAttachmentDao
+import com.filestech.sms.data.local.db.dao.NoteDao
+import com.filestech.sms.data.local.db.dao.NoteMessageDao
 import com.filestech.sms.data.local.db.dao.QuickReplyDao
 import com.filestech.sms.data.local.db.dao.ScheduledMessageDao
 import com.filestech.sms.data.local.db.dao.SyncedContactDao
@@ -19,6 +22,9 @@ import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.local.db.entity.MessageFts
+import com.filestech.sms.data.local.db.entity.NoteAttachmentEntity
+import com.filestech.sms.data.local.db.entity.NoteEntity
+import com.filestech.sms.data.local.db.entity.NoteMessageEntity
 import com.filestech.sms.data.local.db.entity.QuickReplyEntity
 import com.filestech.sms.data.local.db.entity.ScheduledMessageEntity
 import com.filestech.sms.data.local.db.entity.SyncedContactEntity
@@ -37,6 +43,9 @@ import com.filestech.sms.data.local.db.entity.SyncedContactEntity
         ClientSyncStateEntity::class,
         ClientConversationStateEntity::class,
         SyncedContactEntity::class,
+        NoteEntity::class,
+        NoteMessageEntity::class,
+        NoteAttachmentEntity::class,
     ],
 )
 // v1.16.0 — TypeConverters pour les 3 enums MessageStatus/Type/Direction ↔ Int.
@@ -52,6 +61,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun clientSyncStateDao(): ClientSyncStateDao
     abstract fun clientConversationStateDao(): ClientConversationStateDao
     abstract fun syncedContactDao(): SyncedContactDao
+    abstract fun noteDao(): NoteDao
+    abstract fun noteMessageDao(): NoteMessageDao
+    abstract fun noteAttachmentDao(): NoteAttachmentDao
 
     companion object {
         const val DATABASE_NAME = "smstech.db"
@@ -136,6 +148,11 @@ abstract class AppDatabase : RoomDatabase() {
         //   (frontière de marche arrière par conversation) et `synced_contacts` (carnet
         //   synchronisé, rempli en C4). Strictement additive. Les lignes existantes
         //   projettent NULL sur les trois colonnes.
-        const val SCHEMA_VERSION = 18
+        // v19 (2026-11-20, notes phase 1): trois tables neuves — `notes`, `note_messages`,
+        //   `note_attachments` (notes locales, jamais dans le fournisseur système). Chaque
+        //   table porte son UUID v4 (clé de dédup de la sauvegarde notes) et les colonnes
+        //   `hub_*` / `client_*` de la phase 2 (sync), posées dès maintenant pour éviter
+        //   une seconde migration. Strictement additive : les tables naissent vides.
+        const val SCHEMA_VERSION = 19
     }
 }

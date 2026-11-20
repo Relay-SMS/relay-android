@@ -17,6 +17,7 @@ import javax.inject.Singleton
  *  - "vault_kek"       : KEK for the secure vault
  *  - "settings_aead"   : encrypts sensitive DataStore entries
  *  - "panic_decoy"     : panic-mode decoy key (separate from db_master)
+ *  - "notes_aead"      : wraps the notes master key (note attachment files)
  *
  * Keys are non-exportable; AES-GCM nonces are caller-provided 12-byte arrays.
  */
@@ -98,6 +99,15 @@ class KeystoreManager @Inject constructor() {
         const val ALIAS_VAULT_KEK = "smstech_vault_kek"
         const val ALIAS_SETTINGS_AEAD = "smstech_settings_aead"
         const val ALIAS_PANIC_DECOY = "smstech_panic_decoy"
+
+        /**
+         * Notes phase 1 — wraps the notes master key
+         * ([com.filestech.sms.data.local.db.NotesKeyManager]), which encrypts note
+         * attachment files. Its caller passes `allowUserIv = true`, like the DB master
+         * key: the fresh IV comes from [AeadCipher]. Do NOT reuse the dormant vault /
+         * settings / panic aliases — a notes key is a new alias.
+         */
+        const val ALIAS_NOTES_AEAD = "smstech_notes_aead"
 
         /**
          * v1.25.3 — clé adossée à la biométrie, seule à porter `userAuthRequired = true`.

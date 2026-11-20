@@ -197,6 +197,24 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="tel" />
         </intent>
+        <!-- Viewer picker: `queryIntentActivities` for ACTION_VIEW
+             + a media MIME type needs a matching entry here on
+             Android 11+, or the query comes back empty and a tap
+             on an image or video does nothing. A VIEW query adds
+             nothing to any text-selection toolbar, so the
+             ACTION_PROCESS_TEXT problem below does not apply. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="audio/*" />
+        </intent>
         <!-- Plus de <queries> pour ACTION_PROCESS_TEXT. Déclarée en v1.7.1 pour que
              `resolveActivity` sache d'avance si un traducteur était installé, elle rendait
              VISIBLE toute application qui déclare une action de texte — n'importe laquelle peut

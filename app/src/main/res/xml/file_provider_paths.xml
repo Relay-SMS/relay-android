@@ -20,4 +20,10 @@
     <cache-path name="mms_incoming" path="mms_incoming/" />
     <cache-path name="mms_incoming_audio" path="mms_incoming_audio/" />
     <cache-path name="voice_mms" path="voice_mms/" />
+    <!-- Notes — decrypted note attachments, handed to external viewers via the
+         remembered-viewer opener. Plaintext lives here only transiently: the
+         note thread releases each file when playback closes or the screen
+         clears, and the resolver purges stale files (older than 24 h) on the
+         next playback call. -->
+    <cache-path name="notes_playback" path="notes_playback/" />
 </paths>

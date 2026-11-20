@@ -877,4 +877,107 @@ class MigrationTest {
         // Contrôle positif : une autre clé passe.
         db.execSQL("UPDATE messages SET hub_message_id = 9002 WHERE id = 2")
     }
+
+    /**
+     * Notes phase 1 — 18 → 19 : trois tables neuves (`notes`, `note_messages`,
+     * `note_attachments`), qui naissent vides. Strictement additive : les lignes
+     * existantes ne bougent pas. Les défauts SQL (`pinned`/`archived` 0, `body` '',
+     * `attachments_count` 0) sont vérifiés, ainsi que l'unicité des UUID et la
+     * cascade note → messages → pièces jointes.
+     *
+     * Nécessite `19.json` dans les assets (émis par Room à la compilation).
+     */
+    @Test
+    fun migrate18To19_createsNotesTables_emptyWithDefaultsUniqueUuidsAndCascade() {
+        helper.createDatabase(TEST_DB, 18).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO conversations
+                    (id, thread_id, addresses_csv, display_name, last_message_at,
+                     last_message_preview, unread_count, pinned, archived, muted, in_vault)
+                VALUES (1, 7, '+33600000001', 'Alice', 1700000000000, 'a', 0, 0, 0, 0, 0)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 19, true, Migrations.MIGRATION_18_19)
+
+        // La ligne existante ne bouge pas.
+        db.query("SELECT display_name FROM conversations WHERE id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("Alice")
+        }
+
+        // Les trois tables neuves existent et naissent vides, avec les index attendus.
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN " +
+                "('notes', 'note_messages', 'note_attachments')",
+        ).use { c -> assertThat(c.count).isEqualTo(3) }
+        db.query("SELECT COUNT(*) FROM notes").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name IN " +
+                "('index_notes_uuid', 'index_note_messages_uuid', 'index_note_attachments_uuid')",
+        ).use { c -> assertThat(c.count).isEqualTo(3) }
+
+        // Les défauts SQL s'appliquent aux colonnes omises.
+        db.execSQL(
+            "INSERT INTO notes (uuid, title, created_at, updated_at) " +
+                "VALUES ('uuid-note-1', 'Courses', 1700000000000, 1700000000000)",
+        )
+        db.query("SELECT pinned, archived FROM notes WHERE uuid = 'uuid-note-1'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+            assertThat(c.getInt(1)).isEqualTo(0)
+        }
+        db.execSQL(
+            "INSERT INTO note_messages (uuid, note_id, date) " +
+                "VALUES ('uuid-msg-1', 1, 1700000000000)",
+        )
+        db.query("SELECT body, attachments_count FROM note_messages WHERE uuid = 'uuid-msg-1'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("")
+            assertThat(c.getInt(1)).isEqualTo(0)
+        }
+        db.execSQL(
+            """
+            INSERT INTO note_attachments
+                (uuid, note_message_id, mime_type, file_name, size_bytes, local_uri)
+            VALUES ('uuid-att-1', 1, 'image/jpeg', 'photo.jpg', 100, '/notes/uuid-att-1')
+            """.trimIndent(),
+        )
+
+        // L'index UNIQUE tient sur les UUID : un doublon est refusé.
+        val doublon = runCatching {
+            db.execSQL(
+                "INSERT INTO notes (uuid, title, created_at, updated_at) " +
+                    "VALUES ('uuid-note-1', 'Doublon', 1700000000000, 1700000000000)",
+            )
+        }
+        assertThat(doublon.isFailure).isTrue()
+        assertThat(doublon.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
+        // Contrôle positif : un autre UUID passe.
+        db.execSQL(
+            "INSERT INTO notes (uuid, title, created_at, updated_at) " +
+                "VALUES ('uuid-note-2', 'Autre', 1700000000000, 1700000000000)",
+        )
+
+        // La cascade efface les messages et les pièces jointes avec la note.
+        db.execSQL("DELETE FROM notes WHERE uuid = 'uuid-note-1'")
+        db.query("SELECT COUNT(*) FROM note_messages WHERE note_id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.query("SELECT COUNT(*) FROM note_attachments WHERE note_message_id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        // L'autre note survit.
+        db.query("SELECT COUNT(*) FROM notes").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(1)
+        }
+    }
 }

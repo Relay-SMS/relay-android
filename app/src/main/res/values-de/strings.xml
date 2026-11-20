@@ -1305,4 +1305,37 @@
     <string name="client_contacts_error_title">Kontakte konnten nicht synchronisiert werden</string>
     <string name="client_contacts_error_no_access">Ihr Telefon kann nicht auf Ihre Kontakte zugreifen. Erlauben Sie den Zugriff auf Kontakte auf Ihrem Telefon und versuchen Sie es dann erneut.</string>
     <string name="client_contacts_error_default">Ihr Telefon konnte die Kontakte gerade nicht synchronisieren.</string>
+    <string name="backup_notes_export_title">Notizen-Sicherung</string>
+    <string name="backup_notes_export_explainer">Sichern Sie Ihre Notizen – Fotos und Dateien eingeschlossen – in einer einzigen verschlüsselten Datei. Wählen Sie eine starke Passphrase – ohne sie kann die Datei nicht wiederhergestellt werden.</string>
+    <string name="backup_notes_export_button">Notizen sichern</string>
+    <string name="backup_notes_export_success">Notizen-Sicherung gespeichert.</string>
+    <string name="backup_notes_export_failed">Notizen-Sicherung fehlgeschlagen.</string>
+    <string name="backup_notes_restore_title">Notizen wiederherstellen</string>
+    <string name="backup_notes_restore_explainer">Wählen Sie eine .notebk-Datei und geben Sie dann ihre Passphrase ein. Notizen, die bereits auf diesem Gerät vorhanden sind, werden mit Ihren aktuellen zusammengeführt; vorhandene Einträge bleiben erhalten (keine Duplikate).</string>
+    <string name="backup_notes_restore_pick_file">.notebk-Datei wählen</string>
+    <string name="backup_notes_restore_in_progress">Notizen werden wiederhergestellt…</string>
+    <string name="backup_notes_restore_success">%1$d Notizen (%2$d neu), %3$d Einträge importiert (%4$d bereits vorhanden)</string>
+
+    <!-- Notes — the note feature's strings (phase 1: phone notes). -->
+    <string name="action_new_note">Neue Notiz</string>
+    <string name="note_name_title">Notiz benennen</string>
+    <string name="note_name_placeholder">Name der Notiz</string>
+    <string name="note_explainer">Notizen bleiben auf diesem Gerät und werden nie über das Internet gesendet. Sie sind verschlüsselt und leben in Relay – wenn Sie die App entfernen, gehen Ihre Notizen mit ihr. Sichern Sie sie jederzeit unter Einstellungen → Sicherungen.</string>
+    <string name="note_empty_title">Hier ist noch nichts</string>
+    <string name="note_empty_body">Schreiben Sie unten Ihren ersten Eintrag.</string>
+    <string name="note_delete_title">Notiz löschen?</string>
+    <string name="note_delete_body">Diese Notiz und alle ihre Einträge werden endgültig gelöscht.</string>
+    <string name="note_delete_message_title">Eintrag löschen?</string>
+    <string name="note_delete_message_body">Dieser Eintrag wird endgültig gelöscht.</string>
+    <string name="note_rename_title">Notiz umbenennen</string>
+    <string name="note_rename_placeholder">Name der Notiz</string>
+    <string name="note_save_failed">Dieser Eintrag konnte nicht gespeichert werden</string>
+    <string name="note_attachment_failed">Dieser Anhang konnte nicht hinzugefügt werden</string>
+    <string name="note_open_failed">Diese Datei konnte nicht geöffnet werden</string>
+    <string name="note_compose_placeholder">Notiz schreiben…</string>
+    <string name="note_attach_sheet_subtitle">Fotos, Videos und Dateien werden in dieser Notiz verschlüsselt gespeichert.</string>
+    <string name="note_pdf_header_subtitle">Exportiert %1$s</string>
+    <string name="note_empty_photos">Fotos, die in dieser Notiz gespeichert sind, werden hier angezeigt.</string>
+    <string name="note_empty_videos">Videos, die in dieser Notiz gespeichert sind, werden hier angezeigt.</string>
+    <string name="note_empty_files">Dateien, die in dieser Notiz gespeichert sind, werden hier angezeigt.</string>
 </resources>

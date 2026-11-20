@@ -131,6 +131,12 @@ fun AudioMessageBubble(
      * button simply does nothing until the bytes arrive.
      */
     onRequestDownload: (() -> Unit)? = null,
+    /**
+     * Notes — the note's bubble colour (the AppearanceDialog palette,
+     * WCAG-safe for white text), or null for the default brand blue.
+     * Outgoing only, like [MessageBubble.customBubbleColorArgb].
+     */
+    customBubbleColorArgb: Int? = null,
 ) {
     // Client mode C5 — auto-request on render when the bytes are
     // missing (the desktop rule). Keyed on the clip + its URI: a new
@@ -147,15 +153,21 @@ fun AudioMessageBubble(
     // border-only one). Incoming keeps the neutral grey. Round 20 — the
     // outgoing fill is [brandBlue]: fixed brand blue, or the wallpaper
     // `primary` when dynamic colours are on.
-    val bgColor = if (isOut) brandBlue() else com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
+    // Notes — a custom colour replaces the brand blue (outgoing only).
+    val bgColor = if (isOut) {
+        customBubbleColorArgb?.let { Color(it) } ?: brandBlue()
+    } else {
+        com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
+    }
     // Feedback round 5 — disc + waveform colour: [onBrandBlue] on the outgoing
     // bubble (white on the fixed brand blue, `onPrimary` on the dynamic one);
     // Kristin's dark `#353535` on the light incoming bubble, white in
     // dark mode where `#353535` would vanish on the dark grey bubble. Picked
     // from the surface luminance, like [com.filestech.sms.ui.theme.textFieldCursorColor].
+    // Notes — white on a custom colour (the palette is WCAG-safe for white).
     val surfaceLuma = 0.2126f * cs.surface.red + 0.7152f * cs.surface.green + 0.0722f * cs.surface.blue
     val controlColor = if (isOut) {
-        onBrandBlue()
+        if (customBubbleColorArgb == null) onBrandBlue() else Color.White
     } else if (surfaceLuma < 0.5f) {
         Color.White
     } else {

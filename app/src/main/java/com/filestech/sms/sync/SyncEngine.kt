@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
@@ -60,6 +62,18 @@ import java.util.concurrent.ConcurrentHashMap
  * inbound call frames (`incoming_call`, `call_state`) are NOT an
  * engine concern — the server broadcasts them from the shared
  * observer (see [SyncServer]), so every session hears them.
+ *
+ * Category mutes add the `set_category_muted` handler
+ * ([onSetCategoryMuted]) — through [runAction], like the other
+ * flag actions, with the category echoed on `action_result` —
+ * plus a third live collector ([collectCategoryMutes]) that
+ * pushes the full muted set whenever it changes on the phone,
+ * and the same full set after every snapshot in [runStream].
+ * A new conversation's first message also pushes here now: the
+ * new-conversation arm of the conversation diff calls
+ * [pushNewMessages], so a first text from a new number notifies
+ * on the desktop like any other (the desktop notifies only from
+ * `message_new`).
  *
  * Slice 5 adds the contact-sync handlers ([onContactsRequest],
  * [onAvatarRequest]) in the same shape, plus the contact snapshot
@@ -130,6 +144,7 @@ class SyncEngine(
         started = true
         scope.launch { collectConversations() }
         scope.launch { collectMessageStates() }
+        scope.launch { collectCategoryMutes() }
     }
 
     /**
@@ -231,6 +246,15 @@ class SyncEngine(
         }
     }
 
+    /** Handles a `set_category_muted`, answered with `action_result` (the category echoed). */
+    fun onSetCategoryMuted(request: SyncProtocol.SetCategoryMuted) {
+        scope.launch {
+            runAction("set_category_muted", null, null, request.category) {
+                source.setCategoryMuted(request.category, request.muted)
+            }
+        }
+    }
+
     /** Handles a `set_blocked`, answered with `action_result`. */
     fun onSetBlocked(request: SyncProtocol.SetBlocked) {
         scope.launch {
@@ -303,14 +327,15 @@ class SyncEngine(
             } catch (t: Throwable) {
                 Timber.w(t, "SyncEngine: upload start failed")
                 runCatching {
-                    send(
-                        uploadError(
-                            request.clientMessageId,
-                            request.index,
-                            SyncProtocol.AttachmentUploadError.INTERNAL,
-                            "This file couldn't be uploaded.",
-                        ),
+                    // Val-extracted (was a nested `send(uploadError(...))`): keeps
+                    // the class under the LargeClass limit after the wrapping fixes.
+                    val errorFrame = uploadError(
+                        request.clientMessageId,
+                        request.index,
+                        SyncProtocol.AttachmentUploadError.INTERNAL,
+                        "This file couldn't be uploaded.",
                     )
+                    send(errorFrame)
                 }
             }
         }
@@ -331,14 +356,15 @@ class SyncEngine(
             } catch (t: Throwable) {
                 Timber.w(t, "SyncEngine: upload chunk failed")
                 runCatching {
-                    send(
-                        uploadError(
-                            request.clientMessageId,
-                            request.index,
-                            SyncProtocol.AttachmentUploadError.INTERNAL,
-                            "This file couldn't be uploaded.",
-                        ),
+                    // Val-extracted (was a nested `send(uploadError(...))`): keeps
+                    // the class under the LargeClass limit after the wrapping fixes.
+                    val errorFrame = uploadError(
+                        request.clientMessageId,
+                        request.index,
+                        SyncProtocol.AttachmentUploadError.INTERNAL,
+                        "This file couldn't be uploaded.",
                     )
+                    send(errorFrame)
                 }
             }
         }
@@ -541,11 +567,18 @@ class SyncEngine(
             if (sinceId > 0L) streamDelta(conversations, sinceId) else streamAllMessages(conversations)
         }
         val endCursor = source.maxMessageId()
-        send(
-            SyncProtocol.encodeSyncComplete(
-                SyncProtocol.SyncComplete(cursorMessageId = endCursor.toString()),
-            ),
-        )
+        // Val-extracted (was a 5-line nested `send(encode(...))`): keeps the
+        // class under the LargeClass limit after the wrapping fixes above.
+        val complete = SyncProtocol.SyncComplete(cursorMessageId = endCursor.toString())
+        send(SyncProtocol.encodeSyncComplete(complete))
+        // Category mutes — the full set rides right after the
+        // snapshot, so a fresh connection learns it without waiting
+        // for a change. A null read (settings unreadable) skips the
+        // frame — an empty set would wrongly unmute everything —
+        // and the collector sends the set on the next change.
+        source.mutedCategories()?.let {
+            send(SyncProtocol.encodeCategoryMutes(SyncProtocol.CategoryMutes(it.sorted())))
+        }
     }
 
     /** Full mode: every conversation's messages, newest first, most-recent conversation first. */
@@ -707,11 +740,14 @@ class SyncEngine(
      * `mark_all_read` passes null and its [call] ignores the id. A
      * thrown error answers `ok: false` with `internal` — the socket
      * stays up, and the desktop reverts its optimistic change.
+     * [category] echoes back on `action_result` for category
+     * actions (only `set_category_muted` sets it).
      */
     private suspend fun runAction(
         action: String,
         conversationId: String?,
         messageId: String?,
+        category: String? = null,
         call: suspend (conversationId: Long) -> ActionResult,
     ) {
         val result = try {
@@ -742,6 +778,7 @@ class SyncEngine(
                         action = action,
                         conversationId = conversationId,
                         messageId = messageId,
+                        category = category,
                         ok = result.ok,
                         code = result.code,
                         message = result.message,
@@ -828,6 +865,12 @@ class SyncEngine(
                             SyncProtocol.ConversationUpdated(conversation),
                         ),
                     )
+                    // A new conversation arrives with its first
+                    // message(s) — push them, or the desktop shows
+                    // the thread but never notifies for it (it
+                    // notifies only from `message_new`). The baseline
+                    // seeded above keeps older messages out.
+                    conversationId?.let { pushNewMessages(it) }
                 }
                 conversation != old -> {
                     send(
@@ -875,6 +918,21 @@ class SyncEngine(
                 }
             }
             lastStates = states.associateBy { it.id }
+        }
+    }
+
+    /**
+     * Category-mute collector: the first emission is the baseline —
+     * silent (the snapshot sends the full set itself) — and every
+     * later change pushes a `category_mutes` with the full set, so
+     * the desktop replaces its list wholesale.
+     * `distinctUntilChanged` swallows the re-emissions an unrelated
+     * settings write causes upstream (the flow re-emits on every
+     * write, muted or not).
+     */
+    private suspend fun collectCategoryMutes() {
+        source.observeMutedCategories().drop(1).distinctUntilChanged().collect { muted ->
+            send(SyncProtocol.encodeCategoryMutes(SyncProtocol.CategoryMutes(muted.sorted())))
         }
     }
 

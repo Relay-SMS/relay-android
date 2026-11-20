@@ -95,6 +95,35 @@ internal fun onBrandBlueTint(): Color =
         Color(0xFF001A40)
     }
 
+/**
+ * Notes — the note tint (note avatar backgrounds): the scheme
+ * `tertiaryContainer` under dynamic colours (the wallpaper's
+ * third accent, typically a green — the note colour), the fixed
+ * soft green `#E3F2E6` when off, in both themes — the same rule as
+ * [brandBlueTint], which keeps its light tint in dark mode too.
+ * Always paired with [onNoteTint].
+ */
+@Composable
+internal fun noteTint(): Color =
+    if (LocalUseDynamicColors.current) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        RelayColors.NoteTint
+    }
+
+/**
+ * Notes — the content colour on a [noteTint] surface (the note
+ * glyph): the scheme `onTertiaryContainer` under dynamic colours,
+ * the fixed dark green `#14532D` when off (7.86:1 on `#E3F2E6`).
+ */
+@Composable
+internal fun onNoteTint(): Color =
+    if (LocalUseDynamicColors.current) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        Color(0xFF14532D)
+    }
+
 /** Round 20 — how far the quote stripe darkens toward black (matches the fixed `#0D2B54`). */
 private const val BRAND_STRIPE_DARKEN = 0.55f
 
@@ -134,6 +163,9 @@ internal object RelayColors {
     val Blue = BrandBlue
     val BluePressed = Color(0xFF1740A8)
     val BlueTint = Color(0xFFE4EBFD)
+
+    /** Notes — the fixed note tint, paired with the dark green `#14532D` (see [noteTint]). */
+    val NoteTint = Color(0xFFE3F2E6)
     val Incoming = Color(0xFFE9E9EB)
     val IncomingDark = Color(0xFF2A2A2A)
     val OutgoingMeta = Color(0xFFD3DFFC)

@@ -25,3 +25,27 @@ internal fun trierConversations(rows: List<Conversation>, mode: SortMode): List<
     }
     return rows.sortedWith(ordre)
 }
+
+/**
+ * Notes — the merged list sort: the same order as
+ * [trierConversations], over the merged list ([ConversationListItem]).
+ * Pinned first (notes and conversations together), then — under
+ * `UNREAD_FIRST` — unread first (notes are never unread, so they
+ * sit with the read rows), then by [ConversationListItem.sortKey]
+ * descending. `sortedWith` is stable: on a tie the order received
+ * (conversations first, notes after) is kept.
+ */
+internal fun trierListItems(
+    rows: List<ConversationListItem>,
+    mode: SortMode,
+): List<ConversationListItem> {
+    val epingleesDabord = compareByDescending<ConversationListItem> { it.pinned }
+    val ordre = when (mode) {
+        SortMode.DATE -> epingleesDabord.thenByDescending { it.sortKey }
+        SortMode.UNREAD_FIRST ->
+            epingleesDabord
+                .thenByDescending { it.isUnread }
+                .thenByDescending { it.sortKey }
+    }
+    return rows.sortedWith(ordre)
+}

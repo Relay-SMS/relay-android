@@ -17,9 +17,11 @@ import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.clientmode.ClientActionGateway
 import com.filestech.sms.domain.clientmode.NoOpClientActionGateway
 import com.filestech.sms.domain.model.Contact
+import com.filestech.sms.domain.model.NOTE_TITLE_MAX_LENGTH
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.repository.NoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,13 @@ class ComposeViewModel @Inject constructor(
     private val contactRepo: ContactRepository,
     private val conversationRepo: ConversationRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
+    /**
+     * Notes — the note repository, for [createNote]. Phase 1 is
+     * hub-only: the "New note" entry is hidden in client mode (the
+     * screen gates on [isClientMode]), so no `create_note` frame
+     * exists yet.
+     */
+    private val noteRepo: NoteRepository,
     /**
      * Client mode C3 — the create-conversation gateway (the group
      * name rides the `create_conversation` frame; the repo's
@@ -84,6 +93,9 @@ class ComposeViewModel @Inject constructor(
 
     sealed interface Event {
         data class ConversationCreated(val id: Long) : Event
+
+        /** Notes — a note was created; the screen opens its thread. */
+        data class NoteCreated(val id: Long) : Event
 
         /** Client mode C3 — the hub refused the create (or could not be reached). */
         data class CreateFailed(val error: AppError) : Event
@@ -236,6 +248,22 @@ class ComposeViewModel @Inject constructor(
                 }
                 events.tryEmit(Event.ConversationCreated(res.value.id))
             }
+        }
+    }
+
+    /**
+     * Notes — creates a note with the given title and emits
+     * [Event.NoteCreated] so the screen opens its thread. Unlike a
+     * group name, the title is REQUIRED (a note with no title has
+     * no identity in the list): a blank title does nothing. Every
+     * note is a new row — there is no `findOrCreate` for notes.
+     */
+    fun createNote(title: String) {
+        val clean = title.trim().take(NOTE_TITLE_MAX_LENGTH)
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            val note = noteRepo.createNote(clean)
+            events.tryEmit(Event.NoteCreated(note.id))
         }
     }
 

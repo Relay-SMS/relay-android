@@ -9,6 +9,9 @@ import com.filestech.sms.data.local.db.dao.ClientConversationStateDao
 import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
+import com.filestech.sms.data.local.db.dao.NoteAttachmentDao
+import com.filestech.sms.data.local.db.dao.NoteDao
+import com.filestech.sms.data.local.db.dao.NoteMessageDao
 import com.filestech.sms.data.local.db.dao.QuickReplyDao
 import com.filestech.sms.data.local.db.dao.ScheduledMessageDao
 import com.filestech.sms.data.local.db.dao.SyncedContactDao
@@ -41,4 +44,11 @@ object DatabaseModule {
         db.clientConversationStateDao()
 
     @Provides fun syncedContactDao(db: AppDatabase): SyncedContactDao = db.syncedContactDao()
+
+    // Notes phase 1 — the local-only notes tables.
+    @Provides fun noteDao(db: AppDatabase): NoteDao = db.noteDao()
+
+    @Provides fun noteMessageDao(db: AppDatabase): NoteMessageDao = db.noteMessageDao()
+
+    @Provides fun noteAttachmentDao(db: AppDatabase): NoteAttachmentDao = db.noteAttachmentDao()
 }

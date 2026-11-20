@@ -1,6 +1,7 @@
 package com.filestech.sms.data.mms
 
 import android.content.Context
+import com.filestech.sms.core.mms.MmsConstants
 import com.filestech.sms.domain.mms.OutgoingAttachmentStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
@@ -62,7 +63,7 @@ class OutgoingAttachmentStoreImpl @Inject constructor(
         return try {
             if (!dir.exists()) dir.mkdirs()
             val ext = staged.extension.ifBlank { "bin" }
-            val target = File(dir, "out-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}.$ext")
+            val target = File(dir, durableAttachmentFileName(staged.name, ext))
             // Same partition (both under /data/data/<pkg>/), so rename normally succeeds; fall back
             // to copy + delete for the rare cross-volume / locked-file case.
             if (staged.renameTo(target)) {
@@ -87,4 +88,35 @@ class OutgoingAttachmentStoreImpl @Inject constructor(
          */
         const val ATTACHMENTS_DIR: String = "mms_attachments"
     }
+}
+
+/**
+ * Round 33 follow-up — the durable filename for a promoted outgoing
+ * attachment. Same shape as before (`out-<timestamp>-<uuid>.<ext>`), with
+ * one addition: a staged name carrying the sticker marker keeps it —
+ * `sticker-out-<timestamp>-<uuid>.<ext>`.
+ *
+ * The promotion used to rename EVERYTHING to `out-…`, which stripped the
+ * marker a second time: even with the staged copy named `sticker-…`, the
+ * mirror would still have stored `out-…` and the Photos tab's filename
+ * arm would never fire. The marker must survive both renames — staging
+ * (`outgoingCacheFileName`) and promotion (here) — for the stored row to
+ * say "sticker". Desktop-sent stickers benefit too: their staged name is
+ * already `sticker-<position>.png`, so they now get the filename arm as
+ * well as the 512×512 dimensions arm that caught them until now.
+ *
+ * Extracted from [OutgoingAttachmentStoreImpl.promoteToDurable] to be
+ * testable without a `Context`, like `selecteurOutboxPossedee`.
+ */
+internal fun durableAttachmentFileName(stagedName: String, extension: String): String {
+    val ext = extension.ifBlank { "bin" }
+    val unique = "out-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
+    val stickerPrefix = if (
+        stagedName.startsWith(MmsConstants.STICKER_FILENAME_PREFIX, ignoreCase = true)
+    ) {
+        MmsConstants.STICKER_FILENAME_PREFIX
+    } else {
+        ""
+    }
+    return "$stickerPrefix$unique.$ext"
 }

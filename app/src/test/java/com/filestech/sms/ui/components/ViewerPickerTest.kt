@@ -48,6 +48,20 @@ class ViewerPickerTest {
     }
 
     @Test
+    fun `an empty query means no handler even with a remembered viewer`() {
+        // The remembered app cannot rescue a blind query — the
+        // opener fails open to the plain intent instead.
+        assertThat(resolveViewerOpen("com.example.gallery", emptyList()))
+            .isEqualTo(ViewerOpenDecision.NoHandler)
+    }
+
+    @Test
+    fun `one handler opens directly even when a different app is remembered`() {
+        assertThat(resolveViewerOpen("com.example.gone", listOf(gallery)))
+            .isEqualTo(ViewerOpenDecision.Open("com.example.gallery"))
+    }
+
+    @Test
     fun `viewer kind follows the MIME type`() {
         assertThat(ViewerKind.fromMimeType("image/png")).isEqualTo(ViewerKind.IMAGE)
         assertThat(ViewerKind.fromMimeType("image/gif")).isEqualTo(ViewerKind.IMAGE)

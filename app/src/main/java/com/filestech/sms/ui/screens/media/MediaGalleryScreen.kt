@@ -184,6 +184,16 @@ internal fun MediaTile(
     onRequestDownload: ((Long) -> Unit)? = null,
     /** Round 33 — saves a copy of a local file (the panel's SAF "Save as"). */
     onSaveCopy: ((Attachment) -> Unit)? = null,
+    /**
+     * Notes — the decrypted Coil model resolver (the note panel's
+     * tiles): when non-null, the image loads from the resolver
+     * instead of the attachment's own URI (ciphertext for a note
+     * attachment). A null model leaves the neutral tile — the
+     * ciphertext URI is never handed to Coil. For a video the
+     * resolver returns a frame bitmap (the playback file has no
+     * extension, so Coil's video-frame decoder would not match it).
+     */
+    imageModel: ((Attachment) -> Any?)? = null,
 ) {
     val fond = MaterialTheme.colorScheme.surfaceVariant
     // Client mode C5 — a synced tile without bytes: it auto-requests
@@ -219,25 +229,37 @@ internal fun MediaTile(
         contentAlignment = Alignment.Center,
     ) {
         if (attachment.isImage) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(attachment.modeleImage())
-                    // Plafond au décodage : une longue conversation ne charge pas ses photos en pleine taille.
-                    .size(THUMBNAIL_PX)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = attachment.fileName ?: stringResource(R.string.attachment_image_label),
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                // Un fichier disparu laisse une case neutre, pas un trou.
-                error = ColorPainter(fond),
-                fallback = ColorPainter(fond),
-            )
+            // Notes — an override replaces the attachment's own URI
+            // (ciphertext) with a decrypted model; a null model
+            // leaves the neutral tile (the `fond` background above),
+            // never the ciphertext URI.
+            val overrideModel = imageModel?.invoke(attachment)
+            if (imageModel == null || overrideModel != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(overrideModel ?: attachment.modeleImage())
+                        // Plafond au décodage : une longue conversation ne charge pas ses photos en pleine taille.
+                        .size(THUMBNAIL_PX)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = attachment.fileName ?: stringResource(R.string.attachment_image_label),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                    // Un fichier disparu laisse une case neutre, pas un trou.
+                    error = ColorPainter(fond),
+                    fallback = ColorPainter(fond),
+                )
+            }
         } else {
             // Round 33 — the video's first frame, like the thread
             // bubble (the Videos tab used to show only the play icon
-            // while the thread showed the frame).
-            VideoTileThumbnail(attachment)
+            // while the thread showed the frame). Notes — the frame
+            // bitmap comes from the override (see above).
+            VideoTileThumbnail(
+                attachment,
+                modelOverride = imageModel?.invoke(attachment),
+                hasOverride = imageModel != null,
+            )
         }
         // Round 33 — the download icon, top-right on every tile in
         // the panel: client mode fetches the bytes from the hub
@@ -342,7 +364,20 @@ private val VIDEO_PLAY_HALO_SIZE = 36.dp
  * leaves the plain icon — never a blank hole.
  */
 @Composable
-private fun VideoTileThumbnail(attachment: Attachment) {
+private fun VideoTileThumbnail(
+    attachment: Attachment,
+    /**
+     * Notes — the decrypted frame bitmap (see [MediaTile.imageModel]).
+     * Only read when [hasOverride] is true.
+     */
+    modelOverride: Any? = null,
+    /**
+     * Notes — true when the caller overrides the model. A null
+     * [modelOverride] with an override in place leaves the plain
+     * play icon — the ciphertext URI is never handed to Coil.
+     */
+    hasOverride: Boolean = false,
+) {
     val context = LocalContext.current
     val videoImageLoader = remember(context) {
         ImageLoader.Builder(context)
@@ -361,10 +396,10 @@ private fun VideoTileThumbnail(attachment: Attachment) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(VIDEO_ICON_SIZE),
         )
-        if (!thumbFailed) {
+        if (!thumbFailed && !(hasOverride && modelOverride == null)) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(attachment.modeleImage())
+                    .data(modelOverride ?: attachment.modeleImage())
                     .size(THUMBNAIL_PX)
                     .crossfade(true)
                     .build(),

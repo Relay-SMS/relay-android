@@ -50,6 +50,9 @@ internal fun LazyListScope.messageHitsSection(
 /**
  * v1.28.8 — l'état vide ne s'affiche que si RIEN ne correspond : ni conversation, ni message. Une
  * recherche qui ne trouve qu'un vieux message doit montrer ce message, pas « aucune conversation ».
+ *
+ * Notes — reads [items], the merged list: a search that matches only
+ * a note title must show that note, not the empty state.
  */
 internal fun ConversationsViewModel.UiState.sansAucunResultat(hits: List<MessageSearchHit>): Boolean =
-    conversations.isEmpty() && hits.isEmpty()
+    items.isEmpty() && hits.isEmpty()

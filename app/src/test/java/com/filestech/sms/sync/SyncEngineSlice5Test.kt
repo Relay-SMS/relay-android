@@ -43,6 +43,10 @@ class SyncEngineSlice5Test {
                 "contacts",
                 "conversations",
                 "sync_complete",
+                // Category mutes — the full muted set rides right
+                // after the snapshot (empty here: the fake mutes
+                // nothing).
+                "category_mutes",
             ).inOrder()
 
             val started = sent.first { it.frameType() == "sync_started" }.asObject()
@@ -173,6 +177,10 @@ class SyncEngineSlice5Test {
                 "contacts_error",
                 "conversations",
                 "sync_complete",
+                // Category mutes — the full muted set still rides
+                // after the snapshot (a contacts failure never fails
+                // message sync, and it never fails this either).
+                "category_mutes",
             ).inOrder()
             val started = sent.first { it.frameType() == "sync_started" }.asObject()
             assertThat(started.containsKey("total_contacts")).isFalse()

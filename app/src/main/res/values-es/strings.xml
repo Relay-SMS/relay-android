@@ -1332,4 +1332,37 @@
     <string name="client_contacts_error_title">No se pudieron sincronizar los contactos</string>
     <string name="client_contacts_error_no_access">Tu teléfono no puede acceder a tus contactos. Permite el acceso a los contactos en tu teléfono y vuelve a intentarlo.</string>
     <string name="client_contacts_error_default">Tu teléfono no pudo sincronizar los contactos en este momento.</string>
+    <string name="backup_notes_export_title">Copia de seguridad de notas</string>
+    <string name="backup_notes_export_explainer">Haz una copia de seguridad de tus notas — incluidas fotos y archivos — en un único archivo cifrado. Elige una frase de contraseña segura: sin ella no se podrá recuperar el archivo.</string>
+    <string name="backup_notes_export_button">Hacer copia de notas</string>
+    <string name="backup_notes_export_success">Copia de seguridad de notas guardada.</string>
+    <string name="backup_notes_export_failed">No se pudo hacer la copia de seguridad de notas.</string>
+    <string name="backup_notes_restore_title">Restaurar notas</string>
+    <string name="backup_notes_restore_explainer">Elige un archivo .notebk y escribe su frase de contraseña. Las notas que ya están en este dispositivo se combinan con las actuales; las entradas existentes se conservan (sin duplicados).</string>
+    <string name="backup_notes_restore_pick_file">Elegir un archivo .notebk</string>
+    <string name="backup_notes_restore_in_progress">Restaurando notas…</string>
+    <string name="backup_notes_restore_success">%1$d notas (%2$d nuevas), %3$d entradas importadas (%4$d ya presentes)</string>
+
+    <!-- Notes — the note feature's strings (phase 1: phone notes). -->
+    <string name="action_new_note">Nueva nota</string>
+    <string name="note_name_title">Nombra tu nota</string>
+    <string name="note_name_placeholder">Nombre de la nota</string>
+    <string name="note_explainer">Las notas permanecen en este dispositivo y nunca se envían por internet. Están cifradas y viven en Relay: si eliminas la app, tus notas se van con ella. Haz una copia de seguridad cuando quieras desde Ajustes → Copias de seguridad.</string>
+    <string name="note_empty_title">Nada aquí todavía</string>
+    <string name="note_empty_body">Escribe tu primera entrada abajo.</string>
+    <string name="note_delete_title">¿Eliminar nota?</string>
+    <string name="note_delete_body">Esta nota y todas sus entradas se eliminarán permanentemente.</string>
+    <string name="note_delete_message_title">¿Eliminar entrada?</string>
+    <string name="note_delete_message_body">Esta entrada se eliminará permanentemente.</string>
+    <string name="note_rename_title">Cambiar nombre de la nota</string>
+    <string name="note_rename_placeholder">Nombre de la nota</string>
+    <string name="note_save_failed">No se pudo guardar esta entrada</string>
+    <string name="note_attachment_failed">No se pudo añadir este adjunto</string>
+    <string name="note_open_failed">No se pudo abrir este archivo</string>
+    <string name="note_compose_placeholder">Escribe una nota…</string>
+    <string name="note_attach_sheet_subtitle">Las fotos, los vídeos y los archivos se guardan cifrados en esta nota.</string>
+    <string name="note_pdf_header_subtitle">Exportado %1$s</string>
+    <string name="note_empty_photos">Las fotos guardadas en esta nota se mostrarán aquí.</string>
+    <string name="note_empty_videos">Los vídeos guardados en esta nota se mostrarán aquí.</string>
+    <string name="note_empty_files">Los archivos guardados en esta nota se mostrarán aquí.</string>
 </resources>

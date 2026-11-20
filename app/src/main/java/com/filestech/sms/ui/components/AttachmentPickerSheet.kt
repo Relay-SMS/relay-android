@@ -56,6 +56,12 @@ import com.filestech.sms.ui.theme.RelayText
 fun AttachmentPickerSheet(
     onDismiss: () -> Unit,
     onAttachmentPicked: (uri: Uri, kind: AttachmentKind) -> Unit,
+    /**
+     * Notes — the subtitle under the title. Null keeps the MMS
+     * subtitle ("Envoyé comme MMS"); a note passes its own text —
+     * note attachments are never sent as MMS.
+     */
+    subtitle: String? = null,
 ) {
     val photoLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -105,7 +111,7 @@ fun AttachmentPickerSheet(
                 style = RelayText.ThreadTitle,
             )
             Text(
-                text = stringResource(R.string.attach_sheet_subtitle),
+                text = subtitle ?: stringResource(R.string.attach_sheet_subtitle),
                 style = RelayText.SystemNote,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, bottom = 16.dp),

@@ -1307,4 +1307,37 @@
     <string name="client_contacts_error_title">Impossible de synchroniser les contacts</string>
     <string name="client_contacts_error_no_access">Votre téléphone ne peut pas accéder à vos contacts. Autorisez l\'accès aux contacts sur votre téléphone, puis réessayez.</string>
     <string name="client_contacts_error_default">Votre téléphone n\'a pas pu synchroniser les contacts pour le moment.</string>
+    <string name="backup_notes_export_title">Sauvegarde des notes</string>
+    <string name="backup_notes_export_explainer">Sauvegardez vos notes — photos et fichiers compris — dans un seul fichier chiffré. Choisissez une phrase secrète solide : sans elle, le fichier ne pourra pas être récupéré.</string>
+    <string name="backup_notes_export_button">Sauvegarder les notes</string>
+    <string name="backup_notes_export_success">Sauvegarde des notes enregistrée.</string>
+    <string name="backup_notes_export_failed">Échec de la sauvegarde des notes.</string>
+    <string name="backup_notes_restore_title">Restaurer les notes</string>
+    <string name="backup_notes_restore_explainer">Choisissez un fichier .notebk puis saisissez sa phrase secrète. Les notes déjà présentes sur cet appareil sont fusionnées avec les vôtres ; les entrées existantes sont conservées (aucun doublon).</string>
+    <string name="backup_notes_restore_pick_file">Choisir un fichier .notebk</string>
+    <string name="backup_notes_restore_in_progress">Restauration des notes…</string>
+    <string name="backup_notes_restore_success">%1$d notes (%2$d nouvelles), %3$d entrées importées (%4$d déjà présentes)</string>
+
+    <!-- Notes — the note feature's strings (phase 1: phone notes). -->
+    <string name="action_new_note">Nouvelle note</string>
+    <string name="note_name_title">Nommez votre note</string>
+    <string name="note_name_placeholder">Nom de la note</string>
+    <string name="note_explainer">Les notes restent sur cet appareil et ne sont jamais envoyées sur internet. Elles sont chiffrées et vivent dans Relay — si vous supprimez l\'application, vos notes disparaissent avec elle. Sauvegardez-les à tout moment depuis Réglages → Sauvegardes.</string>
+    <string name="note_empty_title">Rien ici pour l\'instant</string>
+    <string name="note_empty_body">Écrivez votre première entrée ci-dessous.</string>
+    <string name="note_delete_title">Supprimer la note ?</string>
+    <string name="note_delete_body">Cette note et toutes ses entrées seront définitivement supprimées.</string>
+    <string name="note_delete_message_title">Supprimer l\'entrée ?</string>
+    <string name="note_delete_message_body">Cette entrée sera définitivement supprimée.</string>
+    <string name="note_rename_title">Renommer la note</string>
+    <string name="note_rename_placeholder">Nom de la note</string>
+    <string name="note_save_failed">Impossible d\'enregistrer cette entrée</string>
+    <string name="note_attachment_failed">Impossible d\'ajouter cette pièce jointe</string>
+    <string name="note_open_failed">Impossible d\'ouvrir ce fichier</string>
+    <string name="note_compose_placeholder">Écrire une note…</string>
+    <string name="note_attach_sheet_subtitle">Les photos, vidéos et fichiers sont stockés chiffrés dans cette note.</string>
+    <string name="note_pdf_header_subtitle">Exporté le %1$s</string>
+    <string name="note_empty_photos">Les photos enregistrées dans cette note s\'afficheront ici.</string>
+    <string name="note_empty_videos">Les vidéos enregistrées dans cette note s\'afficheront ici.</string>
+    <string name="note_empty_files">Les fichiers enregistrés dans cette note s\'afficheront ici.</string>
 </resources>

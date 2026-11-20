@@ -20,8 +20,10 @@ import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.categories.MessageClassifier
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.MessageSearchHit
+import com.filestech.sms.domain.model.Note
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.repository.NoteRepository
 import com.filestech.sms.domain.settings.AdvancedSettings
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.DeviceMode
@@ -116,6 +118,12 @@ class ConversationsViewModel @Inject constructor(
     // mirror graph (Room + the sync-state tables); a hub phone never
     // touches it, and the list only resolves it in client mode.
     private val syncEngine: dagger.Lazy<ClientSyncEngine>,
+    /**
+     * Notes — the note repository. Its [NoteRepository.observeAllNotes]
+     * rides the packed combine arm below (the outer combine is at the
+     * 5-arg typed limit), so the list merges notes with conversations.
+     */
+    private val noteRepo: NoteRepository,
 ) : ViewModel() {
 
     private val archivedFlag: Boolean = savedStateHandle.get<Boolean>("archived") ?: false
@@ -242,6 +250,15 @@ class ConversationsViewModel @Inject constructor(
     data class UiState(
         val isLoading: Boolean = true,
         val conversations: List<Conversation> = emptyList(),
+        /**
+         * Notes — the merged list the LazyColumn renders: conversations
+         * and notes together, sorted by [trierListItems] (pinned first,
+         * then recency). [conversations] stays as the conversations-only
+         * list: the contact-photo flows, the blocked partition and the
+         * message-hits gating all read it, and none of those apply to
+         * notes.
+         */
+        val items: List<ConversationListItem> = emptyList(),
         val settings: AppSettings = AppSettings(),
         val isDefaultSmsApp: Boolean = true,
         val archived: Boolean = false,
@@ -333,19 +350,42 @@ class ConversationsViewModel @Inject constructor(
      */
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
 
+    /**
+     * Notes — the packed combine arm's value: the lock state, the
+     * selection, the selected category, and the notes. A data class
+     * (not a `Triple` + something) because the arm now carries four
+     * values, and destructuring keeps the transform readable.
+     */
+    private data class PackedInputs(
+        val lockState: AppLockManager.LockState,
+        val selectedIds: Set<Long>,
+        val category: MessageCategory?,
+        val notes: List<Note>,
+    )
+
     val state: StateFlow<UiState> = combine(
         repo.observeAll(includeArchived = archivedFlag),
         settings.flow,
         debouncedQuery,
         // v1.13.0 — Triple : on packe defaultRefreshTick + appLock.state + selectedIds
         // pour rester dans la limite 5-args typée. Tous sont des inputs de
-        // recomposition pure ; le packing est sound.
-        combine(defaultRefreshTick, appLock.state, selectedIds, selectedCategoryFlow) { _, lockState, sel, cat ->
-            Triple(lockState, sel, cat)
+        // recomposition pure ; le packing est sound. Notes — the packed arm
+        // now carries a fifth input, `observeAllNotes()` (the typed
+        // `combine` stops at 5 args, so this is the last one the arm can
+        // take): the merged list needs the notes on every emission.
+        combine(
+            defaultRefreshTick,
+            appLock.state,
+            selectedIds,
+            selectedCategoryFlow,
+            noteRepo.observeAllNotes(),
+        ) { _, lockState, sel, cat, notes ->
+            PackedInputs(lockState, sel, cat, notes)
         },
         syncManager.state,
-    ) { rows, s, q, lockSelAndCategory, syncState ->
-        val (lockState, sel, selected) = lockSelAndCategory
+    ) { rows, s, q, packed, syncState ->
+        val (lockState, sel, selected) = packed
+        val notes = packed.notes
         val matched = filterConversations(rows, q)
         // Round 11 — category filter AFTER search, BEFORE sort: the tabs
         // are computed from `matched` (search-filtered, not yet
@@ -369,6 +409,25 @@ class ConversationsViewModel @Inject constructor(
             s.conversations.showCategories,
         )
         val sorted = trierConversations(visible, s.conversations.sortMode)
+        // Notes — the merged list: notes join only when the effective
+        // category is All (notes have no category, and the tabs are
+        // computed from conversations only), filtered by the archived
+        // flag and by the search query (title only — note CONTENT is
+        // not searched in phase 1: there is no FTS table for
+        // `note_messages`, and adding one is a data-layer follow-up).
+        // The merged sort is the same order as the conversation sort,
+        // so a note and a conversation interleave by pinned + recency.
+        val noteItems = if (effectiveSelected == null) {
+            notes
+                .filter { it.archived == archivedFlag && noteMatchesQuery(it, q) }
+                .map { ConversationListItem.NoteItem(it) }
+        } else {
+            emptyList()
+        }
+        val items = trierListItems(
+            sorted.map { ConversationListItem.ConversationItem(it) } + noteItems,
+            s.conversations.sortMode,
+        )
         val nomsPartages = sorted
             .mapNotNull { it.displayName?.takeIf { n -> n.isNotBlank() } }
             .groupingBy { it }
@@ -397,6 +456,7 @@ class ConversationsViewModel @Inject constructor(
         UiState(
             isLoading = false,
             conversations = sorted,
+            items = items,
             settings = s,
             isDefaultSmsApp = defaultAppManager.isDefault(),
             archived = archivedFlag,
@@ -691,6 +751,19 @@ class ConversationsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Notes — the list search over notes: TITLE only, same
+     * case/ accent-insensitive fold as [filterConversations]. Note
+     * CONTENT is not searched in phase 1 (no FTS table for
+     * `note_messages` — a data-layer follow-up, see the merged-list
+     * comment in [state]).
+     */
+    private fun noteMatchesQuery(note: Note, q: String): Boolean {
+        if (q.isBlank()) return true
+        val needle = q.trim().foldForSearch()
+        return note.title.foldForSearch().contains(needle)
+    }
+
     /** Persists the picked sort mode — observed by the conversations Flow which re-sorts. */
     fun setSortMode(mode: SortMode) = viewModelScope.launch {
         settings.update { it.copy(conversations = it.conversations.copy(sortMode = mode)) }
@@ -812,6 +885,28 @@ class ConversationsViewModel @Inject constructor(
 
     fun toggleArchived(conversation: Conversation) = viewModelScope.launch {
         toggle.setArchived(conversation.id, !conversation.archived)
+    }
+
+    /**
+     * Notes — toggles a note's pinned state (same one-liner shape as
+     * [togglePinned], straight to the note repository: notes have no
+     * mirror, no sync, no conversation-state use case).
+     */
+    fun toggleNotePinned(note: Note) = viewModelScope.launch {
+        noteRepo.setPinned(note.id, !note.pinned)
+    }
+
+    /** Notes — toggles a note's archived state (see [toggleNotePinned]). */
+    fun toggleNoteArchived(note: Note) = viewModelScope.launch {
+        noteRepo.setArchived(note.id, !note.archived)
+    }
+
+    /**
+     * Notes — deletes a note: the repository cascades the rows and
+     * deletes the attachment files. The list re-emits without it.
+     */
+    fun deleteNote(noteId: Long) = viewModelScope.launch {
+        noteRepo.deleteNote(noteId)
     }
 
     fun toggleMuted(conversation: Conversation) = viewModelScope.launch {

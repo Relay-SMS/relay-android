@@ -60,8 +60,11 @@ import com.filestech.sms.core.ext.oneShotEvents
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.backup.BackupService
+import com.filestech.sms.data.backup.NotesBackupService
+import com.filestech.sms.domain.backup.RestoreNotesResult
 import com.filestech.sms.domain.backup.RestoreResult
 import com.filestech.sms.domain.usecase.RestoreBackupUseCase
+import com.filestech.sms.domain.usecase.RestoreNotesBackupUseCase
 import com.filestech.sms.ui.components.RelayDialog
 import com.filestech.sms.ui.components.RelayPrimaryButton
 import com.filestech.sms.ui.components.RelaySection
@@ -85,6 +88,10 @@ import javax.inject.Inject
 class BackupViewModel @Inject constructor(
     private val backupService: BackupService,
     private val restoreBackup: RestoreBackupUseCase,
+    // Notes backup (.notebk) — same split as the `.smsbk` pair above: the service for
+    // the export, the use case for the restore.
+    private val notesBackupService: NotesBackupService,
+    private val restoreNotesBackup: RestoreNotesBackupUseCase,
     // v1.27.2 (audit externe 2026-08-04 #4) — distingue le refus « second facteur coffre »
     // du refus « session leurre » : les deux reviennent en AppError.Locked, mais seul le
     // premier peut être nommé à l'écran. Cf. [exportEncrypted].
@@ -106,6 +113,14 @@ class BackupViewModel @Inject constructor(
         // l'échec porte un kind typé qui mappe vers une string d'erreur localisée côté UI.
         data class RestoreDone(val result: RestoreResult) : Event
         data class RestoreFailed(val kind: RestoreFailureKind) : Event
+
+        // Notes backup (.notebk) — same shapes as the `.smsbk` events above, kept
+        // separate so the screen can show notes-specific strings. No vault-locked
+        // variant: the vault second-factor gate does not apply to notes.
+        data class NotesExportDone(val uri: android.net.Uri) : Event
+        data object NotesExportFailed : Event
+        data class NotesRestoreDone(val result: RestoreNotesResult) : Event
+        data class NotesRestoreFailed(val kind: RestoreFailureKind) : Event
     }
 
     /** v1.15.2 — Catégorise les échecs de restore pour message UI ciblé. */
@@ -121,6 +136,11 @@ class BackupViewModel @Inject constructor(
     // read-then-write non-atomique. Sûr même si appelé depuis un dispatcher non-Main.
     private val _isRestoring = MutableStateFlow(false)
     val isRestoring: StateFlow<Boolean> = _isRestoring
+
+    // Notes restore twin of [_isRestoring]: same CAS anti-reentrance guard, separate
+    // flag so a notes restore and an SMS restore can never share one.
+    private val _isRestoringNotes = MutableStateFlow(false)
+    val isRestoringNotes: StateFlow<Boolean> = _isRestoringNotes
 
     /**
      * v1.27.13 — ce que l'utilisateur doit prouver avant que l'export puisse aboutir.
@@ -235,6 +255,61 @@ class BackupViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Triggers an encrypted `.notebk` notes export. The [passphrase] CharArray is
+     * consumed (wiped) by [NotesBackupService.writeNotesBackup]. No vault gate: notes
+     * are not vault content, so there is no second factor to prove first.
+     */
+    fun exportNotes(uri: android.net.Uri, passphrase: CharArray) {
+        viewModelScope.launch {
+            val r = notesBackupService.writeNotesBackup(uri, passphrase)
+            _events.tryEmit(
+                when (r) {
+                    is Outcome.Success -> Event.NotesExportDone(uri)
+                    else -> Event.NotesExportFailed
+                },
+            )
+        }
+    }
+
+    /**
+     * Triggers a restore from an encrypted `.notebk` URI. Same contract as
+     * [restoreFromUri]: fresh CharArray per call, wiped by the service, CAS guard
+     * against a double-tap producing two concurrent imports.
+     */
+    fun restoreNotesFromUri(uri: android.net.Uri, passphrase: CharArray) {
+        if (!_isRestoringNotes.compareAndSet(false, true)) {
+            // Restore already in progress — refuse + wipe the passphrase received
+            // (no memory leak).
+            passphrase.fill(' ')
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val outcome = restoreNotesBackup(uri.toString(), passphrase)
+                when (outcome) {
+                    is Outcome.Success -> _events.tryEmit(Event.NotesRestoreDone(outcome.value))
+                    is Outcome.Failure -> {
+                        val error = outcome.error
+                        val kind = when {
+                            error is AppError.Validation -> {
+                                val msg = error.message.orEmpty()
+                                when {
+                                    msg.contains("decrypt failed") -> RestoreFailureKind.WRONG_PASSPHRASE_OR_CORRUPTED
+                                    else -> RestoreFailureKind.INVALID_FORMAT
+                                }
+                            }
+                            else -> RestoreFailureKind.STORAGE
+                        }
+                        _events.tryEmit(Event.NotesRestoreFailed(kind))
+                    }
+                }
+            } finally {
+                _isRestoringNotes.value = false
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -271,6 +346,28 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) restoreUri = uri
+    }
+
+    // Notes backup (.notebk) — same shapes as the `.smsbk` flow above, separate
+    // launchers and state so the two flows never share a pending URI.
+    var pendingNotesUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var askingNotesPassphrase by remember { mutableStateOf(false) }
+    val notesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        if (uri != null) {
+            pendingNotesUri = uri
+            askingNotesPassphrase = true
+        }
+    }
+    var restoreNotesUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val isRestoringNotes by viewModel.isRestoringNotes.collectAsState()
+    val notesRestoreLauncher = rememberLauncherForActivityResult(
+        // Mime `*/*`: same reason as the `.smsbk` picker — the service validates via
+        // the `NTBK` magic bytes, not the MIME type.
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) restoreNotesUri = uri
     }
 
     // v1.27.2 (audit externe 2026-08-04 #4) — résolue à la composition via stringResource :
@@ -322,6 +419,35 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                     },
                 )
                 is BackupViewModel.Event.RestoreFailed -> {
+                    val msg = when (ev.kind) {
+                        BackupViewModel.RestoreFailureKind.WRONG_PASSPHRASE_OR_CORRUPTED ->
+                            context.getString(R.string.backup_restore_failed_wrong_pass)
+                        BackupViewModel.RestoreFailureKind.INVALID_FORMAT ->
+                            context.getString(R.string.backup_restore_failed_format)
+                        BackupViewModel.RestoreFailureKind.STORAGE ->
+                            context.getString(R.string.backup_restore_failed_storage)
+                    }
+                    snackbarHost.showError(msg)
+                }
+                is BackupViewModel.Event.NotesExportDone -> snackbarHost.showSnackbar(
+                    context.getString(R.string.backup_notes_export_success),
+                )
+                BackupViewModel.Event.NotesExportFailed -> snackbarHost.showError(
+                    context.getString(R.string.backup_notes_export_failed),
+                )
+                is BackupViewModel.Event.NotesRestoreDone -> snackbarHost.showSnackbar(
+                    context.getString(
+                        R.string.backup_notes_restore_success,
+                        ev.result.totalNotesInBackup,
+                        ev.result.notesCreated,
+                        ev.result.messagesImported,
+                        ev.result.messagesSkipped,
+                    ),
+                )
+                is BackupViewModel.Event.NotesRestoreFailed -> {
+                    // Same failure strings as the `.smsbk` restore: the meanings are
+                    // identical ("wrong passphrase or corrupted file", "not a valid
+                    // Relay backup file", "could not read the file").
                     val msg = when (ev.kind) {
                         BackupViewModel.RestoreFailureKind.WRONG_PASSPHRASE_OR_CORRUPTED ->
                             context.getString(R.string.backup_restore_failed_wrong_pass)
@@ -440,6 +566,15 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                     }
                 }
             }
+            NotesBackupSections(
+                isRestoringNotes = isRestoringNotes,
+                onExportNotes = {
+                    // No vault gate for notes: the vault second factor does
+                    // not apply, so the picker opens directly.
+                    notesLauncher.launch("relay_notes_${System.currentTimeMillis()}.notebk")
+                },
+                onRestoreNotes = { notesRestoreLauncher.launch(arrayOf("*/*")) },
+            )
         }
     }
 
@@ -454,6 +589,18 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                 viewModel.restoreFromUri(safeUri, passphrase)
             },
             onDismiss = { restoreUri = null },
+        )
+    }
+
+    restoreNotesUri?.let { uri ->
+        RestorePassphraseDialog(
+            explainerRes = R.string.backup_notes_restore_explainer,
+            onConfirm = { passphrase ->
+                val safeUri = uri
+                restoreNotesUri = null
+                viewModel.restoreNotesFromUri(safeUri, passphrase)
+            },
+            onDismiss = { restoreNotesUri = null },
         )
     }
 
@@ -510,6 +657,80 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                 pendingUri = null
             },
         )
+    }
+
+    if (askingNotesPassphrase) {
+        PassphraseDialog(
+            onConfirm = { passphrase ->
+                val uri = pendingNotesUri
+                askingNotesPassphrase = false
+                pendingNotesUri = null
+                if (uri != null) viewModel.exportNotes(uri, passphrase)
+            },
+            onDismiss = {
+                askingNotesPassphrase = false
+                pendingNotesUri = null
+            },
+        )
+    }
+}
+
+/**
+ * Notes backup (.notebk) — the export and restore sections, extracted from
+ * [BackupScreen] so the screen stays under the Detekt long-method limit. The
+ * launchers and pending-URI state stay in the screen: the passphrase dialogs
+ * below the Scaffold own them.
+ */
+@Composable
+private fun NotesBackupSections(
+    isRestoringNotes: Boolean,
+    onExportNotes: () -> Unit,
+    onRestoreNotes: () -> Unit,
+) {
+    RelaySection(title = stringResource(R.string.backup_notes_export_title)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.backup_notes_export_explainer),
+                style = RelayText.Preview,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.size(12.dp))
+            RelayPrimaryButton(
+                text = stringResource(R.string.backup_notes_export_button),
+                onClick = onExportNotes,
+            )
+        }
+    }
+    RelaySection(title = stringResource(R.string.backup_notes_restore_title)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.backup_notes_restore_explainer),
+                style = RelayText.Preview,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.size(12.dp))
+            RelayPrimaryButton(
+                // Same depth-in-defense as the `.smsbk` restore button: disable
+                // during the crypto + import work (the VM has its own CAS guard).
+                enabled = !isRestoringNotes,
+                text = if (isRestoringNotes) {
+                    stringResource(R.string.backup_notes_restore_in_progress)
+                } else {
+                    stringResource(R.string.backup_notes_restore_pick_file)
+                },
+                onClick = onRestoreNotes,
+            )
+            if (isRestoringNotes) {
+                Spacer(Modifier.size(12.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp),
+                    color = brandBlue(),
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -686,11 +907,14 @@ private const val MIN_PASSPHRASE_LEN = 8
  *    `WRONG_PASSPHRASE_OR_CORRUPTED` → snackbar localisée.
  *  - CharArray construite à la confirmation, wipée par [BackupService.readSmsbk] côté service.
  *  - String UI wipée immédiatement après conversion en CharArray pour réduire l'exposition.
+ *  - [explainerRes] permet à la restauration des notes de réutiliser ce dialogue avec son
+ *    propre texte (celui par défaut nomme le fichier `.smsbk`).
  */
 @Composable
 private fun RestorePassphraseDialog(
     onConfirm: (CharArray) -> Unit,
     onDismiss: () -> Unit,
+    explainerRes: Int = R.string.backup_restore_explainer,
 ) {
     var pw by remember { mutableStateOf("") }
     // v1.15.2 — Toggle visibilité passphrase. Critique en restore : si l'user se trompe, le
@@ -723,7 +947,7 @@ private fun RestorePassphraseDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.backup_restore_explainer),
+                    text = stringResource(explainerRes),
                     style = RelayText.Preview,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

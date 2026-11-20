@@ -1370,10 +1370,15 @@ class ThreadViewModel @Inject constructor(
             // `contentDescription`, donc lu par TalkBack, quelle que soit la langue de
             // l'application. Le `context` est celui de l'application, et la langue par
             // application s'applique au processus : il rend bien la langue choisie.
-            val displayName = carte?.nomDeFichier
-                ?: resolveDisplayName(uri)
+            // Round 33 follow-up — the source name BEFORE the generic fallback: a sticker
+            // render's FileProvider name starts with `sticker-`, and the copy keeps that
+            // marker in the staged filename so the stored row still says "sticker" (see
+            // `outgoingCacheFileName`). The fallback string is never a sticker name.
+            // Resolved once: the display name and the copy share it.
+            val sourceName = carte?.nomDeFichier ?: resolveDisplayName(uri)
+            val displayName = sourceName
                 ?: context.getString(com.filestech.sms.R.string.attachment_generic_name)
-            val file = copyAttachmentToCache(source, mime)
+            val file = copyAttachmentToCache(source, mime, sourceName)
             if (file == null) {
                 _events.tryEmit(Event.ShowSnackbar(snackEchecPieceJointe(kind), isError = true))
                 return@launch
@@ -1660,14 +1665,15 @@ class ThreadViewModel @Inject constructor(
      * MMS dispatch path can read it as a regular file (the system URI can revoke its grant
      * the moment the picker activity finishes). Returns `null` on IO error or empty content.
      */
-    private suspend fun copyAttachmentToCache(uri: android.net.Uri, mime: String): java.io.File? =
+    private suspend fun copyAttachmentToCache(
+        uri: android.net.Uri,
+        mime: String,
+        sourceName: String?,
+    ): java.io.File? =
         kotlinx.coroutines.withContext(io) {
             val ext = mime.substringAfter('/', "bin").take(8).replace(Regex("[^A-Za-z0-9]"), "")
             val dir = java.io.File(context.cacheDir, "media_outgoing").apply { mkdirs() }
-            val target = java.io.File(
-                dir,
-                "${System.currentTimeMillis()}-${java.util.UUID.randomUUID().toString().take(8)}.${ext.ifBlank { "bin" }}",
-            )
+            val target = java.io.File(dir, outgoingCacheFileName(sourceName, ext))
             // v1.28.3 (F27) — la copie est BORNEE, et le refus precede l'ecriture quand il peut.
             //
             // `input.copyTo(it)` recopiait l'integralite de ce que le selecteur rendait, sans

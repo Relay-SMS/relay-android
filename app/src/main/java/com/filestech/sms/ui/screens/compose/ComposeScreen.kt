@@ -71,6 +71,7 @@ import com.filestech.sms.R
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.domain.model.Contact
+import com.filestech.sms.domain.model.NOTE_TITLE_MAX_LENGTH
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
 import com.filestech.sms.ui.components.ContactIntents
@@ -91,6 +92,8 @@ fun ComposeScreen(
     groupe: Boolean = false,
     onBack: () -> Unit,
     onConversationCreated: (Long) -> Unit,
+    /** Notes — a created note opens its thread (AppRoot pops compose first). */
+    onNoteCreated: (Long) -> Unit = {},
     viewModel: ComposeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -115,6 +118,11 @@ fun ComposeScreen(
     // exits compose. The typed group name, kept across rotation.
     var namingGroup by rememberSaveable { mutableStateOf(false) }
     var groupName by rememberSaveable { mutableStateOf("") }
+    // Notes — the "Name your note" step, mirroring the group naming
+    // step above: its own header, the name pill, the explainer text,
+    // and Continue creates the note. Back returns to compose.
+    var namingNote by rememberSaveable { mutableStateOf(false) }
+    var noteName by rememberSaveable { mutableStateOf("") }
     // Normalized numbers already picked, for the circles' filled state.
     val selectedNumbers = remember(state.recipients) {
         state.recipients.map { it.normalized }.toSet()
@@ -123,6 +131,8 @@ fun ComposeScreen(
         viewModel.events.collect { e ->
             when (e) {
                 is ComposeViewModel.Event.ConversationCreated -> onConversationCreated(e.id)
+                // Notes — the note is created: open its thread.
+                is ComposeViewModel.Event.NoteCreated -> onNoteCreated(e.id)
                 // Client mode C3 — the hub refused the create (or
                 // could not be reached): say so, instead of a
                 // silent nothing.
@@ -167,6 +177,18 @@ fun ComposeScreen(
                         }
                     },
                 )
+                // Notes — the "Name your note" header: back returns to
+                // compose, it does not exit (same as the group step).
+                namingNote -> TopAppBar(
+                    title = {
+                        Text(stringResource(R.string.note_name_title))
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { namingNote = false }) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                        }
+                    },
+                )
                 groupe -> ComposeGroupHeader(onBack = onBack)
                 else -> TopAppBar(
                     title = {
@@ -200,6 +222,17 @@ fun ComposeScreen(
                     contacts = state.results,
                     onRemoveRecipient = viewModel::removeRecipient,
                     onContinue = { viewModel.createConversation(groupName) },
+                    modifier = Modifier.weight(1f),
+                )
+            } else if (namingNote) {
+                // Notes — the "Name your note" step: name pill, the
+                // explainer text, Continue creates the note. No member
+                // list (notes have no members), and the name is
+                // REQUIRED — Continue stays disabled while blank.
+                NoteNameContent(
+                    noteName = noteName,
+                    onNoteNameChange = { noteName = it },
+                    onContinue = { viewModel.createNote(noteName) },
                     modifier = Modifier.weight(1f),
                 )
             } else {
@@ -243,6 +276,22 @@ fun ComposeScreen(
                                 icon = painterResource(R.drawable.ic_new_group),
                                 active = groupPicking,
                                 onClick = { groupPicking = !groupPicking },
+                            )
+                        }
+                    }
+                    // Notes — "New note" sits directly below "Create a
+                    // group" (same [ContactActionRow], the note glyph):
+                    // tapping it enters the naming step. Hidden in the
+                    // navigation group mode (which is group picking)
+                    // and in client mode — phase 1 has no `create_note`
+                    // frame yet, so a linked device cannot create notes.
+                    if (!groupe && !isClientMode) {
+                        item(key = "new-note") {
+                            ContactActionRow(
+                                title = stringResource(R.string.action_new_note),
+                                subtitle = null,
+                                icon = painterResource(R.drawable.ic_note),
+                                onClick = { namingNote = true },
                             )
                         }
                     }
@@ -439,6 +488,43 @@ private fun GroupNameContent(
             text = stringResource(R.string.action_continue),
             onClick = onContinue,
             enabled = recipients.isNotEmpty(),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+    }
+}
+
+/**
+ * Notes — the "Name your note" step: the [RecipientField] pill
+ * reused as the name input, the explainer text BELOW the field, and
+ * the same Continue button as the group step. The name is REQUIRED:
+ * Continue stays disabled while blank. No member list — a note has
+ * no members.
+ */
+@Composable
+private fun NoteNameContent(
+    noteName: String,
+    onNoteNameChange: (String) -> Unit,
+    onContinue: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        RecipientField(
+            query = noteName,
+            onQueryChange = { onNoteNameChange(it.take(NOTE_TITLE_MAX_LENGTH)) },
+            placeholder = stringResource(R.string.note_name_placeholder),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+        Text(
+            text = stringResource(R.string.note_explainer),
+            style = RelayText.Preview,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        RelayPrimaryButton(
+            text = stringResource(R.string.action_continue),
+            onClick = onContinue,
+            enabled = noteName.isNotBlank(),
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }

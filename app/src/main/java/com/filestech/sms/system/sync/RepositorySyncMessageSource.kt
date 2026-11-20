@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import com.filestech.sms.core.mms.MmsConstants
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.Conversation
@@ -130,6 +131,13 @@ import com.filestech.sms.domain.model.MessageState as DomainMessageState
  * service cannot show a permission dialog, so a missing grant is
  * an error the desktop shows, and the user grants it from the
  * Linked devices screen.
+ *
+ * Category mutes add [observeMutedCategories], [mutedCategories]
+ * and [setCategoryMuted]: the phone's own AppSettings holds the
+ * muted-category set, the glue only maps the domain enum to the
+ * lowercase wire strings — explicit `when` mappings, never
+ * `name.lowercase()` (locale). An unknown wire category is
+ * refused with `invalid_request`, never a crash.
  */
 @Singleton
 class RepositorySyncMessageSource @Inject constructor(
@@ -947,6 +955,58 @@ class RepositorySyncMessageSource @Inject constructor(
             )
         }
         return ActionResult(ok = true)
+    }
+
+    // -- Category mutes ----------------------------------------------
+
+    override fun observeMutedCategories(): Flow<Set<String>> =
+        settings.flow.map { it.conversations.mutedCategories.mapToWire() }
+
+    override suspend fun mutedCategories(): Set<String>? =
+        settings.hydratedOrNull()?.conversations?.mutedCategories?.mapToWire()
+
+    override suspend fun setCategoryMuted(category: String, muted: Boolean): ActionResult {
+        val parsed = category.toMessageCategory()
+            ?: return ActionResult(
+                ok = false,
+                code = SyncProtocol.MessageFailed.INVALID_REQUEST,
+                message = "Unknown category.",
+            )
+        settings.update { current ->
+            val mutedSet = if (muted) {
+                current.conversations.mutedCategories + parsed
+            } else {
+                current.conversations.mutedCategories - parsed
+            }
+            current.copy(conversations = current.conversations.copy(mutedCategories = mutedSet))
+        }
+        return ActionResult(ok = true)
+    }
+
+    /** The muted set as lowercase wire strings (the `category_mutes` alphabet). */
+    private fun Set<MessageCategory>.mapToWire(): Set<String> = map { it.toWire() }.toSet()
+
+    /**
+     * Lowercase wire name for one category — explicit, never
+     * `name.lowercase()`: the default-locale lowercase of `PERSONAL`
+     * is wrong in Turkish (dotted I), and the wire alphabet is fixed.
+     */
+    private fun MessageCategory.toWire(): String = when (this) {
+        MessageCategory.PERSONAL -> "personal"
+        MessageCategory.OTP -> "otp"
+        MessageCategory.PROMOTIONAL -> "promotional"
+        MessageCategory.TRANSACTIONS -> "transactions"
+        MessageCategory.OTHER -> "other"
+    }
+
+    /** Parses a wire category; unknown strings are null (refused, never a crash). */
+    private fun String.toMessageCategory(): MessageCategory? = when (this) {
+        "personal" -> MessageCategory.PERSONAL
+        "otp" -> MessageCategory.OTP
+        "promotional" -> MessageCategory.PROMOTIONAL
+        "transactions" -> MessageCategory.TRANSACTIONS
+        "other" -> MessageCategory.OTHER
+        else -> null
     }
 
     override suspend fun setReaction(conversationId: Long, messageId: Long, emoji: String?): ActionResult {

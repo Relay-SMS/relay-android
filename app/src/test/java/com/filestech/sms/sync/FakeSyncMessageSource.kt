@@ -17,6 +17,9 @@ internal class FakeSyncMessageSource : SyncMessageSource {
     var isDefaultSms: Boolean = true
     var snapshot: List<SyncedConversation> = emptyList()
     val conversationsFlow = MutableSharedFlow<List<SyncedConversation>>(replay = 1)
+
+    /** Live muted-category set (wire strings); the engine collects this. */
+    val mutedCategoriesFlow = MutableSharedFlow<Set<String>>(replay = 1)
     val messagesByConversation = mutableMapOf<Long, MutableList<SyncedMessage>>()
     val statesFlow = MutableStateFlow<Map<Long, MessageState>>(emptyMap())
     var maxId: Long = 0L
@@ -26,6 +29,7 @@ internal class FakeSyncMessageSource : SyncMessageSource {
 
     init {
         conversationsFlow.tryEmit(emptyList())
+        mutedCategoriesFlow.tryEmit(emptySet())
     }
 
     override suspend fun conversations(): List<SyncedConversation> {
@@ -309,6 +313,34 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         return photoSetResult
     }
 
+    // -- Category mutes -----------------------------------------------
+    // Same shape as the send surface: the flow is the live settings
+    // feed (a SharedFlow, like the conversations flow, so a test can
+    // re-emit an EQUAL set and prove the engine dedupes it), the
+    // one-shot is independently configurable (null = unreadable
+    // settings), and a successful apply updates the flow — mirroring
+    // the real glue, so an engine test can watch the broadcast a
+    // `set_category_muted` triggers.
+
+    /** What [mutedCategories] answers; null simulates unreadable settings. */
+    var mutedCategoriesSnapshot: Set<String>? = emptySet()
+
+    override fun observeMutedCategories(): Flow<Set<String>> = mutedCategoriesFlow
+
+    override suspend fun mutedCategories(): Set<String>? = mutedCategoriesSnapshot
+
+    val categoryMuteSets = mutableListOf<CategoryMuteCall>()
+    var categoryMuteResult: ActionResult = ActionResult(ok = true)
+
+    override suspend fun setCategoryMuted(category: String, muted: Boolean): ActionResult {
+        categoryMuteSets += CategoryMuteCall(category, muted)
+        if (categoryMuteResult.ok) {
+            val current = mutedCategoriesFlow.replayCache.firstOrNull().orEmpty()
+            mutedCategoriesFlow.tryEmit(if (muted) current + category else current - category)
+        }
+        return categoryMuteResult
+    }
+
     /** Adds [message] to its conversation's store and advances the max id. */
     fun store(message: SyncedMessage) {
         val list = messagesByConversation.getOrPut(message.conversationId.toLong()) { mutableListOf() }
@@ -387,6 +419,12 @@ internal data class UploadChunkCall(
         return result
     }
 }
+
+/** One recorded `setCategoryMuted` call on the fake. */
+internal data class CategoryMuteCall(
+    val category: String,
+    val muted: Boolean,
+)
 
 /** One recorded action call on the fake. */
 internal data class ActionCall(

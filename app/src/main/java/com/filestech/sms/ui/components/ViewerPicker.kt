@@ -71,8 +71,10 @@ import timber.log.Timber
  * remembering) or Always (remembers the package and opens with
  * it). A remembered viewer opens directly with `setPackage`, no
  * picker. One handler opens directly too — a picker with one app
- * is no choice. Anything that is not image/video/audio keeps the
- * plain system intent.
+ * is no choice. No handler at all still tries the plain intent —
+ * an empty query can mean the query was blind, and a tap must
+ * never silently die. Anything that is not image/video/audio keeps
+ * the plain system intent.
  */
 internal data class ViewerApp(
     val packageName: String,
@@ -88,7 +90,11 @@ internal sealed interface ViewerOpenDecision {
     /** Show Relay's picker with these apps. */
     data class Pick(val apps: List<ViewerApp>) : ViewerOpenDecision
 
-    /** No app handles this type — nothing to open with. */
+    /**
+     * The query found no handler. The caller still tries the
+     * plain intent (fail open): an empty query can also mean the
+     * query itself was blind, not that no viewer exists.
+     */
     data object NoHandler : ViewerOpenDecision
 }
 
@@ -116,7 +122,7 @@ internal fun resolveViewerOpen(
  * Every app that handles ACTION_VIEW for ([uri], [mimeType]),
  * Relay itself excluded (it must never offer itself as its own
  * viewer), deduped by package and sorted by name. Empty when the
- * query fails — the caller treats that as "no handler".
+ * query fails — the caller fails open to the plain intent.
  */
 internal fun queryViewerApps(context: Context, uri: Uri, mimeType: String): List<ViewerApp> {
     val intent = Intent(Intent.ACTION_VIEW).apply { setDataAndType(uri, mimeType) }
@@ -228,7 +234,8 @@ internal fun rememberAttachmentOpener(): (Attachment) -> Unit {
  * One open: non-media types go straight to the plain intent; media
  * types resolve the remembered viewer against the current
  * handlers, opening directly or raising the picker through
- * [onPick].
+ * [onPick]. With no handler the plain intent is tried anyway —
+ * a tap must never silently die.
  */
 private suspend fun openAttachment(
     context: Context,
@@ -254,8 +261,20 @@ private suspend fun openAttachment(
         is ViewerOpenDecision.Open ->
             ouvrirPieceJointe(context, attachment, packageName = decision.packageName)
         is ViewerOpenDecision.Pick -> onPick(PendingViewerPick(attachment, kind, decision.apps))
-        ViewerOpenDecision.NoHandler ->
-            Timber.w("AttachmentOpener: no viewer for %s", attachment.mimeType)
+        ViewerOpenDecision.NoHandler -> {
+            // Fail open: an empty query does not prove no viewer
+            // exists (a missing <queries> entry blinded it in
+            // round 33) — and the plain intent is not blocked by
+            // package visibility, so it still reaches a handler
+            // when one is installed. If truly none is, the
+            // runCatching inside ouvrirPieceJointe logs and
+            // returns. A tap must never silently die.
+            Timber.w(
+                "AttachmentOpener: no viewer for %s — trying the plain intent",
+                attachment.mimeType,
+            )
+            ouvrirPieceJointe(context, attachment)
+        }
     }
 }
 

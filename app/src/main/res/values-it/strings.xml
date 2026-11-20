@@ -1332,4 +1332,37 @@
     <string name="client_contacts_error_title">Impossibile sincronizzare i contatti</string>
     <string name="client_contacts_error_no_access">Il telefono non può accedere ai contatti. Consenti l\'accesso ai contatti sul telefono e riprova.</string>
     <string name="client_contacts_error_default">Il telefono non ha potuto sincronizzare i contatti ora.</string>
+    <string name="backup_notes_export_title">Backup delle note</string>
+    <string name="backup_notes_export_explainer">Esegui il backup delle tue note — foto e file inclusi — in un unico file cifrato. Scegli una passphrase sicura: senza di essa il file non potrà essere recuperato.</string>
+    <string name="backup_notes_export_button">Esegui backup delle note</string>
+    <string name="backup_notes_export_success">Backup delle note salvato.</string>
+    <string name="backup_notes_export_failed">Backup delle note non riuscito.</string>
+    <string name="backup_notes_restore_title">Ripristina note</string>
+    <string name="backup_notes_restore_explainer">Scegli un file .notebk e inserisci la sua passphrase. Le note già presenti su questo dispositivo vengono unite a quelle attuali; le voci esistenti vengono conservate (senza duplicati).</string>
+    <string name="backup_notes_restore_pick_file">Scegli un file .notebk</string>
+    <string name="backup_notes_restore_in_progress">Ripristino delle note…</string>
+    <string name="backup_notes_restore_success">%1$d note (%2$d nuove), %3$d voci importate (%4$d già presenti)</string>
+
+    <!-- Notes — the note feature's strings (phase 1: phone notes). -->
+    <string name="action_new_note">Nuova nota</string>
+    <string name="note_name_title">Dai un nome alla nota</string>
+    <string name="note_name_placeholder">Nome della nota</string>
+    <string name="note_explainer">Le note restano su questo dispositivo e non vengono mai inviate su internet. Sono crittografate e vivono in Relay: se rimuovi l\'app, le tue note se ne vanno con lei. Esegui il backup in qualsiasi momento da Impostazioni → Backup.</string>
+    <string name="note_empty_title">Ancora niente qui</string>
+    <string name="note_empty_body">Scrivi la tua prima voce qui sotto.</string>
+    <string name="note_delete_title">Eliminare la nota?</string>
+    <string name="note_delete_body">Questa nota e tutte le sue voci saranno eliminate definitivamente.</string>
+    <string name="note_delete_message_title">Eliminare la voce?</string>
+    <string name="note_delete_message_body">Questa voce sarà eliminata definitivamente.</string>
+    <string name="note_rename_title">Rinomina nota</string>
+    <string name="note_rename_placeholder">Nome della nota</string>
+    <string name="note_save_failed">Impossibile salvare questa voce</string>
+    <string name="note_attachment_failed">Impossibile aggiungere questo allegato</string>
+    <string name="note_open_failed">Impossibile aprire questo file</string>
+    <string name="note_compose_placeholder">Scrivi una nota…</string>
+    <string name="note_attach_sheet_subtitle">Foto, video e file vengono archiviati crittografati in questa nota.</string>
+    <string name="note_pdf_header_subtitle">Esportato %1$s</string>
+    <string name="note_empty_photos">Le foto salvate in questa nota saranno mostrate qui.</string>
+    <string name="note_empty_videos">I video salvati in questa nota saranno mostrati qui.</string>
+    <string name="note_empty_files">I file salvati in questa nota saranno mostrati qui.</string>
 </resources>

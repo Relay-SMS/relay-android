@@ -344,6 +344,41 @@ class SyncSessionHandlerTest {
         }
     }
 
+    // -- Category mutes -------------------------------------------------
+
+    @Test fun `an authenticated set_category_muted reaches the engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+
+            harness.handler.onText("""{"type":"set_category_muted","category":"otp","muted":true}""")
+            advanceUntilIdle()
+            assertThat(source.categoryMuteSets).containsExactly(CategoryMuteCall("otp", true))
+            val results = engineSent.filter { it.frameType() == "action_result" }
+            assertThat(results).hasSize(1)
+            val result = Json.parseToJsonElement(results.first()).jsonObject
+            assertThat(result["action"]?.jsonPrimitive?.content).isEqualTo("set_category_muted")
+            assertThat(result["category"]?.jsonPrimitive?.content).isEqualTo("otp")
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("true")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test fun `an unauthenticated set_category_muted fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText("""{"type":"set_category_muted","category":"otp","muted":true}""")
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
     // -- Slice 5: contact frames ----------------------------------------
 
     @Test fun `an unauthenticated contacts_request fails with protocol and closes`() = runTest {

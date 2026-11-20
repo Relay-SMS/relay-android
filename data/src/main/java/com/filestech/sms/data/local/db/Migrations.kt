@@ -557,6 +557,125 @@ object Migrations {
         }
     }
 
+    /**
+     * Notes phase 1 — three new tables: `notes`, `note_messages`, `note_attachments`
+     * (local-only notes, never in the system provider). Each table carries its UUID v4
+     * column (the notes-backup dedup key) and the phase-2 sync columns (`hub_*` /
+     * `client_*`), laid down now so no second migration is needed for sync.
+     *
+     * Strictly additive: the tables are born empty, no existing row is touched. The
+     * `CREATE TABLE` statements repeat the form Room generates for the entities
+     * (columns, `NOT NULL`, `DEFAULT`, `PRIMARY KEY`, foreign keys):
+     * `runMigrationsAndValidate` compares the real tables against the exported schema
+     * and would refuse the slightest gap — including the `DEFAULT ''` on
+     * `note_messages.body` and the `DEFAULT 0` on the counters and flags, which the
+     * entities declare via `@ColumnInfo(defaultValue = …)`.
+     */
+    val MIGRATION_18_19: Migration = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `notes` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `uuid` TEXT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `created_at` INTEGER NOT NULL,
+                    `updated_at` INTEGER NOT NULL,
+                    `last_message_at` INTEGER,
+                    `last_message_preview` TEXT,
+                    `draft` TEXT,
+                    `pinned` INTEGER NOT NULL DEFAULT 0,
+                    `archived` INTEGER NOT NULL DEFAULT 0,
+                    `bubble_color_argb` INTEGER,
+                    `hub_note_id` INTEGER,
+                    `client_note_id` TEXT
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_uuid` " +
+                    "ON `notes` (`uuid`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_hub_note_id` " +
+                    "ON `notes` (`hub_note_id`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_client_note_id` " +
+                    "ON `notes` (`client_note_id`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_notes_pinned_last_message_at` " +
+                    "ON `notes` (`pinned`, `last_message_at`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_notes_archived` " +
+                    "ON `notes` (`archived`)",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `note_messages` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `uuid` TEXT NOT NULL,
+                    `note_id` INTEGER NOT NULL,
+                    `body` TEXT NOT NULL DEFAULT '',
+                    `date` INTEGER NOT NULL,
+                    `attachments_count` INTEGER NOT NULL DEFAULT 0,
+                    `hub_note_message_id` INTEGER,
+                    `client_message_id` TEXT,
+                    FOREIGN KEY(`note_id`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_note_messages_note_id_date` " +
+                    "ON `note_messages` (`note_id`, `date`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_messages_uuid` " +
+                    "ON `note_messages` (`uuid`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_messages_hub_note_message_id` " +
+                    "ON `note_messages` (`hub_note_message_id`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_messages_client_message_id` " +
+                    "ON `note_messages` (`client_message_id`)",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `note_attachments` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `uuid` TEXT NOT NULL,
+                    `note_message_id` INTEGER NOT NULL,
+                    `mime_type` TEXT NOT NULL,
+                    `file_name` TEXT,
+                    `size_bytes` INTEGER NOT NULL,
+                    `local_uri` TEXT NOT NULL,
+                    `width` INTEGER,
+                    `height` INTEGER,
+                    `duration_ms` INTEGER,
+                    `hub_attachment_id` INTEGER,
+                    FOREIGN KEY(`note_message_id`) REFERENCES `note_messages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_note_attachments_note_message_id` " +
+                    "ON `note_attachments` (`note_message_id`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_attachments_uuid` " +
+                    "ON `note_attachments` (`uuid`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_attachments_hub_attachment_id` " +
+                    "ON `note_attachments` (`hub_attachment_id`)",
+            )
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -576,5 +695,6 @@ object Migrations {
         MIGRATION_15_16,
         MIGRATION_16_17,
         MIGRATION_17_18,
+        MIGRATION_18_19,
     )
 }

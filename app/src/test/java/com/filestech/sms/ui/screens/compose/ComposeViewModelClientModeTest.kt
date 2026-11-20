@@ -10,6 +10,7 @@ import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.repository.NoteRepository
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -83,6 +84,9 @@ class ComposeViewModelClientModeTest {
             contactRepo,
             conversationRepo,
             dispatcher,
+            // Notes — `createNote` is not under test here; a relaxed
+            // mock is enough (the ViewModel never calls it at init).
+            mockk<NoteRepository>(relaxed = true),
             clientActions,
         )
         return Harness(vm, conversationRepo, clientActions)

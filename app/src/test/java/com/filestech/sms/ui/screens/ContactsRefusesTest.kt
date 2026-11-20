@@ -100,7 +100,14 @@ class ContactsRefusesTest {
     fun `nouveau message - la permission refusee vide la liste et le dit, sans planter`() = runTest(dispatcher) {
         val contacts = ContactsSansPermission()
 
-        val vm = ComposeViewModel(SavedStateHandle(), contacts, mockk(relaxed = true), dispatcher)
+        val vm =
+            ComposeViewModel(
+                SavedStateHandle(),
+                contacts,
+                mockk(relaxed = true),
+                dispatcher,
+                mockk(relaxed = true),
+            )
 
         assertThat(vm.state.value.contactsRefused).isTrue()
         assertThat(vm.state.value.results).isEmpty()
@@ -125,7 +132,7 @@ class ContactsRefusesTest {
                 ContactPhotoWriteResult.Failed
         }
 
-        val vm = ComposeViewModel(SavedStateHandle(), enPanne, mockk(relaxed = true), dispatcher)
+        val vm = ComposeViewModel(SavedStateHandle(), enPanne, mockk(relaxed = true), dispatcher, mockk(relaxed = true))
 
         assertThat(vm.state.value.contactsRefused).isFalse()
         assertThat(vm.state.value.results).isEmpty()

@@ -94,6 +94,7 @@ Slice 2 — no bytes cross the channel yet.
 | Server → client | `conversations` | `{"type":"conversations","conversations":[CONVERSATION, "…"],"has_more":false}` |
 | Server → client | `messages_batch` | `{"type":"messages_batch","conversation_id":"123","messages":[MESSAGE, "…"],"has_more":true,"next_before_id":"456"}` |
 | Server → client | `sync_complete` | `{"type":"sync_complete","cursor_message_id":"98765"}` |
+| Server → client | `category_mutes` | `{"type":"category_mutes","muted_categories":["otp","promotional"]}` |
 | Server → client | `message_new` | `{"type":"message_new","message":MESSAGE}` |
 | Server → client | `message_updated` | `{"type":"message_updated","message_id":"789","conversation_id":"123","status":"delivered","reaction":"❤️"}` |
 | Server → client | `conversation_updated` | `{"type":"conversation_updated","conversation":CONVERSATION}` |
@@ -124,7 +125,11 @@ stream — upserts by id make duplicates harmless. `message_new` is
 one live message; `conversation_updated` carries the full row (and
 is also the read-state indicator: `unread: 0` means the phone marked
 the conversation read); `conversation_deleted` fires when a
-conversation disappears from the phone. `message_updated` is
+conversation disappears from the phone. A new conversation arrives
+as `conversation_updated` followed by a `message_new` for each of
+its messages, oldest first — so a first text from a new number
+notifies on the desktop like any other (the desktop notifies only
+from `message_new`). `message_updated` is
 partial — only changed fields are present (`status`, `reaction`,
 `read`, `starred`); a removed reaction rides as
 `"reaction_removed": true`, since a null `reaction` would be
@@ -195,6 +200,7 @@ optimistic row to the real message.
 | Client → server | `mark_read` | `{"type":"mark_read","conversation_id":"123"}` |
 | Client → server | `mark_all_read` | `{"type":"mark_all_read"}` |
 | Client → server | `set_pin` / `set_archived` / `set_muted` / `set_blocked` | `{"type":"set_pin","conversation_id":"123","value":true}` |
+| Client → server | `set_category_muted` | `{"type":"set_category_muted","category":"otp","muted":true}` |
 | Client → server | `set_reaction` | `{"type":"set_reaction","conversation_id":"123","message_id":"789","emoji":"❤️"}` |
 | Client → server | `set_pinned_message` | `{"type":"set_pinned_message","conversation_id":"123","message_id":"789"}` |
 | Server → client | `message_sent` | `{"type":"message_sent","client_message_id":"3f2a…c41d","message_id":"789","conversation_id":"123","status":"pending"}` |
@@ -233,7 +239,9 @@ a protocol violation — the socket stays up.
 
 `action_result` is the one ack type for every action: `action`
 echoes the request type, `message_id` is present for `set_reaction`
-/ `set_pinned_message`, and `conversation_id` is absent for
+/ `set_pinned_message`, `category` is present for
+`set_category_muted` (the reply echoes the category it changed),
+and `conversation_id` is absent for
 `mark_all_read`. `ok: false` means the phone did not apply it — the
 desktop reverts its optimistic change (the live
 `conversation_updated` corrects it either way). Codes reuse the
@@ -838,6 +846,53 @@ dismisses it on `call_state` `ended` (or `active`, answered
 elsewhere), and dials from a 1:1 thread with `dial_request`.
 No answer/hangup frames exist: a linked Android device cannot
 answer or end a call, and call audio stays on the phone.
+
+## Category mutes (protocol version 1)
+
+The phone syncs its muted categories — the tabs whose messages
+do not notify — to every linked device, and a linked device can
+mute or unmute a category on the phone. The phone is the source
+of truth: the desktop replaces its own muted list with the
+phone's set wholesale, and a toggle on the desktop writes
+through to the phone. Same JSON envelope, same `type` field,
+same rules. No protocol bump: every addition is additive.
+
+| Direction | Message | Shape |
+|---|---|---|
+| Server → client | `category_mutes` | `{"type":"category_mutes","muted_categories":["otp","promotional"]}` |
+| Client → server | `set_category_muted` | `{"type":"set_category_muted","category":"otp","muted":true}` |
+
+`category_mutes` carries the FULL set of muted categories as
+lowercase wire strings — `"personal"`, `"otp"`, `"promotional"`,
+`"transactions"`, `"other"` (there is no "all": All is the
+unfiltered view, not a category). The phone sends it after every
+snapshot — immediately after `sync_complete` — and whenever the
+set changes on the phone (a toggle in the tab row or in
+Settings → Notifications, or a `set_category_muted` from any
+linked device). The list is sorted, so the frame is stable; an
+empty list means nothing is muted. A linked device applies the
+frame whenever it arrives: it replaces its local muted list,
+never merges. (If the phone cannot read its settings for one
+sync, the frame is skipped for that sync — an empty list would
+wrongly unmute everything — and the next change sends the set.)
+
+`set_category_muted` mutes or unmutes one category. `muted` is
+REQUIRED, like `set_muted`'s `value`: a missing flag is
+malformed, never a silent unmute. An unknown category string is
+refused with `action_result` `ok: false`, code
+`invalid_request` — the phone applies nothing, and the desktop
+reverts its optimistic change. A successful apply is answered
+with `action_result` (`action: "set_category_muted"`, the
+`category` echoed so the desktop attributes the reply to the
+category it changed), and the updated set then broadcasts back
+to every session via `category_mutes` — the desktop's
+confirmation is the broadcast, not the ack. A
+`set_category_muted` before auth is a protocol violation, like
+any other post-auth frame.
+
+Android clients ignore `category_mutes` for now (an unknown
+server frame is dropped, never an error) — applying the hub's
+set on a linked tablet is a later round.
 
 ## VPN / tunnel (protocol version 1)
 

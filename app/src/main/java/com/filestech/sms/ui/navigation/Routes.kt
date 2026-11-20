@@ -39,6 +39,11 @@ import kotlinx.serialization.Serializable
 @Serializable data object EmergencySetup : Route
 @Serializable data class Thread(val conversationId: Long) : Route
 
+/** Notes — one note's thread. The name contains "Thread" on purpose: AppRoot's
+ * `route.contains("Thread")` checks (slide-back mirror, share/nav guards) treat
+ * a note thread like a conversation thread. */
+@Serializable data class NoteThread(val noteId: Long) : Route
+
 /**
  * Issue #59 — les photos et vidéos d'une conversation. Pas de « Thread » dans le nom : `AppRoot` repère
  * l'écran de fil par `route.contains("Thread")`.

@@ -1,6 +1,7 @@
 package com.filestech.sms.ui
 
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -22,6 +23,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -47,6 +49,7 @@ import com.filestech.sms.ui.navigation.LinkedDevices
 import com.filestech.sms.ui.navigation.Lock
 import com.filestech.sms.ui.navigation.MediaGallery
 import com.filestech.sms.ui.navigation.Migration
+import com.filestech.sms.ui.navigation.NoteThread
 import com.filestech.sms.ui.navigation.SafetyCallSetup
 import com.filestech.sms.ui.navigation.ScheduledMessages
 import com.filestech.sms.ui.navigation.Settings
@@ -63,6 +66,7 @@ import com.filestech.sms.ui.screens.linkeddevices.LinkedDevicesScreen
 import com.filestech.sms.ui.screens.lock.LockScreen
 import com.filestech.sms.ui.screens.media.MediaGalleryScreen
 import com.filestech.sms.ui.screens.migration.MigrationScreen
+import com.filestech.sms.ui.screens.notes.NoteThreadScreen
 import com.filestech.sms.ui.screens.settings.AdvancedScreen
 import com.filestech.sms.ui.screens.settings.ErrorLogScreen
 import com.filestech.sms.ui.screens.settings.SettingsScreen
@@ -404,6 +408,10 @@ fun AppRoot() {
                 // Sans risque de collision d'arguments : Conversations est forcément au
                 // sommet quand ce callback est invoqué, donc le 1er appel pousse toujours.
                 onOpenThread = { id -> nav.navigate(Thread(id)) { launchSingleTop = true } },
+                // Notes — a note row opens the note thread (same
+                // single-top guard as a conversation row: a double
+                // tap must not stack two copies of the note).
+                onOpenNote = { id -> nav.navigate(NoteThread(id)) { launchSingleTop = true } },
                 onCompose = { nav.navigate(Compose()) },
                 onComposeGroup = { nav.navigate(Compose(groupe = true)) },
                 onOpenSettings = { nav.navigate(Settings) },
@@ -618,24 +626,11 @@ fun AppRoot() {
             )
         }
         composable<MediaGallery> { MediaGalleryScreen(onBack = { nav.popBackStack() }) }
-        // Feedback round 9 — Compose slides in from the right like the
-        // thread and Settings (300 ms horizontal slide), instead of the
-        // NavHost-level 80 ms fade that read as a snap.
-        composable<Compose>(
-            enterTransition = { glissementEntrant },
-            popExitTransition = { glissementSortant },
-        ) { backStackEntry ->
-            val args = backStackEntry.toRoute<Compose>()
-            ComposeScreen(
-                initialAddress = args.initialAddress,
-                groupe = args.groupe,
-                onBack = { nav.popBackStack() },
-                onConversationCreated = { id ->
-                    nav.popBackStack()
-                    nav.navigate(Thread(id))
-                },
-            )
-        }
+        composeAndNoteThreadDestinations(
+            nav = nav,
+            enterTransition = glissementEntrant,
+            popExitTransition = glissementSortant,
+        )
     }
 
     // Client mode — tablet calls: the incoming-call dropdown,
@@ -685,6 +680,57 @@ fun AppRoot() {
     // suivantes, SplashScreen ne rend rien. Il n'est plus une destination du NavHost afin que
     // Conversations reste la racine non-dépilable (cf. startDestination ci-dessus).
     SplashScreen(onFinished = {})
+}
+
+/**
+ * Notes — the note-thread destination plus the compose destination,
+ * extracted from [AppRoot] so the screen stays under the Detekt
+ * long-method limit. The note thread slides in from the right like the
+ * conversation thread (300 ms, same pair); the list's slide back in
+ * from the left applies too: `isSlideReturnRoute` matches on
+ * `route.contains("Thread")`, which "NoteThread" satisfies. Compose
+ * rides along because the notes round gave it the `onNoteCreated`
+ * navigation (a created note pops compose and opens the note thread).
+ */
+private fun NavGraphBuilder.composeAndNoteThreadDestinations(
+    nav: NavController,
+    enterTransition: EnterTransition,
+    popExitTransition: ExitTransition,
+) {
+    composable<NoteThread>(
+        enterTransition = { enterTransition },
+        popExitTransition = { popExitTransition },
+    ) {
+        // The ViewModel reads the note id from the SavedStateHandle —
+        // the screen takes no id parameter.
+        NoteThreadScreen(
+            onBack = { nav.popBackStack() },
+        )
+    }
+    // Feedback round 9 — Compose slides in from the right like the
+    // thread and Settings (300 ms horizontal slide), instead of the
+    // NavHost-level 80 ms fade that read as a snap.
+    composable<Compose>(
+        enterTransition = { enterTransition },
+        popExitTransition = { popExitTransition },
+    ) { backStackEntry ->
+        val args = backStackEntry.toRoute<Compose>()
+        ComposeScreen(
+            initialAddress = args.initialAddress,
+            groupe = args.groupe,
+            onBack = { nav.popBackStack() },
+            onConversationCreated = { id ->
+                nav.popBackStack()
+                nav.navigate(Thread(id))
+            },
+            // Notes — a created note pops compose and opens the
+            // note thread, like a created conversation.
+            onNoteCreated = { id ->
+                nav.popBackStack()
+                nav.navigate(NoteThread(id))
+            },
+        )
+    }
 }
 
 /**

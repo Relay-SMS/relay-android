@@ -47,7 +47,46 @@ class ConversationPdfExporter @Inject constructor(
     override suspend fun export(conversation: Conversation, messages: List<Message>): Outcome<PdfExportResult> =
         withContext(io) {
             runCatchingOutcome(
-                block = { renderToFile(conversation, messages) },
+                block = {
+                    renderToFile(
+                        title = conversation.customName ?: conversation.displayName
+                            ?: conversation.addresses.toCsv(),
+                        // v1.28.12 — `Locale.US`, like the filename timestamp below. `SimpleDateFormat`
+                        // renders digits in the locale's set (measured: Indo-Arabic digits in
+                        // `ar-EG` / `fa-IR`); an exported PDF is kept or passed on, so its
+                        // timestamp must stay readable outside its locale of origin. (The
+                        // body dates keep the locale: they are text meant to be read.)
+                        subtitle = context.getString(
+                            R.string.pdf_header_subtitle,
+                            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
+                            conversation.addresses.size,
+                        ),
+                        filePrefix = "smsrelay_conversation_",
+                        messages = messages,
+                    )
+                },
+                errorMapper = { AppError.Storage(it) },
+            )
+        }
+
+    /**
+     * Notes — same layout as [export]: the note title is the header
+     * and the filename stem, and the subtitle names no participants.
+     */
+    override suspend fun exportNote(title: String, messages: List<Message>): Outcome<PdfExportResult> =
+        withContext(io) {
+            runCatchingOutcome(
+                block = {
+                    renderToFile(
+                        title = title,
+                        subtitle = context.getString(
+                            R.string.note_pdf_header_subtitle,
+                            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
+                        ),
+                        filePrefix = "smsrelay_note_",
+                        messages = messages,
+                    )
+                },
                 errorMapper = { AppError.Storage(it) },
             )
         }
@@ -62,16 +101,21 @@ class ConversationPdfExporter @Inject constructor(
      * la duree du processus. Et le `File` deja cree restait sur le disque, tronque, pret a etre
      * partage par un utilisateur qui n'a vu qu'un message d'erreur passer.
      */
-    private fun renderToFile(conversation: Conversation, messages: List<Message>): PdfExportResult {
+    private fun renderToFile(
+        title: String,
+        subtitle: String,
+        filePrefix: String,
+        messages: List<Message>,
+    ): PdfExportResult {
         val doc = PdfDocument()
         val dir = File(context.filesDir, "exports").apply { if (!exists()) mkdirs() }
-        val safeName = (conversation.customName ?: conversation.displayName ?: conversation.addresses.toCsv())
+        val safeName = title
             .replace(Regex("[^A-Za-z0-9_-]+"), "_").take(48)
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val out = File(dir, "smsrelay_conversation_${safeName}_$ts.pdf")
+        val out = File(dir, "${filePrefix}${safeName}_$ts.pdf")
         var abouti = false
         try {
-            val pages = renderPages(doc, conversation, messages)
+            val pages = renderPages(doc, title, subtitle, messages)
             out.outputStream().use { doc.writeTo(it) }
             abouti = true
             val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", out)
@@ -82,7 +126,12 @@ class ConversationPdfExporter @Inject constructor(
         }
     }
 
-    private fun renderPages(doc: PdfDocument, conversation: Conversation, messages: List<Message>): Int {
+    private fun renderPages(
+        doc: PdfDocument,
+        title: String,
+        subtitle: String,
+        messages: List<Message>,
+    ): Int {
         val pageWidth = PAGE_WIDTH
         val pageHeight = PAGE_HEIGHT
         val margin = MARGIN
@@ -126,7 +175,7 @@ class ConversationPdfExporter @Inject constructor(
         // ouverte pourrait lever et ecraser la cause reelle. Cf. `Pagination.finirSiOuverte`.
         try {
             return rendreLesBulles(
-                pagination, conversation, messages, dateFormatter, timeFormatter,
+                pagination, title, subtitle, messages, dateFormatter, timeFormatter,
                 titlePaint, subtitlePaint, datePaint,
                 outgoingTextPaint, incomingTextPaint, timestampPaint,
                 outgoingBg, incomingBg, incomingStroke,
@@ -140,7 +189,8 @@ class ConversationPdfExporter @Inject constructor(
     @Suppress("LongParameterList", "LongMethod")
     private fun rendreLesBulles(
         pagination: Pagination,
-        conversation: Conversation,
+        title: String,
+        subtitle: String,
         messages: List<Message>,
         dateFormatter: SimpleDateFormat,
         timeFormatter: SimpleDateFormat,
@@ -157,7 +207,7 @@ class ConversationPdfExporter @Inject constructor(
         margin: Int,
         bubbleMaxWidth: Int,
     ): Int {
-        pagination.cursorY = drawHeader(pagination.canvas, conversation, titlePaint, subtitlePaint, margin)
+        pagination.cursorY = drawHeader(pagination.canvas, title, subtitle, titlePaint, subtitlePaint, margin)
 
         var lastDayKey: String? = null
         for (msg in messages) {
@@ -346,27 +396,14 @@ class ConversationPdfExporter @Inject constructor(
 
     private fun drawHeader(
         canvas: android.graphics.Canvas,
-        conversation: Conversation,
+        title: String,
+        subtitle: String,
         titlePaint: TextPaint,
         subtitlePaint: TextPaint,
         margin: Int,
     ): Float {
-        val title = conversation.customName ?: conversation.displayName ?: conversation.addresses.toCsv()
         canvas.drawText(title, margin.toFloat(), margin + 18f, titlePaint)
-        val sub = context.getString(
-            R.string.pdf_header_subtitle,
-            // v1.28.12 — `Locale.US`, comme l'horodatage du NOM DE FICHIER 288 lignes plus
-            // haut. Les deux écrivent un `yyyy-MM-dd` technique ; l'un suivait la locale et
-            // l'autre non, dans le même fichier. `SimpleDateFormat` rend les chiffres dans
-            // le jeu de la locale — mesuré : en `ar-EG` et `fa-IR`, des chiffres
-            // indo-arabes — et un PDF exporté est une pièce qu'on garde ou qu'on transmet,
-            // donc son horodatage doit rester lisible hors de son contexte d'origine.
-            // (Les dates DU CORPS, `EEEE d MMMM yyyy` et `HH:mm`, gardent la locale : ce
-            // sont des textes destinés à être lus, pas des repères.)
-            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
-            conversation.addresses.size,
-        )
-        canvas.drawText(sub, margin.toFloat(), margin + 36f, subtitlePaint)
+        canvas.drawText(subtitle, margin.toFloat(), margin + 36f, subtitlePaint)
         val rule = Paint().apply { color = Color.parseColor("#DDDDDD"); strokeWidth = 0.5f }
         canvas.drawRect(Rect(margin, margin + 46, PAGE_WIDTH - margin, margin + 47), rule)
         return (margin + 60).toFloat()

@@ -19,7 +19,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,6 +87,8 @@ import com.filestech.sms.R
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Conversation
+import com.filestech.sms.domain.model.Note
+import com.filestech.sms.domain.notes.NoteAttachmentResolver
 import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.GroupMemberAvatar
 import com.filestech.sms.ui.components.RelayAvatar
@@ -95,6 +96,7 @@ import com.filestech.sms.ui.components.RelayGroupAvatar
 import com.filestech.sms.ui.components.rememberAttachmentOpener
 import com.filestech.sms.ui.screens.media.MediaGalleryViewModel
 import com.filestech.sms.ui.screens.media.MediaTile
+import com.filestech.sms.ui.screens.notes.NoteMediaTile
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.onBrandBlue
@@ -157,6 +159,13 @@ private enum class DetailsMediaTab { Photos, Videos, Files }
  * entry's SavedStateHandle carries `conversationId`, like
  * ThreadViewModel's). Photos and videos reuse its [MediaTile];
  * files get their own rows below.
+ *
+ * Notes — the note variant ([NoteDetailsPanel]) shares the shell
+ * ([DetailsPanelShell]) and the media-tab helpers, with its own
+ * content: the note avatar (no camera badge), the note actions
+ * (Rename / Export to PDF / Chat colors / Delete — no Schedule,
+ * Mute, Block, contacts, Vault, or Members), and the note's
+ * attachments through [NoteMediaTile].
  */
 @Composable
 fun ConversationDetailsPanel(
@@ -176,6 +185,80 @@ fun ConversationDetailsPanel(
     actions: ConversationDetailsActions,
     onDismiss: () -> Unit,
     mediaViewModel: MediaGalleryViewModel = hiltViewModel(),
+) {
+    DetailsPanelShell(onDismiss = onDismiss) { onClose ->
+        DetailsPanelContent(
+            conversation = conversation,
+            title = title,
+            subtitleNumber = subtitleNumber,
+            contactPhotoUri = contactPhotoUri,
+            isUnknownContact = isUnknownContact,
+            memberNames = memberNames,
+            memberPhotos = memberPhotos,
+            showAddToContacts = showAddToContacts,
+            canSchedule = canSchedule,
+            canExport = canExport,
+            isExporting = isExporting,
+            actions = actions,
+            onClose = onClose,
+            mediaViewModel = mediaViewModel,
+        )
+    }
+}
+
+/**
+ * Notes — the note details side panel: the conversation panel's
+ * shell and media tabs, with the note's content (see
+ * [NoteDetailsPanelContent]). The attachments come from the note
+ * thread's ViewModel (already paired with their message dates), and
+ * opens + save-a-copy go through the note opener and the
+ * decrypt-to-stream save — the panel never touches ciphertext.
+ */
+@Composable
+fun NoteDetailsPanel(
+    note: Note,
+    attachments: List<Attachment>,
+    resolver: NoteAttachmentResolver,
+    canExport: Boolean,
+    isExporting: Boolean,
+    onRename: () -> Unit,
+    onExportPdf: () -> Unit,
+    onChatColors: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+    onOpenAttachment: (Attachment) -> Unit,
+    /** Decrypts a copy of [Attachment] to a user-picked SAF location. */
+    saveCopy: suspend (Attachment, Uri) -> Boolean,
+) {
+    DetailsPanelShell(onDismiss = onDismiss) { onClose ->
+        NoteDetailsPanelContent(
+            note = note,
+            attachments = attachments,
+            resolver = resolver,
+            canExport = canExport,
+            isExporting = isExporting,
+            onRename = onRename,
+            onExportPdf = onExportPdf,
+            onChatColors = onChatColors,
+            onDelete = onDelete,
+            onClose = onClose,
+            onOpenAttachment = onOpenAttachment,
+            saveCopy = saveCopy,
+        )
+    }
+}
+
+/**
+ * The shared panel shell: the [Dialog], the scrim, and the 300ms
+ * slide-in from the right / slide-out. The dialog unmounts only
+ * after the slide-out finishes ([onDismiss] fires after the delay),
+ * so the exit animation always plays. The content gets [onClose]
+ * (back arrow, scrim tap, or any in-panel close).
+ */
+@Composable
+private fun DetailsPanelShell(
+    onDismiss: () -> Unit,
+    content: @Composable (onClose: () -> Unit) -> Unit,
 ) {
     // AnimatedVisibility skips its enter animation when it starts
     // visible, so the panel mounts hidden and flips on the next frame.
@@ -220,22 +303,7 @@ fun ConversationDetailsPanel(
                 enter = slideInHorizontally(tween(PANEL_ANIMATION_MS)) { it },
                 exit = slideOutHorizontally(tween(PANEL_ANIMATION_MS)) { it },
             ) {
-                DetailsPanelContent(
-                    conversation = conversation,
-                    title = title,
-                    subtitleNumber = subtitleNumber,
-                    contactPhotoUri = contactPhotoUri,
-                    isUnknownContact = isUnknownContact,
-                    memberNames = memberNames,
-                    memberPhotos = memberPhotos,
-                    showAddToContacts = showAddToContacts,
-                    canSchedule = canSchedule,
-                    canExport = canExport,
-                    isExporting = isExporting,
-                    actions = actions,
-                    onClose = { requestClose() },
-                    mediaViewModel = mediaViewModel,
-                )
+                content { requestClose() }
             }
         }
     }
@@ -460,6 +528,321 @@ private fun DetailsPanelContent(
 }
 
 /**
+ * Notes — the note panel's content, mirroring
+ * [DetailsPanelContent]: the same 64dp header (back + title), the
+ * note avatar block, the note action rows, and the Photos / Videos
+ * / Files tabs grouped by date. No Members section (a note has no
+ * members), no download states (a note's attachments are local and
+ * hub-only in phase 1 — `hubAttachmentId` is null, so no download
+ * UI ever renders), and the tiles are [NoteMediaTile]s (decrypted
+ * models, never the ciphertext URI).
+ *
+ * The "Save as" flow is the conversation panel's, behind the same
+ * download icons: one launcher for the whole panel, a toast
+ * confirming the save (the panel has no snackbar host), and the
+ * toast strings hoisted via [stringResource] — never
+ * `context.getString` in the callback (lint fails the build on it).
+ */
+@Composable
+private fun NoteDetailsPanelContent(
+    note: Note,
+    attachments: List<Attachment>,
+    resolver: NoteAttachmentResolver,
+    canExport: Boolean,
+    isExporting: Boolean,
+    onRename: () -> Unit,
+    onExportPdf: () -> Unit,
+    onChatColors: () -> Unit,
+    onDelete: () -> Unit,
+    onClose: () -> Unit,
+    onOpenAttachment: (Attachment) -> Unit,
+    saveCopy: suspend (Attachment, Uri) -> Boolean,
+) {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val isWide = LocalConfiguration.current.screenWidthDp >= TABLET_MIN_WIDTH_DP
+    var mediaTab by remember { mutableStateOf(DetailsMediaTab.Photos) }
+    val scope = rememberCoroutineScope()
+    var pendingSave by remember { mutableStateOf<Attachment?>(null) }
+    val fileSavedText = stringResource(R.string.details_file_saved)
+    val fileSaveFailedText = stringResource(R.string.details_file_save_failed)
+    val saveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*"),
+    ) { uri: Uri? ->
+        val target = pendingSave
+        pendingSave = null
+        if (uri != null && target != null) {
+            scope.launch {
+                val saved = saveCopy(target, uri)
+                Toast.makeText(
+                    context,
+                    if (saved) fileSavedText else fileSaveFailedText,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+    fun requestSaveCopy(attachment: Attachment) {
+        pendingSave = attachment
+        saveLauncher.launch(saveFileNameFor(attachment))
+    }
+    Column(
+        modifier = Modifier
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .then(
+                if (isWide) Modifier.width(PANEL_WIDTH_DP.dp) else Modifier.fillMaxWidth(),
+            )
+            .fillMaxHeight()
+            .background(cs.surface),
+    ) {
+        // Header — back arrow + title, fixed while the rest scrolls.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(start = 4.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onClose)
+                    .semantics { role = Role.Button },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = stringResource(R.string.action_back),
+                    tint = cs.onSurface,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Text(
+                text = stringResource(R.string.details_panel_title),
+                style = RelayText.ThreadTitle,
+                color = cs.onSurface,
+            )
+        }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            item(key = "avatar") {
+                NoteDetailsAvatarBlock(note = note)
+            }
+            item(key = "actions") {
+                NoteDetailsActionRows(
+                    canExport = canExport,
+                    isExporting = isExporting,
+                    onRename = onRename,
+                    onExportPdf = onExportPdf,
+                    onChatColors = onChatColors,
+                    onDelete = onDelete,
+                )
+            }
+            item(key = "tabs") {
+                DetailsMediaTabs(
+                    selected = mediaTab,
+                    onSelect = { mediaTab = it },
+                )
+            }
+            when (mediaTab) {
+                DetailsMediaTab.Photos -> {
+                    val photos = attachments.filter { it.isPhotosTabItem() }
+                    if (photos.isEmpty()) {
+                        item(key = "empty-photos") {
+                            DetailsEmptyMedia(
+                                iconRes = R.drawable.ic_images,
+                                text = stringResource(R.string.note_empty_photos),
+                            )
+                        }
+                    } else {
+                        detailsGroupedTiles(
+                            tabKey = "photos",
+                            items = photos,
+                            downloadStates = emptyMap(),
+                            onOpen = onOpenAttachment,
+                            onRequestDownload = {},
+                            onSaveCopy = { requestSaveCopy(it) },
+                            tile = { attachment ->
+                                NoteMediaTile(
+                                    attachment = attachment,
+                                    resolver = resolver,
+                                    onClick = { onOpenAttachment(attachment) },
+                                    onSaveCopy = { requestSaveCopy(it) },
+                                )
+                            },
+                        )
+                    }
+                }
+                DetailsMediaTab.Videos -> {
+                    val videos = attachments.filter { it.isVideo }
+                    if (videos.isEmpty()) {
+                        item(key = "empty-videos") {
+                            DetailsEmptyMedia(
+                                iconRes = R.drawable.ic_videocam,
+                                text = stringResource(R.string.note_empty_videos),
+                            )
+                        }
+                    } else {
+                        detailsGroupedTiles(
+                            tabKey = "videos",
+                            items = videos,
+                            downloadStates = emptyMap(),
+                            onOpen = onOpenAttachment,
+                            onRequestDownload = {},
+                            onSaveCopy = { requestSaveCopy(it) },
+                            tile = { attachment ->
+                                NoteMediaTile(
+                                    attachment = attachment,
+                                    resolver = resolver,
+                                    onClick = { onOpenAttachment(attachment) },
+                                    onSaveCopy = { requestSaveCopy(it) },
+                                )
+                            },
+                        )
+                    }
+                }
+                DetailsMediaTab.Files -> {
+                    // A 0-byte file has no bytes to open — hidden,
+                    // like the desktop Files tab. Files are the
+                    // attachments that are neither image nor video
+                    // (the `observeFilesForConversation` rule).
+                    val fileRows = attachments.filter {
+                        !it.isImage && !it.isVideo && it.sizeBytes > 0
+                    }
+                    if (fileRows.isEmpty()) {
+                        item(key = "empty-files") {
+                            DetailsEmptyMedia(
+                                iconRes = R.drawable.ic_file_tray_full,
+                                text = stringResource(R.string.note_empty_files),
+                            )
+                        }
+                    } else {
+                        detailsGroupedFiles(
+                            files = fileRows,
+                            downloadStates = emptyMap(),
+                            onOpen = onOpenAttachment,
+                            onRequestDownload = {},
+                            onSaveCopy = { requestSaveCopy(it) },
+                        )
+                    }
+                }
+            }
+            item(key = "bottom-spacing") {
+                Spacer(Modifier.height(32.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Notes — the note avatar block: the 96dp note avatar (soft-green
+ * tint + note glyph, the round-33 panel avatar size) and the title.
+ * NO camera badge (a note has no photo to change) and NO subtitle
+ * number (a note has no number).
+ */
+@Composable
+private fun NoteDetailsAvatarBlock(note: Note) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 24.dp, bottom = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        RelayAvatar(
+            label = note.title,
+            size = HEADER_AVATAR_SIZE,
+            isNote = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = note.title,
+            style = RelayText.ThreadTitle,
+            color = cs.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 32.dp),
+        )
+    }
+}
+
+/**
+ * Notes — the note action rows: Rename note, Export to PDF, Chat
+ * colors, Delete note. EXCLUDED, per design §5.4: Schedule (notes
+ * have no send), Mute/Unmute (a note never notifies), Block, Add to
+ * contacts, and Move to Vault. Same row component
+ * ([DetailsActionRow]) and icons as the conversation rows.
+ */
+@Composable
+private fun NoteDetailsActionRows(
+    canExport: Boolean,
+    isExporting: Boolean,
+    onRename: () -> Unit,
+    onExportPdf: () -> Unit,
+    onChatColors: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Column(modifier = Modifier.padding(top = 16.dp)) {
+        DetailsActionRow(
+            label = stringResource(R.string.note_rename_title),
+            icon = {
+                Icon(
+                    Icons.Outlined.Edit,
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            onClick = onRename,
+        )
+        DetailsActionRow(
+            label = stringResource(R.string.action_export_pdf),
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_export_pdf),
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            enabled = canExport && !isExporting,
+            onClick = onExportPdf,
+        )
+        DetailsActionRow(
+            label = stringResource(R.string.appearance_dialog_title),
+            icon = {
+                Icon(
+                    Icons.Outlined.Palette,
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            onClick = onChatColors,
+        )
+        DetailsActionRow(
+            label = stringResource(R.string.action_delete),
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_trash),
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            },
+            onClick = onDelete,
+        )
+    }
+}
+
+/**
  * Big avatar (96dp, measured ~99px on Kristin's mockup) with the
  * camera badge at its bottom-right, the name, and the number — or
  * the member count for a group. The badge changes the conversation
@@ -563,8 +946,7 @@ private fun DetailsAvatarBlock(
                         .align(Alignment.BottomEnd)
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(brandBlue())
-                        .border(2.dp, cs.surface, CircleShape)
+                        .background(cs.surface)
                         .clickable {
                             if (conversation.avatarUri == null) {
                                 avatarPicker.launch(
@@ -582,7 +964,7 @@ private fun DetailsAvatarBlock(
                     Icon(
                         Icons.Outlined.PhotoCamera,
                         contentDescription = stringResource(R.string.details_change_photo),
-                        tint = onBrandBlue(),
+                        tint = cs.onSurfaceVariant,
                         modifier = Modifier.size(16.dp),
                     )
                 }
@@ -1015,6 +1397,10 @@ private fun DetailsMediaGroupHeader(group: DetailsDateGroup) {
  * One media tab's tiles, grouped by date (Today / Yesterday / …):
  * a header per group, then its rows. The Photos and Videos tabs
  * share this; Files has its own rows below.
+ *
+ * Notes — [tile] replaces the [MediaTile] render per attachment
+ * (the note panel passes [NoteMediaTile], whose model is
+ * decrypted). Null keeps the [MediaTile] render.
  */
 private fun LazyListScope.detailsGroupedTiles(
     tabKey: String,
@@ -1023,6 +1409,7 @@ private fun LazyListScope.detailsGroupedTiles(
     onOpen: (Attachment) -> Unit,
     onRequestDownload: (Long) -> Unit,
     onSaveCopy: (Attachment) -> Unit,
+    tile: (@Composable (Attachment) -> Unit)? = null,
 ) {
     items.groupByDetailsDate().forEach { (group, groupItems) ->
         item(key = "$tabKey-header-${group.name}") {
@@ -1038,6 +1425,7 @@ private fun LazyListScope.detailsGroupedTiles(
                 onOpen = onOpen,
                 onRequestDownload = onRequestDownload,
                 onSaveCopy = onSaveCopy,
+                tile = tile,
             )
         }
     }
@@ -1075,6 +1463,11 @@ private fun DetailsMediaRow(
     onOpen: (Attachment) -> Unit,
     onRequestDownload: (Long) -> Unit,
     onSaveCopy: (Attachment) -> Unit,
+    /**
+     * Notes — replaces the [MediaTile] render per attachment (the
+     * note panel passes [NoteMediaTile]). Null keeps [MediaTile].
+     */
+    tile: (@Composable (Attachment) -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -1086,13 +1479,17 @@ private fun DetailsMediaRow(
                     .weight(1f)
                     .aspectRatio(1f),
             ) {
-                MediaTile(
-                    attachment,
-                    onClick = { onOpen(attachment) },
-                    downloadState = downloadStates[attachment.id],
-                    onRequestDownload = onRequestDownload,
-                    onSaveCopy = onSaveCopy,
-                )
+                if (tile != null) {
+                    tile(attachment)
+                } else {
+                    MediaTile(
+                        attachment,
+                        onClick = { onOpen(attachment) },
+                        downloadState = downloadStates[attachment.id],
+                        onRequestDownload = onRequestDownload,
+                        onSaveCopy = onSaveCopy,
+                    )
+                }
             }
         }
         // A short last row keeps its tiles full-size.
@@ -1173,7 +1570,7 @@ private fun DetailsFileRow(
                 text = attachment.fileName ?: stringResource(R.string.attachment_file_label),
                 style = MaterialTheme.typography.bodyMedium,
                 color = cs.onSurface,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (attachment.sizeBytes > 0) {
@@ -1187,12 +1584,9 @@ private fun DetailsFileRow(
         // The far-right slot: the fetch state on a linked device
         // whose bytes have not landed, the download icon on every
         // audio row (fetch in client mode, save-a-copy in hub mode).
-        // A 40dp touch target with 2dp of end padding puts the
-        // download glyph 29dp in from the card's right edge (16dp row
-        // padding + 2dp + 5dp centring slack + ~6dp of empty vector
-        // space — the download vector's ink fills only 0.625 of its
-        // box width) — the mockup's right inset. The 30dp icon
-        // renders a ~19x24 glyph, the mockup's 20x24.
+        // The 40dp touch target stays; the 24dp glyph matches the
+        // action-row icons (Schedule, Block — Kristin, round-33
+        // testing).
         if (needsDownload || attachment.isAudio) {
             Spacer(Modifier.width(8.dp))
             Box(
@@ -1242,7 +1636,7 @@ private fun DetailsFileRow(
                             },
                         ),
                         tint = cs.onSurfaceVariant,
-                        modifier = Modifier.size(30.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
@@ -1298,8 +1692,8 @@ private val ACTION_ROW_CORNER = 16.dp
 /** Header avatar diameter — 96dp (the mockup measures ~99px). */
 private val HEADER_AVATAR_SIZE = 96.dp
 
-/** File-card side margin — 26dp (the mockup measures 25/27px). */
-private val FILE_CARD_MARGIN = 26.dp
+/** File-card side margin — 16dp, aligned with the date-group headers (Kristin, round-33 testing). */
+private val FILE_CARD_MARGIN = 16.dp
 
 /** Disabled-row opacity (Material disabled content). */
 private const val DISABLED_ALPHA = 0.38f

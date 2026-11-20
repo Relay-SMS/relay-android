@@ -83,6 +83,12 @@ import java.io.File
  * [BubbleMenu] (delete/reply/react) du pattern existant — l'utilisateur a
  * les mêmes actions que sur les bulles texte/audio.
  */
+// 20 parameters, at the Detekt threshold: the notes round added `previewOverrides`,
+// the encrypted-preview seam — it cannot be dropped, and bundling the menu
+// callbacks into a config object would churn every call site for no behaviour
+// gain. The repo already baselines LongParameterList for ThreadViewModel and
+// SettingsScreen.
+@Suppress("LongParameterList")
 @Composable
 fun MediaAttachmentBubble(
     message: Message,
@@ -155,6 +161,24 @@ fun MediaAttachmentBubble(
      * render). Null in hub mode: the previews render as before.
      */
     onRequestDownload: ((Long) -> Unit)? = null,
+    /**
+     * Notes — the encrypted-preview seam ([MediaPreviewOverrides]):
+     * when non-null, the previews load from
+     * [MediaPreviewOverrides.imageModel] instead of the attachment's
+     * own URI (ciphertext for a note attachment), and taps go to
+     * [MediaPreviewOverrides.onOpen] instead of the remembered-viewer
+     * opener. A null model renders the neutral placeholder — the
+     * ciphertext URI is never handed to Coil.
+     */
+    previewOverrides: MediaPreviewOverrides? = null,
+    /**
+     * Notes — the note's bubble colour (the AppearanceDialog palette,
+     * WCAG-safe for white text), or null for the default brand blue.
+     * Outgoing only, like [MessageBubble.customBubbleColorArgb].
+     * The 20th parameter: the Detekt long-parameter-list threshold
+     * is 20, and the text bubble already sits at it.
+     */
+    customBubbleColorArgb: Int? = null,
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
@@ -162,7 +186,14 @@ fun MediaAttachmentBubble(
     // [AudioMessageBubble]) — bleu de marque fixe hors couleurs dynamiques,
     // `primary` du fond d'écran quand elles sont actives (round 20). Le
     // texte sortant suit avec [onBrandBlue] (voir ci-dessous).
-    val bgColor = if (isOut) brandBlue() else bubbleIncomingColor(cs)
+    // Notes — a custom colour replaces the brand blue, with white text
+    // (the palette is WCAG-safe for white, like [MessageBubble]).
+    val bgColor = if (isOut) {
+        customBubbleColorArgb?.let { Color(it) } ?: brandBlue()
+    } else {
+        bubbleIncomingColor(cs)
+    }
+    val outgoingTextColor = if (customBubbleColorArgb == null) onBrandBlue() else Color.White
     // Feedback round 9 — same rounder bubble language as the text bubbles
     // (24dp corners; was 18dp).
     val shape = RoundedCornerShape(24.dp)
@@ -170,7 +201,11 @@ fun MediaAttachmentBubble(
     // X-04 — une seule fonction d'ouverture, paramétrée par la pièce jointe touchée.
     // Round 33 — Relay's own viewer picker ([rememberAttachmentOpener]):
     // media opens resolve the remembered viewer or raise the picker.
-    val ouvrir: (Attachment) -> Unit = rememberAttachmentOpener()
+    // Notes — the override wins when present: the note opener decrypts
+    // to a playback file first, then calls this same picker on the
+    // plaintext copy (one remembered viewer per type, shared).
+    val defaultOpener = rememberAttachmentOpener()
+    val ouvrir: (Attachment) -> Unit = previewOverrides?.onOpen ?: defaultOpener
 
     // Relay — plus de bouton ⋮ à côté de la bulle : un tap sur la bulle ouvre
     // le menu. Le tap sur une vignette garde l'ouverture de la pièce jointe ;
@@ -252,6 +287,8 @@ fun MediaAttachmentBubble(
                             onClick = { ouvrir(attachment) },
                             downloadState = downloadStates[attachment.id],
                             onRequestDownload = onRequestDownload,
+                            imageModel = previewOverrides?.imageModel,
+                            outgoingTextColor = outgoingTextColor,
                         )
                     }
                     // X-04 — les pièces jointes suivantes, empilées sous la première, chacune avec son
@@ -267,6 +304,8 @@ fun MediaAttachmentBubble(
                             onClick = { ouvrir(autre) },
                             downloadState = downloadStates[autre.id],
                             onRequestDownload = onRequestDownload,
+                            imageModel = previewOverrides?.imageModel,
+                            outgoingTextColor = outgoingTextColor,
                         )
                     }
                 }
@@ -313,7 +352,8 @@ fun MediaAttachmentBubble(
                         // Round 20 — [onBrandBlue] sur le fond sortant : blanc
                         // sur le bleu fixe, `onPrimary` du scheme dynamique
                         // quand les couleurs dynamiques sont actives.
-                        color = if (isOut) onBrandBlue() else cs.onSurface,
+                        // Notes — white on a custom colour (see above).
+                        color = if (isOut) outgoingTextColor else cs.onSurface,
                         onPhoneClick = onPhoneClick,
                         searchHighlight = searchHighlight,
                     )
@@ -321,7 +361,7 @@ fun MediaAttachmentBubble(
                         message = message,
                         showTimestamp = showTimestamp,
                         showStatus = showStatus,
-                        textColor = if (isOut) onBrandBlue() else cs.onSurface,
+                        textColor = if (isOut) outgoingTextColor else cs.onSurface,
                         // Feedback round 5 — 12dp above the timestamp (was 2dp):
                         // the time sat too close under the caption.
                         modifier = Modifier.padding(top = 12.dp).align(Alignment.End),
@@ -358,6 +398,17 @@ private fun MediaPreview(
     onClick: () -> Unit,
     downloadState: ClientDownloadState? = null,
     onRequestDownload: ((Long) -> Unit)? = null,
+    /**
+     * Notes — the decrypted Coil model resolver (see
+     * [MediaPreviewOverrides.imageModel]). Null = no override: the
+     * previews load from the attachment's own URI, as before.
+     */
+    imageModel: ((Attachment) -> Any?)? = null,
+    /**
+     * Notes — the text colour on an outgoing tile: [onBrandBlue] by
+     * default, white on a custom bubble colour.
+     */
+    outgoingTextColor: androidx.compose.ui.graphics.Color,
 ) {
     // Client mode C5 — no bytes yet: the download tile replaces the
     // type preview entirely (a blank URI would render a hole). The
@@ -379,6 +430,7 @@ private fun MediaPreview(
             isOutgoing = isOutgoing,
             onLongClick = onLongClick,
             onRequestDownload = onRequestDownload,
+            outgoingTextColor = outgoingTextColor,
         )
         return
     }
@@ -389,6 +441,8 @@ private fun MediaPreview(
             bgColor = bgColor,
             onLongClick = onLongClick,
             onClick = onClick,
+            modelOverride = imageModel?.invoke(attachment),
+            hasOverride = imageModel != null,
         )
         attachment.mimeType.startsWith("video/", ignoreCase = true) ->
             VideoPreview(
@@ -398,6 +452,9 @@ private fun MediaPreview(
                 isOutgoing = isOutgoing,
                 onLongClick = onLongClick,
                 onClick = onClick,
+                modelOverride = imageModel?.invoke(attachment),
+                hasOverride = imageModel != null,
+                outgoingTextColor = outgoingTextColor,
             )
         else -> IconAttachment(
             attachment = attachment,
@@ -408,6 +465,7 @@ private fun MediaPreview(
             isOutgoing = isOutgoing,
             onLongClick = onLongClick,
             onClick = onClick,
+            outgoingTextColor = outgoingTextColor,
         )
     }
 }
@@ -434,9 +492,11 @@ private fun DownloadTile(
     isOutgoing: Boolean,
     onLongClick: () -> Unit,
     onRequestDownload: (Long) -> Unit,
+    /** Notes — the text colour on an outgoing tile (white on a custom bubble colour). */
+    outgoingTextColor: androidx.compose.ui.graphics.Color,
 ) {
     val cs = MaterialTheme.colorScheme
-    val textColor = if (isOutgoing) onBrandBlue() else cs.onSurface
+    val textColor = if (isOutgoing) outgoingTextColor else cs.onSurface
     if (state == null || state is ClientDownloadState.NotDownloaded) {
         LaunchedEffect(attachment.id) { onRequestDownload(attachment.id) }
     }
@@ -557,6 +617,19 @@ private fun ImagePreview(
     bgColor: androidx.compose.ui.graphics.Color,
     onLongClick: () -> Unit,
     onClick: () -> Unit,
+    /**
+     * Notes — the decrypted model (see [MediaPreviewOverrides]).
+     * Only read when [hasOverride] is true.
+     */
+    modelOverride: Any? = null,
+    /**
+     * Notes — true when the caller overrides the model. A null
+     * [modelOverride] with an override in place means the bytes are
+     * not available (decrypting, or the decrypt failed): the neutral
+     * placeholder renders, and the attachment URI — ciphertext for a
+     * note — is never handed to Coil.
+     */
+    hasOverride: Boolean = false,
 ) {
     val context = LocalContext.current
     val gifImageLoader = remember(context) {
@@ -569,6 +642,11 @@ private fun ImagePreview(
             .widthIn(min = 80.dp, max = 240.dp)
             .heightIn(min = 80.dp, max = 320.dp)
             .clip(shape)
+            // Notes — the bubble colour behind the image: when the
+            // override model is null (decrypting / failed) no image
+            // loads, and this is the neutral placeholder — the same
+            // colour a failed MMS load renders via the error painter.
+            .background(bgColor)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         // v1.3.10 (P5) — Coil `.size(px)` cap so multi-megapixel incoming MMS images (2048×1536
@@ -576,27 +654,29 @@ private fun ImagePreview(
         // bitmap and scaling on the GPU. Without the cap, a thread with 10 photo MMS easily
         // allocates 120 MiB of Bitmap on the Java heap → OOM on Android Go (Redmi 9A, 2 GiB RAM).
         // 480 px ≈ 240 dp × 2 density factor (xxhdpi) — sharp on every device, ~230 KiB per image.
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(attachment.modeleImage())
-                .size(THUMBNAIL_PX)
-                .crossfade(true)
-                .build(),
-            imageLoader = gifImageLoader,
-            contentDescription = attachment.fileName ?: stringResource(R.string.attachment_image_label),
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(width = 240.dp, height = 240.dp),
-            // F-11 — les MMS importés du système stockent `content://mms/part/N` sans copie
-            // locale (contrairement aux MMS temps réel copiés dans filesDir). Si le provider
-            // Telephony est purgé (réinstallation, changement temporaire d'app SMS par défaut,
-            // suppression cross-app), l'URI devient invalide → Coil échoue. On rend alors un
-            // tile neutre (au lieu d'un trou blanc) et on logue pour diagnostic.
-            error = ColorPainter(bgColor),
-            fallback = ColorPainter(bgColor),
-            onError = {
-                Timber.w("MMS thumbnail load failed for attachment %d", attachment.id)
-            },
-        )
+        if (!hasOverride || modelOverride != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(modelOverride ?: attachment.modeleImage())
+                    .size(THUMBNAIL_PX)
+                    .crossfade(true)
+                    .build(),
+                imageLoader = gifImageLoader,
+                contentDescription = attachment.fileName ?: stringResource(R.string.attachment_image_label),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 240.dp, height = 240.dp),
+                // F-11 — les MMS importés du système stockent `content://mms/part/N` sans copie
+                // locale (contrairement aux MMS temps réel copiés dans filesDir). Si le provider
+                // Telephony est purgé (réinstallation, changement temporaire d'app SMS par défaut,
+                // suppression cross-app), l'URI devient invalide → Coil échoue. On rend alors un
+                // tile neutre (au lieu d'un trou blanc) et on logue pour diagnostic.
+                error = ColorPainter(bgColor),
+                fallback = ColorPainter(bgColor),
+                onError = {
+                    Timber.w("MMS thumbnail load failed for attachment %d", attachment.id)
+                },
+            )
+        }
     }
 }
 
@@ -634,6 +714,22 @@ private fun VideoPreview(
     isOutgoing: Boolean,
     onLongClick: () -> Unit,
     onClick: () -> Unit,
+    /**
+     * Notes — the decrypted model (see [MediaPreviewOverrides]):
+     * for a note video, a frame [android.graphics.Bitmap] extracted
+     * by the caller (the playback file has no extension, so Coil's
+     * video-frame decoder would not match it). Only read when
+     * [hasOverride] is true.
+     */
+    modelOverride: Any? = null,
+    /**
+     * Notes — true when the caller overrides the model. A null
+     * [modelOverride] with an override in place renders the play-icon
+     * tile, the same fallback as a failed frame decode.
+     */
+    hasOverride: Boolean = false,
+    /** Notes — the text colour on an outgoing tile (white on a custom bubble colour). */
+    outgoingTextColor: androidx.compose.ui.graphics.Color,
 ) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -649,7 +745,9 @@ private fun VideoPreview(
     // (a recycled list item must not keep the previous video's loaded/failed).
     var thumbLoaded by remember(attachment.localUri) { mutableStateOf(false) }
     var thumbFailed by remember(attachment.localUri) { mutableStateOf(false) }
-    if (thumbFailed) {
+    // Notes — no decrypted model yet (decrypting / failed): the
+    // play-icon tile, the same fallback as a failed frame decode.
+    if (thumbFailed || (hasOverride && modelOverride == null)) {
         IconAttachment(
             attachment = attachment,
             icon = Icons.Outlined.PlayCircleOutline,
@@ -659,6 +757,7 @@ private fun VideoPreview(
             isOutgoing = isOutgoing,
             onLongClick = onLongClick,
             onClick = onClick,
+            outgoingTextColor = outgoingTextColor,
         )
     } else {
         Box(
@@ -676,7 +775,7 @@ private fun VideoPreview(
             Icon(
                 imageVector = Icons.Outlined.PlayCircleOutline,
                 contentDescription = null,
-                tint = if (isOutgoing) onBrandBlue() else cs.onSurface,
+                tint = if (isOutgoing) outgoingTextColor else cs.onSurface,
                 modifier = Modifier.size(48.dp),
             )
             // v1.3.10 (P5) — same 480px decode cap as [ImagePreview] so a
@@ -685,7 +784,7 @@ private fun VideoPreview(
             // so the icon underneath (then the [IconAttachment] swap) shows.
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(attachment.modeleImage())
+                    .data(modelOverride ?: attachment.modeleImage())
                     .size(THUMBNAIL_PX)
                     .crossfade(true)
                     .build(),
@@ -838,12 +937,14 @@ private fun IconAttachment(
     isOutgoing: Boolean,
     onLongClick: () -> Unit,
     onClick: () -> Unit,
+    /** Notes — the text colour on an outgoing tile (white on a custom bubble colour). */
+    outgoingTextColor: androidx.compose.ui.graphics.Color,
 ) {
     val cs = MaterialTheme.colorScheme
     // Round 20 — [onBrandBlue] sur le fond sortant (voir [bgColor] plus haut) :
     // blanc sur le bleu fixe, `onPrimary` du scheme dynamique quand les
-    // couleurs dynamiques sont actives.
-    val textColor = if (isOutgoing) onBrandBlue() else cs.onSurface
+    // couleurs dynamiques sont actives. Notes — white on a custom colour.
+    val textColor = if (isOutgoing) outgoingTextColor else cs.onSurface
     // v1.3.10 — fill the bubble for BOTH directions. Before, outgoing got only a 1.5 dp
     // border around a transparent interior; that pattern relied on the body placeholder text
     // ("📎 filename.pdf") underneath to fill the visual space. With the v1.3.10 body /

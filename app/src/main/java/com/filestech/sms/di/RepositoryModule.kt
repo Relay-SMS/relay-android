@@ -1,10 +1,13 @@
 package com.filestech.sms.di
 
 import com.filestech.sms.data.backup.BackupService
+import com.filestech.sms.data.backup.NotesBackupService
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.location.LocationResolver
 import com.filestech.sms.data.mms.MmsSender
 import com.filestech.sms.data.mms.OutgoingAttachmentStoreImpl
+import com.filestech.sms.data.notes.NoteAttachmentResolverImpl
+import com.filestech.sms.data.notes.NoteRepositoryImpl
 import com.filestech.sms.data.repository.BlockedNumberRepositoryImpl
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.repository.ConversationRepositoryImpl
@@ -18,11 +21,13 @@ import com.filestech.sms.data.sms.SystemCopyEraser
 import com.filestech.sms.data.sms.TelephonyReader
 import com.filestech.sms.data.sms.TelephonySystemCopyEraser
 import com.filestech.sms.domain.backup.BackupRestorer
+import com.filestech.sms.domain.backup.NotesBackupRestorer
 import com.filestech.sms.domain.clipboard.ClipboardCleaner
 import com.filestech.sms.domain.emergency.IAmOkMessageProvider
 import com.filestech.sms.domain.location.LocationProvider
 import com.filestech.sms.domain.mms.MmsDispatcher
 import com.filestech.sms.domain.mms.OutgoingAttachmentStore
+import com.filestech.sms.domain.notes.NoteAttachmentResolver
 import com.filestech.sms.domain.notification.AllNotificationsCanceller
 import com.filestech.sms.domain.notification.ConversationNotificationCanceller
 import com.filestech.sms.domain.ownnumber.OwnNumberEnsurer
@@ -30,6 +35,7 @@ import com.filestech.sms.domain.pdf.PdfExporter
 import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.repository.NoteRepository
 import com.filestech.sms.domain.repository.OutgoingMessageMirror
 import com.filestech.sms.domain.repository.QuickReplyRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
@@ -94,6 +100,13 @@ abstract class RepositoryModule {
     @Binds @Singleton
     abstract fun bindScheduledMessageRepository(impl: ScheduledMessageRepositoryImpl): ScheduledMessageRepository
 
+    /** Notes phase 1 — the single write path for notes + the decrypt-on-read seam. */
+    @Binds @Singleton
+    abstract fun bindNoteRepository(impl: NoteRepositoryImpl): NoteRepository
+
+    @Binds @Singleton
+    abstract fun bindNoteAttachmentResolver(impl: NoteAttachmentResolverImpl): NoteAttachmentResolver
+
     @Binds @Singleton
     abstract fun bindSmsSender(impl: SmsSenderImpl): SmsSender
 
@@ -130,6 +143,10 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindBackupRestorer(impl: BackupService): BackupRestorer
+
+    /** Notes phase 1 — the `.notebk` restore port, mirroring the `.smsbk` one above. */
+    @Binds @Singleton
+    abstract fun bindNotesBackupRestorer(impl: NotesBackupService): NotesBackupRestorer
 
     @Binds @Singleton
     abstract fun bindIAmOkMessageProvider(impl: IAmOkMessageProviderImpl): IAmOkMessageProvider

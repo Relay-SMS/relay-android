@@ -11,6 +11,7 @@ import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.repository.NoteRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.sync.client.ClientSyncEngine
@@ -262,6 +263,13 @@ class ConversationsContactPhotosTest {
             every { state } returns
                 MutableStateFlow<AppLockManager.LockState>(AppLockManager.LockState.Unlocked)
         }
+        // Notes — the list merges the notes flow; a bare relaxed
+        // mock returns `emptyFlow()` (never emits), which would
+        // stall the packed combine, so the notes arm emits an
+        // empty list.
+        val noteRepo: NoteRepository = mockk(relaxed = true) {
+            every { observeAllNotes() } returns MutableStateFlow(emptyList())
+        }
         return ConversationsViewModel(
             savedStateHandle = SavedStateHandle(),
             repo = repo,
@@ -281,6 +289,7 @@ class ConversationsContactPhotosTest {
             // (the ViewModel only calls syncEngine.get() in client
             // mode); a relaxed mock behind a Lazy is enough.
             syncEngine = dagger.Lazy { mockk<ClientSyncEngine>(relaxed = true) },
+            noteRepo = noteRepo,
         )
     }
 

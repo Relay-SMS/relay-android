@@ -93,6 +93,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.Conversation
+import com.filestech.sms.domain.model.Note
 import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.sync.client.NoSimNudgeCard
 import com.filestech.sms.sync.client.isSimLess
@@ -107,6 +108,7 @@ import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.showError
+import com.filestech.sms.ui.screens.notes.SwipeableNoteRow
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.onBrandBlue
@@ -151,6 +153,8 @@ private fun rowGating(
 fun ConversationsScreen(
     archived: Boolean = false,
     onOpenThread: (Long) -> Unit,
+    /** Notes — a note row opens the note thread. */
+    onOpenNote: (Long) -> Unit = {},
     onCompose: () -> Unit,
     onComposeGroup: () -> Unit = {},
     onOpenSettings: () -> Unit,
@@ -789,14 +793,20 @@ fun ConversationsScreen(
                     // ni supprimées ni masquées : elles descendent en fin de liste sous un
                     // en-tête dédié. Le tri d'origine est conservé à l'intérieur de chaque groupe
                     // (`partition` est stable), donc rien ne bouge pour qui n'a rien bloqué.
-                    val (activeConversations, blockedConversations) =
-                        state.conversations.partition { !it.blocked }
+                    val blockedConversations = state.conversations.filter { it.blocked }
+                    // Notes — the merged list, minus the blocked
+                    // conversations (which keep their own section
+                    // below): notes are never blocked, so every note
+                    // item is active. [activeListItems] is extracted
+                    // (Detekt complexity ceiling).
+                    val activeItems = activeListItems(state.items)
                     // Round 4 — pinned chats get their own "Pinned" section above
                     // "Chats", like Kristin's list screenshot (see
                     // [conversationSections]). While the search pill is open the
-                    // headers are hidden and the list is flat.
-                    val (pinnedConversations, otherConversations) =
-                        splitPinnedSections(activeConversations, searching = searchOpen)
+                    // headers are hidden and the list is flat. Notes sort
+                    // with the conversations: a pinned note sits in Pinned.
+                    val (pinnedItems, otherItems) =
+                        splitPinnedSections(activeItems, searching = searchOpen)
 
                     // One row renderer shared by the Pinned and Chats sections, so the
                     // two sections can never drift apart.
@@ -920,14 +930,32 @@ fun ConversationsScreen(
                         )
                     }
 
+                    // Notes — the merged row renderer: conversations go
+                    // through [conversationItem] above, notes through
+                    // [SwipeableNoteRow]. The branch lives in
+                    // [ListItemRow] (Detekt complexity ceiling); this
+                    // lambda only wires the callbacks.
+                    val listItemContent: @Composable LazyItemScope.(ConversationListItem) -> Unit = { item ->
+                        ListItemRow(
+                            item = item,
+                            conversationItem = conversationItem,
+                            showAvatars = state.settings.conversations.showAvatars,
+                            previewLines = state.settings.conversations.previewLines.coerceIn(1, 2),
+                            onOpenNote = onOpenNote,
+                            onDeleteNote = viewModel::deleteNote,
+                            onToggleNotePinned = viewModel::toggleNotePinned,
+                            onToggleNoteArchived = viewModel::toggleNoteArchived,
+                        )
+                    }
+
                     // Feedback round 10 — date-grouped under Today /
                     // Yesterday / This week / This month / Older when the
                     // list is date-sorted and not searching. Unread-first
                     // sort and search keep the flat Pinned/Chats list.
                     conversationSections(
-                        pinned = pinnedConversations,
-                        other = otherConversations,
-                        itemContent = conversationItem,
+                        pinned = pinnedItems,
+                        other = otherItems,
+                        itemContent = listItemContent,
                         groupByDate = shouldGroupByDate(
                             searchOpen,
                             state.settings.conversations.sortMode,
@@ -1059,15 +1087,78 @@ private fun ConversationsFab(onCompose: () -> Unit) {
 /**
  * Round 4 — splits the list into the "Pinned" section and the rest. While the
  * search pill is open the list stays flat: nothing is pinned out.
+ *
+ * Notes — over the merged list ([ConversationListItem]): a pinned note
+ * sorts into Pinned with the pinned conversations.
  */
 private fun splitPinnedSections(
-    conversations: List<Conversation>,
+    items: List<ConversationListItem>,
     searching: Boolean,
-): Pair<List<Conversation>, List<Conversation>> {
+): Pair<List<ConversationListItem>, List<ConversationListItem>> {
     return if (searching) {
-        emptyList<Conversation>() to conversations
+        emptyList<ConversationListItem>() to items
     } else {
-        conversations.partition { it.pinned }
+        items.partition { it.pinned }
+    }
+}
+
+/**
+ * Notes — the merged list minus the blocked conversations, which keep
+ * their own section below. Notes are never blocked, so every note item
+ * is active. Extracted from [ConversationsScreen] (Detekt complexity
+ * ceiling).
+ */
+private fun activeListItems(items: List<ConversationListItem>): List<ConversationListItem> =
+    items.filter { item ->
+        when (item) {
+            is ConversationListItem.NoteItem -> true
+            is ConversationListItem.ConversationItem -> !item.conversation.blocked
+        }
+    }
+
+/**
+ * Notes — LazyColumn keys for the merged list. Note ids and
+ * conversation ids both come from Room sequences, so a note and a
+ * conversation can share an id: the keys are namespaced (`c-` / `n-`)
+ * so the recycler never confuses the two.
+ */
+private fun listItemKey(item: ConversationListItem): String = when (item) {
+    is ConversationListItem.ConversationItem -> "c-${item.conversation.id}"
+    is ConversationListItem.NoteItem -> "n-${item.note.id}"
+}
+
+/**
+ * Notes — one row of the merged list: a conversation renders through
+ * the existing [conversationItem] lambda, a note renders
+ * [SwipeableNoteRow]. Extracted from [ConversationsScreen] (Detekt
+ * complexity ceiling): the screen's LazyColumn passes a branch-free
+ * lambda that calls this.
+ */
+@Composable
+private fun LazyItemScope.ListItemRow(
+    item: ConversationListItem,
+    conversationItem: @Composable LazyItemScope.(Conversation) -> Unit,
+    showAvatars: Boolean,
+    previewLines: Int,
+    onOpenNote: (Long) -> Unit,
+    onDeleteNote: (Long) -> Unit,
+    onToggleNotePinned: (Note) -> Unit,
+    onToggleNoteArchived: (Note) -> Unit,
+) {
+    when (item) {
+        is ConversationListItem.ConversationItem -> conversationItem(item.conversation)
+        is ConversationListItem.NoteItem -> {
+            val note = item.note
+            SwipeableNoteRow(
+                note = note,
+                showAvatars = showAvatars,
+                previewLines = previewLines,
+                onOpenNote = { onOpenNote(note.id) },
+                onDelete = { onDeleteNote(note.id) },
+                onTogglePin = { onToggleNotePinned(note) },
+                onToggleArchive = { onToggleNoteArchived(note) },
+            )
+        }
     }
 }
 
@@ -1170,11 +1261,16 @@ private fun CategoryTabsRowIfShown(
  * the unpinned chats are grouped under date headers instead: Today, Yesterday,
  * This week, This month, Older. The "Chats" header is dropped then — the date
  * headers take its place. Unread-first sort and search keep the flat list.
+ *
+ * Notes — over the merged list ([ConversationListItem]): the date bucket
+ * reads [ConversationListItem.sortKey] (last entry, or creation for an
+ * empty note), and the row keys are namespaced ([listItemKey]) because
+ * note and conversation Room ids can collide.
  */
 private fun LazyListScope.conversationSections(
-    pinned: List<Conversation>,
-    other: List<Conversation>,
-    itemContent: @Composable LazyItemScope.(Conversation) -> Unit,
+    pinned: List<ConversationListItem>,
+    other: List<ConversationListItem>,
+    itemContent: @Composable LazyItemScope.(ConversationListItem) -> Unit,
     groupByDate: Boolean = false,
     locale: Locale = Locale.getDefault(),
 ) {
@@ -1188,7 +1284,7 @@ private fun LazyListScope.conversationSections(
     }
     items(
         pinned,
-        key = { it.id },
+        key = { listItemKey(it) },
         contentType = { "row" },
         itemContent = itemContent,
     )
@@ -1199,7 +1295,7 @@ private fun LazyListScope.conversationSections(
         // top padding the "Chats" header used to have when pinned chats
         // sit above it, 16dp when it opens the list.
         val now = Calendar.getInstance(locale)
-        val grouped = other.groupBy { dateBucketFor(it.lastMessageAt, now, locale) }
+        val grouped = other.groupBy { dateBucketFor(it.sortKey, now, locale) }
         var firstHeader = true
         for (bucket in ConversationDateBucket.entries) {
             val rows = grouped[bucket].orEmpty()
@@ -1213,7 +1309,7 @@ private fun LazyListScope.conversationSections(
             firstHeader = false
             items(
                 rows,
-                key = { it.id },
+                key = { listItemKey(it) },
                 contentType = { "row" },
                 itemContent = itemContent,
             )
@@ -1230,7 +1326,7 @@ private fun LazyListScope.conversationSections(
     }
     items(
         other,
-        key = { it.id },
+        key = { listItemKey(it) },
         contentType = { "row" },
         itemContent = itemContent,
     )
