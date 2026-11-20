@@ -44,7 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -316,7 +315,6 @@ class BackupViewModel @Inject constructor(
 @Composable
 fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel()) {
     val snackbarHost = remember { SnackbarHostState() }
-    val context = LocalContext.current
 
     var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var askingPassphrase by remember { mutableStateOf(false) }
@@ -378,15 +376,25 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
     // dans une lambda non composable ne suit pas les changements de configuration.
     val sansPiecesJointesFmt = stringResource(R.string.backup_restore_without_attachments)
     val coffreSansFacteurMsg = stringResource(R.string.backup_restore_vault_without_factor)
+    // Round 34 — CI lint (LocalContextGetResourceValueCall) : les messages
+    // des notes ET les anciens messages de sauvegarde sont resolus a la
+    // composition, comme vaultLockedMsg ci-dessus. Les trois messages
+    // d'echec de restauration servent aux deux restaurations (`.smsbk`
+    // et notes), d'ou un seul jeu de valeurs.
+    val exportSuccessMsg = stringResource(R.string.backup_export_success)
+    val exportFailedMsg = stringResource(R.string.backup_export_failed)
+    val restoreSuccessFmt = stringResource(R.string.backup_restore_success)
+    val restoreWrongPassMsg = stringResource(R.string.backup_restore_failed_wrong_pass)
+    val restoreInvalidFormatMsg = stringResource(R.string.backup_restore_failed_format)
+    val restoreStorageMsg = stringResource(R.string.backup_restore_failed_storage)
+    val notesExportSuccessMsg = stringResource(R.string.backup_notes_export_success)
+    val notesExportFailedMsg = stringResource(R.string.backup_notes_export_failed)
+    val notesRestoreSuccessFmt = stringResource(R.string.backup_notes_restore_success)
     LaunchedEffect(Unit) {
         viewModel.events.collect { ev ->
             when (ev) {
-                is BackupViewModel.Event.ExportDone -> snackbarHost.showSnackbar(
-                    context.getString(R.string.backup_export_success),
-                )
-                BackupViewModel.Event.ExportFailed -> snackbarHost.showError(
-                    context.getString(R.string.backup_export_failed),
-                )
+                is BackupViewModel.Event.ExportDone -> snackbarHost.showSnackbar(exportSuccessMsg)
+                BackupViewModel.Event.ExportFailed -> snackbarHost.showError(exportFailedMsg)
                 // v1.27.2 (audit externe 2026-08-04 #4) — le coffre n'est pas vide et sa
                 // session est verrouillée : inviter à l'ouvrir plutôt qu'un échec opaque.
                 BackupViewModel.Event.ExportVaultLocked -> snackbarHost.showError(vaultLockedMsg)
@@ -399,8 +407,7 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                 is BackupViewModel.Event.RestoreDone -> snackbarHost.showSnackbar(
                     buildString {
                         append(
-                            context.getString(
-                                R.string.backup_restore_success,
+                            restoreSuccessFmt.format(
                                 ev.result.totalConversationsInBackup,
                                 ev.result.conversationsCreated,
                                 ev.result.messagesImported,
@@ -421,23 +428,18 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                 is BackupViewModel.Event.RestoreFailed -> {
                     val msg = when (ev.kind) {
                         BackupViewModel.RestoreFailureKind.WRONG_PASSPHRASE_OR_CORRUPTED ->
-                            context.getString(R.string.backup_restore_failed_wrong_pass)
+                            restoreWrongPassMsg
                         BackupViewModel.RestoreFailureKind.INVALID_FORMAT ->
-                            context.getString(R.string.backup_restore_failed_format)
+                            restoreInvalidFormatMsg
                         BackupViewModel.RestoreFailureKind.STORAGE ->
-                            context.getString(R.string.backup_restore_failed_storage)
+                            restoreStorageMsg
                     }
                     snackbarHost.showError(msg)
                 }
-                is BackupViewModel.Event.NotesExportDone -> snackbarHost.showSnackbar(
-                    context.getString(R.string.backup_notes_export_success),
-                )
-                BackupViewModel.Event.NotesExportFailed -> snackbarHost.showError(
-                    context.getString(R.string.backup_notes_export_failed),
-                )
+                is BackupViewModel.Event.NotesExportDone -> snackbarHost.showSnackbar(notesExportSuccessMsg)
+                BackupViewModel.Event.NotesExportFailed -> snackbarHost.showError(notesExportFailedMsg)
                 is BackupViewModel.Event.NotesRestoreDone -> snackbarHost.showSnackbar(
-                    context.getString(
-                        R.string.backup_notes_restore_success,
+                    notesRestoreSuccessFmt.format(
                         ev.result.totalNotesInBackup,
                         ev.result.notesCreated,
                         ev.result.messagesImported,
@@ -450,11 +452,11 @@ fun BackupScreen(onBack: () -> Unit, viewModel: BackupViewModel = hiltViewModel(
                     // Relay backup file", "could not read the file").
                     val msg = when (ev.kind) {
                         BackupViewModel.RestoreFailureKind.WRONG_PASSPHRASE_OR_CORRUPTED ->
-                            context.getString(R.string.backup_restore_failed_wrong_pass)
+                            restoreWrongPassMsg
                         BackupViewModel.RestoreFailureKind.INVALID_FORMAT ->
-                            context.getString(R.string.backup_restore_failed_format)
+                            restoreInvalidFormatMsg
                         BackupViewModel.RestoreFailureKind.STORAGE ->
-                            context.getString(R.string.backup_restore_failed_storage)
+                            restoreStorageMsg
                     }
                     snackbarHost.showError(msg)
                 }
