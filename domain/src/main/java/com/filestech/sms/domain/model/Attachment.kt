@@ -23,6 +23,15 @@ data class Attachment(
      * download, and must never show a download tile.
      */
     val hubAttachmentId: Long? = null,
+    /**
+     * Round 32 — the date + body of the message carrying this
+     * attachment. Only the media queries populate them (the DAO
+     * joins the message row): the details panel groups media by
+     * date and needs the body for its sticker check. Everywhere
+     * else they stay `null`.
+     */
+    val messageDate: Long? = null,
+    val messageBody: String? = null,
 ) {
     val isAudio: Boolean get() = mimeType.startsWith("audio/", ignoreCase = true)
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)

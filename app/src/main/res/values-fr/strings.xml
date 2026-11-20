@@ -141,9 +141,9 @@
     <string name="details_tab_photos">Photos</string>
     <string name="details_tab_videos">Vidéos</string>
     <string name="details_tab_files">Fichiers</string>
-    <string name="details_empty_photos">Aucune photo dans cette conversation.</string>
-    <string name="details_empty_videos">Aucune vidéo dans cette conversation.</string>
-    <string name="details_empty_files">Aucun fichier dans cette conversation.</string>
+    <string name="details_empty_photos">Les photos partagées dans cette conversation apparaîtront ici.</string>
+    <string name="details_empty_videos">Les vidéos partagées dans cette conversation apparaîtront ici.</string>
+    <string name="details_empty_files">Les fichiers partagés dans cette conversation apparaîtront ici.</string>
 
     <string name="tab_archived">Archivées</string>
     <string name="tab_vault">Coffre-fort</string>
@@ -919,6 +919,8 @@
     <string name="settings_scheduled_messages">Messages programmés</string>
     <string name="settings_scheduled_messages_desc">Voir et gérer les SMS programmés</string>
     <string name="thread_schedule_action">Programmer…</string>
+    <string name="thread_schedule_message_title">Programmer un message</string>
+    <string name="thread_schedule_message_hint">Écrivez un message…</string>
     <string name="thread_schedule_date_title">Choisir une date</string>
     <string name="thread_schedule_time_title">Choisir une heure</string>
     <string name="thread_schedule_invalid_past">La date choisie est dans le passé</string>

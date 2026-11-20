@@ -757,7 +757,11 @@ internal fun ouvrirPieceJointe(context: android.content.Context, cible: Attachme
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, cible.fileName ?: ""))
+        // Round 32 — the plain intent, NOT createChooser: a chooser
+        // forces the pick every time and never offers "Always". The
+        // plain intent lets Android offer "Just once" / "Always", so
+        // a default sticks after the first tap.
+        context.startActivity(intent)
     }.onFailure { Timber.w(it, "Failed to open attachment %d", cible.id) }
 }
 

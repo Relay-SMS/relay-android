@@ -142,9 +142,9 @@
     <string name="details_tab_photos">Fotos</string>
     <string name="details_tab_videos">Videos</string>
     <string name="details_tab_files">Dateien</string>
-    <string name="details_empty_photos">Keine Fotos in dieser Unterhaltung.</string>
-    <string name="details_empty_videos">Keine Videos in dieser Unterhaltung.</string>
-    <string name="details_empty_files">Keine Dateien in dieser Unterhaltung.</string>
+    <string name="details_empty_photos">Fotos, die in dieser Unterhaltung geteilt werden, werden hier angezeigt.</string>
+    <string name="details_empty_videos">Videos, die in dieser Unterhaltung geteilt werden, werden hier angezeigt.</string>
+    <string name="details_empty_files">Dateien, die in dieser Unterhaltung geteilt werden, werden hier angezeigt.</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archiviert</string>
@@ -931,6 +931,8 @@
     <string name="settings_scheduled_messages">Geplante Nachrichten</string>
     <string name="settings_scheduled_messages_desc">Geplante SMS ansehen und verwalten</string>
     <string name="thread_schedule_action">Planen…</string>
+    <string name="thread_schedule_message_title">Nachricht planen</string>
+    <string name="thread_schedule_message_hint">Nachricht schreiben…</string>
     <string name="thread_schedule_date_title">Datum wählen</string>
     <string name="thread_schedule_time_title">Uhrzeit wählen</string>
     <string name="thread_schedule_invalid_past">Das gewählte Datum liegt in der Vergangenheit</string>

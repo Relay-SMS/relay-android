@@ -1,0 +1,35 @@
+<!-- Kristin's own icon (images-outline.svg, Ionicons style): two overlapping photos,
+     64x64 viewBox. Shared with the desktop app (ImagesIcon) — the Photos empty
+     state + the file-row icon for anything that is not a document, a vCard or
+     audio. Black strokes; the Icon() call site tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54 14V12C53.9954 10.4101 53.3618 8.88668 52.2375 7.76246C51.1133 6.63824 49.5899 6.00462 48 6H8C6.41012 6.00462 4.88668 6.63824 3.76246 7.76246C2.63824 8.88668 2.00462 10.4101 2 12V44C2.00462 45.5899 2.63824 47.1133 3.76246 48.2375C4.88668 49.3618 6.41012 49.9954 8 50H10"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M17.7488 16H56.2513C59.4262 16 62 18.5738 62 21.7488V52.2513C62 55.4262 59.4262 58 56.2513 58H17.7488C14.5738 58 12 55.4262 12 52.2513V21.7488C12 18.5738 14.5738 16 17.7488 16Z"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M50.4611 27.4547C50.4611 29.5638 48.739 31.2735 46.6148 31.2735C44.4906 31.2735 42.7686 29.5638 42.7686 27.4547C42.7686 25.3457 44.4906 23.636 46.6148 23.636C48.739 23.636 50.4611 25.3457 50.4611 27.4547Z"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M42.7687 46.5214L31.875 35.7227C31.1786 35.0346 30.2471 34.6364 29.2685 34.6083C28.29 34.5802 27.3372 34.9244 26.6025 35.5714L12 48.4552M33.1538 58.0002L47.9775 43.2839C48.6596 42.6112 49.5668 42.215 50.5239 42.1718C51.4809 42.1287 52.4201 42.4416 53.16 43.0502L62 50.3639"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

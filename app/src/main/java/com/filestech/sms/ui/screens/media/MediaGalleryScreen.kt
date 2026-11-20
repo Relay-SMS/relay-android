@@ -13,10 +13,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.Refresh
@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -130,13 +131,13 @@ internal fun MediaGalleryContent(
             columns = GridCells.Fixed(GALLERY_COLUMNS),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = TILE_GAP,
-                end = TILE_GAP,
-                top = padding.calculateTopPadding() + TILE_GAP,
-                bottom = padding.calculateBottomPadding() + TILE_GAP,
+                start = TILE_GAP_HORIZONTAL,
+                end = TILE_GAP_HORIZONTAL,
+                top = padding.calculateTopPadding() + TILE_GAP_VERTICAL,
+                bottom = padding.calculateBottomPadding() + TILE_GAP_VERTICAL,
             ),
-            horizontalArrangement = Arrangement.spacedBy(TILE_GAP),
-            verticalArrangement = Arrangement.spacedBy(TILE_GAP),
+            horizontalArrangement = Arrangement.spacedBy(TILE_GAP_HORIZONTAL),
+            verticalArrangement = Arrangement.spacedBy(TILE_GAP_VERTICAL),
         ) {
             items(media, key = { it.id }) { attachment ->
                 MediaTile(
@@ -153,6 +154,11 @@ internal fun MediaGalleryContent(
 /**
  * Shared with the details panel: the same tile, its download badge and its
  * tap-to-download behaviour, laid out in the panel's media rows.
+ *
+ * Round 32 — the tile follows the desktop pane: rounded 16dp, 11/10
+ * aspect (not square), 14dp between columns and 12dp between rows.
+ * The rounding applies here and in the panel alike — one component,
+ * one look.
  */
 @Composable
 internal fun MediaTile(
@@ -175,7 +181,8 @@ internal fun MediaTile(
     }
     Box(
         modifier = Modifier
-            .aspectRatio(1f)
+            .aspectRatio(11f / 10f)
+            .clip(RoundedCornerShape(TILE_CORNER))
             .background(fond)
             .clickable(onClick = {
                 if (needsDownload) {
@@ -246,7 +253,7 @@ internal fun MediaTile(
                         modifier = Modifier.size(DOWNLOAD_BADGE_ICON_SIZE),
                     )
                     else -> Icon(
-                        Icons.Outlined.Download,
+                        painter = painterResource(R.drawable.ic_download_outline),
                         contentDescription = stringResource(R.string.client_attachment_tap_download),
                         tint = Color.White,
                         modifier = Modifier.size(DOWNLOAD_BADGE_ICON_SIZE),
@@ -258,7 +265,9 @@ internal fun MediaTile(
 }
 
 private const val GALLERY_COLUMNS = 3
-private val TILE_GAP = 4.dp
+private val TILE_CORNER = 16.dp
+private val TILE_GAP_HORIZONTAL = 14.dp
+private val TILE_GAP_VERTICAL = 12.dp
 private val VIDEO_ICON_SIZE = 40.dp
 private val DOWNLOAD_BADGE_SIZE = 32.dp
 private val DOWNLOAD_BADGE_ICON_SIZE = 18.dp

@@ -1,0 +1,24 @@
+<!-- Kristin's own icon (download-outline.svg, Ionicons style): a tray with a
+     down arrow, 18x18 viewBox. Shared with the desktop app (DownloadIcon) —
+     the lightbox Download button and the download affordance on file rows
+     and media tiles. Black strokes; the Icon() call site tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="18"
+    android:viewportHeight="18">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M11.8125 6.1875H13.2188C13.5917 6.1875 13.9494 6.33566 14.2131 6.59938C14.4768 6.8631 14.625 7.22079 14.625 7.59375V14.9062C14.625 15.2792 14.4768 15.6369 14.2131 15.9006C13.9494 16.1643 13.5917 16.3125 13.2188 16.3125H4.78125C4.40829 16.3125 4.0506 16.1643 3.78688 15.9006C3.52316 15.6369 3.375 15.2792 3.375 14.9062V7.59375C3.375 7.22079 3.52316 6.8631 3.78688 6.59938C4.0506 6.33566 4.40829 6.1875 4.78125 6.1875H6.1875"
+        android:strokeWidth="1.125"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M6.1875 9.5625L9 12.375L11.8125 9.5625M9 1.6875V11.8125"
+        android:strokeWidth="1.125"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

@@ -929,9 +929,13 @@ class ThreadViewModel @Inject constructor(
      *
      * Le draft est validé non-vide ET la date est validée future côté Use Case. En cas d'échec,
      * un Event.ShowSnackbar(isError=true) est émis vers la View.
+     *
+     * Round 32 — [bodyOverride] programme un autre texte que le draft (le
+     * panneau latéral, dont le brouillon est vide : l'utilisateur tape son
+     * message dans l'étape dédiée). Le draft n'est alors ni lu ni vidé.
      */
-    fun scheduleSend(epochMillis: Long) {
-        val body = _state.value.draft.trim()
+    fun scheduleSend(epochMillis: Long, bodyOverride: String? = null) {
+        val body = (bodyOverride ?: _state.value.draft).trim()
         // v1.28.3 (F29) — un MMS programmé sans légende est LÉGITIME, et trois couches sur
         // quatre le savaient déjà.
         //
@@ -999,7 +1003,8 @@ class ThreadViewModel @Inject constructor(
                     // v1.28.3 (F22) — même garde que sur les deux chemins d'envoi : la fenêtre
                     // est plus étroite ici (aucune attente radio), mais le motif est le même et
                     // il ne doit pas rester un chemin qui efface sans regarder.
-                    effacerBrouillonSiIntact(revisionEnvoyee)
+                    // Round 32 — avec un bodyOverride, le draft n'a pas servi : on ne l'efface pas.
+                    if (bodyOverride == null) effacerBrouillonSiIntact(revisionEnvoyee)
                     _events.tryEmit(Event.ShowSnackbar(
                         context.getString(com.filestech.sms.R.string.thread_schedule_success),
                     ))
@@ -1011,6 +1016,18 @@ class ThreadViewModel @Inject constructor(
                     ))
                 }
             }
+        }
+    }
+
+    /**
+     * Round 32 — Details panel: flips this conversation's mute. Same
+     * toggle as the list's long-press menu (client mode goes through
+     * the `set_muted` frame, like the pin toggle).
+     */
+    fun toggleMute() {
+        viewModelScope.launch {
+            val conv = _state.value.conversation ?: return@launch
+            toggleConvState.setMuted(conv.id, !conv.muted)
         }
     }
 

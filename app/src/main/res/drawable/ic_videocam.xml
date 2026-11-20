@@ -1,0 +1,22 @@
+<!-- Kristin's own icon (videocam-outline.svg, Ionicons style): video camera,
+     66x66 viewBox. Shared with the desktop app (VideocamIcon) — the Videos
+     empty state. Black strokes; the Icon() call site tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="66"
+    android:viewportHeight="66">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M48.3128 39.8036L58.9746 47.3085C59.2886 47.4481 59.6326 47.507 59.9751 47.4799C60.3177 47.4528 60.6481 47.3406 60.9363 47.1533C61.2244 46.9661 61.4612 46.7098 61.6252 46.4078C61.7891 46.1057 61.875 45.7675 61.875 45.4239V20.5759C61.875 20.2322 61.7891 19.894 61.6252 19.592C61.4612 19.29 61.2244 19.0337 60.9363 18.8465C60.6481 18.6592 60.3177 18.5469 59.9751 18.5199C59.6326 18.4928 59.2886 18.5517 58.9746 18.6913L48.3128 26.1962C48.0424 26.3865 47.8218 26.639 47.6695 26.9325C47.5171 27.2259 47.4376 27.5517 47.4375 27.8823V38.1175C47.4376 38.4481 47.5171 38.7738 47.6695 39.0673C47.8218 39.3607 48.0424 39.6132 48.3128 39.8036Z"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M34.5469 49.5H10.8281C9.05191 49.4949 7.34991 48.787 6.09394 47.5311C4.83796 46.2751 4.1301 44.5731 4.125 42.7969V23.2031C4.1301 21.4269 4.83796 19.7249 6.09394 18.4689C7.34991 17.213 9.05191 16.5051 10.8281 16.5H34.6088C36.3684 16.5054 38.0545 17.2069 39.2988 18.4512C40.5431 19.6955 41.2446 21.3816 41.25 23.1413V42.7969C41.2449 44.5731 40.537 46.2751 39.2811 47.5311C38.0251 48.787 36.3231 49.4949 34.5469 49.5Z"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeMiterLimit="10" />
+</vector>

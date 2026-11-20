@@ -441,7 +441,11 @@ fun ThreadScreen(
     // v1.15.1 — Flow Programmer un SMS : 2 étapes (DatePicker puis TimePicker).
     // `scheduleStep` null = aucun picker ouvert ; "date" = DatePicker actif ;
     // "time" = TimePicker actif (date déjà choisie, stockée dans scheduledEpochMidnight).
+    // Round 32 — "message" = le dialogue de saisie du texte, en premier quand
+    // le brouillon est vide (depuis le panneau latéral) ; le texte saisi part
+    // dans `scheduledBodyOverride` et ne touche jamais au brouillon.
     var scheduleStep by remember { mutableStateOf<String?>(null) }
+    var scheduledBodyOverride by remember { mutableStateOf<String?>(null) }
     var scheduledEpochMidnight by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
 
     // Feedback round 5 — search inside this conversation. The query searches
@@ -1636,12 +1640,32 @@ fun ThreadScreen(
     }
 
     // v1.15.1 — DatePicker pour programmer un message. Date d'aujourd'hui min, pas de cap max.
+    // Round 32 — message step: the panel's Schedule row lands here when the
+    // composer draft is empty, so scheduling never needs a draft. The typed
+    // text becomes the body override for `scheduleSend`; dismissing clears
+    // it, like every other exit of this flow.
+    if (scheduleStep == "message") {
+        com.filestech.sms.ui.components.ScheduleMessageDialog(
+            allowEmpty = state.pendingAttachments.isNotEmpty(),
+            onDismiss = {
+                scheduleStep = null
+                scheduledBodyOverride = null
+            },
+            onConfirm = { text ->
+                scheduledBodyOverride = text
+                scheduleStep = "date"
+            },
+        )
+    }
     if (scheduleStep == "date") {
         val datePickerState = androidx.compose.material3.rememberDatePickerState(
             initialSelectedDateMillis = System.currentTimeMillis(),
         )
         androidx.compose.material3.DatePickerDialog(
-            onDismissRequest = { scheduleStep = null },
+            onDismissRequest = {
+                scheduleStep = null
+                scheduledBodyOverride = null
+            },
             confirmButton = {
                 TextButton(onClick = {
                     val selected = datePickerState.selectedDateMillis
@@ -1650,11 +1674,15 @@ fun ThreadScreen(
                         scheduleStep = "time"
                     } else {
                         scheduleStep = null
+                        scheduledBodyOverride = null
                     }
                 }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.action_continue)) }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleStep = null }, shape = RoundedCornerShape(50)) {
+                TextButton(onClick = {
+                    scheduleStep = null
+                    scheduledBodyOverride = null
+                }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1673,7 +1701,10 @@ fun ThreadScreen(
             is24Hour = true,
         )
         AlertDialog(
-            onDismissRequest = { scheduleStep = null },
+            onDismissRequest = {
+                scheduleStep = null
+                scheduledBodyOverride = null
+            },
             title = { Text(stringResource(R.string.thread_schedule_time_title)) },
             text = {
                 androidx.compose.material3.TimePicker(state = timePickerState)
@@ -1696,14 +1727,21 @@ fun ThreadScreen(
                     }
                     val epochMs = localCal.timeInMillis
                     scheduleStep = null
-                    viewModel.scheduleSend(epochMs)
+                    // Round 32 — the override is consumed here (null on
+                    // the composer path, where the draft is scheduled)
+                    // and cleared, so a later flow never reuses it.
+                    viewModel.scheduleSend(epochMs, scheduledBodyOverride)
+                    scheduledBodyOverride = null
                     // v1.25.3 (audit L10) — « Programmer » et non « Continuer » : c'est l'étape
                     // finale du sélecteur, elle valide l'envoi différé. `action_schedule`
                     // existait déjà en FR et EN, simplement jamais référencée.
                 }, shape = RoundedCornerShape(50)) { Text(stringResource(R.string.action_schedule)) }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleStep = null }, shape = RoundedCornerShape(50)) {
+                TextButton(onClick = {
+                    scheduleStep = null
+                    scheduledBodyOverride = null
+                }, shape = RoundedCornerShape(50)) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -1827,22 +1865,24 @@ fun ThreadScreen(
                 memberNames = state.memberNames,
                 showAddToContacts = !detailsConversation.isGroup &&
                     !state.hasContact && !state.isClientMode,
-                // v1.15.1 — Programmer le draft pour plus tard. Grisé tant qu'il
-                // n'y a rien à programmer — évite le tunnel date/heure → snackbar
-                // "Tape un message avant" frustrant.
-                // v1.26.0 — une pièce jointe suffit désormais, même sans texte : un MMS
-                // ne portant qu'une image est un envoi normal, et la programmation les
-                // transporte maintenant. Auparavant ce test ne regardait que le texte, si
-                // bien qu'on pouvait programmer un message avec photo et voir partir le
-                // texte seul.
-                canSchedule = state.draft.isNotBlank() ||
-                    state.pendingAttachments.isNotEmpty(),
+                // Round 32 — Schedule is always available from the
+                // panel: with an empty draft the flow opens its
+                // message step first, so there is never "nothing to
+                // schedule". (The composer's own button keeps its
+                // draft-or-attachment gate — it has no message step.)
+                canSchedule = true,
                 canExport = state.messages.isNotEmpty(),
                 isExporting = state.isExporting,
                 actions = com.filestech.sms.ui.screens.details.ConversationDetailsActions(
-                    onSchedule = { scheduleStep = "date" },
+                    onSchedule = {
+                        // Draft non-blank: schedule it, like the
+                        // composer button. Blank: type the message
+                        // first, then the usual date/time pickers.
+                        scheduleStep = if (state.draft.isNotBlank()) "date" else "message"
+                    },
                     onExportPdf = { viewModel.exportToPdf() },
                     onChatColors = { appearanceOpen = true },
+                    onToggleMute = { viewModel.toggleMute() },
                     onBlock = { askBlock = true },
                     // Client mode C3 — Schedule and Block are wired
                     // on a linked device (wire frames); Rename and

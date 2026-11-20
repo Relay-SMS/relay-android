@@ -143,9 +143,9 @@
     <string name="details_tab_photos">Photos</string>
     <string name="details_tab_videos">Videos</string>
     <string name="details_tab_files">Files</string>
-    <string name="details_empty_photos">No photos in this conversation.</string>
-    <string name="details_empty_videos">No videos in this conversation.</string>
-    <string name="details_empty_files">No files in this conversation.</string>
+    <string name="details_empty_photos">Photos shared in this conversation will show here.</string>
+    <string name="details_empty_videos">Videos shared in this conversation will show here.</string>
+    <string name="details_empty_files">Files shared in this conversation will show here.</string>
 
     <!-- Tabs / sections -->
     <string name="tab_archived">Archived</string>
@@ -929,6 +929,8 @@
     <string name="settings_scheduled_messages">Scheduled messages</string>
     <string name="settings_scheduled_messages_desc">View and manage scheduled SMS</string>
     <string name="thread_schedule_action">Schedule…</string>
+    <string name="thread_schedule_message_title">Schedule a message</string>
+    <string name="thread_schedule_message_hint">Type a message…</string>
     <string name="thread_schedule_date_title">Pick a date</string>
     <string name="thread_schedule_time_title">Pick a time</string>
     <string name="thread_schedule_invalid_past">The chosen date is in the past</string>

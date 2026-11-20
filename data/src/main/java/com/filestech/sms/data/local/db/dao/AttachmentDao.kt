@@ -74,10 +74,13 @@ interface AttachmentDao {
      * Issue #59 — les photos et vidéos d'une conversation, les plus récentes d'abord, pour l'écran du
      * même nom. Seules les pièces jointes sont lues, pas l'historique des messages. `hidden = 0` : les
      * mêmes messages que le fil (`MessageDao.observeForConversation`).
+     *
+     * Round 32 — the query also returns the carrying message's date + body (the details panel
+     * groups media by date and needs the body for its sticker check).
      */
     @Query(
         """
-        SELECT a.* FROM attachments a
+        SELECT a.*, m.date AS message_date, m.body AS message_body FROM attachments a
         JOIN messages m ON m.id = a.message_id
         WHERE m.conversation_id = :conversationId
           AND m.hidden = 0
@@ -85,16 +88,19 @@ interface AttachmentDao {
         ORDER BY m.date DESC, m.id DESC, a.id ASC
         """,
     )
-    fun observeMediaForConversation(conversationId: Long): Flow<List<AttachmentEntity>>
+    fun observeMediaForConversation(conversationId: Long): Flow<List<AttachmentWithMessage>>
 
     /**
      * Details panel — Files tab: every attachment that is neither a
      * photo nor a video (documents, audio, vCards…), newest first.
      * Same hidden-message rule as [observeMediaForConversation].
+     *
+     * Round 32 — also returns the carrying message's date + body,
+     * like [observeMediaForConversation].
      */
     @Query(
         """
-        SELECT a.* FROM attachments a
+        SELECT a.*, m.date AS message_date, m.body AS message_body FROM attachments a
         JOIN messages m ON m.id = a.message_id
         WHERE m.conversation_id = :conversationId
           AND m.hidden = 0
@@ -102,7 +108,7 @@ interface AttachmentDao {
         ORDER BY m.date DESC, m.id DESC, a.id ASC
         """,
     )
-    fun observeFilesForConversation(conversationId: Long): Flow<List<AttachmentEntity>>
+    fun observeFilesForConversation(conversationId: Long): Flow<List<AttachmentWithMessage>>
 
     @Query("DELETE FROM attachments WHERE message_id = :messageId")
     suspend fun deleteForMessage(messageId: Long)

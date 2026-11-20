@@ -90,7 +90,7 @@ class MediaDeLaConversationTest {
     }
 
     private suspend fun noms(conversation: Long = CONVERSATION) =
-        db.attachmentDao().observeMediaForConversation(conversation).first().map { it.fileName }
+        db.attachmentDao().observeMediaForConversation(conversation).first().map { it.attachment.fileName }
 
     @Test
     fun seulsLesPhotosEtLesVideosSortent(): Unit = runBlocking {
@@ -103,6 +103,18 @@ class MediaDeLaConversationTest {
         piece(id, "application/smil", "smil.xml")
 
         assertThat(noms()).containsExactly("photo.jpg", "film.mp4", "majuscules.png")
+    }
+
+    @Test
+    fun laProjectionRendLaDateEtLeCorpsDuMessage(): Unit = runBlocking {
+        val id = message(date = 100L)
+        piece(id, "image/jpeg", "photo.jpg")
+
+        val rows = db.attachmentDao().observeMediaForConversation(CONVERSATION).first()
+        assertThat(rows).hasSize(1)
+        assertThat(rows[0].attachment.fileName).isEqualTo("photo.jpg")
+        assertThat(rows[0].messageDate).isEqualTo(100L)
+        assertThat(rows[0].messageBody).isEqualTo("")
     }
 
     @Test

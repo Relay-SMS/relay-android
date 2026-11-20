@@ -1,5 +1,6 @@
 package com.filestech.sms.data.local.db.mapper
 
+import com.filestech.sms.data.local.db.dao.AttachmentWithMessage
 import com.filestech.sms.data.local.db.dao.MessageStateRow
 import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import com.filestech.sms.data.local.db.entity.BlockedNumberEntity
@@ -40,6 +41,12 @@ fun AttachmentEntity.toDomain(): Attachment = Attachment(
     durationMs = durationMs,
     // Client mode C5 — the UI gates its download tile on this.
     hubAttachmentId = hubAttachmentId,
+)
+
+/** Round 32 — the media-query projection: the attachment plus its carrying message's date + body. */
+fun AttachmentWithMessage.toDomain(): Attachment = attachment.toDomain().copy(
+    messageDate = messageDate,
+    messageBody = messageBody,
 )
 
 fun BlockedNumberEntity.toDomain(): BlockedNumber = BlockedNumber(

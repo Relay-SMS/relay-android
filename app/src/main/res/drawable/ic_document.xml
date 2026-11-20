@@ -1,0 +1,23 @@
+<!-- Kristin's own icon (document-outline.svg, Ionicons style): a document
+     with a folded corner, 31x31 viewBox. Shared with the desktop app
+     (DocumentIcon) — the document file-row icon (text/* and
+     application/*). Black strokes; the Icon() call site tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="31"
+    android:viewportHeight="31">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M25.1875 13.396V25.1875C25.1875 25.9583 24.8813 26.6975 24.3363 27.2425C23.7913 27.7876 23.052 28.0937 22.2812 28.0938H8.71875C7.94796 28.0937 7.20875 27.7876 6.66372 27.2425C6.11869 26.6975 5.8125 25.9583 5.8125 25.1875V5.8125C5.8125 5.04171 6.11869 4.3025 6.66372 3.75747C7.20875 3.21244 7.94796 2.90625 8.71875 2.90625H14.6978C15.2114 2.90633 15.7041 3.11039 16.0673 3.47357L24.6202 12.0264C24.9834 12.3897 25.1874 12.8823 25.1875 13.396Z"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M15.5 3.39062V10.6562C15.5 11.1701 15.7041 11.6629 16.0675 12.0263C16.4308 12.3896 16.9236 12.5938 17.4375 12.5938H24.7031"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

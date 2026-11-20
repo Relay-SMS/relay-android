@@ -1,6 +1,7 @@
 package com.filestech.sms.data.repository
 
 import com.filestech.sms.data.local.db.dao.AttachmentDao
+import com.filestech.sms.data.local.db.dao.AttachmentWithMessage
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
@@ -49,7 +50,9 @@ class ObserveMediaCoffreTest {
             ),
         )
         val attachmentDao = mockk<AttachmentDao>()
-        every { attachmentDao.observeMediaForConversation(CONVERSATION) } returns flowOf(listOf(photo))
+        every { attachmentDao.observeMediaForConversation(CONVERSATION) } returns flowOf(
+            listOf(AttachmentWithMessage(photo, messageDate = 0L, messageBody = "")),
+        )
         val appLock = mockk<AppLockManager>()
         every { appLock.state } returns MutableStateFlow(verrou)
         val coffre = VaultSessionState()
