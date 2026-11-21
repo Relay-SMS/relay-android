@@ -231,7 +231,7 @@ class E2eDaoDbTest {
     @Test fun `observeDecryptFailedLatestConversationIds tracks the latest visible message`() = runTest {
         val conversationDao = db.conversationDao()
         val messageDao = db.messageDao()
-        fun conversation(csv: String) = conversationDao.insert(
+        suspend fun conversation(csv: String) = conversationDao.insert(
             ConversationEntity(
                 threadId = null,
                 addressesCsv = csv,
@@ -240,7 +240,7 @@ class E2eDaoDbTest {
                 lastMessagePreview = null,
             ),
         )
-        fun message(conversationId: Long, date: Long, decryptFailed: Boolean = false, hidden: Boolean = false) =
+        suspend fun message(conversationId: Long, date: Long, decryptFailed: Boolean = false, hidden: Boolean = false) =
             messageDao.insert(
                 MessageEntity(
                     conversationId = conversationId,
