@@ -1,6 +1,7 @@
 package com.filestech.sms.system.startup
 
 import android.content.Context
+import com.filestech.sms.data.categories.StickyCategoryStore
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
@@ -42,6 +43,7 @@ class StartupMigrationsTest {
         coEvery { findByLocalUriPrefix(any()) } returns emptyList()
     }
     private val mirror = mockk<ConversationMirror>()
+    private val stickyCategories = mockk<StickyCategoryStore>(relaxed = true)
 
     /**
      * 🔴 v1.27.2 — SANS CECI, LES COMPTES DE MOCK S ACCUMULENT ENTRE LES TESTS.
@@ -56,7 +58,7 @@ class StartupMigrationsTest {
      */
     @BeforeEach
     fun resetMocks() {
-        clearMocks(messageDao, conversationDao, attachmentDao, mirror, answers = false)
+        clearMocks(messageDao, conversationDao, attachmentDao, mirror, stickyCategories, answers = false)
         coEvery { attachmentDao.findByLocalUriPrefix(any()) } returns emptyList()
     }
 
@@ -84,6 +86,7 @@ class StartupMigrationsTest {
         conversationDao = dagger.Lazy { conversationDao },
         attachmentDao = dagger.Lazy { attachmentDao },
         conversationMirror = dagger.Lazy { mirror },
+        stickyCategories = dagger.Lazy { stickyCategories },
         context = context(),
         io = Dispatchers.Unconfined,
     )
@@ -230,5 +233,61 @@ class StartupMigrationsTest {
         // `freshState_runsEveryMigration_thenRecordsGlobalCompletion` : la dedup est idempotente,
         // donc la faire tourner deux fois est sans consequence.
         coVerify(exactly = 2) { mirror.dedupeSameNumberConversations() }
+    }
+
+    // ──────── Round 35 — sticky category backfill ────────
+
+    @Test
+    fun backfillRunsOnce_andRecordsItsFlag() = runTest {
+        coEvery { mirror.dedupeSameNumberConversations() } returns false
+        coEvery { stickyCategories.backfill() } returns 3
+        val (settings, state) = fakeSettings(AppSettings())
+
+        migrations(settings).run()
+
+        coVerify(exactly = 1) { stickyCategories.backfill() }
+        assertThat(state.first().advanced.stickyCategoryBackfilledV20).isTrue()
+    }
+
+    @Test
+    fun backfillAlreadyDone_isNotReRun() = runTest {
+        coEvery { mirror.dedupeSameNumberConversations() } returns false
+        val (settings, _) = fakeSettings(
+            AppSettings().copy(
+                advanced = AppSettings().advanced.copy(stickyCategoryBackfilledV20 = true),
+            ),
+        )
+
+        migrations(settings).run()
+
+        coVerify(exactly = 0) { stickyCategories.backfill() }
+    }
+
+    /**
+     * Round 35 — the backfill lives BEFORE the global short-circuit, like
+     * the v1.27.2 repairs: the fleet it targets (conversations the
+     * spammers already reached) already has every legacy flag set. This
+     * test fails if it is moved behind the guard.
+     */
+    @Test
+    fun backfillRunsEvenWhenGlobalGuardSet() = runTest {
+        coEvery { mirror.dedupeSameNumberConversations() } returns false
+        coEvery { stickyCategories.backfill() } returns 1
+        val (settings, state) = fakeSettings(
+            AppSettings().copy(
+                advanced = AppSettings().advanced.copy(
+                    startupDbMigrationsDone = true,
+                    unreadResetV180 = true,
+                    attachmentsMovedToFilesDirV147 = true,
+                    dedupSameNumberV1230 = true,
+                    staleConversationPreviewsRepairedV1240 = true,
+                ),
+            ),
+        )
+
+        migrations(settings).run()
+
+        coVerify(exactly = 1) { stickyCategories.backfill() }
+        assertThat(state.first().advanced.stickyCategoryBackfilledV20).isTrue()
     }
 }

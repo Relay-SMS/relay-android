@@ -484,10 +484,13 @@ class MessageClassifierTest {
         ).isEqualTo(MessageCategory.PERSONAL)
     }
 
+    // Round 35 — this body used to mention "my polling place", but
+    // "polling place" is a political keyword now, so the old wording
+    // would file Promotional. The point of the test is "vote" alone.
     @Test fun `vote alone stays personal`() {
         assertThat(
             MessageClassifier.classify(
-                body = "Did you vote today? The line at my polling place was so long.",
+                body = "Did you vote today? The line was so long.",
                 sender = regularNumber,
                 isContact = false,
                 isGroup = false,

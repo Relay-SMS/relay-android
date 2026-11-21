@@ -10,7 +10,8 @@ import org.junit.jupiter.api.Test
  * is the `sticker-` filename, or a 512×512 PNG sent with no
  * caption (blank or emoji-only body). Round 33 follow-up — the
  * dimensions arm gains 72×72, the bundled-PNG fallback size
- * `stickerSendUri` produces when the SVG render fails.
+ * `stickerSendUri` produces when the SVG render fails. Round 36 —
+ * the dimensions arm also covers WebP (imported stickers).
  */
 class DetailsMediaFiltersTest {
 
@@ -165,6 +166,67 @@ class DetailsMediaFiltersTest {
         )
         assertThat(sticker.isStickerAttachment()).isTrue()
         assertThat(sticker.isPhotosTabItem()).isFalse()
+    }
+
+    @Test
+    fun `a 512x512 WebP with no caption is a sticker`() {
+        val sticker = photo(
+            mimeType = "image/webp",
+            width = 512,
+            height = 512,
+            body = "",
+        )
+        assertThat(sticker.isStickerAttachment()).isTrue()
+        assertThat(sticker.isPhotosTabItem()).isFalse()
+    }
+
+    @Test
+    fun `a 512x512 WebP with an emoji-only caption is a sticker`() {
+        val sticker = photo(
+            mimeType = "image/webp",
+            width = 512,
+            height = 512,
+            body = "😀😀",
+        )
+        assertThat(sticker.isStickerAttachment()).isTrue()
+    }
+
+    @Test
+    fun `a 512x512 WebP with a real caption is a photo`() {
+        val captioned = photo(
+            mimeType = "image/webp",
+            width = 512,
+            height = 512,
+            body = "look at this",
+        )
+        assertThat(captioned.isStickerAttachment()).isFalse()
+        assertThat(captioned.isPhotosTabItem()).isTrue()
+    }
+
+    @Test
+    fun `a 72x72 WebP with no caption is a sticker`() {
+        val sticker = photo(
+            mimeType = "image/webp",
+            width = 72,
+            height = 72,
+            body = "",
+        )
+        assertThat(sticker.isStickerAttachment()).isTrue()
+        assertThat(sticker.isPhotosTabItem()).isFalse()
+    }
+
+    @Test
+    fun `a non-square WebP with no caption is a photo`() {
+        val wide = photo(mimeType = "image/webp", width = 800, height = 600, body = "")
+        assertThat(wide.isStickerAttachment()).isFalse()
+        assertThat(wide.isPhotosTabItem()).isTrue()
+    }
+
+    @Test
+    fun `a WebP without dimensions only hides on the filename arm`() {
+        val noDims = photo(mimeType = "image/webp", width = null, height = null, body = "")
+        assertThat(noDims.isStickerAttachment()).isFalse()
+        assertThat(noDims.isPhotosTabItem()).isTrue()
     }
 
     private fun photo(

@@ -176,6 +176,8 @@
     <string name="conversations_delete_kept_local">La conversazione non è stata eliminata: una parte non è stata rimossa da questo telefono. Riprovi.</string>
     <string name="conversations_draft_prefix">Bozza: %1$s</string>
     <string name="conversations_preview_attachment">Allegato</string>
+    <string name="invite_friends">Invita amici</string>
+    <string name="invite_friends_settings">Invita i tuoi amici</string>
 
 
     <!-- Thread -->
@@ -791,7 +793,7 @@
     <string name="about_perm_notifications">Mostrare le notifiche dei nuovi messaggi.</string>
     <string name="about_perm_biometric">Sblocco biometrico facoltativo.</string>
     <string name="about_perm_record_audio">Registrare messaggi audio allegati agli MMS in uscita.</string>
-    <string name="about_perm_internet">Solo ricerca GIF (Klipy). L\'app funziona anche senza di essa.</string>
+    <string name="about_perm_internet">Ricerca GIF (Klipy), anteprima dei link e sincronizzazione tra dispositivi. L\'app funziona anche senza di essa.</string>
     <string name="about_perm_foreground_service">Migrazione o backup di lunga durata.</string>
     <string name="about_perm_location">Solo modalità emergenza, se la attiva: una posizione al momento dell\'allerta, precisa o approssimativa.</string>
     <string name="about_perm_call_phone">Riquadri di chiamata d\'emergenza: chiamata diretta. Se negata, aprono l\'app Telefono.</string>
@@ -804,6 +806,7 @@
     <string name="about_source_code">Codice sorgente</string>
     <string name="about_report_issue">Segnala un problema</string>
     <string name="about_website">Sito web</string>
+    <string name="about_contact_support">Contatta l\'assistenza</string>
     <string name="about_license">Licenza</string>
     <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
     <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
@@ -844,6 +847,8 @@
     <!-- Errors -->
     <string name="error_log_title">Registro errori</string>
     <string name="error_log_info">Le segnalazioni di arresto anomalo restano su questo dispositivo. Vengono inviate solo se si sceglie di farlo.</string>
+    <string name="error_log_toggle_title">Salva registro errori</string>
+    <string name="error_log_toggle_desc">Salva le segnalazioni di arresto anomalo su questo dispositivo, così puoi condividerle se qualcosa va storto. Non viene mai inviato nulla.</string>
     <string name="error_log_empty">Ancora nessuna segnalazione di arresto anomalo.</string>
     <string name="error_log_share">Condividi</string>
     <string name="error_log_clear_all">Cancella tutto</string>
@@ -1006,7 +1011,7 @@
     <string name="about_feat_ui_label">Interfaccia fluida</string>
     <string name="about_feat_ui_desc">Compose + ricomposizione isolata per ogni bolla. Ordinamento delle conversazioni nel menu a tre punti.</string>
     <string name="about_feat_noads_label">Zero pubblicità, zero tracker</string>
-    <string name="about_feat_noads_desc">Nessuna analisi. Internet serve solo per la ricerca di GIF (Klipy); gli MMS li trasporta il servizio MMS di Android.</string>
+    <string name="about_feat_noads_desc">Nessuna analisi, nessun servizio Google. Internet serve solo per la ricerca di GIF (Klipy), l\'anteprima dei link e la sincronizzazione tra dispositivi; gli MMS li trasporta il servizio MMS di Android.</string>
 
     <!-- Help recipes (7 titles + steps) -->
     <string name="about_help_default_title">Impostare come app SMS predefinita</string>
@@ -1356,6 +1361,8 @@
     <string name="note_delete_message_body">Questa voce sarà eliminata definitivamente.</string>
     <string name="note_rename_title">Rinomina nota</string>
     <string name="note_rename_placeholder">Nome della nota</string>
+    <string name="note_edit_entry_title">Modifica voce</string>
+    <string name="note_message_edited">Modificato</string>
     <string name="note_save_failed">Impossibile salvare questa voce</string>
     <string name="note_attachment_failed">Impossibile aggiungere questo allegato</string>
     <string name="note_open_failed">Impossibile aprire questo file</string>

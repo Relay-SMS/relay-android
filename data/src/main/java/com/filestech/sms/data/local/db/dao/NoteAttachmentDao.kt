@@ -36,6 +36,27 @@ interface NoteAttachmentDao {
     @Query("SELECT * FROM note_attachments WHERE uuid = :uuid LIMIT 1")
     suspend fun findByUuid(uuid: String): NoteAttachmentEntity?
 
+    /** Phase 2 — mirror lookup: the attachment carrying this hub id, if any. */
+    @Query("SELECT * FROM note_attachments WHERE hub_attachment_id = :hubId LIMIT 1")
+    suspend fun findByHubId(hubId: Long): NoteAttachmentEntity?
+
+    /**
+     * Phase 2 — the downloader fills a mirrored attachment's
+     * `local_uri` once the bytes land (encrypted). The mirror starts
+     * the row blank, which is also what makes the download tile
+     * render.
+     */
+    @Query("UPDATE note_attachments SET local_uri = :localUri WHERE id = :id")
+    suspend fun updateLocalUri(id: Long, localUri: String)
+
+    /**
+     * Phase 2 — links a client-saved attachment to its hub id: the
+     * hub echoes attachments in send order, so the mirror zips the
+     * optimistic rows (no hub id yet) with the wire list by position.
+     */
+    @Query("UPDATE note_attachments SET hub_attachment_id = :hubId WHERE id = :id")
+    suspend fun setHubId(id: Long, hubId: Long)
+
     /** Snapshot read for the notes backup pipeline. */
     @Query("SELECT * FROM note_attachments ORDER BY id ASC")
     suspend fun listAll(): List<NoteAttachmentEntity>

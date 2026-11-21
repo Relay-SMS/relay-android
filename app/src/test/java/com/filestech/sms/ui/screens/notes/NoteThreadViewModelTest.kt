@@ -229,6 +229,33 @@ class NoteThreadViewModelTest {
         assertThat(h.vm.state.value.totalCount).isEqualTo(1)
     }
 
+    @Test fun `edit message updates the body and marks it edited`() = runTest(dispatcher) {
+        val h = harness()
+        h.repo.messagesFlow.value = listOf(message(1L, "one"), message(2L, "two"))
+        advanceUntilIdle()
+        assertThat(h.vm.state.value.messages).hasSize(2)
+
+        h.vm.editMessage(1L, "one, edited")
+        advanceUntilIdle()
+
+        val edited = h.vm.state.value.messages.first { it.id == 1L }
+        assertThat(edited.body).isEqualTo("one, edited")
+        assertThat(edited.edited).isTrue()
+        assertThat(h.vm.state.value.messages.first { it.id == 2L }.edited).isFalse()
+    }
+
+    @Test fun `blank edit is ignored`() = runTest(dispatcher) {
+        val h = harness()
+        h.repo.messagesFlow.value = listOf(message(1L, "one"))
+        advanceUntilIdle()
+
+        h.vm.editMessage(1L, "   ")
+        advanceUntilIdle()
+
+        assertThat(h.vm.state.value.messages[0].body).isEqualTo("one")
+        assertThat(h.vm.state.value.messages[0].edited).isFalse()
+    }
+
     @Test fun `draft persists to the repository on every keystroke`() = runTest(dispatcher) {
         val h = harness()
 

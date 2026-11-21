@@ -23,10 +23,18 @@ package com.filestech.sms.crashlog
  *
  * Never throws: a failed provider query or a failed write just
  * means the death goes unrecorded.
+ *
+ * Round 36 — the error-log switch ([CrashLogSettings]): the
+ * check is a writer, so it reads the flag live too. When the
+ * log is off, no entry is written — the marker is normally
+ * already gone ([SessionMarkerTracker] deletes it when the log
+ * is off), so this is the second line of defence, not the
+ * first.
  */
 class SessionDeathChecker(
     private val store: CrashReportStore,
     private val exitReasonProvider: ExitReasonProvider?,
+    private val enabled: () -> Boolean = { true },
 ) {
 
     /**
@@ -35,6 +43,7 @@ class SessionDeathChecker(
      * build/device metadata (the header of the entry).
      */
     fun check(marker: SessionMarker?, metadata: CrashMetadata) {
+        if (!enabled()) return
         val previous = marker ?: return
         val exit = runCatching { exitReasonProvider?.mostRecentExit(previous) }.getOrNull()
         if (SessionDeathClassifier.classify(exit?.reason, previous) == SessionDeathClassifier.Outcome.SILENT) {

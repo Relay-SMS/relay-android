@@ -176,6 +176,8 @@
     <string name="conversations_delete_kept_local">The conversation was not deleted: part of it could not be removed from this phone. Try again.</string>
     <string name="conversations_draft_prefix">Draft: %1$s</string>
     <string name="conversations_preview_attachment">Attachment</string>
+    <string name="invite_friends">Invite friends</string>
+    <string name="invite_friends_settings">Invite your friends</string>
 
     <!-- Thread -->
     <string name="thread_compose_placeholder">Relay message</string>
@@ -786,7 +788,7 @@
     <string name="about_perm_notifications">Show new-message notifications.</string>
     <string name="about_perm_biometric">Optional biometric unlock.</string>
     <string name="about_perm_record_audio">Record audio messages attached to outgoing MMS.</string>
-    <string name="about_perm_internet">GIF search (Klipy) and link previews only. The app works without it.</string>
+    <string name="about_perm_internet">GIF search (Klipy), link previews, and device syncing. The app works without it.</string>
     <string name="about_perm_foreground_service">Long-running migration / backup.</string>
     <string name="about_perm_location">Emergency mode only, if you turn it on: one position at the moment of the alert, precise or approximate.</string>
     <string name="about_perm_call_phone">Emergency call tiles: call directly. Refused, they open the dialer instead.</string>
@@ -799,6 +801,7 @@
     <string name="about_source_code">Source code</string>
     <string name="about_report_issue">Report an issue</string>
     <string name="about_website">Website</string>
+    <string name="about_contact_support">Contact support</string>
     <string name="about_license">License</string>
     <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
     <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
@@ -839,6 +842,8 @@
     <!-- Errors -->
     <string name="error_log_title">Error log</string>
     <string name="error_log_info">Crash reports stay on this device. Send one to us only if you choose to.</string>
+    <string name="error_log_toggle_title">Save error log</string>
+    <string name="error_log_toggle_desc">Saves crash reports on this device so you can share them if something goes wrong. Nothing is ever sent anywhere.</string>
     <string name="error_log_empty">No crash reports yet.</string>
     <string name="error_log_share">Share</string>
     <string name="error_log_clear_all">Clear all</string>
@@ -1002,7 +1007,7 @@
     <string name="about_feat_ui_label">Smooth UI</string>
     <string name="about_feat_ui_desc">Compose + per-bubble isolated recomposition. Conversation sorting in the 3-dot menu.</string>
     <string name="about_feat_noads_label">Zero ads, zero trackers</string>
-    <string name="about_feat_noads_desc">No analytics, no Google services. Internet is used only for GIF search (Klipy) and link previews; MMS are carried by Android\'s own MMS service.</string>
+    <string name="about_feat_noads_desc">No analytics, no Google services. Internet is used only for GIF search (Klipy), link previews, and device syncing; MMS are carried by Android\'s own MMS service.</string>
 
     <!-- Help recipes (7 titles + steps) -->
     <string name="about_help_default_title">Set as default SMS app</string>
@@ -1345,6 +1350,8 @@
     <string name="note_delete_message_body">This entry will be permanently deleted.</string>
     <string name="note_rename_title">Rename note</string>
     <string name="note_rename_placeholder">Note name</string>
+    <string name="note_edit_entry_title">Edit entry</string>
+    <string name="note_message_edited">Edited</string>
     <string name="note_save_failed">Couldn\'t save this entry</string>
     <string name="note_attachment_failed">Couldn\'t add this attachment</string>
     <string name="note_open_failed">Couldn\'t open this file</string>

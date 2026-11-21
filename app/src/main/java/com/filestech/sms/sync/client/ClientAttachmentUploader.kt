@@ -51,7 +51,10 @@ class ClientAttachmentUploader @Inject constructor(
      * 64 KiB chunks, await `done`. Throws [UploadError] on a phone
      * refusal, a timeout, or a dropped session. An empty file still
      * sends one final (empty) chunk — the phone waits for `final`
-     * before it verifies.
+     * before it verifies. Round 36 phase 2 — [kind] is the
+     * `attachment_upload_start` `kind` (`"note"` for a note
+     * attachment, which lifts the 280 KB MMS cap to the 25 MB note
+     * cap; null keeps the MMS cap).
      */
     suspend fun upload(
         clientMessageId: String,
@@ -59,6 +62,7 @@ class ClientAttachmentUploader @Inject constructor(
         bytes: ByteArray,
         mimeType: String,
         fileName: String?,
+        kind: String? = null,
     ) {
         val digest = sha256Hex(bytes)
         val key = "$clientMessageId:$index"
@@ -74,6 +78,7 @@ class ClientAttachmentUploader @Inject constructor(
                         fileName = fileName,
                         sizeBytes = bytes.size.toLong(),
                         sha256 = digest,
+                        kind = kind,
                     ),
                 ),
             )

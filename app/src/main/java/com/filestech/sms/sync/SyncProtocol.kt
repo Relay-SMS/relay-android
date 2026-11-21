@@ -127,6 +127,36 @@ object SyncProtocol {
      */
     const val MAX_ATTACHMENT_DOWNLOAD_BYTES = 25L * 1024 * 1024
 
+    /**
+     * Round 36 phase 2 — the largest `attachment_upload_start`
+     * with `kind: "note"` the phone accepts, in decoded bytes.
+     * Notes store originals (unlike MMS, which is capped at the
+     * 280 KB carrier payload), so the note cap matches the
+     * download cap and the note thread's own staging cap (25 MB)
+     * instead. An upload without `kind` keeps the MMS cap.
+     */
+    const val MAX_NOTE_ATTACHMENT_UPLOAD_BYTES = 25L * 1024 * 1024
+
+    /**
+     * Round 36 phase 2 — the prefix on a note attachment's
+     * download ids: `attachment_id` and `message_id` of an
+     * `attachment_request` for a note attachment are
+     * `"note:<hub id>"` (hub note-attachment ids and MMS
+     * attachment ids are independent autoincrement sequences, so
+     * a bare id is ambiguous across the two tables). Chunk frames
+     * echo the prefixed id, so the client routes them back to the
+     * note download. Mirrors the `avatar:<number>` convention.
+     */
+    const val NOTE_ATTACHMENT_ID_PREFIX = "note:"
+
+    /**
+     * Round 36 phase 2 — the `kind` value on an
+     * `attachment_upload_start` for a note attachment. A note
+     * upload is capped at [MAX_NOTE_ATTACHMENT_UPLOAD_BYTES];
+     * an upload without `kind` keeps the MMS cap.
+     */
+    const val UPLOAD_KIND_NOTE = "note"
+
     /** Lenient JSON: unknown fields are ignored, so a newer client stays readable. */
     val json = Json {
         ignoreUnknownKeys = true
@@ -194,11 +224,15 @@ object SyncProtocol {
      * [sinceMessageId] is the desktop's stored global cursor (max
      * message id it has stored), or `"0"` / omitted on a first sync;
      * ignored for [NEW_ONLY] (the cursor is set to "now").
+     * [sinceNoteMessageId] is the same cursor for note messages
+     * (round 36 phase 2): the note LIST always streams in full, but
+     * the per-note message pages page on this cursor.
      */
     @Serializable
     data class SyncRequest(
         @SerialName("mode") val mode: String,
         @SerialName("since_message_id") val sinceMessageId: String? = null,
+        @SerialName("since_note_message_id") val sinceNoteMessageId: String? = null,
     ) {
         companion object {
             /** The entire message history comes over. */
@@ -242,6 +276,11 @@ object SyncProtocol {
      * (none on the phone, or the contacts read failed — the failure
      * itself rides as `contacts_error`, never as `sync_error`, so
      * message sync proceeds regardless).
+     *
+     * Round 36 phase 2 — [cursorNoteMessageId] is the note cursor
+     * (the max note-message id on the phone when the stream
+     * started) and [totalNotes] the note count; both default to
+     * their empty values so an older hub's frame still parses.
      */
     @Serializable
     data class SyncStarted(
@@ -252,6 +291,8 @@ object SyncProtocol {
         @SerialName("hub_is_default_sms") val hubIsDefaultSms: Boolean,
         @SerialName("hub_tunnel_ip") val hubTunnelIp: String? = null,
         @SerialName("total_contacts") val totalContacts: Int = 0,
+        @SerialName("cursor_note_message_id") val cursorNoteMessageId: String = "0",
+        @SerialName("total_notes") val totalNotes: Int = 0,
     )
 
     /** Server → client: one batch of the conversation snapshot (100 per batch). */
@@ -274,10 +315,16 @@ object SyncProtocol {
         @SerialName("next_before_id") val nextBeforeId: String? = null,
     )
 
-    /** Server → client: the initial stream is finished. */
+    /**
+     * Server → client: the initial stream is finished.
+     * [cursorNoteMessageId] (round 36 phase 2) is the note cursor
+     * the client persists alongside the message cursor; `"0"` when
+     * the phone holds no note messages yet.
+     */
     @Serializable
     data class SyncComplete(
         @SerialName("cursor_message_id") val cursorMessageId: String,
+        @SerialName("cursor_note_message_id") val cursorNoteMessageId: String = "0",
     )
 
     /** Server → client: one live message (a burst arrives as several frames). */
@@ -627,7 +674,11 @@ object SyncProtocol {
      * [index] is the attachment's position in the send (0-based).
      * The phone answers `attachment_upload_ready` or
      * `attachment_upload_error` — the desktop sends no chunks before
-     * `ready`.
+     * `ready`. Round 36 phase 2 — [kind] is `"note"` for a note
+     * attachment (capped at [MAX_NOTE_ATTACHMENT_UPLOAD_BYTES]);
+     * absent means an MMS send (capped at the 280 KB carrier
+     * payload). The chunks carry no kind — the start frame sets it
+     * for the whole upload session.
      */
     @Serializable
     data class AttachmentUploadStart(
@@ -637,6 +688,7 @@ object SyncProtocol {
         @SerialName("file_name") val fileName: String? = null,
         @SerialName("size_bytes") val sizeBytes: Long,
         @SerialName("sha256") val sha256: String,
+        @SerialName("kind") val kind: String? = null,
     )
 
     /**
@@ -678,7 +730,11 @@ object SyncProtocol {
         @SerialName("message") val message: String,
     ) {
         companion object {
-            /** A single file over the 280 KB MMS cap — it could never be sent anyway. */
+            /**
+             * Over the upload cap — the 280 KB MMS cap for a send
+             * upload, [MAX_NOTE_ATTACHMENT_UPLOAD_BYTES] for a note
+             * upload (`kind: "note"`).
+             */
             const val UPLOAD_TOO_LARGE = "upload_too_large"
 
             /** SHA-256 mismatch at `final` — the partial is deleted. */
@@ -1025,6 +1081,212 @@ object SyncProtocol {
         @SerialName("muted") val muted: Boolean,
     )
 
+    // -- Round 36 phase 2: notes sync (SYNC_PROTOCOL.md, Notes sync) --
+
+    /** Server → client: one batch of the note snapshot (100 per batch). */
+    @Serializable
+    data class Notes(
+        @SerialName("notes") val notes: List<SyncedNote>,
+        @SerialName("has_more") val hasMore: Boolean,
+    )
+
+    /**
+     * Server → client: one page of one note's entries, newest first.
+     * [nextBeforeId] is passed back as `before_id` for the next page;
+     * absent when [hasMore] is false.
+     */
+    @Serializable
+    data class NoteMessagesBatch(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("messages") val messages: List<SyncedNoteMessage>,
+        @SerialName("has_more") val hasMore: Boolean,
+        @SerialName("next_before_id") val nextBeforeId: String? = null,
+    )
+
+    /**
+     * Server → client: the note a `create_note` just made — the full
+     * row, sent to the requesting session only. The other sessions
+     * learn about it via `note_new`.
+     */
+    @Serializable
+    data class NoteCreated(
+        @SerialName("note") val note: SyncedNote,
+    )
+
+    /** Server → client: a note was created (pushed to the OTHER sessions). */
+    @Serializable
+    data class NoteNew(
+        @SerialName("note") val note: SyncedNote,
+    )
+
+    /** Server → client: a note row changed — the full row is sent. */
+    @Serializable
+    data class NoteUpdated(
+        @SerialName("note") val note: SyncedNote,
+    )
+
+    /** Server → client: a note was deleted. */
+    @Serializable
+    data class NoteDeleted(
+        @SerialName("note_id") val noteId: String,
+    )
+
+    /** Server → client: one live note entry (a burst arrives as several frames). */
+    @Serializable
+    data class NoteMessageNew(
+        @SerialName("message") val message: SyncedNoteMessage,
+    )
+
+    /** Server → client: a note entry was deleted. */
+    @Serializable
+    data class NoteMessageDeleted(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("message_id") val messageId: String,
+    )
+
+    /**
+     * Server → client: a note entry's text was edited — the full row
+     * is sent (the client upserts it, so the "Edited" marker and the
+     * new body land together). This is also the success signal for
+     * `edit_note_message`: the broadcast goes to ALL sessions,
+     * including the requester.
+     */
+    @Serializable
+    data class NoteMessageUpdated(
+        @SerialName("message") val message: SyncedNoteMessage,
+    )
+
+    /**
+     * Client → server: create a note. [clientNoteId] is the client's
+     * UUID dedup key: the hub stores it on the row, so a retried
+     * create lands on the same note instead of duplicating it.
+     * Answered by `note_created`, or `action_result` `ok: false`
+     * (`action: "create_note"`) on failure.
+     */
+    @Serializable
+    data class CreateNote(
+        @SerialName("client_note_id") val clientNoteId: String,
+        @SerialName("title") val title: String,
+    )
+
+    /**
+     * Client → server: save an entry to a note. [clientMessageId]
+     * is the client's UUID dedup key (same rule as `create_note`).
+     * [attachments] reuses [SendAttachment]: an upload reference
+     * ([uploadIndex] + metadata) per file, uploaded beforehand with
+     * `kind: "note"`. Answered by `note_message_saved` or
+     * `note_message_failed`.
+     */
+    @Serializable
+    data class SaveNoteMessage(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("note_id") val noteId: String,
+        @SerialName("body") val body: String,
+        @SerialName("attachments") val attachments: List<SendAttachment>? = null,
+    )
+
+    /** Server → client: the `save_note_message` ack — the entry's hub id. */
+    @Serializable
+    data class NoteMessageSaved(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("message_id") val messageId: String,
+        @SerialName("note_id") val noteId: String,
+    )
+
+    /** Server → client: the `save_note_message` refusal. */
+    @Serializable
+    data class NoteMessageFailed(
+        @SerialName("client_message_id") val clientMessageId: String,
+        @SerialName("note_id") val noteId: String,
+        @SerialName("code") val code: String,
+        @SerialName("message") val message: String,
+    ) {
+        companion object {
+            /** No note carries that id. */
+            const val UNKNOWN_NOTE = "unknown_note"
+
+            /**
+             * No entry carries that id — used by the
+             * `edit_note_message` / `delete_note_message`
+             * `action_result` refusals, never by `note_message_failed`
+             * itself (a save has no entry id yet).
+             */
+            const val UNKNOWN_MESSAGE = "unknown_message"
+
+            /** The entry is over the [MAX_SEND_BODY_BYTES] wire cap. */
+            const val MESSAGE_TOO_LONG = "message_too_long"
+
+            /** An upload the save references expired (24 h TTL) or never landed. */
+            const val UPLOAD_EXPIRED = "upload_expired"
+
+            /** Anything else; [NoteMessageFailed.message] stays generic. */
+            const val INTERNAL = "internal"
+        }
+    }
+
+    /**
+     * Client → server: edit a note entry's text. No client key —
+     * edits are idempotent (re-sending the same edit is a no-op),
+     * and the success signal is the `note_message_updated`
+     * broadcast, not an ack. A refusal answers `action_result`
+     * `ok: false` (`action: "edit_note_message"`, `code` one of
+     * `unknown_note` / `unknown_message` / `message_too_long` /
+     * `internal`) and the client reverts its optimistic edit.
+     */
+    @Serializable
+    data class EditNoteMessage(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("message_id") val messageId: String,
+        @SerialName("body") val body: String,
+    )
+
+    /** Client → server: rename a note. Answered by `action_result`. */
+    @Serializable
+    data class RenameNote(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("title") val title: String,
+    )
+
+    /** Client → server: delete a note. Answered by `action_result`. */
+    @Serializable
+    data class DeleteNote(
+        @SerialName("note_id") val noteId: String,
+    )
+
+    /** Client → server: delete one entry. Answered by `action_result`. */
+    @Serializable
+    data class DeleteNoteMessage(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("message_id") val messageId: String,
+    )
+
+    /** Client → server: pin / unpin a note. Answered by `action_result`. */
+    @Serializable
+    data class SetNotePin(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("value") val value: Boolean,
+    )
+
+    /** Client → server: archive / unarchive a note. Answered by `action_result`. */
+    @Serializable
+    data class SetNoteArchived(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("value") val value: Boolean,
+    )
+
+    /**
+     * Client → server: targeted fetch of one note's entries.
+     * [beforeId] fetches entries with id strictly below it, newest
+     * first (`"0"` / omitted = newest); [limit] is capped at 200 by
+     * the server. Answered by `note_messages_batch`.
+     */
+    @Serializable
+    data class NoteMessagesRequest(
+        @SerialName("note_id") val noteId: String,
+        @SerialName("before_id") val beforeId: String? = null,
+        @SerialName("limit") val limit: Int? = null,
+    )
+
     /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
@@ -1057,6 +1319,15 @@ object SyncProtocol {
         data class CreateConversation(val value: SyncProtocol.CreateConversation) : Parsed
         data class SetContactPhoto(val value: SyncProtocol.SetContactPhoto) : Parsed
         data class DialRequest(val value: SyncProtocol.DialRequest) : Parsed
+        data class CreateNote(val value: SyncProtocol.CreateNote) : Parsed
+        data class SaveNoteMessage(val value: SyncProtocol.SaveNoteMessage) : Parsed
+        data class EditNoteMessage(val value: SyncProtocol.EditNoteMessage) : Parsed
+        data class RenameNote(val value: SyncProtocol.RenameNote) : Parsed
+        data class DeleteNote(val value: SyncProtocol.DeleteNote) : Parsed
+        data class DeleteNoteMessage(val value: SyncProtocol.DeleteNoteMessage) : Parsed
+        data class SetNotePin(val value: SyncProtocol.SetNotePin) : Parsed
+        data class SetNoteArchived(val value: SyncProtocol.SetNoteArchived) : Parsed
+        data class NoteMessagesRequest(val value: SyncProtocol.NoteMessagesRequest) : Parsed
         data class Unknown(val type: String?) : Parsed
         data object Malformed : Parsed
     }
@@ -1096,8 +1367,11 @@ object SyncProtocol {
      * Slice 4 attachment frames, the Phase 2 schedule frames, the
      * Slice 5 contact frames, the create-conversation frame, the
      * round-3 contact-photo frame, the live-calls dial frame, and
-     * the category-mute frame. A well-formed message of an unknown
-     * type comes back as [Parsed.Unknown], like in [parse].
+     * the category-mute frame. The note frames live in
+     * [parseNoteFrames] — one more `when` arm here would push this
+     * function over the Detekt complexity cap (40). A well-formed
+     * message of an unknown type comes back as [Parsed.Unknown],
+     * like in [parse].
      */
     private fun parseRemaining(type: String, obj: JsonObject): Parsed = when (type) {
         "set_pin" -> decode<SetPin>(obj)?.let(Parsed::SetPin) ?: Parsed.Malformed
@@ -1117,6 +1391,20 @@ object SyncProtocol {
         "create_conversation" -> decode<CreateConversation>(obj)?.let(Parsed::CreateConversation) ?: Parsed.Malformed
         "set_contact_photo" -> decode<SetContactPhoto>(obj)?.let(Parsed::SetContactPhoto) ?: Parsed.Malformed
         "dial_request" -> decode<DialRequest>(obj)?.let(Parsed::DialRequest) ?: Parsed.Malformed
+        else -> parseNoteFrames(type, obj)
+    }
+
+    /** The third part of [parse]: the round-36 phase-2 note frames. */
+    private fun parseNoteFrames(type: String, obj: JsonObject): Parsed = when (type) {
+        "create_note" -> decode<CreateNote>(obj)?.let(Parsed::CreateNote) ?: Parsed.Malformed
+        "save_note_message" -> decode<SaveNoteMessage>(obj)?.let(Parsed::SaveNoteMessage) ?: Parsed.Malformed
+        "edit_note_message" -> decode<EditNoteMessage>(obj)?.let(Parsed::EditNoteMessage) ?: Parsed.Malformed
+        "rename_note" -> decode<RenameNote>(obj)?.let(Parsed::RenameNote) ?: Parsed.Malformed
+        "delete_note" -> decode<DeleteNote>(obj)?.let(Parsed::DeleteNote) ?: Parsed.Malformed
+        "delete_note_message" -> decode<DeleteNoteMessage>(obj)?.let(Parsed::DeleteNoteMessage) ?: Parsed.Malformed
+        "set_note_pin" -> decode<SetNotePin>(obj)?.let(Parsed::SetNotePin) ?: Parsed.Malformed
+        "set_note_archived" -> decode<SetNoteArchived>(obj)?.let(Parsed::SetNoteArchived) ?: Parsed.Malformed
+        "note_messages_request" -> decode<NoteMessagesRequest>(obj)?.let(Parsed::NoteMessagesRequest) ?: Parsed.Malformed
         else -> Parsed.Unknown(type)
     }
 
@@ -1212,6 +1500,36 @@ object SyncProtocol {
     fun encodeCallState(value: CallState): String = withType(value, "call_state").toString()
 
     fun encodeDialResult(value: DialResult): String = withType(value, "dial_result").toString()
+
+    // -- Round 36 phase 2: notes sync encoders -------------------------
+
+    fun encodeNotes(value: Notes): String = withType(value, "notes").toString()
+
+    fun encodeNoteMessagesBatch(value: NoteMessagesBatch): String =
+        withType(value, "note_messages_batch").toString()
+
+    fun encodeNoteCreated(value: NoteCreated): String = withType(value, "note_created").toString()
+
+    fun encodeNoteNew(value: NoteNew): String = withType(value, "note_new").toString()
+
+    fun encodeNoteUpdated(value: NoteUpdated): String = withType(value, "note_updated").toString()
+
+    fun encodeNoteDeleted(value: NoteDeleted): String = withType(value, "note_deleted").toString()
+
+    fun encodeNoteMessageNew(value: NoteMessageNew): String =
+        withType(value, "note_message_new").toString()
+
+    fun encodeNoteMessageDeleted(value: NoteMessageDeleted): String =
+        withType(value, "note_message_deleted").toString()
+
+    fun encodeNoteMessageUpdated(value: NoteMessageUpdated): String =
+        withType(value, "note_message_updated").toString()
+
+    fun encodeNoteMessageSaved(value: NoteMessageSaved): String =
+        withType(value, "note_message_saved").toString()
+
+    fun encodeNoteMessageFailed(value: NoteMessageFailed): String =
+        withType(value, "note_message_failed").toString()
 
     /**
      * The `type` field is not part of the data classes (it is routing,

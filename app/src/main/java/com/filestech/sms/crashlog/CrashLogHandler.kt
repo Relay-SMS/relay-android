@@ -27,6 +27,13 @@ import kotlin.system.exitProcess
  * There is no network, no upload, and no third-party code on this
  * path; the report only leaves the device if the user shares it
  * from the Error log screen.
+ *
+ * Round 36 — the error-log switch ([CrashLogSettings]): the
+ * handler reads the flag live at crash time (through
+ * [CrashLogSettings.enabled]), so turning the log off
+ * mid-session stops the very next crash from being recorded.
+ * When the log is off, [recordCrash] writes nothing and the
+ * process dies exactly as it would with no handler at all.
  */
 object CrashLogHandler {
 
@@ -37,9 +44,10 @@ object CrashLogHandler {
         if (!installed.compareAndSet(false, true)) return
         val store = CrashReportStore(File(context.filesDir, CrashReportStore.DIR_NAME))
         val markerStore = SessionMarkerStore(File(context.filesDir, CrashReportStore.DIR_NAME))
+        val settings = CrashLogSettings(context)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            recordCrash(store, markerStore, collectMetadata(), throwable)
+            recordCrash(store, markerStore, collectMetadata(), throwable, settings::enabled)
             if (previous != null) {
                 previous.uncaughtException(thread, throwable)
             } else {
@@ -60,6 +68,11 @@ object CrashLogHandler {
      * the death from the exit reason instead (a fallback record,
      * not a duplicate). Internal for tests. Never throws.
      *
+     * Round 36 — [enabled] is the error-log switch, read live:
+     * when it returns false, nothing is written and the marker
+     * is left alone (there is none to clean up: with the log
+     * off, the tracker never writes one).
+     *
      * @return true when the report was written.
      */
     internal fun recordCrash(
@@ -67,7 +80,9 @@ object CrashLogHandler {
         markerStore: SessionMarkerStore,
         metadata: CrashMetadata,
         throwable: Throwable,
+        enabled: () -> Boolean = { true },
     ): Boolean {
+        if (!enabled()) return false
         return runCatching {
             val text = CrashReportFormatter.format(metadata, throwable)
             val crashType = throwable.javaClass.simpleName.ifBlank { "Unknown" }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.GraphicEq
@@ -214,7 +215,7 @@ fun AboutScreen(
                         context,
                         Intent(
                             Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com/realquink/relay/issues/new")
+                            Uri.parse("https://github.com/relay-sms/relay-android/issues/new")
                         )
                     )
                 }) {
@@ -229,6 +230,23 @@ fun AboutScreen(
                         icon = Icons.Outlined.Language,
                         title = stringResource(R.string.about_website),
                         subtitle = WEBSITE_URL,
+                        chevron = true,
+                    )
+                }
+                // Round 36 — contact support by email: opens the
+                // email app with the Relay support address. An
+                // email address reveals nothing, so the row stays
+                // visible in a panic-decoy session.
+                item(onClick = {
+                    safeStartActivity(
+                        context,
+                        Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$SUPPORT_EMAIL")),
+                    )
+                }) {
+                    RelaySettingRow(
+                        icon = Icons.Outlined.Email,
+                        title = stringResource(R.string.about_contact_support),
+                        subtitle = SUPPORT_EMAIL,
                         chevron = true,
                     )
                 }
@@ -389,12 +407,15 @@ private fun safeStartActivity(context: android.content.Context, intent: android.
 // ces deux liens rendaient 404 depuis toujours. Ce n'est pas une affaire de casse (GitHub
 // l'ignore) mais de separateur, tiret contre soulignement. Seul RELEASES_URL etait juste, ce
 // qui a masque le defaut : une des trois surfaces marchait.
-private const val REPO_URL = "https://github.com/realquink/relay"
-private const val RELEASES_URL = "https://github.com/realquink/relay/releases/latest"
+private const val REPO_URL = "https://github.com/relay-sms/relay-android"
+private const val RELEASES_URL = "https://github.com/relay-sms/relay-android/releases/latest"
 
-// Relay has no standalone website yet; the repo is the project page for now.
-private const val WEBSITE_URL = "https://github.com/realquink/relay"
-private const val LEGAL_BASE_URL = "https://github.com/realquink/relay/blob/main/"
+// Round 36 — Relay has its own website now.
+private const val WEBSITE_URL = "https://getrelaysms.com"
+private const val LEGAL_BASE_URL = "https://github.com/relay-sms/relay-android/blob/main/"
+
+/** Round 36 — the support email, shown on the About screen. */
+private const val SUPPORT_EMAIL = "support@getrelaysms.com"
 
 /** Langues dans lesquelles PRIVACY et TERMS ont une traduction ; l'anglais est `PRIVACY.md`. */
 private val LANGUES_DES_TEXTES_JURIDIQUES = setOf("fr", "de", "it", "es")

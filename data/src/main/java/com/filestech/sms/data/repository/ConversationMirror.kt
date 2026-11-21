@@ -3,6 +3,7 @@ package com.filestech.sms.data.repository
 import androidx.room.withTransaction
 import com.filestech.sms.core.ext.blockKey
 import com.filestech.sms.core.ext.stripMmsAddressSuffix
+import com.filestech.sms.data.categories.StickyCategoryStore
 import com.filestech.sms.data.local.db.AppDatabase
 import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
@@ -50,6 +51,11 @@ class ConversationMirror @Inject constructor(
     // pointaient ensuite vers une conversation qui n'existe plus.
     private val notifications: com.filestech.sms.domain.notification.ConversationNotificationCanceller,
     @IoDispatcher private val io: CoroutineDispatcher,
+    // Round 35 — the sticky category store (receive-time filing). Hilt
+    // injects the shared @Singleton; the default keeps the existing
+    // unit tests constructing the mirror without it (it builds from the
+    // mirror's own DAOs, so a test's fake DAOs still back it).
+    private val stickyCategories: StickyCategoryStore = StickyCategoryStore(conversationDao, messageDao),
 ) : OutgoingMessageMirror {
 
     /**
@@ -146,6 +152,10 @@ class ConversationMirror @Inject constructor(
             // unitaire ne l'avait pas été.
             val insertedId = messageDao.insert(msg)
             if (insertedId > 0L) {
+                // Round 35 — sticky filing from the FULL body, BEFORE the
+                // touch: the store's newest-wins guard compares against
+                // the pre-touch `lastMessageAt`.
+                stickyCategories.onIncomingMessage(convId, body, PhoneAddress.of(address), date)
                 touchConversation(convId, date, body, deltaUnread = +1)
                 insertedId
             } else {
@@ -1186,6 +1196,11 @@ class ConversationMirror @Inject constructor(
                     },
                 )
             }
+            // Round 35 — sticky filing from the caption (the stored body),
+            // not the preview label: an MMS caption can carry the promo
+            // signal ("Reply STOP to opt out") the label never shows.
+            // BEFORE the touch, for the store's newest-wins guard.
+            stickyCategories.onIncomingMessage(convId, storedBody, PhoneAddress.of(address), date)
             touchConversation(convId, date, previewLabel, deltaUnread = +1)
             InscriptionMmsRecu(msgId, nouveau = true)
         }
@@ -1964,6 +1979,13 @@ class ConversationMirror @Inject constructor(
      * depuis la notification (sans ouvrir le fil) laissait le compteur à 1 alors
      * que l'utilisateur venait d'écrire. Les envois passent `resetUnread = true` ;
      * les réceptions gardent `deltaUnread = +1`.
+     *
+     * Round 35 — répondre efface aussi la catégorie collante : la
+     * conversation redevient classée sur son dernier message (le texte de
+     * l'utilisateur, donc Personnel). Seuls les chemins d'envoi passent
+     * `resetUnread = true`, donc c'est le seul endroit où l'effacement
+     * peut se faire ; la réception ne touche jamais la colonne ici (elle
+     * passe par `StickyCategoryStore`, qui a besoin du corps complet).
      */
     private suspend fun touchConversation(
         convId: Long,
@@ -1993,6 +2015,7 @@ class ConversationMirror @Inject constructor(
                 lastMessagePreview =
                 if (isNewest) preview.take(MAX_PREVIEW) else current.lastMessagePreview,
                 unreadCount = if (resetUnread) 0 else (current.unreadCount + deltaUnread).coerceAtLeast(0),
+                stickyCategory = if (resetUnread) null else current.stickyCategory,
             ),
         )
     }
@@ -2203,6 +2226,13 @@ class ConversationMirror @Inject constructor(
                             ),
                         )
                         upsertSyncedAttachments(attachmentDao, optimistic.id, data.attachments)
+                        // Round 35 — a hub echo of our own send un-sticks
+                        // the thread. The touch here must not reset the
+                        // hub-owned unread count, so the clear is
+                        // explicit rather than riding `resetUnread`.
+                        if (data.direction == MessageDirection.OUTGOING) {
+                            stickyCategories.onOutgoingMessage(optimistic.conversationId)
+                        }
                         touchConversation(
                             convId = optimistic.conversationId,
                             date = data.date,
@@ -2259,6 +2289,21 @@ class ConversationMirror @Inject constructor(
                 }
                 if (localId != -1L) {
                     upsertSyncedAttachments(attachmentDao, localId, data.attachments)
+                    // Round 35 — the client computes its sticky category
+                    // locally from the frame's full body (no protocol
+                    // change): an incoming message files, an outgoing
+                    // one un-sticks. BEFORE the touch, for the store's
+                    // newest-wins guard.
+                    if (data.direction == MessageDirection.OUTGOING) {
+                        stickyCategories.onOutgoingMessage(convId)
+                    } else {
+                        stickyCategories.onIncomingMessage(
+                            convId,
+                            data.body,
+                            PhoneAddress.of(data.address),
+                            data.date,
+                        )
+                    }
                     touchConversation(
                         convId = convId,
                         date = data.date,

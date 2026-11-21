@@ -3,6 +3,9 @@ package com.filestech.sms.sync
 import com.filestech.sms.sync.calls.DialOutcome
 import com.filestech.sms.sync.calls.FakeCallDialer
 import com.google.common.truth.Truth.assertThat
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -205,6 +208,90 @@ class SyncSessionHandlerTest {
             assertThat(types).contains("sync_started")
             assertThat(types).contains("sync_complete")
             assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+        }
+    }
+
+    // -- Round 36 phase 2: note frames --------------------------------
+
+    @Test fun `create_note before auth fails with protocol`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText(
+            """{"type":"create_note","client_note_id":"uuid-9","title":"Ideas"}""",
+        )
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `note frames after auth dispatch to the note engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        val noteSource = mockk<NoteSyncSource>(relaxed = true)
+        coEvery { noteSource.createNote(any(), any()) } returns CreateNoteResult.Created(
+            SyncedNote(
+                id = "7",
+                title = "Ideas",
+                createdAt = 1000L,
+                updatedAt = 1000L,
+                lastMessageAt = null,
+                lastMessagePreview = null,
+                pinned = false,
+                archived = false,
+                messageCount = 0,
+            ),
+        )
+        val sent = mutableListOf<String>()
+        val engine = SyncEngine(
+            source,
+            this,
+            send = { sent += it },
+            wakelock = NoOpSyncWakelock,
+            noteSource = noteSource,
+        )
+        try {
+            assertThat(engine.noteEngine).isNotNull()
+            val harness = Harness(mapOf(DEVICE_ID to device), engine, sent)
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            assertThat(harness.handler.isAuthenticated).isTrue()
+            advanceUntilIdle()
+            harness.handler.onText(
+                """{"type":"create_note","client_note_id":"uuid-9","title":"Ideas"}""",
+            )
+            advanceUntilIdle()
+            val types = sent.map {
+                Json.parseToJsonElement(it).jsonObject["type"]?.jsonPrimitive?.content
+            }
+            assertThat(types).contains("note_created")
+            assertThat(harness.closes).isEmpty()
+            coVerify { noteSource.createNote("uuid-9", "Ideas") }
+        } finally {
+            engine.stop()
+        }
+    }
+
+    @Test fun `note frames after auth without a note engine are ignored`() = runTest {
+        // A SyncEngine built without a note source (the production
+        // hub always has one; tests may not) never crashes on a
+        // note frame — the dispatch is a no-op.
+        val source = FakeSyncMessageSource()
+        val sent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { sent += it }, wakelock = NoOpSyncWakelock)
+        try {
+            assertThat(engine.noteEngine).isNull()
+            val harness = Harness(mapOf(DEVICE_ID to device), engine, sent)
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+            advanceUntilIdle()
+            val sentAfterAuth = sent.size
+            harness.handler.onText(
+                """{"type":"create_note","client_note_id":"uuid-9","title":"Ideas"}""",
+            )
+            advanceUntilIdle()
+            assertThat(sent).hasSize(sentAfterAuth)
+            assertThat(harness.closes).isEmpty()
+            assertThat(harness.handler.isAuthenticated).isTrue()
         } finally {
             engine.stop()
         }

@@ -19,6 +19,8 @@ import com.filestech.sms.sync.client.ConversationMirrorAdapter
 import com.filestech.sms.sync.client.DataStoreSyncPauseStore
 import com.filestech.sms.sync.client.DeviceIdleMonitor
 import com.filestech.sms.sync.client.NetworkAvailabilityMonitor
+import com.filestech.sms.sync.client.NoteMirror
+import com.filestech.sms.sync.client.NoteMirrorAdapter
 import com.filestech.sms.sync.client.RoomSyncStateStore
 import com.filestech.sms.sync.client.SyncPauseStore
 import com.filestech.sms.sync.client.SyncStateStore
@@ -129,6 +131,11 @@ object ClientSyncModule {
     @Provides
     @Singleton
     fun provideClientMirror(adapter: ConversationMirrorAdapter): ClientMirror = adapter
+
+    /** Round 36 phase 2 — the note mirror is the `NoteRepository` adapter. */
+    @Provides
+    @Singleton
+    fun provideNoteMirror(adapter: NoteMirrorAdapter): NoteMirror = adapter
 
     /** Client mode C3 — the send gateway is the send manager. */
     @Provides

@@ -291,7 +291,12 @@ class ConversationRepositoryImpl @Inject constructor(
             if (inVault && (lockState is AppLockManager.LockState.PanicDecoy || !vaultOpen)) {
                 emptyList()
             } else {
-                rows.map { it.toDomain() }
+                // Round 36 — the media query also carries the
+                // message's system MMS id, for the gallery's
+                // fallback probe when the cache file is gone; it
+                // is applied here, on top of the shared mapper
+                // (see `AttachmentWithMessage.toDomain`).
+                rows.map { it.toDomain().copy(mmsSystemId = it.mmsSystemId) }
             }
         }.flowOn(io)
 

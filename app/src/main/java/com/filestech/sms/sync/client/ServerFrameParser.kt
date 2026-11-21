@@ -57,6 +57,17 @@ sealed interface ServerFrame {
     data class IncomingCall(val value: SyncProtocol.IncomingCall) : ServerFrame
     data class CallState(val value: SyncProtocol.CallState) : ServerFrame
     data class DialResult(val value: SyncProtocol.DialResult) : ServerFrame
+    data class Notes(val value: SyncProtocol.Notes) : ServerFrame
+    data class NoteMessagesBatch(val value: SyncProtocol.NoteMessagesBatch) : ServerFrame
+    data class NoteCreated(val value: SyncProtocol.NoteCreated) : ServerFrame
+    data class NoteNew(val value: SyncProtocol.NoteNew) : ServerFrame
+    data class NoteUpdated(val value: SyncProtocol.NoteUpdated) : ServerFrame
+    data class NoteDeleted(val value: SyncProtocol.NoteDeleted) : ServerFrame
+    data class NoteMessageNew(val value: SyncProtocol.NoteMessageNew) : ServerFrame
+    data class NoteMessageDeleted(val value: SyncProtocol.NoteMessageDeleted) : ServerFrame
+    data class NoteMessageUpdated(val value: SyncProtocol.NoteMessageUpdated) : ServerFrame
+    data class NoteMessageSaved(val value: SyncProtocol.NoteMessageSaved) : ServerFrame
+    data class NoteMessageFailed(val value: SyncProtocol.NoteMessageFailed) : ServerFrame
     data class Unknown(val type: String?) : ServerFrame
     data object Malformed : ServerFrame
 }
@@ -135,9 +146,9 @@ object ServerFrameParser {
 
     /**
      * The third part of [parse]: the attachment, schedule, contact
-     * and create-conversation frames. A well-formed message of an
-     * unknown type comes back as [ServerFrame.Unknown], like in
-     * [parse].
+     * and create-conversation frames. The note frames live in
+     * [parseNoteFrames]: one `when` for all of them pushed this
+     * function over the Detekt complexity cap (40).
      */
     private fun parseLiveFrames(type: String, obj: JsonObject): ServerFrame = when (type) {
         "attachment_chunk" -> decode<SyncProtocol.AttachmentChunk>(obj)
@@ -164,11 +175,43 @@ object ServerFrameParser {
             ?: ServerFrame.Malformed
         "conversation_created" -> decode<SyncProtocol.ConversationCreated>(obj)
             ?.let(ServerFrame::ConversationCreated) ?: ServerFrame.Malformed
+        else -> parseNoteFrames(type, obj)
+    }
+
+    /**
+     * The fourth part of [parse]: the round-36 phase-2 note frames.
+     * The call frames live in [parseCallFrames]. A well-formed
+     * message of an unknown type comes back as [ServerFrame.Unknown],
+     * like in [parse].
+     */
+    private fun parseNoteFrames(type: String, obj: JsonObject): ServerFrame = when (type) {
+        "notes" -> decode<SyncProtocol.Notes>(obj)?.let(ServerFrame::Notes)
+            ?: ServerFrame.Malformed
+        "note_messages_batch" -> decode<SyncProtocol.NoteMessagesBatch>(obj)
+            ?.let(ServerFrame::NoteMessagesBatch) ?: ServerFrame.Malformed
+        "note_created" -> decode<SyncProtocol.NoteCreated>(obj)?.let(ServerFrame::NoteCreated)
+            ?: ServerFrame.Malformed
+        "note_new" -> decode<SyncProtocol.NoteNew>(obj)?.let(ServerFrame::NoteNew)
+            ?: ServerFrame.Malformed
+        "note_updated" -> decode<SyncProtocol.NoteUpdated>(obj)?.let(ServerFrame::NoteUpdated)
+            ?: ServerFrame.Malformed
+        "note_deleted" -> decode<SyncProtocol.NoteDeleted>(obj)?.let(ServerFrame::NoteDeleted)
+            ?: ServerFrame.Malformed
+        "note_message_new" -> decode<SyncProtocol.NoteMessageNew>(obj)
+            ?.let(ServerFrame::NoteMessageNew) ?: ServerFrame.Malformed
+        "note_message_deleted" -> decode<SyncProtocol.NoteMessageDeleted>(obj)
+            ?.let(ServerFrame::NoteMessageDeleted) ?: ServerFrame.Malformed
+        "note_message_updated" -> decode<SyncProtocol.NoteMessageUpdated>(obj)
+            ?.let(ServerFrame::NoteMessageUpdated) ?: ServerFrame.Malformed
+        "note_message_saved" -> decode<SyncProtocol.NoteMessageSaved>(obj)
+            ?.let(ServerFrame::NoteMessageSaved) ?: ServerFrame.Malformed
+        "note_message_failed" -> decode<SyncProtocol.NoteMessageFailed>(obj)
+            ?.let(ServerFrame::NoteMessageFailed) ?: ServerFrame.Malformed
         else -> parseCallFrames(type, obj)
     }
 
     /**
-     * The fourth part of [parse]: the live-call frames
+     * The fifth part of [parse]: the live-call frames
      * (`incoming_call`, `call_state`, `dial_result`). A well-formed
      * message of an unknown type comes back as [ServerFrame.Unknown],
      * like in [parse].
@@ -203,10 +246,18 @@ object ClientFrames {
     /**
      * Client mode C2 — encodes a `sync_request` (`full` or `new_only`,
      * with the stored cursor when this is a delta). A null cursor is
-     * omitted, which the hub reads as `"0"` (first sync).
+     * omitted, which the hub reads as `"0"` (first sync). Round 36
+     * phase 2 — [sinceNoteMessageId] is the note cursor, same rule.
      */
-    fun encodeSyncRequest(mode: String, sinceMessageId: String?): String =
-        withType(SyncProtocol.SyncRequest(mode, sinceMessageId), "sync_request").toString()
+    fun encodeSyncRequest(
+        mode: String,
+        sinceMessageId: String?,
+        sinceNoteMessageId: String? = null,
+    ): String =
+        withType(
+            SyncProtocol.SyncRequest(mode, sinceMessageId, sinceNoteMessageId),
+            "sync_request",
+        ).toString()
 
     /**
      * Client mode C2 — encodes a `messages_request`: one page of one
@@ -290,6 +341,44 @@ object ClientFrames {
     /** Client mode C5 — encodes an `attachment_upload_chunk` (one streamed upload chunk). */
     fun encodeAttachmentUploadChunk(value: SyncProtocol.AttachmentUploadChunk): String =
         withType(value, "attachment_upload_chunk").toString()
+
+    // -- Round 36 phase 2: notes sync ----------------------------------
+
+    /** Encodes a `create_note` (the client UUID dedup key + the title). */
+    fun encodeCreateNote(value: SyncProtocol.CreateNote): String =
+        withType(value, "create_note").toString()
+
+    /** Encodes a `save_note_message` (one entry, with its upload references). */
+    fun encodeSaveNoteMessage(value: SyncProtocol.SaveNoteMessage): String =
+        withType(value, "save_note_message").toString()
+
+    /** Encodes an `edit_note_message` (an entry's new text). */
+    fun encodeEditNoteMessage(value: SyncProtocol.EditNoteMessage): String =
+        withType(value, "edit_note_message").toString()
+
+    /** Encodes a `rename_note`. */
+    fun encodeRenameNote(value: SyncProtocol.RenameNote): String =
+        withType(value, "rename_note").toString()
+
+    /** Encodes a `delete_note`. */
+    fun encodeDeleteNote(value: SyncProtocol.DeleteNote): String =
+        withType(value, "delete_note").toString()
+
+    /** Encodes a `delete_note_message`. */
+    fun encodeDeleteNoteMessage(value: SyncProtocol.DeleteNoteMessage): String =
+        withType(value, "delete_note_message").toString()
+
+    /** Encodes a `set_note_pin`. */
+    fun encodeSetNotePin(value: SyncProtocol.SetNotePin): String =
+        withType(value, "set_note_pin").toString()
+
+    /** Encodes a `set_note_archived`. */
+    fun encodeSetNoteArchived(value: SyncProtocol.SetNoteArchived): String =
+        withType(value, "set_note_archived").toString()
+
+    /** Encodes a `note_messages_request` (one page of one note's entries). */
+    fun encodeNoteMessagesRequest(value: SyncProtocol.NoteMessagesRequest): String =
+        withType(value, "note_messages_request").toString()
 
     private inline fun <reified T> withType(value: T, type: String): JsonObject {
         val obj = SyncProtocol.json.encodeToJsonElement(serializer(), value).jsonObject

@@ -67,6 +67,12 @@ import com.filestech.sms.ui.theme.onBrandBlue
 enum class BurstPosition { Solo, First, Middle, Last }
 
 @OptIn(ExperimentalFoundationApi::class)
+// 20 parameters, at the Detekt threshold: the notes round added
+// `onEdit` (message editing, round 36 phase 2) — it cannot be
+// dropped, and bundling the menu callbacks into a config object
+// would churn every call site for no behaviour gain. The next
+// addition needs a bundle like [BubbleMenuToggles].
+@Suppress("LongParameterList")
 @Composable
 fun MessageBubble(
     message: Message,
@@ -88,6 +94,13 @@ fun MessageBubble(
     onCopy: (() -> Unit)? = null,
     /** v1.3.11 (F5) — forward the bubble's text body to another conversation. */
     onForward: (() -> Unit)? = null,
+    /**
+     * Round 36 phase 2 — edit the bubble's text (note entries
+     * only: SMS has no edit). `null` = no Edit entry. The 20th
+     * parameter — the Detekt limit; the next addition needs a
+     * bundle like [BubbleMenuToggles].
+     */
+    onEdit: (() -> Unit)? = null,
     /**
      * Round 12 — quick-reaction bar on tap. One bundle parameter instead of
      * two — the bubble sits at the Detekt 20-parameter limit (see
@@ -446,6 +459,7 @@ fun MessageBubble(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
                 onCopy = onCopy,
+                onEdit = onEdit,
                 onForward = onForward,
                 onReply = onReply,
                 onTranslate = onTranslate,

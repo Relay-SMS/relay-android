@@ -182,9 +182,10 @@ internal class FakeSyncMessageSource : SyncMessageSource {
         fileName: String?,
         sizeBytes: Long,
         sha256: String,
+        kind: String?,
     ): UploadResult {
         uploadStartError?.let { throw it }
-        uploadStarts += UploadStartCall(clientMessageId, index, mimeType, fileName, sizeBytes, sha256)
+        uploadStarts += UploadStartCall(clientMessageId, index, mimeType, fileName, sizeBytes, sha256, kind)
         return uploadStartResult
     }
 
@@ -390,6 +391,8 @@ internal data class UploadStartCall(
     val fileName: String?,
     val sizeBytes: Long,
     val sha256: String,
+    /** Round 36 phase 2 — the upload `kind` (`"note"` for a note attachment, else null). */
+    val kind: String? = null,
 )
 
 /** One recorded `appendUploadChunk` call on the fake. */

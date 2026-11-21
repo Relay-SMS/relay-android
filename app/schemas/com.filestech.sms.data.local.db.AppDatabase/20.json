@@ -1,0 +1,1251 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 20,
+    "identityHash": "97a628336d1d0f0dfc0c6cda41f3d302",
+    "entities": [
+      {
+        "tableName": "conversations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `thread_id` INTEGER, `addresses_csv` TEXT NOT NULL, `display_name` TEXT, `last_message_at` INTEGER NOT NULL, `last_message_preview` TEXT, `unread_count` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, `archived` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `in_vault` INTEGER NOT NULL, `draft` TEXT, `notification_channel_id` TEXT, `bubble_color_argb` INTEGER, `avatar_uri` TEXT, `custom_name` TEXT, `pinned_message_id` INTEGER, `pinned_message_at` INTEGER, `hub_conversation_id` INTEGER, `sticky_category` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "threadId",
+            "columnName": "thread_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "addressesCsv",
+            "columnName": "addresses_csv",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastMessageAt",
+            "columnName": "last_message_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastMessagePreview",
+            "columnName": "last_message_preview",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "unreadCount",
+            "columnName": "unread_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pinned",
+            "columnName": "pinned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "archived",
+            "columnName": "archived",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "muted",
+            "columnName": "muted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inVault",
+            "columnName": "in_vault",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draft",
+            "columnName": "draft",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "notificationChannelId",
+            "columnName": "notification_channel_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "bubbleColorArgb",
+            "columnName": "bubble_color_argb",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "avatarUri",
+            "columnName": "avatar_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "customName",
+            "columnName": "custom_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "pinnedMessageId",
+            "columnName": "pinned_message_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "pinnedMessageAt",
+            "columnName": "pinned_message_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hubConversationId",
+            "columnName": "hub_conversation_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stickyCategory",
+            "columnName": "sticky_category",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_conversations_thread_id",
+            "unique": true,
+            "columnNames": [
+              "thread_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_conversations_thread_id` ON `${TABLE_NAME}` (`thread_id`)"
+          },
+          {
+            "name": "index_conversations_pinned_last_message_at",
+            "unique": false,
+            "columnNames": [
+              "pinned",
+              "last_message_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_conversations_pinned_last_message_at` ON `${TABLE_NAME}` (`pinned`, `last_message_at`)"
+          },
+          {
+            "name": "index_conversations_archived",
+            "unique": false,
+            "columnNames": [
+              "archived"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_conversations_archived` ON `${TABLE_NAME}` (`archived`)"
+          },
+          {
+            "name": "index_conversations_in_vault",
+            "unique": false,
+            "columnNames": [
+              "in_vault"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_conversations_in_vault` ON `${TABLE_NAME}` (`in_vault`)"
+          },
+          {
+            "name": "index_conversations_hub_conversation_id",
+            "unique": true,
+            "columnNames": [
+              "hub_conversation_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_conversations_hub_conversation_id` ON `${TABLE_NAME}` (`hub_conversation_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `conversation_id` INTEGER NOT NULL, `telephony_uri` TEXT, `address` TEXT NOT NULL, `body` TEXT NOT NULL, `type` INTEGER NOT NULL, `direction` INTEGER NOT NULL, `date` INTEGER NOT NULL, `date_sent` INTEGER, `read` INTEGER NOT NULL, `starred` INTEGER NOT NULL, `status` INTEGER NOT NULL, `error_code` INTEGER, `sub_id` INTEGER, `scheduled_at` INTEGER, `attachments_count` INTEGER NOT NULL, `reply_to_message_id` INTEGER, `mms_system_id` INTEGER, `reaction_emoji` TEXT, `send_attempt` INTEGER NOT NULL DEFAULT 0, `hidden` INTEGER NOT NULL DEFAULT 0, `mms_transaction_key` TEXT, `client_message_id` TEXT, `hub_message_id` INTEGER, FOREIGN KEY(`conversation_id`) REFERENCES `conversations`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conversationId",
+            "columnName": "conversation_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "telephonyUri",
+            "columnName": "telephony_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dateSent",
+            "columnName": "date_sent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "read",
+            "columnName": "read",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "starred",
+            "columnName": "starred",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "error_code",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "subId",
+            "columnName": "sub_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "scheduledAt",
+            "columnName": "scheduled_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "attachmentsCount",
+            "columnName": "attachments_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "replyToMessageId",
+            "columnName": "reply_to_message_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mmsSystemId",
+            "columnName": "mms_system_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "reactionEmoji",
+            "columnName": "reaction_emoji",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sendAttempt",
+            "columnName": "send_attempt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "hidden",
+            "columnName": "hidden",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "mmsTransactionKey",
+            "columnName": "mms_transaction_key",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "clientMessageId",
+            "columnName": "client_message_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hubMessageId",
+            "columnName": "hub_message_id",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_messages_conversation_id_date",
+            "unique": false,
+            "columnNames": [
+              "conversation_id",
+              "date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_conversation_id_date` ON `${TABLE_NAME}` (`conversation_id`, `date`)"
+          },
+          {
+            "name": "index_messages_telephony_uri",
+            "unique": true,
+            "columnNames": [
+              "telephony_uri"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_telephony_uri` ON `${TABLE_NAME}` (`telephony_uri`)"
+          },
+          {
+            "name": "index_messages_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_status` ON `${TABLE_NAME}` (`status`)"
+          },
+          {
+            "name": "index_messages_read",
+            "unique": false,
+            "columnNames": [
+              "read"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_read` ON `${TABLE_NAME}` (`read`)"
+          },
+          {
+            "name": "index_messages_starred",
+            "unique": false,
+            "columnNames": [
+              "starred"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_starred` ON `${TABLE_NAME}` (`starred`)"
+          },
+          {
+            "name": "index_messages_reply_to_message_id",
+            "unique": false,
+            "columnNames": [
+              "reply_to_message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_reply_to_message_id` ON `${TABLE_NAME}` (`reply_to_message_id`)"
+          },
+          {
+            "name": "index_messages_mms_system_id",
+            "unique": false,
+            "columnNames": [
+              "mms_system_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_mms_system_id` ON `${TABLE_NAME}` (`mms_system_id`)"
+          },
+          {
+            "name": "index_messages_date",
+            "unique": false,
+            "columnNames": [
+              "date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_date` ON `${TABLE_NAME}` (`date`)"
+          },
+          {
+            "name": "index_messages_mms_transaction_key",
+            "unique": true,
+            "columnNames": [
+              "mms_transaction_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_mms_transaction_key` ON `${TABLE_NAME}` (`mms_transaction_key`)"
+          },
+          {
+            "name": "index_messages_client_message_id",
+            "unique": true,
+            "columnNames": [
+              "client_message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_client_message_id` ON `${TABLE_NAME}` (`client_message_id`)"
+          },
+          {
+            "name": "index_messages_hub_message_id",
+            "unique": true,
+            "columnNames": [
+              "hub_message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_hub_message_id` ON `${TABLE_NAME}` (`hub_message_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "conversations",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "conversation_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "messages_fts",
+        "createSql": "CREATE VIRTUAL TABLE IF NOT EXISTS `${TABLE_NAME}` USING FTS4(`body` TEXT NOT NULL, `address` TEXT NOT NULL, tokenize=unicode61, content=`messages`)",
+        "fields": [
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "rowid"
+          ]
+        },
+        "ftsVersion": "FTS4",
+        "ftsOptions": {
+          "tokenizer": "unicode61",
+          "tokenizerArgs": [],
+          "contentTable": "messages",
+          "languageIdColumnName": "",
+          "matchInfo": "FTS4",
+          "notIndexedColumns": [],
+          "prefixSizes": [],
+          "preferredOrder": "ASC"
+        },
+        "contentSyncTriggers": [
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_BEFORE_UPDATE BEFORE UPDATE ON `messages` BEGIN DELETE FROM `messages_fts` WHERE `docid`=OLD.`rowid`; END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_BEFORE_DELETE BEFORE DELETE ON `messages` BEGIN DELETE FROM `messages_fts` WHERE `docid`=OLD.`rowid`; END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_AFTER_UPDATE AFTER UPDATE ON `messages` BEGIN INSERT INTO `messages_fts`(`docid`, `body`, `address`) VALUES (NEW.`rowid`, NEW.`body`, NEW.`address`); END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_messages_fts_AFTER_INSERT AFTER INSERT ON `messages` BEGIN INSERT INTO `messages_fts`(`docid`, `body`, `address`) VALUES (NEW.`rowid`, NEW.`body`, NEW.`address`); END"
+        ]
+      },
+      {
+        "tableName": "attachments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `message_id` INTEGER NOT NULL, `mime_type` TEXT NOT NULL, `file_name` TEXT, `size_bytes` INTEGER NOT NULL, `local_uri` TEXT NOT NULL, `width` INTEGER, `height` INTEGER, `duration_ms` INTEGER, `hub_attachment_id` INTEGER, FOREIGN KEY(`message_id`) REFERENCES `messages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "messageId",
+            "columnName": "message_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileName",
+            "columnName": "file_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "size_bytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localUri",
+            "columnName": "local_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hubAttachmentId",
+            "columnName": "hub_attachment_id",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_attachments_message_id",
+            "unique": false,
+            "columnNames": [
+              "message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_attachments_message_id` ON `${TABLE_NAME}` (`message_id`)"
+          },
+          {
+            "name": "index_attachments_hub_attachment_id",
+            "unique": true,
+            "columnNames": [
+              "hub_attachment_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_attachments_hub_attachment_id` ON `${TABLE_NAME}` (`hub_attachment_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "messages",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "message_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "blocked_numbers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `normalized_number` TEXT NOT NULL, `raw_number` TEXT NOT NULL, `label` TEXT, `created_at` INTEGER NOT NULL, `system_uri` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedNumber",
+            "columnName": "normalized_number",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawNumber",
+            "columnName": "raw_number",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "systemUri",
+            "columnName": "system_uri",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_blocked_numbers_normalized_number",
+            "unique": true,
+            "columnNames": [
+              "normalized_number"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_blocked_numbers_normalized_number` ON `${TABLE_NAME}` (`normalized_number`)"
+          }
+        ]
+      },
+      {
+        "tableName": "scheduled_messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `conversation_id` INTEGER, `addresses_csv` TEXT NOT NULL, `body` TEXT NOT NULL, `scheduled_at` INTEGER NOT NULL, `sub_id` INTEGER, `attachments_json` TEXT, `state` INTEGER NOT NULL, `work_id` TEXT, `created_at` INTEGER NOT NULL, `claimed_at` INTEGER, `client_message_id` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conversationId",
+            "columnName": "conversation_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "addressesCsv",
+            "columnName": "addresses_csv",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scheduledAt",
+            "columnName": "scheduled_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subId",
+            "columnName": "sub_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "attachmentsJson",
+            "columnName": "attachments_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workId",
+            "columnName": "work_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "claimedAt",
+            "columnName": "claimed_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "clientMessageId",
+            "columnName": "client_message_id",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_scheduled_messages_scheduled_at",
+            "unique": false,
+            "columnNames": [
+              "scheduled_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_scheduled_messages_scheduled_at` ON `${TABLE_NAME}` (`scheduled_at`)"
+          },
+          {
+            "name": "index_scheduled_messages_client_message_id",
+            "unique": true,
+            "columnNames": [
+              "client_message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_scheduled_messages_client_message_id` ON `${TABLE_NAME}` (`client_message_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "quick_replies",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `text` TEXT NOT NULL, `position` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "client_sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`hub_id` TEXT NOT NULL, `mode` TEXT NOT NULL, `global_last_message_id` TEXT NOT NULL, `initial_sync_done` INTEGER NOT NULL, `last_sync_at` INTEGER, PRIMARY KEY(`hub_id`))",
+        "fields": [
+          {
+            "fieldPath": "hubId",
+            "columnName": "hub_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "globalLastMessageId",
+            "columnName": "global_last_message_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "initialSyncDone",
+            "columnName": "initial_sync_done",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncAt",
+            "columnName": "last_sync_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "hub_id"
+          ]
+        }
+      },
+      {
+        "tableName": "client_conversation_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`hub_conversation_id` INTEGER NOT NULL, `min_synced_id` TEXT NOT NULL, `history_complete` INTEGER NOT NULL, PRIMARY KEY(`hub_conversation_id`))",
+        "fields": [
+          {
+            "fieldPath": "hubConversationId",
+            "columnName": "hub_conversation_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "minSyncedId",
+            "columnName": "min_synced_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "historyComplete",
+            "columnName": "history_complete",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "hub_conversation_id"
+          ]
+        }
+      },
+      {
+        "tableName": "synced_contacts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`number` TEXT NOT NULL, `display_name` TEXT NOT NULL, `has_photo` INTEGER NOT NULL, `photo_updated_at` INTEGER, `avatar_local_path` TEXT, `local_avatar` TEXT, `local_avatar_baseline` TEXT, PRIMARY KEY(`number`))",
+        "fields": [
+          {
+            "fieldPath": "number",
+            "columnName": "number",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasPhoto",
+            "columnName": "has_photo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "photoUpdatedAt",
+            "columnName": "photo_updated_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "avatarLocalPath",
+            "columnName": "avatar_local_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "localAvatar",
+            "columnName": "local_avatar",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "localAvatarBaseline",
+            "columnName": "local_avatar_baseline",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "number"
+          ]
+        }
+      },
+      {
+        "tableName": "notes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uuid` TEXT NOT NULL, `title` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `last_message_at` INTEGER, `last_message_preview` TEXT, `draft` TEXT, `pinned` INTEGER NOT NULL DEFAULT 0, `archived` INTEGER NOT NULL DEFAULT 0, `bubble_color_argb` INTEGER, `hub_note_id` INTEGER, `client_note_id` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastMessageAt",
+            "columnName": "last_message_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastMessagePreview",
+            "columnName": "last_message_preview",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "draft",
+            "columnName": "draft",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "pinned",
+            "columnName": "pinned",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "archived",
+            "columnName": "archived",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "bubbleColorArgb",
+            "columnName": "bubble_color_argb",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hubNoteId",
+            "columnName": "hub_note_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "clientNoteId",
+            "columnName": "client_note_id",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notes_uuid",
+            "unique": true,
+            "columnNames": [
+              "uuid"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_uuid` ON `${TABLE_NAME}` (`uuid`)"
+          },
+          {
+            "name": "index_notes_hub_note_id",
+            "unique": true,
+            "columnNames": [
+              "hub_note_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_hub_note_id` ON `${TABLE_NAME}` (`hub_note_id`)"
+          },
+          {
+            "name": "index_notes_client_note_id",
+            "unique": true,
+            "columnNames": [
+              "client_note_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_client_note_id` ON `${TABLE_NAME}` (`client_note_id`)"
+          },
+          {
+            "name": "index_notes_pinned_last_message_at",
+            "unique": false,
+            "columnNames": [
+              "pinned",
+              "last_message_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notes_pinned_last_message_at` ON `${TABLE_NAME}` (`pinned`, `last_message_at`)"
+          },
+          {
+            "name": "index_notes_archived",
+            "unique": false,
+            "columnNames": [
+              "archived"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notes_archived` ON `${TABLE_NAME}` (`archived`)"
+          }
+        ]
+      },
+      {
+        "tableName": "note_messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uuid` TEXT NOT NULL, `note_id` INTEGER NOT NULL, `body` TEXT NOT NULL DEFAULT '', `date` INTEGER NOT NULL, `attachments_count` INTEGER NOT NULL DEFAULT 0, `hub_note_message_id` INTEGER, `client_message_id` TEXT, FOREIGN KEY(`note_id`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noteId",
+            "columnName": "note_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attachmentsCount",
+            "columnName": "attachments_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "hubNoteMessageId",
+            "columnName": "hub_note_message_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "clientMessageId",
+            "columnName": "client_message_id",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "notes",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "note_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ],
+        "indices": [
+          {
+            "name": "index_note_messages_note_id_date",
+            "unique": false,
+            "columnNames": [
+              "note_id",
+              "date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_note_messages_note_id_date` ON `${TABLE_NAME}` (`note_id`, `date`)"
+          },
+          {
+            "name": "index_note_messages_uuid",
+            "unique": true,
+            "columnNames": [
+              "uuid"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_messages_uuid` ON `${TABLE_NAME}` (`uuid`)"
+          },
+          {
+            "name": "index_note_messages_hub_note_message_id",
+            "unique": true,
+            "columnNames": [
+              "hub_note_message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_messages_hub_note_message_id` ON `${TABLE_NAME}` (`hub_note_message_id`)"
+          },
+          {
+            "name": "index_note_messages_client_message_id",
+            "unique": true,
+            "columnNames": [
+              "client_message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_messages_client_message_id` ON `${TABLE_NAME}` (`client_message_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "note_attachments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uuid` TEXT NOT NULL, `note_message_id` INTEGER NOT NULL, `mime_type` TEXT NOT NULL, `file_name` TEXT, `size_bytes` INTEGER NOT NULL, `local_uri` TEXT NOT NULL, `width` INTEGER, `height` INTEGER, `duration_ms` INTEGER, `hub_attachment_id` INTEGER, FOREIGN KEY(`note_message_id`) REFERENCES `note_messages`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noteMessageId",
+            "columnName": "note_message_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileName",
+            "columnName": "file_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "size_bytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localUri",
+            "columnName": "local_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hubAttachmentId",
+            "columnName": "hub_attachment_id",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "note_messages",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "note_message_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ],
+        "indices": [
+          {
+            "name": "index_note_attachments_note_message_id",
+            "unique": false,
+            "columnNames": [
+              "note_message_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_note_attachments_note_message_id` ON `${TABLE_NAME}` (`note_message_id`)"
+          },
+          {
+            "name": "index_note_attachments_uuid",
+            "unique": true,
+            "columnNames": [
+              "uuid"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_attachments_uuid` ON `${TABLE_NAME}` (`uuid`)"
+          },
+          {
+            "name": "index_note_attachments_hub_attachment_id",
+            "unique": true,
+            "columnNames": [
+              "hub_attachment_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_note_attachments_hub_attachment_id` ON `${TABLE_NAME}` (`hub_attachment_id`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '97a628336d1d0f0dfc0c6cda41f3d302')"
+    ]
+  }
+}

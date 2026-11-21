@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -46,8 +48,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -65,6 +71,10 @@ import com.filestech.sms.domain.model.NoteMessage
 import com.filestech.sms.ui.components.AppearanceDialog
 import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.components.AttachmentPickerSheet
+import com.filestech.sms.ui.components.EmojiPickerButton
+import com.filestech.sms.ui.components.EmojiPickerPanel
+import com.filestech.sms.ui.components.EmojiPickerTab
+import com.filestech.sms.ui.components.EmojiPickerTabStore
 import com.filestech.sms.ui.components.PendingAttachmentChipData
 import com.filestech.sms.ui.components.PendingAttachmentsBar
 import com.filestech.sms.ui.components.RelayAvatar
@@ -74,6 +84,7 @@ import com.filestech.sms.ui.components.RelayEmptyState
 import com.filestech.sms.ui.components.RelayTextButton
 import com.filestech.sms.ui.components.SmsTechSnackbarHost
 import com.filestech.sms.ui.components.SmsTechSnackbarVisuals
+import com.filestech.sms.ui.components.stickerSendUri
 import com.filestech.sms.ui.screens.details.NoteDetailsPanel
 import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.RelayText
@@ -82,6 +93,7 @@ import com.filestech.sms.ui.util.rememberChatFormatters
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -95,10 +107,20 @@ import java.io.File
  *     ⋮ → panel. NO call icon, NO search magnifier in v1;
  *   - entries render through [NoteMessageItem] (delete only — no
  *     reply, reactions, forward, or retry);
- *   - the composer is [NoteComposerBar] (no schedule, no picker
- *     panel; tap-to-record voice);
+ *   - the composer is [NoteComposerBar] (no schedule; tap-to-record
+ *     voice) with the thread's emoji/GIF/sticker picker panel below
+ *     it (round 36 — a GIF or sticker stages through the note
+ *     attachment path, an emoji appends to the draft);
  *   - the screen pops when the note disappears (deleted from the
  *     list, or from its own panel).
+ *
+ * Round 36 — the header and the composer live in the Scaffold's
+ * `topBar`/`bottomBar` slots (the thread's shape), NOT inside the
+ * content: the content padding already carries the status bar (top)
+ * and the navigation bar (bottom), so a header with its own
+ * `statusBarsPadding` — or a bottom bar with its own
+ * `navigationBarsPadding` — inside the content is padded TWICE
+ * (the round-34 header gap + the floating composer).
  */
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -174,12 +196,20 @@ fun NoteThreadScreen(
 
     // — Scroll bookkeeping (the thread's shape, simplified: no search
     // anchor, no sticky date pill) —
+    //
+    // Round 36 — the picker state (see [rememberNotePickerState]):
+    // the scroll effects need to know when the panel opens (the
+    // viewport shrinks and the tail slides behind it), and the
+    // top-bar height is measured for the panel's full-height stop.
+    val picker = rememberNotePickerState()
+    var topBarHeightPx by remember { mutableStateOf(0) }
     val listSettled = NoteThreadScrollEffects(
         listState = listState,
         messages = messages,
         hasMore = state.hasMore,
         isLoadingOlder = state.isLoadingOlder,
         onLoadOlder = viewModel::loadOlder,
+        pickerOpen = picker.isOpen,
     )
 
     // — Composer + attachments —
@@ -239,6 +269,7 @@ fun NoteThreadScreen(
     // the header, the message list, and the composer open them.
     var detailsPanelOpen by remember { mutableStateOf(false) }
     var pendingDeleteMessage by remember { mutableStateOf<NoteMessage?>(null) }
+    var pendingEditMessage by remember { mutableStateOf<NoteMessage?>(null) }
 
     val note = state.note
     val openAttachment = rememberNoteAttachmentOpener(
@@ -259,116 +290,115 @@ fun NoteThreadScreen(
 
     Scaffold(
         snackbarHost = { SmsTechSnackbarHost(snackbarHost) },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .imePadding(),
-        ) {
+        topBar = {
+            // Round 36 — the header lives in the `topBar` slot (the
+            // thread's shape): the slot does NOT add the status-bar
+            // inset itself, so the header's own `statusBarsPadding`
+            // applies it exactly once. Measured so the picker panel
+            // can stop at its bottom edge.
             if (note != null) {
-                NoteThreadHeader(
-                    title = note.title,
-                    onBack = onBack,
-                    onDetails = { detailsPanelOpen = true },
-                )
-            }
-            Box(modifier = Modifier.weight(1f)) {
-                if (messages.isEmpty() && !state.isLoading) {
-                    RelayEmptyState(
-                        iconRes = R.drawable.ic_note,
-                        headline = stringResource(R.string.note_empty_title),
-                        body = stringResource(R.string.note_empty_body),
-                        modifier = Modifier.fillMaxSize(),
+                Box(modifier = Modifier.onSizeChanged { topBarHeightPx = it.height }) {
+                    NoteThreadHeader(
+                        title = note.title,
+                        onBack = onBack,
+                        onDetails = { detailsPanelOpen = true },
                     )
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .alpha(if (listSettled) 1f else 0f),
-                    ) {
-                        itemsIndexed(
-                            items = messages,
-                            key = { _, msg -> msg.id },
-                            contentType = { _, _ -> "note-message" },
-                        ) { index, msg ->
-                            NoteMessageItem(
-                                noteMessage = msg,
-                                prev = messages.getOrNull(index - 1),
-                                next = messages.getOrNull(index + 1),
-                                daySeparatorLabel = daySeparatorLabels.getOrNull(index),
-                                resolver = viewModel.resolver,
-                                playbackProvider = { playbackState },
-                                onTogglePlayback = viewModel::togglePlayback,
-                                onSeekPlaybackTo = viewModel::seekPlaybackTo,
-                                onOpenAttachment = openAttachment,
-                                customBubbleColorArgb = note?.bubbleColorArgb,
-                                onDelete = { pendingDeleteMessage = msg },
-                                onCopy = if (msg.body.isNotBlank()) {
-                                    {
-                                        context.copyToClipboardSensitive(
-                                            label = "message",
-                                            text = msg.body,
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                onTranslate = if (msg.body.isNotBlank()) {
-                                    {
-                                        val body = msg.body.trim()
-                                        val intent = Intent(Intent.ACTION_PROCESS_TEXT)
-                                            .setType("text/plain")
-                                            .putExtra(Intent.EXTRA_PROCESS_TEXT, body)
-                                            .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        context.startActivity(Intent.createChooser(intent, null))
-                                    }
-                                } else {
-                                    null
-                                },
-                            )
-                        }
-                    }
                 }
             }
-            // Bottom bar: pending chips over the composer; the
-            // keyboard lifts both as one unit (the thread's round-20
-            // rule — `imePadding` lives on the outer Column).
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding(),
-            ) {
-                PendingAttachmentsBar(
-                    pending = state.pendingAttachments.map { staged ->
-                        PendingAttachmentChipData(
-                            id = staged.path,
-                            file = File(staged.path),
-                            mimeType = staged.mimeType,
-                            displayName = staged.fileName ?: "",
+        },
+        bottomBar = {
+            NoteThreadBottomBar(
+                state = state,
+                viewModel = viewModel,
+                permissionGranted = micPermissionGranted,
+                onRequestPermission = { micPermission.launchPermissionRequest() },
+                onAttachClick = { attachmentSheetOpen = true },
+                onCameraClick = onCameraClick,
+                picker = picker,
+                topBarHeightPx = topBarHeightPx,
+            )
+        },
+    ) { padding ->
+        // Round 36 — the content is the list only: the Scaffold
+        // padding already accounts for the top and bottom bars, so
+        // nothing here adds its own system-bar padding (the
+        // round-34 double insets lived here).
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            if (messages.isEmpty() && !state.isLoading) {
+                RelayEmptyState(
+                    iconRes = R.drawable.ic_note,
+                    headline = stringResource(R.string.note_empty_title),
+                    body = stringResource(R.string.note_empty_body),
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(if (listSettled) 1f else 0f),
+                ) {
+                    itemsIndexed(
+                        items = messages,
+                        key = { _, msg -> msg.id },
+                        contentType = { _, _ -> "note-message" },
+                    ) { index, msg ->
+                        NoteMessageItem(
+                            noteMessage = msg,
+                            prev = messages.getOrNull(index - 1),
+                            next = messages.getOrNull(index + 1),
+                            daySeparatorLabel = daySeparatorLabels.getOrNull(index),
+                            resolver = viewModel.resolver,
+                            playbackProvider = { playbackState },
+                            onTogglePlayback = viewModel::togglePlayback,
+                            onSeekPlaybackTo = viewModel::seekPlaybackTo,
+                            onOpenAttachment = openAttachment,
+                            customBubbleColorArgb = note?.bubbleColorArgb,
+                            onDelete = { pendingDeleteMessage = msg },
+                            onCopy = if (msg.body.isNotBlank()) {
+                                {
+                                    context.copyToClipboardSensitive(
+                                        label = "message",
+                                        text = msg.body,
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            onTranslate = if (msg.body.isNotBlank()) {
+                                {
+                                    val body = msg.body.trim()
+                                    val intent = Intent(Intent.ACTION_PROCESS_TEXT)
+                                        .setType("text/plain")
+                                        .putExtra(Intent.EXTRA_PROCESS_TEXT, body)
+                                        .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    context.startActivity(Intent.createChooser(intent, null))
+                                }
+                            } else {
+                                null
+                            },
+                            // Round 36 phase 2 — editing is text-only
+                            // entries only (a media entry's caption is
+                            // not editable this round).
+                            onEdit = if (msg.attachments.isEmpty() && msg.body.isNotBlank()) {
+                                { pendingEditMessage = msg }
+                            } else {
+                                null
+                            },
+                            downloadStates = state.noteDownloads,
+                            onRequestDownload = if (state.isClientMode) {
+                                { id -> viewModel.requestNoteDownload(id) }
+                            } else {
+                                null
+                            },
                         )
-                    },
-                    onRemove = viewModel::removePendingAttachment,
-                )
-                val recording = state.voiceState as? NoteThreadViewModel.VoiceState.Recording
-                NoteComposerBar(
-                    draft = state.draft,
-                    onDraftChanged = viewModel::updateDraft,
-                    hasPendingAttachments = state.pendingAttachments.isNotEmpty(),
-                    isSaving = state.isSaving,
-                    isRecording = recording != null,
-                    recordingElapsedMs = recording?.elapsedMs ?: 0L,
-                    permissionGranted = micPermissionGranted,
-                    onRequestPermission = { micPermission.launchPermissionRequest() },
-                    onSave = viewModel::save,
-                    onMicClick = viewModel::startRecording,
-                    onStopRecording = viewModel::stopRecording,
-                    onCancelRecording = viewModel::cancelRecording,
-                    onAttachClick = { attachmentSheetOpen = true },
-                    onCameraClick = onCameraClick,
-                )
+                    }
+                }
             }
         }
     }
@@ -378,6 +408,8 @@ fun NoteThreadScreen(
         onAttachmentSheetOpenChange = { attachmentSheetOpen = it },
         pendingDeleteMessage = pendingDeleteMessage,
         onPendingDeleteMessageChange = { pendingDeleteMessage = it },
+        pendingEditMessage = pendingEditMessage,
+        onPendingEditMessageChange = { pendingEditMessage = it },
         detailsPanelOpen = detailsPanelOpen,
         onDetailsPanelOpenChange = { detailsPanelOpen = it },
         note = note,
@@ -399,7 +431,10 @@ fun NoteThreadScreen(
  * pill. A new entry scrolls into view only while the user sits at the
  * bottom; scrolling up auto-loads older history with an anchor restore
  * (a 200-item prepend exceeds Compose's ~130-item key re-anchor window,
- * so without it the user would teleport 200 entries back).
+ * so without it the user would teleport 200 entries back). Opening the
+ * picker panel ([pickerOpen]) scrolls back to the bottom when the user
+ * was at the tail — the panel shrinks the viewport from the bottom and
+ * the newest entries would slide behind it (the thread's round-13 fix).
  */
 @Composable
 private fun NoteThreadScrollEffects(
@@ -408,6 +443,7 @@ private fun NoteThreadScrollEffects(
     hasMore: Boolean,
     isLoadingOlder: Boolean,
     onLoadOlder: () -> Unit,
+    pickerOpen: Boolean = false,
 ): Boolean {
     var initialScrollDone by remember { mutableStateOf(false) }
     val listSettled = initialScrollDone || messages.isEmpty()
@@ -432,6 +468,20 @@ private fun NoteThreadScrollEffects(
     LaunchedEffect(lastMessageId) {
         if (initialScrollDone && pinnedToBottom && lastMessageId != null) {
             listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+        }
+    }
+    // Round 36 — the picker (the thread's round-13 fix): opening it
+    // shrinks the viewport from the bottom as the panel grows (300ms
+    // enter animation), sliding the newest entries behind the panel.
+    // If the user was at the tail when it opened, scroll to the
+    // bottom once the panel has finished growing; a user scrolled up
+    // reading older entries is left alone.
+    LaunchedEffect(pickerOpen) {
+        if (!pickerOpen) return@LaunchedEffect
+        val wasAtBottom = pinnedToBottom
+        delay(320)
+        if (wasAtBottom && messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
         }
     }
     // Auto load-older on scroll-up (the thread's feedback-round-5
@@ -482,6 +532,8 @@ private fun NoteThreadDialogs(
     onAttachmentSheetOpenChange: (Boolean) -> Unit,
     pendingDeleteMessage: NoteMessage?,
     onPendingDeleteMessageChange: (NoteMessage?) -> Unit,
+    pendingEditMessage: NoteMessage?,
+    onPendingEditMessageChange: (NoteMessage?) -> Unit,
     detailsPanelOpen: Boolean,
     onDetailsPanelOpenChange: (Boolean) -> Unit,
     note: Note?,
@@ -528,6 +580,19 @@ private fun NoteThreadDialogs(
                     text = stringResource(R.string.action_cancel),
                     onClick = { onPendingDeleteMessageChange(null) },
                 )
+            },
+        )
+    }
+
+    // Round 36 phase 2 — edit a text entry (the dialog disables
+    // Save while the text is blank or unchanged).
+    if (pendingEditMessage != null) {
+        EditNoteMessageDialog(
+            current = pendingEditMessage.body,
+            onDismiss = { onPendingEditMessageChange(null) },
+            onConfirm = { newBody ->
+                pendingEditMessage.let { viewModel.editMessage(it.id, newBody) }
+                onPendingEditMessageChange(null)
             },
         )
     }
@@ -610,6 +675,176 @@ private fun NoteThreadDialogs(
             },
         )
     }
+}
+
+/**
+ * Notes — the bottom bar, extracted from [NoteThreadScreen] so the
+ * screen stays under the Detekt long-method limit: pending chips
+ * over the composer, and — when open — the emoji/GIF/sticker
+ * picker panel BELOW the composer (the thread's round-14 shape, so
+ * picked emojis land in the draft box the user can see).
+ *
+ * The keyboard lifts the whole bar as one unit (the thread's
+ * round-20 rule — `imePadding` lives on the outer Column, not on
+ * the composer). The navigation-bar padding lives on the inner
+ * Column and drops while the panel is open — the panel carries it
+ * (the thread's round-14 rule). The slot itself adds no insets,
+ * so the bar is padded exactly once (round 36 — the round-34
+ * floating composer was the content padding + this padding).
+ *
+ * A GIF or sticker tap stages the file through the note
+ * attachment path (`onAttachmentPicked`, the same one the attach
+ * button uses) and closes the panel — the staged chip sits in the
+ * composer above, and Save stores the ORIGINAL file (design §5.3:
+ * no MMS budget, no compression). An emoji tap appends to the
+ * draft and leaves the panel open for more picks.
+ */
+@Composable
+private fun NoteThreadBottomBar(
+    state: NoteThreadViewModel.UiState,
+    viewModel: NoteThreadViewModel,
+    permissionGranted: Boolean,
+    onRequestPermission: () -> Unit,
+    onAttachClick: () -> Unit,
+    onCameraClick: () -> Unit,
+    picker: NotePickerState,
+    topBarHeightPx: Int,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var abovePanelHeightPx by remember { mutableStateOf(0) }
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
+    val onEmojiSelected: (String) -> Unit = { emoji ->
+        picker.onTabSelected(EmojiPickerTab.EMOJI)
+        viewModel.updateDraft(state.draft + emoji)
+    }
+    val onStickerSelected: (String) -> Unit = { unicode ->
+        picker.onTabSelected(EmojiPickerTab.STICKER)
+        scope.launch {
+            stickerSendUri(context, unicode)?.let { uri ->
+                viewModel.onAttachmentPicked(uri, AttachmentKind.PHOTO)
+            }
+        }
+        picker.onClose()
+    }
+    val onGifSelected: (String) -> Unit = { uri ->
+        picker.onTabSelected(EmojiPickerTab.GIF)
+        viewModel.onAttachmentPicked(Uri.parse(uri), AttachmentKind.PHOTO)
+        picker.onClose()
+    }
+    Column(modifier = Modifier.imePadding()) {
+        Column(
+            modifier = Modifier
+                .onSizeChanged { abovePanelHeightPx = it.height }
+                .then(if (picker.isOpen) Modifier else Modifier.navigationBarsPadding()),
+        ) {
+            PendingAttachmentsBar(
+                pending = state.pendingAttachments.map { staged ->
+                    PendingAttachmentChipData(
+                        id = staged.path,
+                        file = File(staged.path),
+                        mimeType = staged.mimeType,
+                        displayName = staged.fileName ?: "",
+                    )
+                },
+                onRemove = viewModel::removePendingAttachment,
+            )
+            val recording = state.voiceState as? NoteThreadViewModel.VoiceState.Recording
+            NoteComposerBar(
+                draft = state.draft,
+                onDraftChanged = viewModel::updateDraft,
+                hasPendingAttachments = state.pendingAttachments.isNotEmpty(),
+                isSaving = state.isSaving,
+                isRecording = recording != null,
+                recordingElapsedMs = recording?.elapsedMs ?: 0L,
+                permissionGranted = permissionGranted,
+                onRequestPermission = onRequestPermission,
+                onSave = viewModel::save,
+                onMicClick = viewModel::startRecording,
+                onStopRecording = viewModel::stopRecording,
+                onCancelRecording = viewModel::cancelRecording,
+                onAttachClick = onAttachClick,
+                onCameraClick = onCameraClick,
+                emojiPickerButton = EmojiPickerButton(
+                    iconRes = picker.lastTab.iconRes,
+                    onClick = picker.onToggle,
+                ),
+                onTextFieldFocused = picker.onClose,
+            )
+        }
+        if (picker.isOpen) {
+            EmojiPickerPanel(
+                selectedTab = picker.tab,
+                onTabSelected = picker.onTabSelected,
+                onClose = picker.onClose,
+                onEmojiSelected = onEmojiSelected,
+                onStickerSelected = onStickerSelected,
+                onGifSelected = onGifSelected,
+                reservedTopPx = abovePanelHeightPx.toFloat(),
+                reservedHeaderPx = topBarHeightPx.toFloat(),
+                reservedBottomPx = imeBottomPx.toFloat(),
+            )
+        }
+    }
+}
+
+/**
+ * Notes — the emoji/GIF/sticker picker's state, bundled so the
+ * screen stays under the Detekt long-method limit: the last-used
+ * tab (persisted across restarts in the shared
+ * [EmojiPickerTabStore] — the same store the thread uses, so the
+ * tab follows the user between screens), the open/tab state, and
+ * the toggle/select/close actions (the thread's round 13–14
+ * shape).
+ */
+private class NotePickerState(
+    val lastTab: EmojiPickerTab,
+    val isOpen: Boolean,
+    val tab: EmojiPickerTab,
+    val onTabSelected: (EmojiPickerTab) -> Unit,
+    val onToggle: () -> Unit,
+    val onClose: () -> Unit,
+)
+
+/** Creates the picker's state (see [NotePickerState]). */
+@Composable
+private fun rememberNotePickerState(): NotePickerState {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val pickerTabStore = remember(context) { EmojiPickerTabStore(context) }
+    val lastPickerTab by pickerTabStore.tab.collectAsStateWithLifecycle(
+        initialValue = EmojiPickerTab.EMOJI,
+    )
+    var emojiPickerOpen by remember { mutableStateOf(false) }
+    var emojiPickerTab by remember { mutableStateOf(EmojiPickerTab.EMOJI) }
+    val onPickerTabSelected: (EmojiPickerTab) -> Unit = { tab ->
+        emojiPickerTab = tab
+        scope.launch { pickerTabStore.setTab(tab) }
+    }
+    // The composer icon toggles the panel (the thread's round 14
+    // shape): opening hides the keyboard and opens on the
+    // last-used tab; a second tap closes it again.
+    val onToggle: () -> Unit = {
+        if (emojiPickerOpen) {
+            emojiPickerOpen = false
+        } else {
+            emojiPickerTab = lastPickerTab
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            emojiPickerOpen = true
+        }
+    }
+    val onClose: () -> Unit = { emojiPickerOpen = false }
+    return NotePickerState(
+        lastTab = lastPickerTab,
+        isOpen = emojiPickerOpen,
+        tab = emojiPickerTab,
+        onTabSelected = onPickerTabSelected,
+        onToggle = onToggle,
+        onClose = onClose,
+    )
 }
 
 /** Auto-load older entries when the first visible item is within this many of the top. */

@@ -52,4 +52,11 @@ data class NoteMessageEntity(
     @ColumnInfo(name = "hub_note_message_id") val hubNoteMessageId: Long? = null,
     /** Phase 2 (D8) — the client-side send key; null on hub-mode rows. */
     @ColumnInfo(name = "client_message_id") val clientMessageId: String? = null,
+    /**
+     * Phase 2 (v21) — true once the entry's text was edited (hub or client). The thread
+     * renders an "Edited" marker under the bubble; the flag crosses the wire on
+     * `SyncedNoteMessage`, and the hub's edits collector watches it to push
+     * `note_message_updated`.
+     */
+    @ColumnInfo(name = "edited", defaultValue = "0") val edited: Boolean = false,
 )

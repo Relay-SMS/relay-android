@@ -600,6 +600,21 @@ private fun DownloadTile(
 }
 
 /**
+ * Round 36 — whether the image tile paints the bubble colour
+ * behind the image: only when NO image will render — a note whose
+ * override model is null (decrypting, or the decrypt failed). A
+ * loaded image (a photo, a GIF, a transparent sticker PNG) never
+ * gets the colour behind it: its transparent pixels show the
+ * thread, so a sticker renders bare. The plain path ([hasOverride]
+ * false) always has an image to try — or the error painter's tile
+ * on failure — so it never needs the placeholder.
+ */
+internal fun imagePreviewShowsPlaceholderBackground(
+    hasOverride: Boolean,
+    modelOverride: Any?,
+): Boolean = hasOverride && modelOverride == null
+
+/**
  * Thumbnail image via Coil. Tap = ACTION_VIEW; round 22 — long-press opens
  * the menu (round 23: the menu's top row IS the quick-reaction row, so the
  * round-22 long-press quick bar is gone).
@@ -637,16 +652,19 @@ private fun ImagePreview(
             .components { add(GifDecoder.Factory()) }
             .build()
     }
+    // Round 36 — the bubble colour behind the image ONLY when no
+    // image will render (see [imagePreviewShowsPlaceholderBackground]):
+    // round 34 painted it unconditionally, which put a blue tile
+    // behind every transparent image — every sticker, in threads
+    // AND notes, since both render here.
+    val showPlaceholderBackground =
+        imagePreviewShowsPlaceholderBackground(hasOverride, modelOverride)
     Box(
         modifier = Modifier
             .widthIn(min = 80.dp, max = 240.dp)
             .heightIn(min = 80.dp, max = 320.dp)
             .clip(shape)
-            // Notes — the bubble colour behind the image: when the
-            // override model is null (decrypting / failed) no image
-            // loads, and this is the neutral placeholder — the same
-            // colour a failed MMS load renders via the error painter.
-            .background(bgColor)
+            .then(if (showPlaceholderBackground) Modifier.background(bgColor) else Modifier)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         // v1.3.10 (P5) — Coil `.size(px)` cap so multi-megapixel incoming MMS images (2048×1536

@@ -4,6 +4,7 @@ import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.repository.FichiersDePiecesJointes
+import com.filestech.sms.domain.repository.NoteRepository
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,7 +22,8 @@ import javax.inject.Singleton
  * Re-sync reuses [wipeMessageCache] on its own (the link survives
  * a Re-sync). C4 adds the avatar files (the contacts cache's bytes).
  * C5 adds the downloaded attachment files (the message cache's
- * bytes) + the downloader reset.
+ * bytes) + the downloader reset. Round 36 phase 2 adds the mirrored
+ * notes (rows + encrypted attachment files, via the prune).
  */
 @Singleton
 class ClientCacheWiper @Inject constructor(
@@ -38,6 +40,8 @@ class ClientCacheWiper @Inject constructor(
     private val fichiers: FichiersDePiecesJointes,
     /** Client mode C5 — in-flight + queued downloads die with the cache. */
     private val downloader: ClientAttachmentDownloader,
+    /** Round 36 phase 2 — the mirrored notes go with the message cache. */
+    private val noteRepository: NoteRepository,
 ) {
 
     /**
@@ -64,6 +68,10 @@ class ClientCacheWiper @Inject constructor(
      * walk frontiers, the synced-contacts cache) — plus the avatar
      * files (C4) and any in-flight avatar download, and the
      * downloaded attachment files (C5) and any in-flight download.
+     * Round 36 phase 2 — the mirrored notes go too (rows +
+     * encrypted attachment files, via the prune with an empty
+     * keep-set); the downloader reset already drops any in-flight
+     * note download.
      *
      * The attachment URIs are collected BEFORE the rows go (the
      * rows are the only record of which files belong to the cache),
@@ -74,7 +82,8 @@ class ClientCacheWiper @Inject constructor(
      *
      * Deliberately NOT cleared:
      * - hub-mode rows (`hub_*_id` NULL) — a device that switches
-     *   back to hub mode keeps its own messages;
+     *   back to hub mode keeps its own messages (and its own notes,
+     *   same rule);
      * - `scheduled_messages` — the schedules this device created
      *   survive a Re-sync (the desktop rule).
      */
@@ -82,6 +91,7 @@ class ClientCacheWiper @Inject constructor(
         val uris = attachmentDao.findLocalUrisForSynced()
         conversationDao.deleteSynced()
         messageDao.deleteSynced()
+        noteRepository.pruneSyncedNotes(emptySet())
         stateStore.clearAll()
         contactSync.onCacheWiped()
         downloader.onCacheWiped()

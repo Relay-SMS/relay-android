@@ -2,6 +2,9 @@ package com.filestech.sms.ui.screens.compose
 
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
+import com.filestech.sms.core.result.AppError
+import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.clientmode.ClientActionGateway
 import com.filestech.sms.domain.model.Note
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
@@ -101,5 +104,53 @@ class ComposeViewModelCreateNoteTest {
         advanceUntilIdle()
 
         coVerify { h.noteRepo.createNote("x".repeat(40), any(), any(), any()) }
+    }
+
+    @Test fun `createNote in client mode goes through the create_note frame`() = runTest(dispatcher) {
+        val noteRepo = mockk<NoteRepository>()
+        val clientActions = mockk<ClientActionGateway>()
+        coEvery { clientActions.isClientMode() } returns true
+        coEvery { clientActions.createNote("Groceries") } returns Outcome.Success(42L)
+        val vm = ComposeViewModel(
+            SavedStateHandle(),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            dispatcher,
+            noteRepo,
+            clientActions,
+        )
+
+        vm.events.test {
+            vm.createNote("Groceries")
+            advanceUntilIdle()
+
+            assertThat(awaitItem()).isEqualTo(ComposeViewModel.Event.NoteCreated(42L))
+        }
+        // No optimistic note: the hub creates it, `note_created` resolves the id.
+        coVerify(exactly = 0) { noteRepo.createNote(any(), any(), any(), any()) }
+    }
+
+    @Test fun `a refused client-mode create emits CreateFailed`() = runTest(dispatcher) {
+        val noteRepo = mockk<NoteRepository>()
+        val clientActions = mockk<ClientActionGateway>()
+        coEvery { clientActions.isClientMode() } returns true
+        coEvery { clientActions.createNote("Groceries") } returns
+            Outcome.Failure(AppError.ClientOffline)
+        val vm = ComposeViewModel(
+            SavedStateHandle(),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            dispatcher,
+            noteRepo,
+            clientActions,
+        )
+
+        vm.events.test {
+            vm.createNote("Groceries")
+            advanceUntilIdle()
+
+            assertThat(awaitItem())
+                .isEqualTo(ComposeViewModel.Event.CreateFailed(AppError.ClientOffline))
+        }
     }
 }

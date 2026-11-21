@@ -181,6 +181,8 @@ fun shouldShowSyncProgress(ui: ClientSyncUiState): Boolean {
 class ClientSyncEngine @Inject constructor(
     private val channel: ClientSyncChannel,
     private val mirror: ClientMirror,
+    /** Round 36 phase 2 — the note mirror (note frames route here). */
+    private val noteMirror: NoteMirror,
     private val stateStore: SyncStateStore,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
@@ -232,11 +234,17 @@ class ClientSyncEngine @Inject constructor(
     /** The cursor: max hub message id durably stored (in-memory; see the class doc). */
     private var maxStoredId: Long = 0
 
+    /** Round 36 phase 2 — the note cursor: max hub note message id durably stored. */
+    private var maxStoredNoteMessageId: Long = 0
+
     private var imported: Long = 0
     private var total: Long? = null
 
     /** Hub conversation ids seen in this run's snapshot (null outside a run). */
     private var snapshotIds: MutableSet<Long>? = null
+
+    /** Round 36 phase 2 — hub note ids seen in this run's snapshot (null outside a run). */
+    private var snapshotNoteIds: MutableSet<Long>? = null
 
     /** Gap-fill: the incomplete conversations, walked one at a time. */
     private val gapFillQueue: ArrayDeque<Long> = ArrayDeque()
@@ -1023,6 +1031,15 @@ class ClientSyncEngine @Inject constructor(
         runIsDelta = sinceMessageId != "0"
         maxStoredId = sinceMessageId.toLongOrNull() ?: 0L
         snapshotIds = mutableSetOf()
+        // Round 36 phase 2 — the note cursor rides along: a first
+        // sync starts it at 0 (like the message cursor), a delta
+        // resumes from the stored note cursor.
+        maxStoredNoteMessageId = if (sinceMessageId == "0") {
+            0L
+        } else {
+            syncState?.noteLastMessageId?.toLongOrNull() ?: 0L
+        }
+        snapshotNoteIds = mutableSetOf()
         // A fresh full run picks up the counter of an interrupted
         // run (the per-batch pause-record writes): the hub
         // re-streams from the start, the mirror upserts
@@ -1057,7 +1074,15 @@ class ClientSyncEngine @Inject constructor(
             )
         }
         val cursor = sinceMessageId.takeIf { it != "0" }
-        val sent = channel.send(ClientFrames.encodeSyncRequest(mode, cursor))
+        // Round 36 phase 2 — the note cursor travels with the
+        // request (null on a first sync, like the message cursor):
+        // the hub streams only the note entries above it.
+        val noteCursor = if (sinceMessageId == "0") {
+            null
+        } else {
+            syncState?.noteLastMessageId?.takeIf { it != "0" }
+        }
+        val sent = channel.send(ClientFrames.encodeSyncRequest(mode, cursor, noteCursor))
         if (!sent) {
             stallWatchdogJob?.cancel()
             stallWatchdogJob = null
@@ -1080,6 +1105,8 @@ class ClientSyncEngine @Inject constructor(
         total = null
         maxStoredId = syncState?.globalLastMessageId?.toLongOrNull() ?: 0L
         snapshotIds = null
+        maxStoredNoteMessageId = syncState?.noteLastMessageId?.toLongOrNull() ?: 0L
+        snapshotNoteIds = null
         gapFillQueue.clear()
         gapFillActive = false
         // In-flight fetches belong to the dead session — their
@@ -1106,6 +1133,14 @@ class ClientSyncEngine @Inject constructor(
         syncState = updated
     }
 
+    /** Round 36 phase 2 — persists the note cursor after a live note entry lands. */
+    private suspend fun persistNoteCursor() {
+        val stored = syncState ?: return
+        val updated = stored.copy(noteLastMessageId = maxStoredNoteMessageId.toString())
+        stateStore.saveSyncState(updated)
+        syncState = updated
+    }
+
     // -- Frames -----------------------------------------------------
 
     private suspend fun onFrame(frame: ServerFrame) {
@@ -1119,6 +1154,8 @@ class ClientSyncEngine @Inject constructor(
                 is ServerFrame.SyncStarted,
                 is ServerFrame.Conversations,
                 is ServerFrame.MessagesBatch,
+                is ServerFrame.Notes,
+                is ServerFrame.NoteMessagesBatch,
                 is ServerFrame.SyncComplete,
                 is ServerFrame.SyncError,
                 -> return
@@ -1169,6 +1206,22 @@ class ClientSyncEngine @Inject constructor(
             is ServerFrame.CallState,
             is ServerFrame.DialResult,
             -> onCallFrame(frame)
+
+            // Round 36 phase 2 — notes sync: one branch for all
+            // note frames (keeps this `when` under the complexity
+            // cap); the split lives in [onNoteFrame].
+            is ServerFrame.Notes,
+            is ServerFrame.NoteMessagesBatch,
+            is ServerFrame.NoteCreated,
+            is ServerFrame.NoteNew,
+            is ServerFrame.NoteUpdated,
+            is ServerFrame.NoteDeleted,
+            is ServerFrame.NoteMessageNew,
+            is ServerFrame.NoteMessageDeleted,
+            is ServerFrame.NoteMessageUpdated,
+            is ServerFrame.NoteMessageSaved,
+            is ServerFrame.NoteMessageFailed,
+            -> onNoteFrame(frame)
 
             else -> onOtherFrame(frame)
         }
@@ -1372,6 +1425,11 @@ class ClientSyncEngine @Inject constructor(
             val baseline = value.cursorMessageId.toLongOrNull() ?: 0L
             if (baseline > maxStoredId) maxStoredId = baseline
             persistCursor()
+            // Round 36 phase 2 — the note cursor baselines the
+            // same way (the list streams, the entries don't).
+            val noteBaseline = value.cursorNoteMessageId.toLongOrNull() ?: 0L
+            if (noteBaseline > maxStoredNoteMessageId) maxStoredNoteMessageId = noteBaseline
+            persistNoteCursor()
         }
     }
 
@@ -1570,6 +1628,7 @@ class ClientSyncEngine @Inject constructor(
         if (stored != null) {
             val updated = stored.copy(
                 globalLastMessageId = maxStoredId.toString(),
+                noteLastMessageId = maxStoredNoteMessageId.toString(),
                 initialSyncDone = true,
                 lastSyncAt = System.currentTimeMillis(),
             )
@@ -1633,6 +1692,100 @@ class ClientSyncEngine @Inject constructor(
         fetchInFlight.remove(hubConvId)
         fetchedThisSession.remove(hubConvId)
         pendingPinned.entries.removeAll { it.value.hubConversationId == hubConvId }
+    }
+
+    // -- Notes (round 36 phase 2) -----------------------------------
+
+    /** The note frames: snapshot batches, live pushes, and the save acks. */
+    private suspend fun onNoteFrame(frame: ServerFrame) {
+        when (frame) {
+            is ServerFrame.Notes -> onNotes(frame.value)
+            is ServerFrame.NoteMessagesBatch -> onNoteMessagesBatch(frame.value)
+            is ServerFrame.NoteCreated -> {
+                // Upsert FIRST, then notify the sender: the create
+                // waiter reads the local row by hub id, and it must
+                // exist by then (the `conversation_created` rule).
+                noteMirror.upsertSyncedNote(frame.value.note)
+                actionSender.onNoteCreated(frame.value)
+            }
+            is ServerFrame.NoteNew -> noteMirror.upsertSyncedNote(frame.value.note)
+            is ServerFrame.NoteUpdated -> noteMirror.upsertSyncedNote(frame.value.note)
+            is ServerFrame.NoteDeleted -> onNoteDeleted(frame.value)
+            is ServerFrame.NoteMessageNew -> onNoteMessageNew(frame.value)
+            is ServerFrame.NoteMessageDeleted -> onNoteMessageDeleted(frame.value)
+            is ServerFrame.NoteMessageUpdated -> {
+                // The full edited row lands first; the broadcast is
+                // also the edit's success signal (it drops the
+                // pending revert — the `action_result` `ok:true`
+                // does the same, whichever arrives first).
+                noteMirror.upsertSyncedMessage(frame.value.message)
+                actionSender.onNoteMessageUpdated(frame.value)
+            }
+            is ServerFrame.NoteMessageSaved -> sendManager.onNoteMessageSaved(frame.value)
+            is ServerFrame.NoteMessageFailed -> sendManager.onNoteMessageFailed(frame.value)
+            else -> Unit
+        }
+    }
+
+    /**
+     * One batch of the note snapshot: upsert every note, record
+     * its hub id. When the snapshot finishes, prune the mirrored
+     * notes the hub no longer has (the hub always sends the FULL
+     * snapshot, delta runs included, so this is safe on every
+     * run). The note count never joins `imported` — the total is
+     * SMS messages.
+     */
+    private suspend fun onNotes(value: SyncProtocol.Notes) {
+        val snapshot = snapshotNoteIds ?: return
+        for (wire in value.notes) {
+            noteMirror.upsertSyncedNote(wire)
+            parseHubId(wire.id)?.let { snapshot.add(it) }
+        }
+        if (!value.hasMore) {
+            val pruned = noteMirror.pruneSyncedNotes(snapshot)
+            if (pruned > 0) {
+                Timber.i("ClientSyncEngine: pruned %d notes absent from the snapshot", pruned)
+            }
+        }
+    }
+
+    /**
+     * One page of one note's entries: upsert each, advance the
+     * note cursor past the highest id stored. A batch is proof of
+     * life (the stall watchdog restarts from it, like a message
+     * batch). Note batches never count toward `imported` — the
+     * total is SMS messages.
+     */
+    private suspend fun onNoteMessagesBatch(value: SyncProtocol.NoteMessagesBatch) {
+        if (ui.value.phase == ClientSyncPhase.Syncing &&
+            runMode == SyncProtocol.SyncRequest.FULL && !runIsDelta
+        ) {
+            startStallWatchdog()
+        }
+        for (wire in value.messages) {
+            noteMirror.upsertSyncedMessage(wire)
+            val hubMsgId = parseHubId(wire.id) ?: continue
+            if (hubMsgId > maxStoredNoteMessageId) maxStoredNoteMessageId = hubMsgId
+        }
+    }
+
+    /** One live note entry: upsert it, advance the note cursor, persist it. No notification. */
+    private suspend fun onNoteMessageNew(value: SyncProtocol.NoteMessageNew) {
+        val wire = value.message
+        noteMirror.upsertSyncedMessage(wire) ?: return
+        val hubMsgId = parseHubId(wire.id) ?: return
+        if (hubMsgId > maxStoredNoteMessageId) maxStoredNoteMessageId = hubMsgId
+        persistNoteCursor()
+    }
+
+    private suspend fun onNoteDeleted(value: SyncProtocol.NoteDeleted) {
+        val hubNoteId = parseHubId(value.noteId) ?: return
+        noteMirror.deleteSyncedNote(hubNoteId)
+    }
+
+    private suspend fun onNoteMessageDeleted(value: SyncProtocol.NoteMessageDeleted) {
+        val hubMsgId = parseHubId(value.messageId) ?: return
+        noteMirror.deleteSyncedMessage(hubMsgId)
     }
 
     private suspend fun onSyncError(value: SyncProtocol.SyncError) {

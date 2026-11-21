@@ -10,12 +10,17 @@ import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
+import com.filestech.sms.domain.clientmode.NoteSaveAttachment
+import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.MessageType
+import com.filestech.sms.domain.model.NoteMessage
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.ScheduledMessage
 import com.filestech.sms.domain.model.SendErrorCode
+import com.filestech.sms.domain.notes.NoteAttachmentResolver
+import com.filestech.sms.domain.repository.NoteRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
@@ -30,12 +35,14 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -83,6 +90,9 @@ class ClientSendManagerTest {
         val attachmentDao: AttachmentDao,
         /** Client mode C5 — the temp `filesDir` the durable copies land in. */
         val filesDir: File,
+        /** Round 36 phase 2 — the note store + resolver (the note save tests seed them). */
+        val noteRepo: NoteRepository,
+        val noteAttachmentResolver: NoteAttachmentResolver,
     ) {
         /** A staged file (the composer's copy) — outside the durable root, so the send copies it. */
         fun stagedFile(name: String, sizeBytes: Int): File =
@@ -124,6 +134,9 @@ class ClientSendManagerTest {
         val filesDir = Files.createTempDirectory("c5-send").toFile()
         val context = mockk<Context>()
         every { context.filesDir } returns filesDir
+        // Round 36 phase 2 — the note store + resolver (the note save tests seed them).
+        val noteRepo = mockk<NoteRepository>(relaxed = true)
+        val noteAttachmentResolver = mockk<NoteAttachmentResolver>(relaxed = true)
         val manager = ClientSendManager(
             channel,
             database,
@@ -135,8 +148,21 @@ class ClientSendManagerTest {
             attachmentDao,
             context,
             this,
+            noteRepo,
+            noteAttachmentResolver,
         )
-        return Harness(manager, channel, conversationDao, messageDao, scheduledRepo, uploader, attachmentDao, filesDir)
+        return Harness(
+            manager,
+            channel,
+            conversationDao,
+            messageDao,
+            scheduledRepo,
+            uploader,
+            attachmentDao,
+            filesDir,
+            noteRepo,
+            noteAttachmentResolver,
+        )
     }
 
     private fun conversation(
@@ -782,6 +808,201 @@ class ClientSendManagerTest {
         h.manager.onLiveMessage("sched-key")
 
         coVerify(exactly = 0) { h.scheduledRepo.markSent(any()) }
+    }
+
+    // -- Round 36 phase 2: note saves ---------------------------------
+
+    private fun noteMessage(id: Long = 11L, noteId: Long = 3L, body: String = "hello") =
+        NoteMessage(
+            id = id,
+            uuid = "msg-uuid",
+            noteId = noteId,
+            body = body,
+            date = 1000L,
+        )
+
+    private fun seedNoteSave(h: Harness, message: NoteMessage = noteMessage()) {
+        coEvery { h.noteRepo.noteHubId(3L) } returns 30L
+        coEvery {
+            h.noteRepo.insertMessage(any(), any(), any(), any(), any(), any())
+        } returns message
+    }
+
+    @Test fun `saveNoteMessage sends save_note_message and completes on the ack`() = runTest {
+        val h = harness()
+        seedNoteSave(h)
+
+        val deferred = async {
+            h.manager.saveNoteMessage(3L, "hello", emptyList(), "uuid-1")
+        }
+        runCurrent()
+        assertThat(h.channel.sent).hasSize(1)
+        val frame = h.channel.sent.single().asObject()
+        assertThat(frame.frameType()).isEqualTo("save_note_message")
+        assertThat(frame["client_message_id"]?.jsonPrimitive?.content).isEqualTo("uuid-1")
+        assertThat(frame["note_id"]?.jsonPrimitive?.content).isEqualTo("30")
+        assertThat(frame["body"]?.jsonPrimitive?.content).isEqualTo("hello")
+        // No attachments: the array encodes empty (the manager passes
+        // the list, not null — the hub treats both the same).
+        assertThat(frame["attachments"]?.jsonArray).isEmpty()
+
+        h.manager.onNoteMessageSaved(
+            SyncProtocol.NoteMessageSaved("uuid-1", "42", "7"),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Success(11L))
+        coVerify { h.noteRepo.linkMessageToHub("uuid-1", 42L) }
+        coVerify(exactly = 0) { h.noteRepo.deleteMessage(any()) }
+    }
+
+    @Test fun `saveNoteMessage to an unsynced note fails without a frame`() = runTest {
+        val h = harness()
+        // The relaxed mock answers 0L for a `Long?` return — the
+        // unsynced case must be stubbed to null explicitly.
+        coEvery { h.noteRepo.noteHubId(3L) } returns null
+
+        val result = h.manager.saveNoteMessage(3L, "hello", emptyList(), "uuid-1")
+
+        assertThat(result).isInstanceOf(Outcome.Failure::class.java)
+        assertThat(h.channel.sent).isEmpty()
+        coVerify(exactly = 0) { h.noteRepo.insertMessage(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun `saveNoteMessage failure deletes the optimistic row`() = runTest {
+        val h = harness()
+        seedNoteSave(h)
+
+        val deferred = async {
+            h.manager.saveNoteMessage(3L, "hello", emptyList(), "uuid-1")
+        }
+        runCurrent()
+        h.manager.onNoteMessageFailed(
+            SyncProtocol.NoteMessageFailed("uuid-1", "7", "unknown_note", "gone"),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await())
+            .isEqualTo(Outcome.Failure(AppError.Validation("note doesn't exist anymore")))
+        coVerify { h.noteRepo.deleteMessage(11L) }
+    }
+
+    @Test fun `saveNoteMessage with an attachment uploads with kind note`() = runTest {
+        val h = harness()
+        seedNoteSave(h)
+        val bytes = byteArrayOf(1, 2, 3)
+        val staged = File(h.filesDir, "a.jpg").also { it.writeBytes(bytes) }
+        coEvery {
+            h.noteRepo.addAttachment(any(), any(), any(), any(), any(), any(), any(), any())
+        } returns Outcome.Success(
+            Attachment(
+                id = 5L,
+                messageId = 11L,
+                mimeType = "image/jpeg",
+                fileName = "a.jpg",
+                sizeBytes = 3L,
+                localUri = "note://5",
+                width = 800,
+                height = 600,
+                durationMs = null,
+            ),
+        )
+        val uploaded = slot<ByteArray>()
+
+        val deferred = async {
+            h.manager.saveNoteMessage(
+                3L,
+                "hello",
+                listOf(NoteSaveAttachment(staged, "image/jpeg", "a.jpg", 800, 600)),
+                "uuid-1",
+            )
+        }
+        runCurrent()
+        coVerify {
+            h.uploader.upload("uuid-1", 0, capture(uploaded), "image/jpeg", "a.jpg", "note")
+        }
+        assertThat(uploaded.captured).isEqualTo(bytes)
+        val frame = h.channel.sent.single().asObject()
+        val attachment = frame["attachments"]?.jsonArray?.single()?.jsonObject
+        assertThat(attachment?.get("upload_index")?.jsonPrimitive?.content).isEqualTo("0")
+        assertThat(attachment?.get("mime_type")?.jsonPrimitive?.content).isEqualTo("image/jpeg")
+
+        h.manager.onNoteMessageSaved(SyncProtocol.NoteMessageSaved("uuid-1", "42", "7"))
+        advanceUntilIdle()
+        assertThat(deferred.await()).isEqualTo(Outcome.Success(11L))
+    }
+
+    @Test fun `upload_expired re-uploads once and the second ack completes the save`() = runTest {
+        val h = harness()
+        seedNoteSave(h)
+        val bytes = byteArrayOf(1, 2, 3)
+        val staged = File(h.filesDir, "a.jpg").also { it.writeBytes(bytes) }
+        val attachment = Attachment(
+            id = 5L,
+            messageId = 11L,
+            mimeType = "image/jpeg",
+            fileName = "a.jpg",
+            sizeBytes = 3L,
+            localUri = "note://5",
+            width = null,
+            height = null,
+            durationMs = null,
+        )
+        coEvery {
+            h.noteRepo.addAttachment(any(), any(), any(), any(), any(), any(), any(), any())
+        } returns Outcome.Success(attachment)
+        coEvery { h.noteRepo.attachmentsForMessage(11L) } returns listOf(attachment)
+        coEvery { h.noteRepo.findMessageById(11L) } returns noteMessage()
+        coEvery { h.noteAttachmentResolver.decryptToMemory(attachment) } returns
+            Outcome.Success(bytes)
+
+        val deferred = async {
+            h.manager.saveNoteMessage(
+                3L,
+                "hello",
+                listOf(NoteSaveAttachment(staged, "image/jpeg", "a.jpg")),
+                "uuid-1",
+            )
+        }
+        runCurrent()
+        assertThat(h.channel.sent).hasSize(1)
+
+        h.manager.onNoteMessageFailed(
+            SyncProtocol.NoteMessageFailed("uuid-1", "7", "upload_expired", "stale"),
+        )
+        // runCurrent, not advanceUntilIdle: the save's 20 s timeout
+        // is still pending, and advancing the clock would fire it
+        // before the second ack arrives.
+        runCurrent()
+        // The retry re-uploaded (same key, kind note) and re-sent the frame.
+        assertThat(h.channel.sent).hasSize(2)
+        val retry = h.channel.sent[1].asObject()
+        assertThat(retry.frameType()).isEqualTo("save_note_message")
+        assertThat(retry["client_message_id"]?.jsonPrimitive?.content).isEqualTo("uuid-1")
+        assertThat(deferred.isCompleted).isFalse()
+
+        h.manager.onNoteMessageSaved(SyncProtocol.NoteMessageSaved("uuid-1", "42", "7"))
+        advanceUntilIdle()
+        assertThat(deferred.await()).isEqualTo(Outcome.Success(11L))
+        coVerify(exactly = 0) { h.noteRepo.deleteMessage(any()) }
+    }
+
+    @Test fun `upload_expired on a text entry fails the save (nothing to re-upload)`() = runTest {
+        val h = harness()
+        seedNoteSave(h)
+        coEvery { h.noteRepo.attachmentsForMessage(11L) } returns emptyList()
+
+        val deferred = async {
+            h.manager.saveNoteMessage(3L, "hello", emptyList(), "uuid-1")
+        }
+        runCurrent()
+        h.manager.onNoteMessageFailed(
+            SyncProtocol.NoteMessageFailed("uuid-1", "7", "upload_expired", "stale"),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Failure(AppError.Network()))
+        coVerify { h.noteRepo.deleteMessage(11L) }
     }
 
     // -- mode -------------------------------------------------------

@@ -15,13 +15,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.filestech.sms.R
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.NoteMessage
 import com.filestech.sms.domain.model.toDisplayMessage
 import com.filestech.sms.domain.notes.NoteAttachmentResolver
+import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.AudioMessageBubble
 import com.filestech.sms.ui.components.BurstPosition
 import com.filestech.sms.ui.components.MessageBubble
@@ -51,6 +54,13 @@ import com.filestech.sms.ui.theme.RelayText
  * follows the thread's ([computeNoteBurstPosition]: same-day, ≤60 s
  * apart). The day separator renders above the entry when
  * [daySeparatorLabel] is non-null.
+ *
+ * Round 36 phase 2 — an edited entry shows a small "Edited" marker
+ * under the bubble (right-aligned, secondary text); the marker is
+ * rendered here, not inside the bubbles, so it covers all three
+ * branches. Editing itself is text-only entries only (the
+ * [MessageBubble] branch): a media entry's caption is not editable
+ * this round.
  */
 @Composable
 fun NoteMessageItem(
@@ -69,6 +79,12 @@ fun NoteMessageItem(
     onCopy: (() -> Unit)?,
     /** Null when the entry has no text (no inert Translate entry). */
     onTranslate: (() -> Unit)?,
+    /** Round 36 phase 2 — null when the entry is not a text-only entry with text. */
+    onEdit: (() -> Unit)? = null,
+    /** Round 36 phase 2 — client mode: the note download states, keyed by local attachment id. */
+    downloadStates: Map<Long, ClientDownloadState> = emptyMap(),
+    /** Round 36 phase 2 — client mode: requests one note attachment's bytes, by local id. */
+    onRequestDownload: ((Long) -> Unit)? = null,
 ) {
     val display = remember(noteMessage) { noteMessage.toDisplayMessage() }
     val displayPrev = remember(prev) { prev?.toDisplayMessage() }
@@ -91,6 +107,7 @@ fun NoteMessageItem(
                 showTimestamp = showTimestamp,
                 showStatus = false,
                 customBubbleColorArgb = customBubbleColorArgb,
+                onRequestDownload = onRequestDownload?.let { request -> { request(audio.id) } },
             )
 
             noteMessage.attachments.isNotEmpty() -> NoteMediaAttachmentBubble(
@@ -102,6 +119,8 @@ fun NoteMessageItem(
                 customBubbleColorArgb = customBubbleColorArgb,
                 onDelete = onDelete,
                 onCopy = onCopy,
+                downloadStates = downloadStates,
+                onRequestDownload = onRequestDownload,
             )
 
             else -> MessageBubble(
@@ -112,8 +131,27 @@ fun NoteMessageItem(
                 onDelete = onDelete,
                 onTranslate = onTranslate,
                 onCopy = onCopy,
+                onEdit = onEdit,
                 customBubbleColorArgb = customBubbleColorArgb,
             )
+        }
+        // Round 36 phase 2 — the "Edited" marker: small,
+        // right-aligned secondary text under the bubble, rendered
+        // here so it covers every branch (edits are text-only, but
+        // the marker belongs to the entry, not the bubble type).
+        if (noteMessage.edited) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, end = 8.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text(
+                    text = stringResource(R.string.note_message_edited),
+                    style = RelayText.Timestamp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.filestech.sms.domain.model
 
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
+import com.filestech.sms.domain.categories.MessageCategory
 
 data class Conversation(
     val id: Long,
@@ -43,6 +44,16 @@ data class Conversation(
      */
     val pinnedMessageId: Long? = null,
     val pinnedMessageAt: Long? = null,
+    /**
+     * Round 35 (schema v20) — the category the latest incoming message
+     * earned at receive time, computed from its FULL body and stored so a
+     * plain follow-up cannot re-file the conversation (`null` = no stored
+     * category; contacts and groups never store one). [com.filestech.sms
+     * .domain.categories.MessageClassifier.classifyConversation] returns
+     * it for a stranger 1:1 instead of live-classifying the truncated
+     * preview. Cleared when the user replies in the thread.
+     */
+    val stickyCategory: MessageCategory? = null,
 ) {
     val isGroup: Boolean get() = addresses.size > 1
 

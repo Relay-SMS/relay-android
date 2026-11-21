@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.filestech.sms.domain.categories.MessageCategory
 import kotlinx.serialization.Serializable
 
 /**
@@ -102,4 +103,19 @@ data class ConversationEntity(
      */
     @kotlinx.serialization.Transient
     @ColumnInfo(name = "hub_conversation_id") val hubConversationId: Long? = null,
+    /**
+     * Round 35 (schema v20) — the sticky category: the category the
+     * latest incoming message earned at receive time, computed from its
+     * FULL body and stored by name (`MessageCategory` ↔ TEXT via
+     * `MessageEnumConverters`), so a plain follow-up cannot re-file the
+     * conversation. `null` = no stored category; contacts and groups
+     * never store one, and any outgoing message in the thread clears it.
+     *
+     * `@Transient` for the backup, like `hubConversationId`: the sticky
+     * value is derived state (the backfill recomputes it, and every new
+     * incoming message refreshes it), and the backup parser is strict
+     * about unknown keys.
+     */
+    @kotlinx.serialization.Transient
+    @ColumnInfo(name = "sticky_category") val stickyCategory: MessageCategory? = null,
 )

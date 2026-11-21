@@ -18,6 +18,13 @@ import androidx.room.PrimaryKey
  *
  * V1 links one hub; the per-hub shape supports multi-hub later
  * without a data-model redo.
+ *
+ * Phase 2 (v21) — [noteLastMessageId] is the note cursor: the max
+ * hub note-message id durably stored, `"0"` when none yet. Same
+ * rule as the message cursor (stored, never the server's cursor;
+ * an older cursor can only re-deliver by id). The note LIST always
+ * streams in full; only the per-note message pages page on this
+ * cursor.
  */
 @Entity(tableName = "client_sync_state")
 data class ClientSyncStateEntity(
@@ -29,6 +36,8 @@ data class ClientSyncStateEntity(
     @ColumnInfo(name = "mode") val mode: String,
     /** Max hub message id stored, as a decimal string; `"0"` when none yet. */
     @ColumnInfo(name = "global_last_message_id") val globalLastMessageId: String = "0",
+    /** Phase 2 (v21) — max hub note-message id stored; `"0"` when none yet. */
+    @ColumnInfo(name = "note_last_message_id", defaultValue = "'0'") val noteLastMessageId: String = "0",
     /** True once a first sync run completed for this hub. */
     @ColumnInfo(name = "initial_sync_done") val initialSyncDone: Boolean = false,
     /** Epoch ms of the last completed sync run, or null before the first. */

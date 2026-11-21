@@ -9,11 +9,16 @@ import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.repository.FichiersDePiecesJointes
 import com.filestech.sms.data.repository.SyncedConversationResult
 import com.filestech.sms.data.repository.SyncedMessageResult
+import com.filestech.sms.domain.repository.NoteRepository
+import com.filestech.sms.domain.repository.SyncedNoteMessageResult
+import com.filestech.sms.domain.repository.SyncedNoteResult
 import com.filestech.sms.sync.SyncProtocol
 import com.filestech.sms.sync.SyncWakelock
 import com.filestech.sms.sync.SyncedContact
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
+import com.filestech.sms.sync.SyncedNote
+import com.filestech.sms.sync.SyncedNoteMessage
 import com.google.common.truth.Truth.assertThat
 import io.mockk.clearMocks
 import io.mockk.coEvery
@@ -131,6 +136,44 @@ class ClientSyncEngineTest {
         }
     }
 
+    /** Round 36 phase 2 — the note mirror fake: records every upsert, delete, and prune. */
+    private class FakeNoteMirror : NoteMirror {
+        val notes = mutableListOf<SyncedNote>()
+        val messages = mutableListOf<SyncedNoteMessage>()
+        val deletedNotes = mutableListOf<Long>()
+        val deletedMessages = mutableListOf<Long>()
+        var prunedWith: Set<Long>? = null
+        var pruneResult = 0
+        var nextLocalId = 1L
+        var noteResult: (SyncedNote) -> SyncedNoteResult =
+            { SyncedNoteResult(nextLocalId++, created = true) }
+        var messageResult: (SyncedNoteMessage) -> SyncedNoteMessageResult =
+            { SyncedNoteMessageResult(nextLocalId++, inserted = true) }
+
+        override suspend fun upsertSyncedNote(wire: SyncedNote): SyncedNoteResult? {
+            notes += wire
+            return noteResult(wire)
+        }
+
+        override suspend fun upsertSyncedMessage(wire: SyncedNoteMessage): SyncedNoteMessageResult? {
+            messages += wire
+            return messageResult(wire)
+        }
+
+        override suspend fun deleteSyncedNote(hubNoteId: Long) {
+            deletedNotes += hubNoteId
+        }
+
+        override suspend fun deleteSyncedMessage(hubMessageId: Long) {
+            deletedMessages += hubMessageId
+        }
+
+        override suspend fun pruneSyncedNotes(keepHubIds: Set<Long>): Int {
+            prunedWith = keepHubIds
+            return pruneResult
+        }
+    }
+
     private class FakeStateStore : SyncStateStore {
         val syncStates = mutableMapOf<String, ClientSyncStateEntity>()
         val convStates = mutableMapOf<Long, ClientConversationStateEntity>()
@@ -177,6 +220,8 @@ class ClientSyncEngineTest {
         val engine: ClientSyncEngine,
         val channel: FakeChannel,
         val mirror: FakeMirror,
+        /** Round 36 phase 2 — the note mirror fake (the note tests assert on it). */
+        val noteMirror: FakeNoteMirror,
         val store: FakeStateStore,
         val conversationDao: ConversationDao,
         val messageDao: MessageDao,
@@ -199,6 +244,7 @@ class ClientSyncEngineTest {
     private fun TestScope.harness(linkedHubId: String? = null): Harness {
         val channel = FakeChannel()
         val mirror = FakeMirror()
+        val noteMirror = FakeNoteMirror()
         val store = FakeStateStore()
         val conversationDao = mockk<ConversationDao>(relaxed = true)
         val messageDao = mockk<MessageDao>(relaxed = true)
@@ -234,6 +280,7 @@ class ClientSyncEngineTest {
             attachmentDao,
             fichiers,
             downloader,
+            mockk<NoteRepository>(relaxed = true),
         )
         // The engine's collectors never complete (they follow the
         // connection state + frame stream for the app's lifetime),
@@ -263,6 +310,7 @@ class ClientSyncEngineTest {
         val engine = ClientSyncEngine(
             channel,
             mirror,
+            noteMirror,
             store,
             conversationDao,
             messageDao,
@@ -285,6 +333,7 @@ class ClientSyncEngineTest {
             engine,
             channel,
             mirror,
+            noteMirror,
             store,
             conversationDao,
             messageDao,
@@ -1809,11 +1858,248 @@ class ClientSyncEngineTest {
         coVerify(exactly = 1) { h.downloader.onHubChanged() }
     }
 
+    // -- Round 36 phase 2: notes -------------------------------------
+
+    @Test fun `a delta resume sends the stored note cursor`() = runTest {
+        val h = harness(linkedHubId = HUB_ID)
+        h.store.syncStates[HUB_ID] = ClientSyncStateEntity(
+            hubId = HUB_ID,
+            mode = "full",
+            globalLastMessageId = "42",
+            noteLastMessageId = "30",
+            initialSyncDone = true,
+            lastSyncAt = 1L,
+        )
+        runCurrent()
+        h.channel.connect(HUB_ID)
+        advanceUntilIdle()
+        assertThat(h.channel.sent).hasSize(1)
+        val request = h.channel.sent.single().asObject()
+        assertThat(request["since_message_id"]?.jsonPrimitive?.content).isEqualTo("42")
+        assertThat(request["since_note_message_id"]?.jsonPrimitive?.content).isEqualTo("30")
+    }
+
+    @Test fun `a first sync sends no note cursor`() = runTest {
+        val h = harness()
+        runCurrent()
+        h.channel.connect()
+        advanceUntilIdle()
+        h.engine.chooseMode(SyncProtocol.SyncRequest.FULL)
+        advanceUntilIdle()
+        assertThat(h.channel.sent).hasSize(1)
+        val request = h.channel.sent.single().asObject()
+        assertThat(request.containsKey("since_note_message_id")).isFalse()
+    }
+
+    @Test fun `notes snapshot upserts and prunes at has_more=false`() = runTest {
+        val h = harness(linkedHubId = HUB_ID)
+        h.store.syncStates[HUB_ID] = ClientSyncStateEntity(
+            hubId = HUB_ID,
+            mode = "full",
+            globalLastMessageId = "42",
+            initialSyncDone = true,
+            lastSyncAt = 1L,
+        )
+        runCurrent()
+        h.channel.connect(HUB_ID)
+        advanceUntilIdle()
+        h.channel.emit(
+            ServerFrame.SyncStarted(
+                SyncProtocol.SyncStarted(
+                    mode = "full",
+                    totalConversations = 0,
+                    totalMessages = 0,
+                    cursorMessageId = "42",
+                    hubIsDefaultSms = true,
+                    cursorNoteMessageId = "0",
+                    totalNotes = 2,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        h.channel.emit(
+            ServerFrame.Notes(
+                SyncProtocol.Notes(notes = listOf(sampleNote(7)), hasMore = true),
+            ),
+        )
+        advanceUntilIdle()
+        assertThat(h.noteMirror.prunedWith).isNull()
+        h.channel.emit(
+            ServerFrame.Notes(
+                SyncProtocol.Notes(notes = listOf(sampleNote(8)), hasMore = false),
+            ),
+        )
+        advanceUntilIdle()
+        assertThat(h.noteMirror.notes.map { it.id }).containsExactly("7", "8").inOrder()
+        assertThat(h.noteMirror.prunedWith).containsExactly(7L, 8L)
+    }
+
+    @Test fun `note_messages_batch advances the note cursor persisted at sync_complete`() = runTest {
+        val h = harness(linkedHubId = HUB_ID)
+        h.store.syncStates[HUB_ID] = ClientSyncStateEntity(
+            hubId = HUB_ID,
+            mode = "full",
+            globalLastMessageId = "42",
+            initialSyncDone = true,
+            lastSyncAt = 1L,
+        )
+        runCurrent()
+        h.channel.connect(HUB_ID)
+        advanceUntilIdle()
+        h.channel.emit(
+            ServerFrame.SyncStarted(
+                SyncProtocol.SyncStarted(
+                    mode = "full",
+                    totalConversations = 0,
+                    totalMessages = 0,
+                    cursorMessageId = "42",
+                    hubIsDefaultSms = true,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        h.channel.emit(
+            ServerFrame.NoteMessagesBatch(
+                SyncProtocol.NoteMessagesBatch(
+                    noteId = "7",
+                    messages = listOf(sampleNoteMessage(42, 7), sampleNoteMessage(41, 7)),
+                    hasMore = false,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        assertThat(h.noteMirror.messages.map { it.id }).containsExactly("42", "41").inOrder()
+        // The server's cursor is deliberately NOT read — the cursor
+        // is the max id WE stored (a live entry could still be in
+        // flight past the server's value).
+        h.channel.emit(
+            ServerFrame.SyncComplete(
+                SyncProtocol.SyncComplete(cursorMessageId = "44", cursorNoteMessageId = "99"),
+            ),
+        )
+        advanceUntilIdle()
+        assertThat(h.store.syncStates[HUB_ID]?.noteLastMessageId).isEqualTo("42")
+    }
+
+    @Test fun `note_message_new upserts live and never notifies`() = runTest {
+        val h = harness()
+        runCurrent()
+        val wire = sampleNoteMessage(50, 7)
+
+        h.channel.emit(ServerFrame.NoteMessageNew(SyncProtocol.NoteMessageNew(wire)))
+        advanceUntilIdle()
+
+        assertThat(h.noteMirror.messages).containsExactly(wire)
+        coVerify(exactly = 0) { h.notificationRelay.onLiveMessage(any(), any()) }
+    }
+
+    @Test fun `note_message_updated upserts and tells the action sender`() = runTest {
+        val h = harness()
+        runCurrent()
+        val updated = SyncProtocol.NoteMessageUpdated(sampleNoteMessage(50, 7, edited = true))
+
+        h.channel.emit(ServerFrame.NoteMessageUpdated(updated))
+        advanceUntilIdle()
+
+        assertThat(h.noteMirror.messages).hasSize(1)
+        assertThat(h.noteMirror.messages[0].edited).isTrue()
+        coVerify { h.actionSender.onNoteMessageUpdated(updated) }
+    }
+
+    @Test fun `note_created upserts then tells the action sender`() = runTest {
+        val h = harness()
+        runCurrent()
+        val created = SyncProtocol.NoteCreated(sampleNote(7))
+
+        h.channel.emit(ServerFrame.NoteCreated(created))
+        advanceUntilIdle()
+
+        assertThat(h.noteMirror.notes).containsExactly(created.note)
+        coVerify { h.actionSender.onNoteCreated(created) }
+    }
+
+    @Test fun `note_new and note_updated upsert without routing`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.channel.emit(ServerFrame.NoteNew(SyncProtocol.NoteNew(sampleNote(7))))
+        h.channel.emit(ServerFrame.NoteUpdated(SyncProtocol.NoteUpdated(sampleNote(8))))
+        advanceUntilIdle()
+
+        assertThat(h.noteMirror.notes.map { it.id }).containsExactly("7", "8").inOrder()
+        coVerify(exactly = 0) { h.actionSender.onNoteCreated(any()) }
+    }
+
+    @Test fun `note_deleted and note_message_deleted delete from the mirror`() = runTest {
+        val h = harness()
+        runCurrent()
+
+        h.channel.emit(ServerFrame.NoteDeleted(SyncProtocol.NoteDeleted("7")))
+        h.channel.emit(
+            ServerFrame.NoteMessageDeleted(
+                SyncProtocol.NoteMessageDeleted(noteId = "7", messageId = "42"),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(h.noteMirror.deletedNotes).containsExactly(7L)
+        assertThat(h.noteMirror.deletedMessages).containsExactly(42L)
+    }
+
+    @Test fun `note_message_saved and note_message_failed route to the send manager`() = runTest {
+        val h = harness()
+        runCurrent()
+        val saved = SyncProtocol.NoteMessageSaved(
+            clientMessageId = "uuid-1",
+            messageId = "42",
+            noteId = "7",
+        )
+        val failed = SyncProtocol.NoteMessageFailed(
+            clientMessageId = "uuid-2",
+            noteId = "7",
+            code = "unknown_note",
+            message = "No note.",
+        )
+
+        h.channel.emit(ServerFrame.NoteMessageSaved(saved))
+        h.channel.emit(ServerFrame.NoteMessageFailed(failed))
+        advanceUntilIdle()
+
+        coVerify { h.sendManager.onNoteMessageSaved(saved) }
+        coVerify { h.sendManager.onNoteMessageFailed(failed) }
+    }
+
     private companion object {
         const val HUB_ID = "hub-1"
         const val HUB_NAME = "Phone"
     }
 }
+
+private fun sampleNote(id: Long, title: String = "Groceries") = SyncedNote(
+    id = id.toString(),
+    title = title,
+    createdAt = 1_794_670_000_000L,
+    updatedAt = 1_794_670_100_000L,
+    lastMessageAt = 1_794_670_100_000L,
+    lastMessagePreview = "Milk",
+    pinned = false,
+    archived = false,
+    messageCount = 3,
+)
+
+private fun sampleNoteMessage(
+    id: Long,
+    noteId: Long,
+    body: String = "Milk, eggs",
+    edited: Boolean = false,
+) = SyncedNoteMessage(
+    id = id.toString(),
+    noteId = noteId.toString(),
+    body = body,
+    date = 1_794_670_100_000L,
+    attachments = emptyList(),
+    edited = edited,
+)
 
 private fun sampleConversation(
     id: Long,

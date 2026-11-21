@@ -22,6 +22,10 @@ import com.filestech.sms.domain.model.NoteMessage
 import com.filestech.sms.domain.model.NoteMessageWindow
 import com.filestech.sms.domain.notes.NoteAttachmentResolver
 import com.filestech.sms.domain.repository.NoteRepository
+import com.filestech.sms.domain.repository.SyncedNoteData
+import com.filestech.sms.domain.repository.SyncedNoteMessageData
+import com.filestech.sms.domain.repository.SyncedNoteMessageResult
+import com.filestech.sms.domain.repository.SyncedNoteResult
 import com.filestech.sms.domain.usecase.RestoreNotesBackupUseCase
 import com.filestech.sms.security.AppLockManager
 import com.google.common.truth.Truth.assertThat
@@ -597,6 +601,8 @@ private class FakeNotesStore {
     }
 }
 
+/** Round 36 phase 2 — the fake implements the sync section too (41 methods: suppressed). */
+@Suppress("TooManyFunctions")
 private class FakeNoteRepository(private val store: FakeNotesStore) : NoteRepository {
 
     override fun observeAllNotes(): Flow<List<Note>> =
@@ -646,6 +652,8 @@ private class FakeNoteRepository(private val store: FakeNotesStore) : NoteReposi
         uuid: String,
         createdAt: Long,
         updatedAt: Long,
+        hubNoteId: Long?,
+        clientNoteId: String?,
     ): Note {
         val entity = NoteEntity(
             id = store.nextNoteId++,
@@ -656,6 +664,8 @@ private class FakeNoteRepository(private val store: FakeNotesStore) : NoteReposi
             lastMessageAt = null,
             lastMessagePreview = null,
             draft = null,
+            hubNoteId = hubNoteId,
+            clientNoteId = clientNoteId,
         )
         store.notes += entity
         return entity.toDomain()
@@ -695,6 +705,8 @@ private class FakeNoteRepository(private val store: FakeNotesStore) : NoteReposi
         body: String,
         uuid: String,
         date: Long,
+        hubNoteMessageId: Long?,
+        clientMessageId: String?,
     ): NoteMessage {
         val entity = NoteMessageEntity(
             id = store.nextMessageId++,
@@ -702,10 +714,19 @@ private class FakeNoteRepository(private val store: FakeNotesStore) : NoteReposi
             noteId = noteId,
             body = body,
             date = date,
+            hubNoteMessageId = hubNoteMessageId,
+            clientMessageId = clientMessageId,
         )
         store.messages += entity
         refreshPreview(noteId)
         return entity.toDomain()
+    }
+
+    override suspend fun editMessage(messageId: Long, body: String) {
+        val index = store.messages.indexOfFirst { it.id == messageId }
+        if (index < 0) return
+        store.messages[index] = store.messages[index].copy(body = body, edited = true)
+        refreshPreview(store.messages[index].noteId)
     }
 
     override suspend fun deleteMessage(messageId: Long) {
@@ -760,6 +781,150 @@ private class FakeNoteRepository(private val store: FakeNotesStore) : NoteReposi
     override suspend fun listAllAttachments(): List<Attachment> =
         store.attachments.sortedBy { it.id }.map { it.toDomain() }
 
+    // -- Round 36 phase 2: sync section (the backup tests do not use
+    // it, but the interface requires it — implemented over the store,
+    // mirroring the real repository's upsert rules) -------------------
+
+    override suspend fun noteHubId(localNoteId: Long): Long? =
+        store.notes.firstOrNull { it.id == localNoteId }?.hubNoteId
+
+    override suspend fun messageHubId(localMessageId: Long): Long? =
+        store.messages.firstOrNull { it.id == localMessageId }?.hubNoteMessageId
+
+    override suspend fun findNoteByHubId(hubNoteId: Long): Note? =
+        store.notes.firstOrNull { it.hubNoteId == hubNoteId }?.toDomain()
+
+    override suspend fun findNoteByClientId(clientNoteId: String): Note? =
+        store.notes.firstOrNull { it.clientNoteId == clientNoteId }?.toDomain()
+
+    override suspend fun findMessageByHubId(hubMessageId: Long): NoteMessage? {
+        val entity = store.messages.firstOrNull { it.hubNoteMessageId == hubMessageId }
+            ?: return null
+        return entity.toDomain(attachmentsFor(entity.id))
+    }
+
+    override suspend fun findMessageByClientId(clientMessageId: String): NoteMessage? {
+        val entity = store.messages.firstOrNull { it.clientMessageId == clientMessageId }
+            ?: return null
+        return entity.toDomain(attachmentsFor(entity.id))
+    }
+
+    override suspend fun findAttachmentByHubId(hubAttachmentId: Long): Attachment? =
+        store.attachments.firstOrNull { it.hubAttachmentId == hubAttachmentId }?.toDomain()
+
+    override suspend fun linkMessageToHub(clientMessageId: String, hubMessageId: Long) {
+        val index = store.messages.indexOfFirst { it.clientMessageId == clientMessageId }
+        if (index >= 0) {
+            store.messages[index] = store.messages[index].copy(hubNoteMessageId = hubMessageId)
+        }
+    }
+
+    override suspend fun upsertSyncedNote(data: SyncedNoteData): SyncedNoteResult {
+        val existing = store.notes.firstOrNull { it.hubNoteId == data.hubNoteId }
+        if (existing != null) {
+            replaceNote(existing.id) {
+                it.copy(
+                    title = data.title,
+                    updatedAt = data.updatedAt,
+                    lastMessageAt = data.lastMessageAt,
+                    lastMessagePreview = data.lastMessagePreview,
+                    pinned = data.pinned,
+                    archived = data.archived,
+                )
+            }
+            return SyncedNoteResult(existing.id, created = false)
+        }
+        val entity = NoteEntity(
+            id = store.nextNoteId++,
+            uuid = "synced-note-${data.hubNoteId}",
+            title = data.title,
+            createdAt = data.createdAt,
+            updatedAt = data.updatedAt,
+            lastMessageAt = data.lastMessageAt,
+            lastMessagePreview = data.lastMessagePreview,
+            draft = null,
+            pinned = data.pinned,
+            archived = data.archived,
+            hubNoteId = data.hubNoteId,
+        )
+        store.notes += entity
+        return SyncedNoteResult(entity.id, created = true)
+    }
+
+    override suspend fun upsertSyncedMessage(
+        data: SyncedNoteMessageData,
+    ): SyncedNoteMessageResult? {
+        val localNoteId = store.notes.firstOrNull { it.hubNoteId == data.hubNoteId }?.id
+            ?: return null
+        val existing = store.messages.firstOrNull { it.hubNoteMessageId == data.hubMessageId }
+            ?: data.clientMessageId?.let { client ->
+                store.messages.firstOrNull { it.clientMessageId == client }
+            }
+        if (existing != null) {
+            val index = store.messages.indexOf(existing)
+            store.messages[index] = existing.copy(
+                body = data.body,
+                edited = data.edited,
+                hubNoteMessageId = data.hubMessageId,
+            )
+            store.attachments.removeAll { it.noteMessageId == existing.id }
+            insertSyncedAttachments(existing.id, data)
+            refreshPreview(localNoteId)
+            return SyncedNoteMessageResult(existing.id, inserted = false)
+        }
+        val entity = NoteMessageEntity(
+            id = store.nextMessageId++,
+            uuid = "synced-msg-${data.hubMessageId}",
+            noteId = localNoteId,
+            body = data.body,
+            date = data.date,
+            hubNoteMessageId = data.hubMessageId,
+            clientMessageId = data.clientMessageId,
+            edited = data.edited,
+        )
+        store.messages += entity
+        insertSyncedAttachments(entity.id, data)
+        refreshPreview(localNoteId)
+        return SyncedNoteMessageResult(entity.id, inserted = true)
+    }
+
+    private fun insertSyncedAttachments(localMessageId: Long, data: SyncedNoteMessageData) {
+        for (att in data.attachments) {
+            store.attachments += NoteAttachmentEntity(
+                id = store.nextAttachmentId++,
+                uuid = "synced-att-${att.hubAttachmentId}",
+                noteMessageId = localMessageId,
+                mimeType = att.mimeType,
+                fileName = att.fileName,
+                sizeBytes = att.sizeBytes,
+                localUri = "",
+                width = att.width,
+                height = att.height,
+                durationMs = att.durationMs,
+                hubAttachmentId = att.hubAttachmentId,
+            )
+        }
+    }
+
+    override suspend fun deleteSyncedNote(hubNoteId: Long) {
+        val note = store.notes.firstOrNull { it.hubNoteId == hubNoteId } ?: return
+        deleteNote(note.id)
+    }
+
+    override suspend fun deleteSyncedMessage(hubMessageId: Long) {
+        val message = store.messages.firstOrNull { it.hubNoteMessageId == hubMessageId } ?: return
+        deleteMessage(message.id)
+    }
+
+    override suspend fun hubNoteIds(): Set<Long> =
+        store.notes.mapNotNull { it.hubNoteId }.toSet()
+
+    override suspend fun pruneSyncedNotes(keepHubIds: Set<Long>): Int {
+        val pruned = store.notes.filter { it.hubNoteId != null && it.hubNoteId !in keepHubIds }
+        pruned.forEach { deleteNote(it.id) }
+        return pruned.size
+    }
+
     private fun attachmentsFor(messageId: Long): List<Attachment> =
         store.attachments.filter { it.noteMessageId == messageId }.map { it.toDomain() }
 
@@ -805,6 +970,17 @@ private class FakeNoteDao(private val store: FakeNotesStore) : NoteDao {
 
     override suspend fun findByUuid(uuid: String): NoteEntity? =
         store.notes.firstOrNull { it.uuid == uuid }
+
+    override suspend fun findByHubId(hubId: Long): NoteEntity? =
+        store.notes.firstOrNull { it.hubNoteId == hubId }
+
+    override suspend fun findByClientNoteId(clientId: String): NoteEntity? =
+        store.notes.firstOrNull { it.clientNoteId == clientId }
+
+    override suspend fun hubNoteIds(): List<Long> =
+        store.notes.mapNotNull { it.hubNoteId }
+
+    override suspend fun count(): Int = store.notes.size
 
     override suspend fun listAll(): List<NoteEntity> = store.notes.toList()
 
@@ -872,6 +1048,23 @@ private class FakeNoteAttachmentDao(private val store: FakeNotesStore) : NoteAtt
 
     override suspend fun findByUuid(uuid: String): NoteAttachmentEntity? =
         store.attachments.firstOrNull { it.uuid == uuid }
+
+    override suspend fun findByHubId(hubId: Long): NoteAttachmentEntity? =
+        store.attachments.firstOrNull { it.hubAttachmentId == hubId }
+
+    override suspend fun updateLocalUri(id: Long, localUri: String) {
+        val index = store.attachments.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            store.attachments[index] = store.attachments[index].copy(localUri = localUri)
+        }
+    }
+
+    override suspend fun setHubId(id: Long, hubId: Long) {
+        val index = store.attachments.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            store.attachments[index] = store.attachments[index].copy(hubAttachmentId = hubId)
+        }
+    }
 
     override suspend fun listAll(): List<NoteAttachmentEntity> =
         store.attachments.sortedBy { it.id }

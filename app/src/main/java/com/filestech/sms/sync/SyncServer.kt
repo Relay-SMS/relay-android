@@ -115,6 +115,9 @@ import javax.inject.Singleton
  * @param callDialer the dial executor handed to each session's
  * engine, or null when the server has none (tests): a dial then
  * answers `dial_result` `failed`.
+ * @param noteSource the note store seam handed to each session's
+ * engine, or null when the server has none (tests): the notes
+ * phase is then skipped and note frames are ignored.
  */
 @Singleton
 class SyncServer @Inject constructor(
@@ -126,6 +129,7 @@ class SyncServer @Inject constructor(
     private val vpnAddressProvider: VpnAddressProvider? = null,
     private val callStateObserver: CallStateObserver? = null,
     private val callDialer: CallDialer? = null,
+    private val noteSource: NoteSyncSource? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val startStopMutex = Mutex()
@@ -524,6 +528,7 @@ class SyncServer @Inject constructor(
             send = { text -> session.send(Frame.Text(text)) },
             wakelock = syncWakelock,
             callDialer = callDialer,
+            noteSource = noteSource,
         )
         val handler = SyncSessionHandler(
             lookup = store,

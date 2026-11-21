@@ -4,6 +4,7 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.domain.clientmode.ClientAction
 import com.filestech.sms.domain.clientmode.ClientActionGateway
 import com.filestech.sms.domain.clientmode.ClientSendGateway
+import com.filestech.sms.domain.clientmode.NoteSaveAttachment
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.BlockedNumber
 import com.filestech.sms.domain.model.Conversation
@@ -134,6 +135,13 @@ internal class FakeClientSendGateway(
         cancelCalls += clientMessageId
         return cancelResult
     }
+
+    override suspend fun saveNoteMessage(
+        localNoteId: Long,
+        body: String,
+        attachments: List<NoteSaveAttachment>,
+        clientMessageId: String?,
+    ): Outcome<Long> = Outcome.Success(1L)
 }
 
 internal class FakeClientActionGateway(
@@ -160,6 +168,15 @@ internal class FakeClientActionGateway(
         createCalls += addresses to customName
         return createResult
     }
+
+    override suspend fun createNote(title: String): Outcome<Long> = createResult
+
+    override suspend fun deleteNote(localNoteId: Long): Outcome<Unit> = Outcome.Success(Unit)
+
+    override suspend fun deleteNoteMessage(
+        localNoteId: Long,
+        localMessageId: Long,
+    ): Outcome<Unit> = Outcome.Success(Unit)
 
     /** Simulates the hub answering `ok:false` for the last action. */
     suspend fun revertLast() {

@@ -4,6 +4,8 @@ import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
+import com.filestech.sms.data.local.db.dao.NoteDao
+import com.filestech.sms.data.local.db.dao.NoteMessageDao
 import com.filestech.sms.domain.clientmode.ClientAction
 import com.filestech.sms.domain.clientmode.ClientActionGateway
 import com.filestech.sms.domain.settings.AppSettings
@@ -15,6 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,6 +44,17 @@ import javax.inject.Singleton
  * the same shape (one dial at a time, awaited up to 10 s) — the
  * tablet asks the hub to place a cellular call, and the audio stays
  * on the phone.
+ *
+ * Round 36 phase 2 — notes follow the same shapes: `create_note`
+ * (one at a time, awaited up to 20 s, answered by `note_created`
+ * or a refused `action_result`), `delete_note` /
+ * `delete_note_message` (awaited up to 20 s, answered by
+ * `action_result` — the caller deletes its local row only on
+ * success), and the pin / archive / rename / edit actions (optimistic
+ * + revert, like the conversation flags). An edit's success is the
+ * `note_message_updated` broadcast, which drops the pending revert
+ * via [onNoteMessageUpdated] — the `action_result` `ok:true` does
+ * the same, whichever arrives first.
  */
 @Singleton
 class ClientActionSender @Inject constructor(
@@ -48,6 +62,8 @@ class ClientActionSender @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val settings: AppSettingsSource,
+    private val noteDao: NoteDao,
+    private val noteMessageDao: NoteMessageDao,
 ) : ClientActionGateway {
 
     /** The identity an `action_result` answers with: action + hub ids. */
@@ -61,6 +77,11 @@ class ClientActionSender @Inject constructor(
     private var pendingCreate: CompletableDeferred<Outcome<Long>>? = null
     private val dialMutex = Mutex()
     private var pendingDial: CompletableDeferred<Outcome<Unit>>? = null
+    private val noteCreateMutex = Mutex()
+    private var pendingNoteCreate: CompletableDeferred<Outcome<Long>>? = null
+
+    /** Awaited note deletes, keyed like the reverts — several may be in flight at once. */
+    private val pendingDeletes = mutableMapOf<ActionKey, CompletableDeferred<Outcome<Unit>>>()
 
     override suspend fun isClientMode(): Boolean =
         (settings.hydratedOrNull() ?: AppSettings()).mode == DeviceMode.CLIENT
@@ -103,6 +124,103 @@ class ClientActionSender @Inject constructor(
             mutex.withLock { if (pendingCreate === deferred) pendingCreate = null }
             outcome
         }
+    }
+
+    /**
+     * Round 36 phase 2 — sends `create_note` and awaits the hub's
+     * answer (up to 20 s): `note_created` (success) or a refused
+     * `action_result`. Returns the LOCAL note id — the engine
+     * upserts the note before the answer is delivered, so the row
+     * exists by the time this returns. One create at a time (the
+     * frame carries a client UUID, but the answer carries no
+     * request id, so the next `note_created` is the answer to this
+     * one). Offline → [AppError.ClientOffline].
+     */
+    override suspend fun createNote(title: String): Outcome<Long> {
+        if (title.isBlank()) return Outcome.Failure(AppError.Validation("no title"))
+        return noteCreateMutex.withLock {
+            val deferred = CompletableDeferred<Outcome<Long>>()
+            mutex.withLock { pendingNoteCreate = deferred }
+            val sent = channel.send(
+                ClientFrames.encodeCreateNote(
+                    SyncProtocol.CreateNote(UUID.randomUUID().toString(), title),
+                ),
+            )
+            if (!sent) {
+                mutex.withLock { if (pendingNoteCreate === deferred) pendingNoteCreate = null }
+                return@withLock Outcome.Failure(AppError.ClientOffline)
+            }
+            val outcome = withTimeoutOrNull(CREATE_TIMEOUT_MS) { deferred.await() }
+                ?: Outcome.Failure(AppError.Network())
+            mutex.withLock { if (pendingNoteCreate === deferred) pendingNoteCreate = null }
+            outcome
+        }
+    }
+
+    /**
+     * Round 36 phase 2 — sends `delete_note` and awaits the hub's
+     * `action_result` (up to 20 s). The caller deletes its local
+     * row only on success — a deleted row cannot be reverted.
+     * Several deletes may be in flight at once (keyed by note);
+     * a second delete of the SAME note awaits the first instead
+     * of sending a second frame. Offline → [AppError.ClientOffline].
+     */
+    override suspend fun deleteNote(localNoteId: Long): Outcome<Unit> {
+        val hubId = noteDao.findById(localNoteId)?.hubNoteId
+            ?: return Outcome.Failure(AppError.Validation("note is not synced with the phone"))
+        return awaitDelete(ActionKey(ACTION_DELETE_NOTE, hubId.toString(), null)) {
+            ClientFrames.encodeDeleteNote(SyncProtocol.DeleteNote(hubId.toString()))
+        }
+    }
+
+    /**
+     * Round 36 phase 2 — sends `delete_note_message` and awaits
+     * the hub's `action_result` (up to 20 s). Same shape as
+     * [deleteNote]: the caller deletes its local row only on
+     * success.
+     */
+    override suspend fun deleteNoteMessage(localNoteId: Long, localMessageId: Long): Outcome<Unit> {
+        val hubNoteId = noteDao.findById(localNoteId)?.hubNoteId
+            ?: return Outcome.Failure(AppError.Validation("note is not synced with the phone"))
+        val hubMessageId = noteMessageDao.findById(localMessageId)?.hubNoteMessageId
+            ?: return Outcome.Failure(AppError.Validation("entry is not synced with the phone"))
+        return awaitDelete(
+            ActionKey(ACTION_DELETE_NOTE_MESSAGE, hubNoteId.toString(), hubMessageId.toString()),
+        ) {
+            ClientFrames.encodeDeleteNoteMessage(
+                SyncProtocol.DeleteNoteMessage(hubNoteId.toString(), hubMessageId.toString()),
+            )
+        }
+    }
+
+    /**
+     * Round 36 phase 2 — the awaited-delete shape: one deferred
+     * per key, the frame sent once, the `action_result` completing
+     * it. A second caller for the same key awaits the same
+     * deferred instead of sending a second frame.
+     */
+    private suspend fun awaitDelete(
+        key: ActionKey,
+        encode: () -> String,
+    ): Outcome<Unit> {
+        var created = false
+        val deferred = mutex.withLock {
+            pendingDeletes[key]?.let { return@withLock it }
+            CompletableDeferred<Outcome<Unit>>().also {
+                pendingDeletes[key] = it
+                created = true
+            }
+        }
+        if (created) {
+            if (!channel.send(encode())) {
+                mutex.withLock { pendingDeletes.remove(key) }
+                return Outcome.Failure(AppError.ClientOffline)
+            }
+        }
+        val outcome = withTimeoutOrNull(CREATE_TIMEOUT_MS) { deferred.await() }
+            ?: Outcome.Failure(AppError.Network())
+        mutex.withLock { if (pendingDeletes[key] === deferred) pendingDeletes.remove(key) }
+        return outcome
     }
 
     /**
@@ -153,15 +271,49 @@ class ClientActionSender @Inject constructor(
 
     /** The `action_result` for a write-back (or a refused create): revert on `ok:false`. */
     suspend fun onActionResult(result: SyncProtocol.ActionResult) {
-        if (result.action == ACTION_CREATE_CONVERSATION) {
-            if (!result.ok) {
-                failPendingCreate(
-                    AppError.Validation(result.message ?: result.code ?: "create failed"),
-                )
+        when (result.action) {
+            ACTION_CREATE_CONVERSATION -> {
+                if (!result.ok) {
+                    failPendingCreate(
+                        AppError.Validation(result.message ?: result.code ?: "create failed"),
+                    )
+                }
             }
+            // Round 36 phase 2 — a refused `create_note` fails the
+            // pending note create (a successful one answers with
+            // `note_created`, never an `action_result`).
+            ACTION_CREATE_NOTE -> {
+                if (!result.ok) {
+                    failPendingNoteCreate(
+                        AppError.Validation(result.message ?: result.code ?: "create failed"),
+                    )
+                }
+            }
+            else -> onActionResultForKey(result)
+        }
+    }
+
+    /**
+     * The `action_result` for a write-back keyed by [ActionKey]:
+     * an awaited delete completes here (success or refusal — the
+     * caller deletes its local row only on success), otherwise the
+     * pending revert runs on `ok:false`.
+     */
+    private suspend fun onActionResultForKey(result: SyncProtocol.ActionResult) {
+        val key = ActionKey(result.action, result.conversationId, result.messageId)
+        val deleteDeferred = mutex.withLock { pendingDeletes.remove(key) }
+        if (deleteDeferred != null) {
+            deleteDeferred.complete(
+                if (result.ok) {
+                    Outcome.Success(Unit)
+                } else {
+                    Outcome.Failure(
+                        AppError.Validation(result.message ?: result.code ?: "delete failed"),
+                    )
+                },
+            )
             return
         }
-        val key = ActionKey(result.action, result.conversationId, result.messageId)
         val revert = mutex.withLock { pendingActions.remove(key) } ?: return
         if (result.ok) return
         // A reaction whose SMS didn't go out stays set on the phone
@@ -189,14 +341,59 @@ class ClientActionSender @Inject constructor(
         deferred.complete(outcome)
     }
 
+    /**
+     * Round 36 phase 2 — the `note_created` answer: completes the
+     * pending note create with the LOCAL note id. The engine
+     * upserted the note before calling here, so the row exists.
+     */
+    suspend fun onNoteCreated(value: SyncProtocol.NoteCreated) {
+        val deferred = mutex.withLock { pendingNoteCreate } ?: return
+        val hubId = parseHubId(value.note.id)
+        val localId = hubId?.let { noteDao.findByHubId(it)?.id }
+        val outcome = if (localId != null) {
+            Outcome.Success(localId)
+        } else {
+            Outcome.Failure(AppError.NotFound("note"))
+        }
+        mutex.withLock { if (pendingNoteCreate === deferred) pendingNoteCreate = null }
+        deferred.complete(outcome)
+    }
+
+    /**
+     * Round 36 phase 2 — the `note_message_updated` broadcast for
+     * an edit this device sent: the edit landed on the hub, so the
+     * pending revert is dropped (not run). The `action_result`
+     * `ok:true` does the same — whichever arrives first wins, and
+     * the second is a no-op. A broadcast for an edit another
+     * device sent has no pending revert and is a no-op too.
+     */
+    suspend fun onNoteMessageUpdated(value: SyncProtocol.NoteMessageUpdated) {
+        val key = ActionKey(
+            ACTION_EDIT_NOTE_MESSAGE,
+            value.message.noteId,
+            value.message.id,
+        )
+        mutex.withLock { pendingActions.remove(key) }
+    }
+
     /** The session ended (disconnect, revocation): a create or dial in flight can never answer. */
     suspend fun onSessionEnded() {
         failPendingCreate(AppError.ClientOffline)
         failPendingDial(AppError.ClientOffline)
+        failPendingNoteCreate(AppError.ClientOffline)
+        val deletes = mutex.withLock {
+            pendingDeletes.values.toList().also { pendingDeletes.clear() }
+        }
+        deletes.forEach { it.complete(Outcome.Failure(AppError.ClientOffline)) }
     }
 
     private suspend fun failPendingCreate(error: AppError) {
         val deferred = mutex.withLock { pendingCreate?.also { pendingCreate = null } } ?: return
+        deferred.complete(Outcome.Failure(error))
+    }
+
+    private suspend fun failPendingNoteCreate(error: AppError) {
+        val deferred = mutex.withLock { pendingNoteCreate?.also { pendingNoteCreate = null } } ?: return
         deferred.complete(Outcome.Failure(error))
     }
 
@@ -266,6 +463,47 @@ class ClientActionSender @Inject constructor(
                 ActionKey(ACTION_SET_PINNED_MESSAGE, hubConvId.toString(), hubMsgId?.toString()),
             )
         }
+        is ClientAction.SetNotePin -> flagNoteAction(
+            action.localNoteId,
+            action.value,
+            ACTION_SET_NOTE_PIN,
+        ) { id, v ->
+            ClientFrames.encodeSetNotePin(SyncProtocol.SetNotePin(id, v))
+        }
+        is ClientAction.SetNoteArchived -> flagNoteAction(
+            action.localNoteId,
+            action.value,
+            ACTION_SET_NOTE_ARCHIVED,
+        ) { id, v ->
+            ClientFrames.encodeSetNoteArchived(SyncProtocol.SetNoteArchived(id, v))
+        }
+        is ClientAction.RenameNote -> {
+            val hubNoteId = hubNoteId(action.localNoteId) ?: return null
+            EncodedAction(
+                ClientFrames.encodeRenameNote(
+                    SyncProtocol.RenameNote(hubNoteId.toString(), action.title),
+                ),
+                ActionKey(ACTION_RENAME_NOTE, hubNoteId.toString(), null),
+            )
+        }
+        is ClientAction.EditNoteMessage -> {
+            val hubNoteId = hubNoteId(action.localNoteId) ?: return null
+            val hubMsgId = hubNoteMessageId(action.localMessageId) ?: return null
+            EncodedAction(
+                ClientFrames.encodeEditNoteMessage(
+                    SyncProtocol.EditNoteMessage(
+                        hubNoteId.toString(),
+                        hubMsgId.toString(),
+                        action.body,
+                    ),
+                ),
+                ActionKey(
+                    ACTION_EDIT_NOTE_MESSAGE,
+                    hubNoteId.toString(),
+                    hubMsgId.toString(),
+                ),
+            )
+        }
     }
 
     private suspend fun flagAction(
@@ -277,6 +515,23 @@ class ClientActionSender @Inject constructor(
         val hubId = hubConversationId(localConversationId) ?: return null
         return EncodedAction(encode(hubId.toString(), value), ActionKey(action, hubId.toString(), null))
     }
+
+    /** Round 36 phase 2 — the note half of [flagAction]: pin / archive by hub note id. */
+    private suspend fun flagNoteAction(
+        localNoteId: Long,
+        value: Boolean,
+        action: String,
+        encode: (String, Boolean) -> String,
+    ): EncodedAction? {
+        val hubId = hubNoteId(localNoteId) ?: return null
+        return EncodedAction(encode(hubId.toString(), value), ActionKey(action, hubId.toString(), null))
+    }
+
+    private suspend fun hubNoteId(localNoteId: Long): Long? =
+        noteDao.findById(localNoteId)?.hubNoteId
+
+    private suspend fun hubNoteMessageId(localMessageId: Long): Long? =
+        noteMessageDao.findById(localMessageId)?.hubNoteMessageId
 
     companion object {
         /** A create that hears nothing back in 20 s fails (same as the desktop). */
@@ -294,5 +549,12 @@ class ClientActionSender @Inject constructor(
         private const val ACTION_SET_REACTION = "set_reaction"
         private const val ACTION_SET_PINNED_MESSAGE = "set_pinned_message"
         private const val ACTION_CREATE_CONVERSATION = "create_conversation"
+        private const val ACTION_CREATE_NOTE = "create_note"
+        private const val ACTION_DELETE_NOTE = "delete_note"
+        private const val ACTION_DELETE_NOTE_MESSAGE = "delete_note_message"
+        private const val ACTION_SET_NOTE_PIN = "set_note_pin"
+        private const val ACTION_SET_NOTE_ARCHIVED = "set_note_archived"
+        private const val ACTION_RENAME_NOTE = "rename_note"
+        private const val ACTION_EDIT_NOTE_MESSAGE = "edit_note_message"
     }
 }

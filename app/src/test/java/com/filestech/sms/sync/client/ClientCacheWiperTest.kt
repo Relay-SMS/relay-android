@@ -6,6 +6,7 @@ import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.ClientConversationStateEntity
 import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.repository.FichiersDePiecesJointes
+import com.filestech.sms.domain.repository.NoteRepository
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -80,6 +81,9 @@ class ClientCacheWiperTest {
         val attachmentDao = mockk<AttachmentDao>(relaxed = true)
         val fichiers = mockk<FichiersDePiecesJointes>(relaxed = true)
         val downloader = mockk<ClientAttachmentDownloader>(relaxed = true)
+
+        // Round 36 phase 2 — the mirrored notes go with the cache.
+        val noteRepository = mockk<NoteRepository>(relaxed = true)
         val wiper = ClientCacheWiper(
             linkStore,
             pinStore,
@@ -90,6 +94,7 @@ class ClientCacheWiperTest {
             attachmentDao,
             fichiers,
             downloader,
+            noteRepository,
         )
     }
 
@@ -127,6 +132,15 @@ class ClientCacheWiperTest {
         confirmVerified(f.attachmentDao)
         confirmVerified(f.fichiers)
         confirmVerified(f.downloader)
+    }
+
+    /** Round 36 phase 2 — the mirrored notes go with the message cache (empty keep-set). */
+    @Test fun `wipeMessageCache prunes all mirrored notes`() = runTest {
+        val f = Fixture()
+
+        f.wiper.wipeMessageCache()
+
+        coVerify(exactly = 1) { f.noteRepository.pruneSyncedNotes(emptySet()) }
     }
 
     @Test fun `wipeMessageCache deletes the downloaded files it collected`() = runTest {

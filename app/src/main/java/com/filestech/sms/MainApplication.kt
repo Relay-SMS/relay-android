@@ -16,6 +16,7 @@ import com.filestech.sms.core.logging.LineNumberDebugTree
 import com.filestech.sms.core.logging.NoOpReleaseTree
 import com.filestech.sms.crashlog.ActivityManagerExitReasonProvider
 import com.filestech.sms.crashlog.CrashLogHandler
+import com.filestech.sms.crashlog.CrashLogSettings
 import com.filestech.sms.crashlog.CrashReportStore
 import com.filestech.sms.crashlog.SessionDeathChecker
 import com.filestech.sms.crashlog.SessionMarkerTracker
@@ -166,6 +167,10 @@ class MainApplication : Application(), Configuration.Provider {
         // (synchronous, ~200 bytes); the check runs off the main
         // thread (one binder call + maybe one file write).
         val previousMarker = runCatching { SessionMarkerTracker.install(this) }.getOrNull()
+        // Round 36 — the error-log switch: the startup death
+        // check is a writer, so it reads the flag live like the
+        // other writers do (see [CrashLogSettings]).
+        val crashLogSettings = CrashLogSettings(this)
         appScope.launch(ioDispatcher) {
             runCatching {
                 val store = CrashReportStore(File(filesDir, CrashReportStore.DIR_NAME))
@@ -173,7 +178,7 @@ class MainApplication : Application(), Configuration.Provider {
                 val provider = activityManager?.let {
                     ActivityManagerExitReasonProvider(it, packageName)
                 }
-                SessionDeathChecker(store, provider)
+                SessionDeathChecker(store, provider, crashLogSettings::enabled)
                     .check(previousMarker, CrashLogHandler.collectMetadata())
             }.onFailure { Timber.w(it, "Session death check failed") }
         }

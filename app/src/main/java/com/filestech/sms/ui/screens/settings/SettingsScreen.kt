@@ -93,6 +93,7 @@ import com.filestech.sms.data.sms.readSimMsisdn
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.settings.AutoLockDelay
 import com.filestech.sms.domain.settings.DeviceMode
+import com.filestech.sms.invite.InviteFriends
 import com.filestech.sms.system.locale.ouvrirLaLangueDeLApplication
 import com.filestech.sms.system.notifications.CANAL_DU_RACCOURCI_D_URGENCE
 import com.filestech.sms.system.notifications.canalDesMessages
@@ -209,6 +210,10 @@ fun SettingsScreen(
 
     val snackbarHost = remember { androidx.compose.material3.SnackbarHostState() }
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    // Round 36 — "Invite your friends" (bottom of the landing):
+    // the Android share sheet with the invite text.
+    val inviteChooserTitle = stringResource(R.string.invite_friends_settings)
+    val inviteFriends = { InviteFriends.share(ctx, inviteChooserTitle) }
     // v1.26.0 — libelles du code panique resolus dans la composition, pas via
     // `Context.getString` depuis le collecteur d'evenements : lint le refuse a juste titre
     // (LocalContextGetResourceValueCall), un changement de langue ne serait pas repercute.
@@ -476,6 +481,7 @@ fun SettingsScreen(
                         onOpenHelp = onOpenHelp,
                         onOpenAbout = onOpenAbout,
                         onOpenLanguage = { ouvrirLaLangueDeLApplication(ctx) },
+                        onInviteFriends = inviteFriends,
                     )
                 }
                 SettingsSection.APPEARANCE -> SettingsPageColumn(padding) {
@@ -556,6 +562,7 @@ fun SettingsScreen(
                         onOpenHelp = onOpenHelp,
                         onOpenAbout = onOpenAbout,
                         onOpenLanguage = { ouvrirLaLangueDeLApplication(ctx) },
+                        onInviteFriends = inviteFriends,
                     )
                 }
             }

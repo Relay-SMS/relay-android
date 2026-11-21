@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MarkEmailRead
 import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.Settings
@@ -95,6 +96,7 @@ import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Note
 import com.filestech.sms.domain.settings.DeviceMode
+import com.filestech.sms.invite.InviteFriends
 import com.filestech.sms.sync.client.NoSimNudgeCard
 import com.filestech.sms.sync.client.isSimLess
 import com.filestech.sms.system.settings.ouvrirLaFicheDeLApplication
@@ -202,6 +204,10 @@ fun ConversationsScreen(
     // once we become default; the running TelephonySyncManager picks up new permissions on its
     // next observer fire (or via the periodic worker, whichever comes first).
     val context = androidx.compose.ui.platform.LocalContext.current
+    // Round 36 — "Invite friends" (3-dot menu): the Android
+    // share sheet with the invite text.
+    val inviteChooserTitle = stringResource(R.string.invite_friends)
+    val inviteFriends = { InviteFriends.share(context, inviteChooserTitle) }
     // Contacts-permission fix — whether READ_CONTACTS is granted,
     // read on first composition and refreshed on every resume (the
     // observer below), so the contacts banner disappears right after
@@ -530,6 +536,7 @@ fun ConversationsScreen(
                                             onOpenVault = onOpenVault,
                                             onOpenArchived = onOpenArchived,
                                             onOpenSettings = onOpenSettings,
+                                            onInviteFriends = inviteFriends,
                                             onSortModeChange = viewModel::setSortMode,
                                         )
                                     }
@@ -661,6 +668,7 @@ fun ConversationsScreen(
                                     onOpenVault = onOpenVault,
                                     onOpenArchived = onOpenArchived,
                                     onOpenSettings = onOpenSettings,
+                                    onInviteFriends = inviteFriends,
                                     onSortModeChange = viewModel::setSortMode,
                                 )
                             }
@@ -1411,6 +1419,7 @@ private fun ConversationsOverflowMenu(
     onOpenVault: () -> Unit,
     onOpenArchived: () -> Unit,
     onOpenSettings: () -> Unit,
+    onInviteFriends: () -> Unit,
     onSortModeChange: (com.filestech.sms.domain.settings.SortMode) -> Unit,
 ) {
     // Round 4 — rounded menu like the rest of the refreshed UI: 18dp, the same
@@ -1515,6 +1524,17 @@ private fun ConversationsOverflowMenu(
             onClick = {
                 onDismiss()
                 onOpenSettings()
+            },
+        )
+        // Round 36 — "Invite friends", right below Settings:
+        // opens the Android share sheet with the invite text.
+        // Visible in every mode (a public share, nothing to hide).
+        DropdownMenuItem(
+            leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null) },
+            text = { Text(stringResource(R.string.invite_friends)) },
+            onClick = {
+                onDismiss()
+                onInviteFriends()
             },
         )
         // Sort section. Header is a non-interactive label rendered with

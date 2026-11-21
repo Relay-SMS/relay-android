@@ -16,9 +16,16 @@ import com.filestech.sms.data.local.db.entity.AttachmentEntity
  * maps it onto [com.filestech.sms.domain.model.Attachment] with the
  * two fields filled; every other attachment flow keeps the plain
  * entity mapping, where they stay `null`.
+ *
+ * Round 36 — the join also returns the message's system MMS id
+ * (`mms_system_id`), for the gallery's fallback probe when the
+ * cache file is gone (see `MediaGalleryViewModel`). The Files
+ * query returns it too (Room needs every projection field in
+ * every query) but nothing reads it there.
  */
 data class AttachmentWithMessage(
     @Embedded val attachment: AttachmentEntity,
     @ColumnInfo(name = "message_date") val messageDate: Long,
     @ColumnInfo(name = "message_body") val messageBody: String,
+    @ColumnInfo(name = "message_mms_system_id") val mmsSystemId: Long? = null,
 )

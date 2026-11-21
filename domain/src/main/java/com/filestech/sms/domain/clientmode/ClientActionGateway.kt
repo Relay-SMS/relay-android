@@ -39,6 +39,29 @@ sealed interface ClientAction {
         val localConversationId: Long,
         val localMessageId: Long?,
     ) : ClientAction
+
+    /** Phase 2 — pins or unpins a note (`set_note_pin`). */
+    data class SetNotePin(val localNoteId: Long, val value: Boolean) : ClientAction
+
+    /** Phase 2 — archives or unarchives a note (`set_note_archived`). */
+    data class SetNoteArchived(val localNoteId: Long, val value: Boolean) : ClientAction
+
+    /** Phase 2 — renames a note (`rename_note`). */
+    data class RenameNote(val localNoteId: Long, val title: String) : ClientAction
+
+    /**
+     * Phase 2 — edits a note entry's text (`edit_note_message`).
+     * The hub answers `action_result` on success AND on failure
+     * (like every other write-back action), and ALSO broadcasts
+     * `note_message_updated` to all sessions; either success
+     * signal drops the pending revert, whichever arrives first.
+     * A refusal (`action_result` `ok:false`) runs the revert.
+     */
+    data class EditNoteMessage(
+        val localNoteId: Long,
+        val localMessageId: Long,
+        val body: String,
+    ) : ClientAction
 }
 
 /**
@@ -78,6 +101,28 @@ interface ClientActionGateway {
      * exists by the time this returns. Offline → [AppError.ClientOffline].
      */
     suspend fun createConversation(addresses: List<String>, customName: String?): Outcome<Long>
+
+    /**
+     * Phase 2 — sends `create_note` and awaits the hub's answer (up
+     * to 20 s). Returns the LOCAL note id — the engine upserts the
+     * note before the answer is delivered, so the row exists by the
+     * time this returns. Offline → [AppError.ClientOffline].
+     */
+    suspend fun createNote(title: String): Outcome<Long>
+
+    /**
+     * Phase 2 — sends `delete_note` and awaits the hub's answer (up
+     * to 20 s). The caller deletes its local row only on success —
+     * the delete is applied on the hub first. Offline → [AppError.ClientOffline].
+     */
+    suspend fun deleteNote(localNoteId: Long): Outcome<Unit>
+
+    /**
+     * Phase 2 — sends `delete_note_message` and awaits the hub's
+     * answer (up to 20 s). The caller deletes its local row only on
+     * success. Offline → [AppError.ClientOffline].
+     */
+    suspend fun deleteNoteMessage(localNoteId: Long, localMessageId: Long): Outcome<Unit>
 }
 
 /**
@@ -91,5 +136,14 @@ object NoOpClientActionGateway : ClientActionGateway {
     override suspend fun sendAction(action: ClientAction, revert: (suspend () -> Unit)?): Boolean = false
 
     override suspend fun createConversation(addresses: List<String>, customName: String?): Outcome<Long> =
+        Outcome.Failure(AppError.Validation("client action gateway not provided"))
+
+    override suspend fun createNote(title: String): Outcome<Long> =
+        Outcome.Failure(AppError.Validation("client action gateway not provided"))
+
+    override suspend fun deleteNote(localNoteId: Long): Outcome<Unit> =
+        Outcome.Failure(AppError.Validation("client action gateway not provided"))
+
+    override suspend fun deleteNoteMessage(localNoteId: Long, localMessageId: Long): Outcome<Unit> =
         Outcome.Failure(AppError.Validation("client action gateway not provided"))
 }

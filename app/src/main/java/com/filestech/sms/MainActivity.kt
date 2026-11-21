@@ -101,6 +101,21 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var telephonySyncManagerLazy: dagger.Lazy<com.filestech.sms.data.sync.TelephonySyncManager>
 
     /**
+     * Round 36 — the stale-PENDING watchdog, foreground trigger:
+     * flips outgoing PENDING rows older than 15 min to FAILED on
+     * every resume, so a lost send ack shows "failed" promptly
+     * instead of "Sending…" for hours (the 12-hour worker is the
+     * backstop). `Lazy` for the same reason as
+     * [telephonySyncManagerLazy]: resolving it builds
+     * `AppDatabase`. No client-mode gate — a linked device has
+     * optimistic PENDING rows too (see
+     * [com.filestech.sms.system.scheduler.StalePendingWatchdog]).
+     */
+    @Inject
+    lateinit var stalePendingWatchdogLazy:
+        dagger.Lazy<com.filestech.sms.system.scheduler.StalePendingWatchdog>
+
+    /**
      * Group-send own-number fix — fills "My phone number" from the
      * SIM when blank. Injected here as well as in MainApplication so
      * the fill can be retried once READ_PHONE_NUMBERS is granted: the
@@ -455,6 +470,20 @@ class MainActivity : FragmentActivity() {
                     )
                 }.onFailure { Timber.w(it, "onResume enqueueOneShot failed") }
             }
+        }
+        // Round 36 — stale-PENDING watchdog: a lost send ack
+        // leaves "Sending…" on screen until the 12-hour worker
+        // runs; the foreground timeout flips it to failed
+        // promptly. A SEPARATE launch from the sync block above:
+        // it has no client-mode gate (a linked device's own
+        // optimistic PENDING rows need it too, and the worker
+        // backstop does not run there). The query is idempotent,
+        // so rapid resumes cost one cheap UPDATE each.
+        lifecycleScope.launch(ioDispatcher) {
+            runCatching {
+                val flipped = stalePendingWatchdogLazy.get().runOnce()
+                if (flipped > 0) Timber.i("Watchdog: %d stale PENDING -> FAILED (foreground)", flipped)
+            }.onFailure { Timber.w(it, "onResume stale-PENDING watchdog failed") }
         }
     }
 

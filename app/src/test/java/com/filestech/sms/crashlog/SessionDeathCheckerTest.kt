@@ -127,4 +127,15 @@ class SessionDeathCheckerTest {
         assertThat(listed).hasSize(CrashReportStore.MAX_REPORTS)
         assertThat(listed.map { it.crashType }).contains(CrashReportFormatter.UNEXPECTED_STOP_TYPE)
     }
+
+    @Test
+    fun `a reportable death writes nothing when the error log is off`() {
+        val reports = store()
+        SessionDeathChecker(
+            reports,
+            FakeProvider(SessionExitInfo(SessionExitReason.ANR, 2_500L)),
+            enabled = { false },
+        ).check(marker, metadata)
+        assertThat(reports.listReports()).isEmpty()
+    }
 }

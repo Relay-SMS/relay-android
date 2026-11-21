@@ -9,9 +9,9 @@ import com.filestech.sms.ui.components.isEmojiOnlyMessage
  * (`image/gif`); stickers have no marker in the metadata, so they
  * are caught by the same heuristic as the desktop — the
  * `sticker-` filename the app gives its own sticker renders, or a
- * 512×512 (or 72×72 fallback) PNG sent with no caption (stickers
- * are rendered at 512px and sent bare). A real 512×512 square PNG
- * with no caption is also hidden — rare, and accepted.
+ * 512×512 (or 72×72 fallback) PNG or WebP sent with no caption
+ * (stickers are rendered at 512px and sent bare). A real 512×512
+ * square PNG with no caption is also hidden — rare, and accepted.
  *
  * Round 33 — the dimensions arm could never fire for a RECEIVED
  * sticker: incoming MMS rows store `width`/`height` as `null`
@@ -31,6 +31,18 @@ import com.filestech.sms.ui.components.isEmojiOnlyMessage
  * phone can be 72×72 instead of 512×512. Same body rule as the
  * 512 arm (blank or emoji-only caption); no real photo is 72×72.
  *
+ * Round 36 — the dimensions arm also covers WebP: people
+ * switching to Relay bring WebP stickers from their old app,
+ * and a 512×512 (or 72×72) WebP sent bare is a sticker the
+ * same way a PNG is. Same body rule, same sizes; a real
+ * 512×512 WebP photo with no caption is hidden too — rare,
+ * and accepted, like the PNG case.
+ *
+ * Round 36 — the dimensions can also arrive from the system
+ * MMS store: when the cache file is gone, the gallery
+ * re-probes the bytes there (see `MediaGalleryViewModel`), so
+ * an old sticker whose file was pruned is still caught.
+ *
  * When the metadata has no dimensions (`null`) — a file that could
  * not be probed — only the filename arm applies.
  */
@@ -46,11 +58,16 @@ internal fun Attachment.isStickerAttachment(): Boolean {
     // evidence, never on its absence.
     val body = messageBody
     val dimensionsMatch = body != null &&
-        mimeType.equals("image/png", ignoreCase = true) &&
+        isStickerImageType() &&
         isStickerSize(width, height) &&
         (body.isBlank() || body.isEmojiOnlyMessage())
     return fileNameMatch || dimensionsMatch
 }
+
+/** The dimensions arm covers PNG and WebP stickers (round 36). */
+private fun Attachment.isStickerImageType(): Boolean =
+    mimeType.equals("image/png", ignoreCase = true) ||
+        mimeType.equals("image/webp", ignoreCase = true)
 
 /** 512 is the SVG render; 72 is the bundled-PNG fallback (see `stickerSendUri`). */
 private fun isStickerSize(width: Int?, height: Int?): Boolean =

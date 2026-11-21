@@ -1,6 +1,7 @@
 package com.filestech.sms.data.local.db
 
 import androidx.room.TypeConverter
+import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.MessageType
@@ -47,4 +48,16 @@ class MessageEnumConverters {
 
     @TypeConverter
     fun scheduledStateToRaw(state: ScheduledState): Int = state.rawValue
+
+    // Round 35 (schema v20) — the sticky category, stored BY NAME like
+    // `mutedCategories` (see `MessageCategory`: add entries, never rename
+    // them). An unknown name — a row from a future build — reads as `null`
+    // (no stored category, live classification applies) instead of
+    // crashing the read; the next incoming message rewrites it.
+    @TypeConverter
+    fun stickyCategoryFromRaw(rawValue: String?): MessageCategory? =
+        rawValue?.let { runCatching { MessageCategory.valueOf(it) }.getOrNull() }
+
+    @TypeConverter
+    fun stickyCategoryToRaw(category: MessageCategory?): String? = category?.name
 }

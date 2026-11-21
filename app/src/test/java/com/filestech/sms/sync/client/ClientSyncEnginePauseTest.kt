@@ -10,8 +10,11 @@ import com.filestech.sms.sync.SyncProtocol
 import com.filestech.sms.sync.SyncWakelock
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
+import com.filestech.sms.sync.SyncedNote
+import com.filestech.sms.sync.SyncedNoteMessage
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -22,6 +25,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -240,6 +244,8 @@ class ClientSyncEnginePauseTest {
         val pauseStore: FakePauseStore,
         val idleMonitor: FakeIdleMonitor,
         val wakelock: FakeWakelock,
+        /** Round 36 phase 2 — the note mirror (the paused-note test verifies on it). */
+        val noteMirror: NoteMirror,
     )
 
     private fun TestScope.harness(linkedHubId: String? = null): Harness {
@@ -273,9 +279,11 @@ class ClientSyncEnginePauseTest {
         // work here). The watchdog keeps its real 60 s timeout.
         val engineScope = TestScope(testScheduler)
         coroutineContext[Job]?.invokeOnCompletion { engineScope.cancel() }
+        val noteMirror = mockk<NoteMirror>(relaxed = true)
         val engine = ClientSyncEngine(
             channel,
             mirror,
+            noteMirror,
             store,
             conversationDao,
             messageDao,
@@ -293,7 +301,7 @@ class ClientSyncEnginePauseTest {
             wakelock,
         )
         engine.start()
-        return Harness(engine, channel, mirror, store, pauseStore, idleMonitor, wakelock)
+        return Harness(engine, channel, mirror, store, pauseStore, idleMonitor, wakelock, noteMirror)
     }
 
     /** Connects and chooses full mode (the run is Syncing, no frames yet). */
@@ -454,6 +462,72 @@ class ClientSyncEnginePauseTest {
         runCurrent()
 
         assertThat(h.engine.ui.value.phase).isEqualTo(ClientSyncPhase.Syncing)
+    }
+
+    @Test fun `note run frames are dropped while paused, live note frames still apply`() = runTest {
+        val h = harness()
+        promptAndChooseFull(h)
+        emitSyncStarted(h)
+        advanceTimeBy(60_000L)
+        runCurrent()
+        assertThat(h.engine.ui.value.phase).isEqualTo(ClientSyncPhase.Paused)
+
+        // Straggler run frames: dropped, the mirror never sees them.
+        h.channel.emit(
+            ServerFrame.Notes(
+                SyncProtocol.Notes(
+                    notes = listOf(
+                        SyncedNote(
+                            id = "7",
+                            title = "Groceries",
+                            createdAt = 1L,
+                            updatedAt = 1L,
+                            lastMessageAt = null,
+                            lastMessagePreview = null,
+                            pinned = false,
+                            archived = false,
+                            messageCount = 0,
+                        ),
+                    ),
+                    hasMore = false,
+                ),
+            ),
+        )
+        h.channel.emit(
+            ServerFrame.NoteMessagesBatch(
+                SyncProtocol.NoteMessagesBatch(
+                    noteId = "7",
+                    messages = listOf(
+                        SyncedNoteMessage(
+                            id = "42",
+                            noteId = "7",
+                            body = "Milk",
+                            date = 1L,
+                            attachments = emptyList(),
+                        ),
+                    ),
+                    hasMore = false,
+                ),
+            ),
+        )
+        // A live entry: independent of the run, it still applies.
+        h.channel.emit(
+            ServerFrame.NoteMessageNew(
+                SyncProtocol.NoteMessageNew(
+                    SyncedNoteMessage(
+                        id = "43",
+                        noteId = "7",
+                        body = "Eggs",
+                        date = 2L,
+                        attachments = emptyList(),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { h.noteMirror.upsertSyncedNote(any()) }
+        coVerify(exactly = 1) { h.noteMirror.upsertSyncedMessage(any()) }
     }
 
     @Test fun `the watchdog pauses after 60s with no batches`() = runTest {

@@ -32,6 +32,16 @@ data class Attachment(
      */
     val messageDate: Long? = null,
     val messageBody: String? = null,
+    /**
+     * Round 36 — the carrying message's id in the system MMS
+     * store (`messages.mms_system_id`, set when the message
+     * was written there on send). Only the media query
+     * populates it: the gallery's fallback probe reads the
+     * bytes back from the system store when the cache file
+     * is gone (see `MediaGalleryViewModel`). Everywhere else
+     * it stays `null`.
+     */
+    val mmsSystemId: Long? = null,
 ) {
     val isAudio: Boolean get() = mimeType.startsWith("audio/", ignoreCase = true)
     val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)

@@ -1,6 +1,7 @@
 package com.filestech.sms.system.startup
 
 import android.content.Context
+import com.filestech.sms.data.categories.StickyCategoryStore
 import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
@@ -48,6 +49,7 @@ class StartupMigrations @Inject constructor(
     private val conversationDao: Lazy<ConversationDao>,
     private val attachmentDao: Lazy<AttachmentDao>,
     private val conversationMirror: Lazy<ConversationMirror>,
+    private val stickyCategories: Lazy<StickyCategoryStore>,
     @ApplicationContext private val context: Context,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) {
@@ -111,6 +113,16 @@ class StartupMigrations @Inject constructor(
                 Timber.i("migration: reaction format EMOJI_WITH_QUOTE -> IOS_TAPBACK")
             }
         }.onFailure { Timber.w(it, "reaction format iOS tapback migration failed") }
+
+        // Round 35 (schema v20) — le backfill one-shot des catégories
+        // collantes. Même placement (AVANT le court-circuit) pour la même
+        // raison : le parc visé — les conversations que les démarcheurs
+        // ont déjà atteintes — a déjà tous les anciens drapeaux à `true`.
+        // Borné (une requête plafonnée par conversation) et idempotent ;
+        // un échec ne bloque pas le démarrage, la passe rejoue au
+        // prochain cold start (le drapeau ne se pose qu'au succès).
+        runCatching { backfillStickyCategoriesV20(advanced) }
+            .onFailure { Timber.w(it, "sticky category backfill failed") }
 
         // Global short-circuit: an up-to-date install does no migration work and never opens the
         // database. This is the whole point of the consolidation.
@@ -201,6 +213,21 @@ class StartupMigrations @Inject constructor(
         val removed = conversationDao.get().deleteAllEmptyConversations()
         settings.update { s -> s.copy(advanced = s.advanced.copy(emptyConversationsPurgedV1272 = true)) }
         if (removed > 0) Timber.i("v1.27.2: %d conversation(s) coquille(s) retiree(s)", removed)
+    }
+
+    /**
+     * Round 35 (schema v20) — classe les conversations 1:1 d'étrangers
+     * déjà en base à partir du corps COMPLET de leurs messages entrants
+     * récents (voir [StickyCategoryStore.backfill]), pour qu'elles
+     * rejoignent leur onglet sans attendre un nouveau message. Le drapeau
+     * ne se pose qu'après une passe complète : en cas d'échec, la passe
+     * rejoue au prochain cold start.
+     */
+    private suspend fun backfillStickyCategoriesV20(advanced: AdvancedSettings) {
+        if (advanced.stickyCategoryBackfilledV20) return
+        val stored = stickyCategories.get().backfill()
+        settings.update { s -> s.copy(advanced = s.advanced.copy(stickyCategoryBackfilledV20 = true)) }
+        if (stored > 0) Timber.i("sticky category backfill: %d conversation(s) filed", stored)
     }
 
     /**

@@ -458,6 +458,7 @@ class SettingsRepository(
                 reactionFormatMigreIosTapback = p[K.reactionFormatMigreIosTapback] ?: false,
                 identityDedupRepairedV1272 = p[K.identityDedupRepairedV1272] ?: false,
                 emptyConversationsPurgedV1272 = p[K.emptyConversationsPurgedV1272] ?: false,
+                stickyCategoryBackfilledV20 = p[K.stickyCategoryBackfilledV20] ?: false,
             ),
         )
     }
@@ -591,6 +592,7 @@ class SettingsRepository(
         this[K.reactionFormatMigreIosTapback] = s.advanced.reactionFormatMigreIosTapback
         this[K.identityDedupRepairedV1272] = s.advanced.identityDedupRepairedV1272
         this[K.emptyConversationsPurgedV1272] = s.advanced.emptyConversationsPurgedV1272
+        this[K.stickyCategoryBackfilledV20] = s.advanced.stickyCategoryBackfilledV20
     }
 
     private inline fun <reified E : Enum<E>> enumOr(p: Preferences, key: Preferences.Key<String>, def: E, valueOf: (String) -> E): E =
@@ -818,5 +820,9 @@ class SettingsRepository(
         /** v1.27.2 (audit Codex, LP-07) — purge des coquilles deja creees. */
         val emptyConversationsPurgedV1272 =
             booleanPreferencesKey("advanced.emptyConversationsPurgedV1272")
+
+        /** Round 35 (schema v20) — backfill one-shot des categories collantes. */
+        val stickyCategoryBackfilledV20 =
+            booleanPreferencesKey("advanced.stickyCategoryBackfilledV20")
     }
 }

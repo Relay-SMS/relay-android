@@ -130,8 +130,9 @@ class IncomingMessageNotifier @Inject constructor(
         // Round 11 — category mute: a message whose category the user muted
         // (long-press on a tab, or Settings → Notifications) does not ring.
         // A group reply's sender is a real person, so it lands in Personal —
-        // muting Promotional never silences a person. Pure string matching,
-        // no extra query.
+        // muting Promotional never silences a person. Pure string matching
+        // on the fresh body, plus the stored sticky category (round 35) —
+        // no extra query: `conv` was already loaded above.
         //
         // Fail OPEN, unlike the vault guard above: if settings cannot be
         // read (`hydratedOrNull()` returns null), `mutedCategories` is empty
@@ -141,11 +142,26 @@ class IncomingMessageNotifier @Inject constructor(
         // follow the user's preview settings either way.
         val mutedCategories = appSettings?.conversations?.mutedCategories.orEmpty()
         if (mutedCategories.isNotEmpty()) {
-            val category = MessageClassifier.classify(
+            val freshCategory = MessageClassifier.classify(
                 body = body,
                 sender = PhoneAddress.of(address),
                 isContact = contact != null,
                 isGroup = false,
+            )
+            // Round 35 — the sticky category wins for a stranger 1:1: the
+            // mirror already filed this message from its FULL body before
+            // the notifier ran, so a muted Promotional follow-up ("Touching
+            // base again…") stays silent even though its own text is plain.
+            // A `;` in the CSV is what marks a group (the DAO's own
+            // convention). For an MMS the notifier's `body` is only the
+            // preview label, so the sticky value is what carries the
+            // caption's signal here.
+            val isGroupConversation = conv?.addressesCsv?.contains(';') == true
+            val category = MessageClassifier.effectiveCategory(
+                stickyCategory = conv?.stickyCategory,
+                fresh = freshCategory,
+                isContact = contact != null,
+                isGroup = isGroupConversation,
             )
             if (category in mutedCategories) return@withContext
         }

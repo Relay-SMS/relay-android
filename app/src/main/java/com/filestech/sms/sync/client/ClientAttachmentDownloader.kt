@@ -1,8 +1,12 @@
 package com.filestech.sms.sync.client
 
 import android.content.Context
+import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.MessageDao
+import com.filestech.sms.data.local.db.dao.NoteAttachmentDao
+import com.filestech.sms.data.local.db.dao.NoteMessageDao
+import com.filestech.sms.data.notes.NoteAttachmentCrypto
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.sync.SyncProtocol
 import dagger.hilt.EntryPoint
@@ -106,6 +110,19 @@ sealed interface ClientDownloadState {
  * from [scope], and the three never interleave. Private helpers run
  * with the mutex held; only the public entry points lock (the mutex
  * is not reentrant).
+ *
+ * Round 36 phase 2 — note attachments download through the same
+ * machine, with three differences. (1) The wire ids are prefixed
+ * (`"note:<hub id>"` for both ids — hub note-attachment ids and MMS
+ * attachment ids are independent sequences, so a bare id is
+ * ambiguous); the prefixed strings are the map keys, so the MMS and
+ * note transfers never collide. (2) The bytes arrive as PLAINTEXT
+ * over TLS and are stored ENCRYPTED (the AES-256-GCM envelope, via
+ * [NoteAttachmentCrypto], at `filesDir/notes/attachments/<uuid>`),
+ * so the cache check expects `sizeBytes + 29` on disk. (3) The
+ * states live in a SEPARATE flow ([noteStates], keyed by local
+ * note attachment id) — MMS and note local ids are independent
+ * sequences too, so one map would collide.
  */
 @Singleton
 class ClientAttachmentDownloader @Inject constructor(
@@ -114,6 +131,12 @@ class ClientAttachmentDownloader @Inject constructor(
     private val messageDao: MessageDao,
     @ApplicationContext private val context: Context,
     @ApplicationScope private val scope: CoroutineScope,
+    /** Round 36 phase 2 — the mirrored note attachment rows (lookup + `localUri` writes). */
+    private val noteAttachmentDao: NoteAttachmentDao,
+    /** Round 36 phase 2 — the parent note entry's hub id (the membership guard). */
+    private val noteMessageDao: NoteMessageDao,
+    /** Round 36 phase 2 — encrypts downloaded note bytes into the envelope. */
+    private val noteCrypto: NoteAttachmentCrypto,
 ) {
 
     /** One attachment the UI asked for: the wire ids + the metadata the verify needs. */
@@ -124,6 +147,8 @@ class ClientAttachmentDownloader @Inject constructor(
         val mimeType: String,
         val sizeBytes: Long,
         val attempts: Int = 0,
+        /** Round 36 phase 2 — true for a note attachment (prefixed ids, encrypted store). */
+        val isNote: Boolean = false,
     )
 
     /** One download in flight: the bytes so far + their count + the stall timer. */
@@ -138,8 +163,10 @@ class ClientAttachmentDownloader @Inject constructor(
     /** A resolved `request()`: the row + the wire ids the request frame needs. */
     private data class Target(
         val localId: Long,
-        val hubAttachmentId: Long,
-        val hubMessageId: Long,
+        /** The wire `attachment_id` — a bare hub id for MMS, `"note:<hub id>"` for notes. */
+        val hubAttachmentId: String,
+        /** The wire `message_id` — same prefix rule as [hubAttachmentId]. */
+        val hubMessageId: String,
         val mimeType: String,
         val sizeBytes: Long,
         val localUri: String,
@@ -151,6 +178,12 @@ class ClientAttachmentDownloader @Inject constructor(
 
     /** The download state per local attachment id (empty while nothing has been asked for). */
     val states: StateFlow<Map<Long, ClientDownloadState>> = _states.asStateFlow()
+
+    /** Round 36 phase 2 — the note states, keyed by LOCAL note attachment id (a separate map). */
+    private val _noteStates = MutableStateFlow<Map<Long, ClientDownloadState>>(emptyMap())
+
+    /** Round 36 phase 2 — the download state per local note attachment id. */
+    val noteStates: StateFlow<Map<Long, ClientDownloadState>> = _noteStates.asStateFlow()
 
     /** Downloads the UI asked for, by hub attachment id (wire string). */
     private val known = mutableMapOf<String, KnownDownload>()
@@ -180,14 +213,14 @@ class ClientAttachmentDownloader @Inject constructor(
     suspend fun request(localAttachmentId: Long) {
         mutex.withLock {
             val target = lookupTarget(localAttachmentId) ?: return
-            val hubId = target.hubAttachmentId.toString()
+            val hubId = target.hubAttachmentId
             if (hubId in active || hubId in queued || hubId in failed) return
             interrupted.remove(hubId)
             val previous = known[hubId]
             known[hubId] = KnownDownload(
                 hubId = hubId,
                 localId = target.localId,
-                hubMessageId = target.hubMessageId.toString(),
+                hubMessageId = target.hubMessageId,
                 mimeType = target.mimeType,
                 sizeBytes = target.sizeBytes,
                 attempts = previous?.attempts ?: 0,
@@ -201,14 +234,63 @@ class ClientAttachmentDownloader @Inject constructor(
         }
     }
 
+    /**
+     * Round 36 phase 2 — asks for one NOTE attachment's bytes, by
+     * LOCAL note attachment id. Same shape as [request]: dedupes,
+     * checks the cache first (the stored file is the ENCRYPTED
+     * envelope, 29 bytes larger than the plaintext size), and
+     * queues a `"note:<hub id>"` transfer. A hub-mode row (no hub
+     * id) or an unknown id is a no-op — the hub path never
+     * downloads.
+     */
+    suspend fun requestNote(localNoteAttachmentId: Long) {
+        mutex.withLock {
+            val target = lookupNoteTarget(localNoteAttachmentId) ?: return
+            val hubId = target.hubAttachmentId
+            if (hubId in active || hubId in queued || hubId in failed) return
+            interrupted.remove(hubId)
+            val previous = known[hubId]
+            known[hubId] = KnownDownload(
+                hubId = hubId,
+                localId = target.localId,
+                hubMessageId = target.hubMessageId,
+                mimeType = target.mimeType,
+                sizeBytes = target.sizeBytes,
+                attempts = previous?.attempts ?: 0,
+                isNote = true,
+            )
+            if (checkNoteCache(target)) {
+                emitState(target.localId, ClientDownloadState.Downloaded, isNote = true)
+                return
+            }
+            queued.add(hubId)
+            pumpLocked()
+        }
+    }
+
     /** Tap-to-retry a failed download. Unknown or not-failed ids are no-ops. */
     suspend fun retry(localAttachmentId: Long) {
         mutex.withLock {
-            val hubId = known.entries.firstOrNull { it.value.localId == localAttachmentId }?.key
+            val hubId = known.entries
+                .firstOrNull { !it.value.isNote && it.value.localId == localAttachmentId }?.key
                 ?: return
             if (hubId !in failed) return
             failed.remove(hubId)
             // A manual retry gets its own automatic retry, like a fresh request.
+            known[hubId]?.let { known[hubId] = it.copy(attempts = 0) }
+            queued.add(hubId)
+            pumpLocked()
+        }
+    }
+
+    /** Round 36 phase 2 — tap-to-retry a failed NOTE download. Unknown or not-failed ids are no-ops. */
+    suspend fun retryNote(localNoteAttachmentId: Long) {
+        mutex.withLock {
+            val hubId = known.entries
+                .firstOrNull { it.value.isNote && it.value.localId == localNoteAttachmentId }?.key
+                ?: return
+            if (hubId !in failed) return
+            failed.remove(hubId)
             known[hubId]?.let { known[hubId] = it.copy(attempts = 0) }
             queued.add(hubId)
             pumpLocked()
@@ -238,7 +320,9 @@ class ClientAttachmentDownloader @Inject constructor(
             for ((hubId, state) in active) {
                 clearStallTimer(state)
                 interrupted.add(hubId)
-                known[hubId]?.let { emitState(it.localId, ClientDownloadState.NotDownloaded) }
+                known[hubId]?.let {
+                    emitState(it.localId, ClientDownloadState.NotDownloaded, isNote = it.isNote)
+                }
             }
             for (hubId in queued) interrupted.add(hubId)
             active.clear()
@@ -277,8 +361,29 @@ class ClientAttachmentDownloader @Inject constructor(
         val hubMessageId = messageDao.findById(entity.messageId)?.hubMessageId ?: return null
         return Target(
             localId = localAttachmentId,
-            hubAttachmentId = hubAttachmentId,
-            hubMessageId = hubMessageId,
+            hubAttachmentId = hubAttachmentId.toString(),
+            hubMessageId = hubMessageId.toString(),
+            mimeType = entity.mimeType,
+            sizeBytes = entity.sizeBytes,
+            localUri = entity.localUri,
+        )
+    }
+
+    /**
+     * Round 36 phase 2 — the row + wire ids for a `requestNote()`,
+     * or null when there is nothing to download. The wire ids are
+     * prefixed (`"note:<hub id>"`); the membership guard needs the
+     * parent note entry's hub id.
+     */
+    private suspend fun lookupNoteTarget(localNoteAttachmentId: Long): Target? {
+        val entity = noteAttachmentDao.findById(localNoteAttachmentId) ?: return null
+        val hubAttachmentId = entity.hubAttachmentId ?: return null
+        val hubMessageId = noteMessageDao.findById(entity.noteMessageId)?.hubNoteMessageId
+            ?: return null
+        return Target(
+            localId = localNoteAttachmentId,
+            hubAttachmentId = SyncProtocol.NOTE_ATTACHMENT_ID_PREFIX + hubAttachmentId,
+            hubMessageId = SyncProtocol.NOTE_ATTACHMENT_ID_PREFIX + hubMessageId,
             mimeType = entity.mimeType,
             sizeBytes = entity.sizeBytes,
             localUri = entity.localUri,
@@ -300,6 +405,28 @@ class ClientAttachmentDownloader @Inject constructor(
         if (cachedFileOk(file, target.sizeBytes)) return true
         runCatching { file.delete() }
         attachmentDao.updateLocalUri(target.localId, "")
+        return false
+    }
+
+    /**
+     * Round 36 phase 2 — the note cache check: the stored file is
+     * the ENCRYPTED envelope, so the expected size is the plaintext
+     * size + the 29-byte cipher overhead. A stale path is cleared
+     * the same way as [checkCache] (file deleted, row's `localUri`
+     * blanked).
+     */
+    private suspend fun checkNoteCache(target: Target): Boolean {
+        val path = target.localUri
+        if (path.isBlank()) return false
+        val file = File(path)
+        val expected = if (target.sizeBytes == 0L) {
+            0L
+        } else {
+            target.sizeBytes + NoteAttachmentCrypto.CIPHER_OVERHEAD_BYTES
+        }
+        if (cachedFileOk(file, expected)) return true
+        runCatching { file.delete() }
+        noteAttachmentDao.updateLocalUri(target.localId, "")
         return false
     }
 
@@ -325,7 +452,11 @@ class ClientAttachmentDownloader @Inject constructor(
         val state = ActiveDownload()
         active[hubId] = state
         resetStallTimerLocked(hubId, state)
-        emitState(entry.localId, ClientDownloadState.Downloading(0, entry.sizeBytes))
+        emitState(
+            entry.localId,
+            ClientDownloadState.Downloading(0, entry.sizeBytes),
+            isNote = entry.isNote,
+        )
         val sent = runCatching {
             channel.send(
                 ClientFrames.encodeAttachmentRequest(
@@ -339,7 +470,7 @@ class ClientAttachmentDownloader @Inject constructor(
             clearStallTimer(state)
             active.remove(hubId)
             interrupted.add(hubId)
-            emitState(entry.localId, ClientDownloadState.NotDownloaded)
+            emitState(entry.localId, ClientDownloadState.NotDownloaded, isNote = entry.isNote)
         }
     }
 
@@ -376,7 +507,11 @@ class ClientAttachmentDownloader @Inject constructor(
         val now = System.currentTimeMillis()
         if (!final && now - state.lastProgressAt < PROGRESS_THROTTLE_MS) return
         state.lastProgressAt = now
-        emitState(entry.localId, ClientDownloadState.Downloading(state.received, entry.sizeBytes))
+        emitState(
+            entry.localId,
+            ClientDownloadState.Downloading(state.received, entry.sizeBytes),
+            isNote = entry.isNote,
+        )
     }
 
     private suspend fun finishLocked(hubId: String, sha256: String?, sizeBytes: Long?) {
@@ -387,16 +522,16 @@ class ClientAttachmentDownloader @Inject constructor(
         val data = state.bytes.toByteArray()
         if (isVerifiedEmpty(data, entry, sha256, sizeBytes)) {
             failed.add(hubId)
-            emitState(entry.localId, ClientDownloadState.Empty)
+            emitState(entry.localId, ClientDownloadState.Empty, isNote = entry.isNote)
         } else if (!isVerified(data, entry, sha256, sizeBytes)) {
             retryOrFailLocked(hubId)
             return
         } else if (storeDownload(entry, data)) {
-            emitState(entry.localId, ClientDownloadState.Downloaded)
+            emitState(entry.localId, ClientDownloadState.Downloaded, isNote = entry.isNote)
         } else {
             // A disk error won't heal on retry — fail, tap-to-retry.
             failed.add(hubId)
-            emitState(entry.localId, ClientDownloadState.Failed)
+            emitState(entry.localId, ClientDownloadState.Failed, isNote = entry.isNote)
         }
         pumpLocked()
     }
@@ -429,9 +564,14 @@ class ClientAttachmentDownloader @Inject constructor(
      * Writes the verified bytes (`.part` + rename) and points the
      * row at them. The row may have been wiped mid-download — never
      * orphan a file for it. False when the row is gone or the disk
-     * write failed.
+     * write failed. Round 36 phase 2 — a NOTE download is
+     * encrypted into the envelope at
+     * `filesDir/notes/attachments/<uuid>` instead: the bytes
+     * arrived as plaintext over TLS, and the note store never
+     * holds plaintext on disk.
      */
     private suspend fun storeDownload(entry: KnownDownload, data: ByteArray): Boolean {
+        if (entry.isNote) return storeNoteDownload(entry, data)
         if (attachmentDao.findById(entry.localId) == null) return false
         val file = downloadFile(entry.hubId, entry.mimeType)
         val written = runCatching {
@@ -449,6 +589,15 @@ class ClientAttachmentDownloader @Inject constructor(
         return true
     }
 
+    /** Round 36 phase 2 — encrypts verified note bytes into the envelope + points the row at them. */
+    private suspend fun storeNoteDownload(entry: KnownDownload, data: ByteArray): Boolean {
+        val row = noteAttachmentDao.findById(entry.localId) ?: return false
+        val stored = noteCrypto.encryptToFile(data, noteCrypto.fileForUuid(row.uuid))
+        val file = (stored as? Outcome.Success)?.value ?: return false
+        noteAttachmentDao.updateLocalUri(entry.localId, file.absolutePath)
+        return true
+    }
+
     /** The cache file for one attachment: `<hubAttachmentId>.<ext>` in `mms_attachments/`. */
     private fun downloadFile(hubId: String, mimeType: String): File =
         File(attachmentsDir, "$hubId.${extensionForMime(mimeType)}")
@@ -462,7 +611,7 @@ class ClientAttachmentDownloader @Inject constructor(
             queued.add(hubId)
         } else {
             failed.add(hubId)
-            emitState(entry.localId, ClientDownloadState.Failed)
+            emitState(entry.localId, ClientDownloadState.Failed, isNote = entry.isNote)
         }
         pumpLocked()
     }
@@ -475,10 +624,10 @@ class ClientAttachmentDownloader @Inject constructor(
         val entry = known[hubId] ?: return
         if (interrupted) {
             this.interrupted.add(hubId)
-            emitState(entry.localId, ClientDownloadState.NotDownloaded)
+            emitState(entry.localId, ClientDownloadState.NotDownloaded, isNote = entry.isNote)
         } else {
             failed.add(hubId)
-            emitState(entry.localId, ClientDownloadState.Failed)
+            emitState(entry.localId, ClientDownloadState.Failed, isNote = entry.isNote)
         }
         pumpLocked()
     }
@@ -516,10 +665,16 @@ class ClientAttachmentDownloader @Inject constructor(
         interrupted.clear()
         known.clear()
         _states.value = emptyMap()
+        _noteStates.value = emptyMap()
     }
 
-    private fun emitState(localId: Long, state: ClientDownloadState) {
-        _states.update { it + (localId to state) }
+    /** Emits into the MMS map, or the note map when [isNote] (the two local-id sequences collide). */
+    private fun emitState(localId: Long, state: ClientDownloadState, isNote: Boolean = false) {
+        if (isNote) {
+            _noteStates.update { it + (localId to state) }
+        } else {
+            _states.update { it + (localId to state) }
+        }
     }
 
     companion object {

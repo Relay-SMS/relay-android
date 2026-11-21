@@ -13,6 +13,8 @@ import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.clientmode.ClientSendGateway
+import com.filestech.sms.domain.clientmode.NoteSaveAttachment
+import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.MessageType
@@ -21,6 +23,8 @@ import com.filestech.sms.domain.model.PhoneAddress.Companion.toCsv
 import com.filestech.sms.domain.model.ScheduledMessage
 import com.filestech.sms.domain.model.SendErrorCode
 import com.filestech.sms.domain.model.SendReport
+import com.filestech.sms.domain.notes.NoteAttachmentResolver
+import com.filestech.sms.domain.repository.NoteRepository
 import com.filestech.sms.domain.repository.ScheduledMessageRepository
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
@@ -31,10 +35,12 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.io.File
 import java.util.UUID
@@ -69,7 +75,24 @@ import javax.inject.Singleton
  * it, and a cancel is tracked until `schedule_cancelled` (or a failed
  * cancel, which restores the local row — the hub still holds the
  * schedule). A schedule whose message arrives live is marked SENT.
+ *
+ * Round 36 phase 2 — note entries follow the same shape, with one
+ * difference: the save is AWAITED ([saveNoteMessage] returns the
+ * local message id on success). Note entries have no status column,
+ * so a failed save cannot show FAILED — and the view model's draft
+ * seeds only once, so a deleted draft would not come back. The
+ * caller therefore keeps its draft + staged files until this returns:
+ * success clears them, failure keeps them for a retry, and this
+ * manager deletes the optimistic row + files on any failure. The
+ * `upload_expired` re-upload + re-send still applies, inside the
+ * await — the retry does not complete the deferred, the second ack
+ * does.
+ *
+ * TooManyFunctions is suppressed: the note save path adds 13
+ * methods to a manager that already sends text, media, and
+ * schedules — one send surface, one class.
  */
+@Suppress("TooManyFunctions")
 @Singleton
 class ClientSendManager @Inject constructor(
     private val channel: ClientSyncChannel,
@@ -90,6 +113,10 @@ class ClientSendManager @Inject constructor(
      * engine mutex, and an upload waits on acks the engine routes).
      */
     @ApplicationScope private val scope: CoroutineScope,
+    /** Round 36 phase 2 — the note store (optimistic entry + attachment rows). */
+    private val noteRepo: NoteRepository,
+    /** Round 36 phase 2 — decrypts the optimistic attachment rows for a re-upload. */
+    private val noteAttachmentResolver: NoteAttachmentResolver,
 ) : ClientSendGateway {
 
     /** A schedule awaiting its `message_scheduled` ack (or already confirmed). */
@@ -97,6 +124,9 @@ class ClientSendManager @Inject constructor(
 
     /** A cancel awaiting its `schedule_cancelled` ack — the row id + fire time restore it on failure. */
     private data class PendingCancel(val localRowId: Long, val scheduledAt: Long)
+
+    /** Round 36 phase 2 — a note save awaiting its `note_message_saved` / `note_message_failed` ack. */
+    private data class NoteSavePending(val localMessageId: Long, val deferred: CompletableDeferred<Outcome<Long>>)
 
     private val mutex = Mutex()
     private val pendingSends = mutableMapOf<String, Long>()
@@ -106,6 +136,9 @@ class ClientSendManager @Inject constructor(
     private val pendingSchedules = mutableMapOf<String, TrackedSchedule>()
     private val confirmedSchedules = mutableMapOf<String, TrackedSchedule>()
     private val pendingCancels = mutableMapOf<String, PendingCancel>()
+
+    /** Round 36 phase 2 — note saves awaiting their ack, keyed by `client_message_id`. */
+    private val pendingNoteSaves = mutableMapOf<String, NoteSavePending>()
 
     override suspend fun isClientMode(): Boolean =
         (settings.hydratedOrNull() ?: AppSettings()).mode == DeviceMode.CLIENT
@@ -502,6 +535,305 @@ class ClientSendManager @Inject constructor(
         }
     }
 
+    /**
+     * Round 36 phase 2 — saves one note entry from a linked device:
+     * optimistic local row + attachment rows (encrypted copies of
+     * the staged files), uploads each attachment with `kind:
+     * "note"` (the 25 MB note cap, not the 280 KB MMS cap), then
+     * `save_note_message` — and AWAITS the ack (up to 20 s).
+     * Returns the LOCAL message id on success. Any failure deletes
+     * the optimistic row + files and returns the error — the caller
+     * keeps its draft + staged files for a retry (note entries
+     * have no status column, so a failed save cannot show FAILED).
+     * A local-only note (no hub id — created on this device while
+     * it was a hub) cannot be saved to in client mode: validation
+     * failure, v1 wart. The `upload_expired` re-upload + re-send
+     * still applies, inside the await.
+     */
+    override suspend fun saveNoteMessage(
+        localNoteId: Long,
+        body: String,
+        attachments: List<NoteSaveAttachment>,
+        clientMessageId: String?,
+    ): Outcome<Long> {
+        val hubNoteId = noteRepo.noteHubId(localNoteId)
+        val precheckError = when {
+            hubNoteId == null ->
+                AppError.Validation("note is not synced with the phone")
+
+            body.toByteArray(Charsets.UTF_8).size > SyncProtocol.MAX_SEND_BODY_BYTES ->
+                AppError.Validation("entry is too long")
+
+            body.isBlank() && attachments.isEmpty() ->
+                AppError.Validation("empty note entry")
+
+            else -> null
+        }
+        if (precheckError != null) return Outcome.Failure(precheckError)
+        // Non-null here: the precheck returns otherwise (the compiler
+        // cannot prove it from the `when`, so the `toString()` below
+        // reads the nullable — it never prints "null").
+        val key = clientMessageId ?: UUID.randomUUID().toString()
+        val staged = stageNoteSave(localNoteId, body, key, attachments)
+        if (staged is Outcome.Failure) return staged
+        val localId = (staged as Outcome.Success).value
+        val deferred = CompletableDeferred<Outcome<Long>>()
+        mutex.withLock { pendingNoteSaves[key] = NoteSavePending(localId, deferred) }
+        val sent = channel.send(
+            ClientFrames.encodeSaveNoteMessage(
+                SyncProtocol.SaveNoteMessage(
+                    key,
+                    hubNoteId.toString(),
+                    body,
+                    wireEntriesForNoteSaves(attachments),
+                ),
+            ),
+        )
+        if (!sent) {
+            deleteOptimisticNoteMessage(localId)
+            mutex.withLock { pendingNoteSaves.remove(key) }
+            return Outcome.Failure(AppError.ClientOffline)
+        }
+        val outcome = withTimeoutOrNull(NOTE_SAVE_TIMEOUT_MS) { deferred.await() }
+        return if (outcome == null) {
+            deleteOptimisticNoteMessage(localId)
+            mutex.withLock { pendingNoteSaves.remove(key) }
+            Outcome.Failure(AppError.Network())
+        } else {
+            outcome
+        }
+    }
+
+    /**
+     * Round 36 phase 2 — the optimistic note entry + its uploads,
+     * as one step: the local message id on success, the failure
+     * otherwise (the optimistic row is deleted again on an upload
+     * failure — the save never starts half-attached).
+     */
+    private suspend fun stageNoteSave(
+        localNoteId: Long,
+        body: String,
+        key: String,
+        attachments: List<NoteSaveAttachment>,
+    ): Outcome<Long> {
+        val localId = insertOptimisticNoteMessage(localNoteId, body, key, attachments)
+            ?: return Outcome.Failure(AppError.Storage())
+        val uploaded = uploadNoteAttachments(key, attachments)
+        if (uploaded is Outcome.Failure) {
+            deleteOptimisticNoteMessage(localId)
+            return uploaded
+        }
+        return Outcome.Success(localId)
+    }
+
+    /**
+     * Round 36 phase 2 — the optimistic note entry: the row
+     * (keyed by the client UUID, so the hub's echo reconciles
+     * instead of duplicating) + one encrypted attachment row per
+     * staged file. Any attachment failure rolls the row back and
+     * returns null — the save never starts half-attached.
+     */
+    private suspend fun insertOptimisticNoteMessage(
+        localNoteId: Long,
+        body: String,
+        key: String,
+        attachments: List<NoteSaveAttachment>,
+    ): Long? {
+        val message = noteRepo.insertMessage(localNoteId, body, clientMessageId = key)
+        for (att in attachments) {
+            val bytes = runCatching { att.file.readBytes() }.getOrNull()
+            val added = bytes?.let {
+                noteRepo.addAttachment(
+                    message.id,
+                    att.mimeType,
+                    att.fileName,
+                    it,
+                    att.width,
+                    att.height,
+                    att.durationMs,
+                )
+            }
+            if (added !is Outcome.Success) {
+                deleteOptimisticNoteMessage(message.id)
+                return null
+            }
+        }
+        return message.id
+    }
+
+    /** Round 36 phase 2 — uploads the staged files with `kind: "note"` (the 25 MB cap). */
+    private suspend fun uploadNoteAttachments(
+        key: String,
+        attachments: List<NoteSaveAttachment>,
+    ): Outcome<Unit> {
+        for ((index, att) in attachments.withIndex()) {
+            val bytes = runCatching { att.file.readBytes() }.getOrNull()
+                ?: return Outcome.Failure(AppError.Storage())
+            try {
+                uploader.upload(
+                    key,
+                    index,
+                    bytes,
+                    att.mimeType,
+                    att.fileName,
+                    SyncProtocol.UPLOAD_KIND_NOTE,
+                )
+            } catch (error: ClientAttachmentUploader.UploadError) {
+                Timber.w("ClientSendManager: note upload %s failed (%s)", key, error.code)
+                return Outcome.Failure(uploadError(error))
+            }
+        }
+        return Outcome.Success(Unit)
+    }
+
+    /** Round 36 phase 2 — maps an upload refusal onto the caller-facing error. */
+    private fun uploadError(error: ClientAttachmentUploader.UploadError): AppError =
+        when (error.code) {
+            ClientAttachmentUploader.NOT_CONNECTED -> AppError.ClientOffline
+            SyncProtocol.AttachmentUploadError.UPLOAD_TOO_LARGE ->
+                AppError.Validation("file is too big to send")
+
+            else -> AppError.Network()
+        }
+
+    /**
+     * Round 36 phase 2 — the `note_message_saved` ack: links the
+     * optimistic row to its hub id and completes the awaited save
+     * with the local id. (The live `note_message_new` echo
+     * reconciles the same row by client key — whichever lands
+     * first, the row is never duplicated.)
+     */
+    suspend fun onNoteMessageSaved(value: SyncProtocol.NoteMessageSaved) {
+        val pending = mutex.withLock {
+            uploadExpiredRetries.remove(value.clientMessageId)
+            pendingNoteSaves.remove(value.clientMessageId)
+        } ?: return
+        parseHubId(value.messageId)?.let { hubId ->
+            noteRepo.linkMessageToHub(value.clientMessageId, hubId)
+        }
+        pending.deferred.complete(Outcome.Success(pending.localMessageId))
+    }
+
+    /**
+     * Round 36 phase 2 — the `note_message_failed` ack: the hub
+     * refused or failed a save. `upload_expired` re-uploads +
+     * re-sends once, automatically (the desktop rule) — the
+     * deferred is NOT completed, the second ack completes it.
+     * Any other failure deletes the optimistic row + files and
+     * completes the awaited save with the error; the caller keeps
+     * its draft + staged files for a retry.
+     */
+    suspend fun onNoteMessageFailed(value: SyncProtocol.NoteMessageFailed) {
+        val key = value.clientMessageId
+        if (value.code == SyncProtocol.NoteMessageFailed.UPLOAD_EXPIRED && tryReuploadNote(key)) return
+        val pending = mutex.withLock {
+            uploadExpiredRetries.remove(key)
+            pendingNoteSaves.remove(key)
+        } ?: return
+        deleteOptimisticNoteMessage(pending.localMessageId)
+        pending.deferred.complete(Outcome.Failure(noteFailureError(value)))
+        Timber.w("ClientSendManager: note save %s failed (%s): %s", key, value.code, value.message)
+    }
+
+    /** Round 36 phase 2 — maps a `note_message_failed` code onto the caller-facing error. */
+    private fun noteFailureError(value: SyncProtocol.NoteMessageFailed): AppError =
+        when (value.code) {
+            SyncProtocol.NoteMessageFailed.MESSAGE_TOO_LONG ->
+                AppError.Validation("entry is too long")
+
+            SyncProtocol.NoteMessageFailed.UNKNOWN_NOTE ->
+                AppError.Validation("note doesn't exist anymore")
+
+            else -> AppError.Network()
+        }
+
+    /**
+     * Round 36 phase 2 — starts one automatic re-upload + re-send
+     * for an `upload_expired` note failure. True when the
+     * re-upload started (the deferred stays pending — the second
+     * ack completes it); false when there is nothing to re-upload
+     * (a text entry, a missing row, the retry already spent) and
+     * the caller must fail the save. Runs in the application
+     * scope, off the engine's frame loop, like [tryReupload].
+     */
+    private suspend fun tryReuploadNote(key: String): Boolean {
+        val pending = mutex.withLock { pendingNoteSaves[key] } ?: return false
+        val attachments = noteRepo.attachmentsForMessage(pending.localMessageId)
+        if (attachments.isEmpty() || !takeUploadExpiredRetry(key)) return false
+        scope.launch { reuploadNoteAndResend(key, pending.localMessageId, attachments) }
+        return true
+    }
+
+    /**
+     * Round 36 phase 2 — re-uploads the optimistic entry's
+     * attachments (decrypted from their encrypted rows — the
+     * staged originals belong to the composer, not this manager)
+     * and re-sends `save_note_message` with the same key. Any
+     * failure here fails the save (the retry was already spent —
+     * there is no second automatic attempt). On success the
+     * deferred stays pending until the second ack.
+     */
+    private suspend fun reuploadNoteAndResend(
+        key: String,
+        localMessageId: Long,
+        attachments: List<Attachment>,
+    ) {
+        val row = noteRepo.findMessageById(localMessageId) ?: run {
+            failPendingNoteSave(key)
+            return
+        }
+        val hubNoteId = noteRepo.noteHubId(row.noteId) ?: run {
+            failPendingNoteSave(key)
+            return
+        }
+        val uploaded = attachments.withIndex().all { (index, att) ->
+            val bytes = when (val decrypted = noteAttachmentResolver.decryptToMemory(att)) {
+                is Outcome.Success -> decrypted.value
+                is Outcome.Failure -> null
+            } ?: return@all false
+            runCatching {
+                uploader.upload(
+                    key,
+                    index,
+                    bytes,
+                    att.mimeType,
+                    att.fileName,
+                    SyncProtocol.UPLOAD_KIND_NOTE,
+                )
+            }.isSuccess
+        }
+        if (!uploaded) {
+            failPendingNoteSave(key)
+            return
+        }
+        val sent = channel.send(
+            ClientFrames.encodeSaveNoteMessage(
+                SyncProtocol.SaveNoteMessage(
+                    key,
+                    hubNoteId.toString(),
+                    row.body,
+                    wireEntriesForNoteRows(attachments),
+                ),
+            ),
+        )
+        if (!sent) failPendingNoteSave(key)
+    }
+
+    /** Round 36 phase 2 — fails an awaited note save + deletes its optimistic row. */
+    private suspend fun failPendingNoteSave(key: String) {
+        val pending = mutex.withLock {
+            uploadExpiredRetries.remove(key)
+            pendingNoteSaves.remove(key)
+        } ?: return
+        deleteOptimisticNoteMessage(pending.localMessageId)
+        pending.deferred.complete(Outcome.Failure(AppError.Network()))
+    }
+
+    /** Round 36 phase 2 — deletes an optimistic entry row, its attachment rows, and their files. */
+    private suspend fun deleteOptimisticNoteMessage(localMessageId: Long) {
+        runCatching { noteRepo.deleteMessage(localMessageId) }
+    }
+
     /** The `message_scheduled` ack: a pending schedule is confirmed on the hub. */
     suspend fun onMessageScheduled(value: SyncProtocol.MessageScheduled) {
         val pending = mutex.withLock { pendingSchedules.remove(value.clientMessageId) } ?: return
@@ -764,6 +1096,34 @@ class ClientSendManager @Inject constructor(
             )
         }
 
+    /** Round 36 phase 2 — the `save_note_message` attachments array for staged files. */
+    private fun wireEntriesForNoteSaves(
+        attachments: List<NoteSaveAttachment>,
+    ): List<SyncProtocol.SendAttachment> =
+        attachments.mapIndexed { index, att ->
+            SyncProtocol.SendAttachment(
+                uploadIndex = index,
+                mimeType = att.mimeType,
+                fileName = att.fileName,
+                width = att.width,
+                height = att.height,
+                durationMs = att.durationMs,
+            )
+        }
+
+    /** Round 36 phase 2 — the `save_note_message` attachments array for optimistic note rows. */
+    private fun wireEntriesForNoteRows(attachments: List<Attachment>): List<SyncProtocol.SendAttachment> =
+        attachments.mapIndexed { index, att ->
+            SyncProtocol.SendAttachment(
+                uploadIndex = index,
+                mimeType = att.mimeType,
+                fileName = att.fileName,
+                width = att.width,
+                height = att.height,
+                durationMs = att.durationMs,
+            )
+        }
+
     private suspend fun failRow(localId: Long, errorCode: Int) {
         val row = messageDao.findById(localId) ?: return
         messageDao.update(row.copy(status = MessageStatus.FAILED, errorCode = errorCode))
@@ -772,6 +1132,9 @@ class ClientSendManager @Inject constructor(
     companion object {
         /** Same preview cap as [com.filestech.sms.data.repository.ConversationMirror]. */
         private const val MAX_PREVIEW: Int = 240
+
+        /** Round 36 phase 2 — a `save_note_message` waits this long for its ack. */
+        private const val NOTE_SAVE_TIMEOUT_MS = 20_000L
     }
 }
 

@@ -57,6 +57,7 @@ import com.filestech.sms.R
 import com.filestech.sms.data.local.datastore.ViewerChoices
 import com.filestech.sms.ui.components.RelayDestructiveButton
 import com.filestech.sms.ui.components.RelayDialog
+import com.filestech.sms.ui.components.RelayGroupScope
 import com.filestech.sms.ui.components.RelayPrimaryButton
 import com.filestech.sms.ui.components.RelaySettingRow
 import com.filestech.sms.ui.components.RelaySettingsGroup
@@ -93,6 +94,7 @@ fun AdvancedScreen(
     onBack: () -> Unit,
     onOpenErrorLog: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
+    crashLogViewModel: CrashLogSettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showNuke by remember { mutableStateOf(false) }
@@ -280,16 +282,12 @@ fun AdvancedScreen(
                         infoText = stringResource(R.string.settings_keep_alive_desc),
                     )
                 }
-                // Local-only error log — the saved crash reports,
-                // for sending us what went wrong. Nothing here
-                // uploads anything; see `crashlog`.
-                item(onClick = onOpenErrorLog) {
-                    RelaySettingRow(
-                        icon = Icons.Outlined.BugReport,
-                        title = stringResource(R.string.error_log_title),
-                        chevron = true,
-                    )
-                }
+                // Local-only error log — the saved crash reports
+                // plus the on/off switch (see [ErrorLogRows]).
+                ErrorLogRows(
+                    onOpenErrorLog = onOpenErrorLog,
+                    crashLogViewModel = crashLogViewModel,
+                )
                 // Round 33 — the viewers remembered with "Always" in
                 // Relay's own picker, per media type; tapping clears
                 // them all (see [rememberViewerChoicesState]).
@@ -552,4 +550,44 @@ private fun rememberViewerChoicesState(snackbarHost: SnackbarHostState): ViewerC
             }
         },
     )
+}
+
+/**
+ * Round 36 — the error-log rows of the Advanced group: the row
+ * that opens the saved reports, and the on/off switch right
+ * under it. Split out of [AdvancedScreen] so that function stays
+ * under the 300-line Detekt ceiling.
+ *
+ * The switch defaults on; when off, no crash report, session
+ * marker, or startup death entry is written anywhere (see
+ * `crashlog`). Saved reports stay viewable until cleared from
+ * the Error log screen.
+ */
+@Composable
+private fun RelayGroupScope.ErrorLogRows(
+    onOpenErrorLog: () -> Unit,
+    crashLogViewModel: CrashLogSettingsViewModel,
+) {
+    // The switch, read live from the toggle ViewModel (see
+    // [CrashLogSettingsViewModel]).
+    val crashLogEnabled by crashLogViewModel.enabled.collectAsStateWithLifecycle()
+    // Local-only error log — the saved crash reports, for
+    // sending us what went wrong. Nothing here uploads
+    // anything; see `crashlog`.
+    item(onClick = onOpenErrorLog) {
+        RelaySettingRow(
+            icon = Icons.Outlined.BugReport,
+            title = stringResource(R.string.error_log_title),
+            chevron = true,
+        )
+    }
+    item {
+        RelaySwitchRow(
+            icon = Icons.Outlined.BugReport,
+            title = stringResource(R.string.error_log_toggle_title),
+            checked = crashLogEnabled,
+            onCheckedChange = { v -> crashLogViewModel.setEnabled(v) },
+            infoText = stringResource(R.string.error_log_toggle_desc),
+        )
+    }
 }

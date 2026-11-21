@@ -153,6 +153,17 @@ abstract class AppDatabase : RoomDatabase() {
         //   table porte son UUID v4 (clé de dédup de la sauvegarde notes) et les colonnes
         //   `hub_*` / `client_*` de la phase 2 (sync), posées dès maintenant pour éviter
         //   une seconde migration. Strictement additive : les tables naissent vides.
-        const val SCHEMA_VERSION = 19
+        // v20 (2026-11-20, round 35 spam protection): ajoute
+        //   `conversations.sticky_category TEXT` (nullable) — la catégorie que le dernier
+        //   message entrant a gagnée à la réception, calculée sur son corps COMPLET et
+        //   conservée jusqu'à la réponse de l'utilisateur, pour qu'un simple suivi ne
+        //   re-classe plus un fil de démarchage en Personnel. Strictement additive. Les
+        //   lignes existantes projettent NULL = pas de catégorie stockée.
+        // v21 (2026-11-21, round 36 phase 2 notes sync + editing): ajoute
+        //   `note_messages.edited INTEGER NOT NULL DEFAULT 0` (le marqueur « modifié »)
+        //   et `client_sync_state.note_last_message_id TEXT NOT NULL DEFAULT '0'` (le
+        //   curseur des messages de notes). Strictement additive : les lignes
+        //   existantes projettent les défauts (non modifié, curseur à zéro).
+        const val SCHEMA_VERSION = 21
     }
 }

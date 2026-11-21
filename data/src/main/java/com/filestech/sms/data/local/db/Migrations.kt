@@ -676,6 +676,42 @@ object Migrations {
         }
     }
 
+    /**
+     * Round 35 — one nullable column on `conversations`:
+     * `sticky_category TEXT`, the category the latest incoming message
+     * earned at receive time (full body), stored by `MessageCategory`
+     * name. Strictly additive: existing rows project NULL = no stored
+     * category, live classification applies until the next incoming
+     * message (or the one-shot backfill) files them.
+     */
+    val MIGRATION_19_20: Migration = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `sticky_category` TEXT")
+        }
+    }
+
+    /**
+     * Round 36 phase 2 (notes sync + message editing) — two columns
+     * with defaults, both strictly additive:
+     * - `note_messages.edited INTEGER NOT NULL DEFAULT 0` — true once
+     *   the entry's text was edited; the thread renders an "Edited"
+     *   marker, and the hub's edits collector watches it.
+     * - `client_sync_state.note_last_message_id TEXT NOT NULL DEFAULT
+     *   '0'` — the note cursor (max hub note-message id durably
+     *   stored, same rule as `global_last_message_id`).
+     */
+    val MIGRATION_20_21: Migration = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `note_messages` ADD COLUMN `edited` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE `client_sync_state` " +
+                    "ADD COLUMN `note_last_message_id` TEXT NOT NULL DEFAULT '0'",
+            )
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -696,5 +732,7 @@ object Migrations {
         MIGRATION_16_17,
         MIGRATION_17_18,
         MIGRATION_18_19,
+        MIGRATION_19_20,
+        MIGRATION_20_21,
     )
 }

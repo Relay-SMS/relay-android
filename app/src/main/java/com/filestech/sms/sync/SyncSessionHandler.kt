@@ -32,7 +32,11 @@ import java.util.Base64
  * frame (`set_contact_photo`), dispatched the same way. Live calls
  * add the dial frame (`dial_request`), dispatched the same way.
  * Category mutes add the `set_category_muted` frame, dispatched
- * the same way.
+ * the same way. Round 36 phase 2 adds the note frames
+ * (`create_note`, `save_note_message`, `edit_note_message`,
+ * `rename_note`, `delete_note`, `delete_note_message`,
+ * `set_note_pin`, `set_note_archived`, `note_messages_request`),
+ * dispatched through the session engine's note engine.
  *
  * @param send carries one outbound text frame to the client.
  * @param close closes the socket; [reason] is a short human-readable
@@ -95,6 +99,15 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.CreateConversation -> onCreateConversation(parsed.value)
             is SyncProtocol.Parsed.SetContactPhoto -> onSetContactPhoto(parsed.value)
             is SyncProtocol.Parsed.DialRequest -> onDialRequest(parsed.value)
+            is SyncProtocol.Parsed.CreateNote -> onCreateNote(parsed.value)
+            is SyncProtocol.Parsed.SaveNoteMessage -> onSaveNoteMessage(parsed.value)
+            is SyncProtocol.Parsed.EditNoteMessage -> onEditNoteMessage(parsed.value)
+            is SyncProtocol.Parsed.RenameNote -> onRenameNote(parsed.value)
+            is SyncProtocol.Parsed.DeleteNote -> onDeleteNote(parsed.value)
+            is SyncProtocol.Parsed.DeleteNoteMessage -> onDeleteNoteMessage(parsed.value)
+            is SyncProtocol.Parsed.SetNotePin -> onSetNotePin(parsed.value)
+            is SyncProtocol.Parsed.SetNoteArchived -> onSetNoteArchived(parsed.value)
+            is SyncProtocol.Parsed.NoteMessagesRequest -> onNoteMessagesRequest(parsed.value)
             is SyncProtocol.Parsed.Unknown -> onUnknown(parsed.type)
             SyncProtocol.Parsed.Malformed -> onProtocolViolation()
         }
@@ -328,6 +341,49 @@ class SyncSessionHandler(
      */
     private suspend fun onDialRequest(request: SyncProtocol.DialRequest) {
         withEngine { it.onDialRequest(request) }
+    }
+
+    /**
+     * Round 36 phase 2 — the note frames need auth too: an
+     * unauthenticated note frame is a protocol violation, like an
+     * unauthenticated send. They dispatch through the session
+     * engine's note engine (null in tests without a note source —
+     * the frame is then ignored, never a crash).
+     */
+    private suspend fun onCreateNote(request: SyncProtocol.CreateNote) {
+        withEngine { it.noteEngine?.onCreateNote(request) }
+    }
+
+    private suspend fun onSaveNoteMessage(request: SyncProtocol.SaveNoteMessage) {
+        withEngine { it.noteEngine?.onSaveNoteMessage(request) }
+    }
+
+    private suspend fun onEditNoteMessage(request: SyncProtocol.EditNoteMessage) {
+        withEngine { it.noteEngine?.onEditNoteMessage(request) }
+    }
+
+    private suspend fun onRenameNote(request: SyncProtocol.RenameNote) {
+        withEngine { it.noteEngine?.onRenameNote(request) }
+    }
+
+    private suspend fun onDeleteNote(request: SyncProtocol.DeleteNote) {
+        withEngine { it.noteEngine?.onDeleteNote(request) }
+    }
+
+    private suspend fun onDeleteNoteMessage(request: SyncProtocol.DeleteNoteMessage) {
+        withEngine { it.noteEngine?.onDeleteNoteMessage(request) }
+    }
+
+    private suspend fun onSetNotePin(request: SyncProtocol.SetNotePin) {
+        withEngine { it.noteEngine?.onSetNotePin(request) }
+    }
+
+    private suspend fun onSetNoteArchived(request: SyncProtocol.SetNoteArchived) {
+        withEngine { it.noteEngine?.onSetNoteArchived(request) }
+    }
+
+    private suspend fun onNoteMessagesRequest(request: SyncProtocol.NoteMessagesRequest) {
+        withEngine { it.noteEngine?.onNoteMessagesRequest(request) }
     }
 
     /**

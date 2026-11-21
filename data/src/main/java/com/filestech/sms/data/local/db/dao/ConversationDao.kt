@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.filestech.sms.data.local.db.entity.ConversationEntity
+import com.filestech.sms.domain.categories.MessageCategory
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -258,6 +259,15 @@ interface ConversationDao {
     /** v1.28.3 — nom choisi d'un groupe ; `null` retire le nom. */
     @Query("UPDATE conversations SET custom_name = :name WHERE id = :id")
     suspend fun setCustomName(id: Long, name: String?)
+
+    /**
+     * Round 35 (schema v20) — writes the sticky category (`null` clears
+     * it, on an outgoing message). The enum is stored by name via
+     * `MessageEnumConverters`. Written only by `StickyCategoryStore`:
+     * the receive-time update and the one-shot backfill.
+     */
+    @Query("UPDATE conversations SET sticky_category = :category WHERE id = :id")
+    suspend fun setStickyCategory(id: Long, category: MessageCategory?)
 
     @Query("UPDATE conversations SET unread_count = 0 WHERE id = :id")
     suspend fun clearUnread(id: Long)

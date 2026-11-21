@@ -6,6 +6,8 @@ import com.filestech.sms.domain.model.MessageType
 import com.filestech.sms.sync.SyncedAttachment
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
+import com.filestech.sms.sync.SyncedNote
+import com.filestech.sms.sync.SyncedNoteMessage
 import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Test
 
@@ -187,4 +189,86 @@ class WireMappersTest {
         pinnedMessageId = "50",
         pinnedMessageAt = 1700000002000,
     )
+
+    // -- Round 36 phase 2: notes --------------------------------------
+
+    private fun sampleNote(id: String = "7") = SyncedNote(
+        id = id,
+        title = "Groceries",
+        createdAt = 1_794_670_000_000L,
+        updatedAt = 1_794_670_100_000L,
+        lastMessageAt = 1_794_670_100_000L,
+        lastMessagePreview = "Milk",
+        pinned = true,
+        archived = false,
+        messageCount = 3,
+    )
+
+    private fun sampleNoteMessage(
+        id: String = "42",
+        noteId: String = "7",
+        edited: Boolean = false,
+        attachments: List<SyncedAttachment> = emptyList(),
+    ) = SyncedNoteMessage(
+        id = id,
+        noteId = noteId,
+        body = "Milk, eggs",
+        date = 1_794_670_100_000L,
+        attachments = attachments,
+        edited = edited,
+    )
+
+    private fun sampleNoteAttachment(id: String = "9") = SyncedAttachment(
+        id = id,
+        mimeType = "image/jpeg",
+        fileName = "list.jpg",
+        sizeBytes = 12_345L,
+        width = 800,
+        height = 600,
+        durationMs = null,
+    )
+
+    @Test fun `SyncedNote toData maps the row and drops the count`() {
+        val data = sampleNote().toData()
+        assertThat(data).isNotNull()
+        assertThat(data!!.hubNoteId).isEqualTo(7L)
+        assertThat(data.title).isEqualTo("Groceries")
+        assertThat(data.pinned).isTrue()
+        assertThat(data.archived).isFalse()
+        // message_count is wire-only (the mobile list shows a preview,
+        // never a count) — the data class has no such field.
+    }
+
+    @Test fun `SyncedNote toData drops a row whose id does not parse`() {
+        assertThat(sampleNote(id = "abc").toData()).isNull()
+    }
+
+    @Test fun `SyncedNoteMessage toData maps the row with its edited flag`() {
+        val data = sampleNoteMessage(edited = true).toData()
+        assertThat(data).isNotNull()
+        assertThat(data!!.hubMessageId).isEqualTo(42L)
+        assertThat(data.hubNoteId).isEqualTo(7L)
+        assertThat(data.body).isEqualTo("Milk, eggs")
+        assertThat(data.edited).isTrue()
+    }
+
+    @Test fun `SyncedNoteMessage toData drops a row whose note id does not parse`() {
+        assertThat(sampleNoteMessage(noteId = "abc").toData()).isNull()
+        assertThat(sampleNoteMessage(id = "abc").toData()).isNull()
+    }
+
+    @Test fun `SyncedNoteMessage toData drops an unparseable attachment on its own`() {
+        val data = sampleNoteMessage(
+            attachments = listOf(sampleNoteAttachment(), sampleNoteAttachment(id = "abc")),
+        ).toData()
+        assertThat(data).isNotNull()
+        assertThat(data!!.attachments).hasSize(1)
+        assertThat(data.attachments[0].hubAttachmentId).isEqualTo(9L)
+        assertThat(data.attachments[0].width).isEqualTo(800)
+    }
+
+    @Test fun `SyncedAttachment toNoteData drops an unparseable id`() {
+        assertThat(sampleNoteAttachment().toNoteData()).isNotNull()
+        assertThat(sampleNoteAttachment(id = "abc").toNoteData()).isNull()
+    }
 }

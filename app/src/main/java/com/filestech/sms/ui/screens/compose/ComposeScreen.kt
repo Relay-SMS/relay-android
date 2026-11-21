@@ -282,10 +282,11 @@ fun ComposeScreen(
                     // Notes — "New note" sits directly below "Create a
                     // group" (same [ContactActionRow], the note glyph):
                     // tapping it enters the naming step. Hidden in the
-                    // navigation group mode (which is group picking)
-                    // and in client mode — phase 1 has no `create_note`
-                    // frame yet, so a linked device cannot create notes.
-                    if (!groupe && !isClientMode) {
+                    // navigation group mode (which is group picking).
+                    // Round 36 phase 2 — no longer hidden in client
+                    // mode: creation goes through the `create_note`
+                    // frame now ([ComposeViewModel.createNote]).
+                    if (!groupe) {
                         item(key = "new-note") {
                             ContactActionRow(
                                 title = stringResource(R.string.action_new_note),
@@ -514,9 +515,13 @@ private fun NoteNameContent(
             placeholder = stringResource(R.string.note_name_placeholder),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         )
+        // Round 36 — the explainer sits a size down (13sp, not 15sp)
+        // with air between it and the input box: at 15sp it read as
+        // a second heading, not a quiet caption.
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.note_explainer),
-            style = RelayText.Preview,
+            style = RelayText.SystemNote,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
         )

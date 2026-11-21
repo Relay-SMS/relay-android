@@ -51,6 +51,7 @@ import com.filestech.sms.domain.vault.VaultMover
 import com.filestech.sms.ownnumber.OwnNumberEnsurerImpl
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.VaultManager
+import com.filestech.sms.sync.NoteSyncSource
 import com.filestech.sms.sync.SyncMessageSource
 import com.filestech.sms.system.clipboard.ClipboardCleanerImpl
 import com.filestech.sms.system.emergency.IAmOkMessageProviderImpl
@@ -59,6 +60,7 @@ import com.filestech.sms.system.notifications.IncomingMessageNotifier
 import com.filestech.sms.system.pdf.ConversationPdfExporter
 import com.filestech.sms.system.safety.AndroidSafetyMessageTexts
 import com.filestech.sms.system.scheduler.ScheduledMessageSchedulerImpl
+import com.filestech.sms.system.sync.RepositoryNoteSyncSource
 import com.filestech.sms.system.sync.RepositorySyncMessageSource
 import dagger.Binds
 import dagger.Module
@@ -76,6 +78,10 @@ abstract class RepositoryModule {
     /** Slice 2 — the sync engine's message store (SYNC_PROTOCOL.md, glue point 4). */
     @Binds @Singleton
     abstract fun bindSyncMessageSource(impl: RepositorySyncMessageSource): SyncMessageSource
+
+    /** Round 36 phase 2 — the note engine's note store (SYNC_PROTOCOL.md, Notes sync). */
+    @Binds @Singleton
+    abstract fun bindNoteSyncSource(impl: RepositoryNoteSyncSource): NoteSyncSource
 
     /**
      * v1.28.1 — l'effacement de la copie systeme d'un message. Interface pour que le contrat

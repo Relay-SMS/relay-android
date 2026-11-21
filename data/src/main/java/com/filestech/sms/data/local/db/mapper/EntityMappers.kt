@@ -76,6 +76,8 @@ fun ConversationEntity.toDomain(): Conversation = Conversation(
     /** Feedback round 5 — message épinglé du fil + date de l'épinglage. */
     pinnedMessageId = pinnedMessageId,
     pinnedMessageAt = pinnedMessageAt,
+    /** Round 35 (schema v20) — catégorie collante, voir `StickyCategoryStore`. */
+    stickyCategory = stickyCategory,
 )
 
 fun MessageEntity.toDomain(attachments: List<Attachment> = emptyList()): Message = Message(

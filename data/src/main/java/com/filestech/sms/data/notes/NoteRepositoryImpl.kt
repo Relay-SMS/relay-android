@@ -12,11 +12,19 @@ import com.filestech.sms.data.local.db.entity.NoteEntity
 import com.filestech.sms.data.local.db.entity.NoteMessageEntity
 import com.filestech.sms.data.local.db.mapper.toDomain
 import com.filestech.sms.di.IoDispatcher
+import com.filestech.sms.domain.clientmode.ClientAction
+import com.filestech.sms.domain.clientmode.ClientActionGateway
+import com.filestech.sms.domain.clientmode.NoOpClientActionGateway
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Note
 import com.filestech.sms.domain.model.NoteMessage
 import com.filestech.sms.domain.model.NoteMessageWindow
 import com.filestech.sms.domain.repository.NoteRepository
+import com.filestech.sms.domain.repository.SyncedNoteAttachmentData
+import com.filestech.sms.domain.repository.SyncedNoteData
+import com.filestech.sms.domain.repository.SyncedNoteMessageData
+import com.filestech.sms.domain.repository.SyncedNoteMessageResult
+import com.filestech.sms.domain.repository.SyncedNoteResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -26,6 +34,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,7 +53,20 @@ import javax.inject.Singleton
  *   the file paths BEFORE the rows go (inside the transaction boundary), delete the rows,
  *   then delete the files after commit. Inserts write + encrypt the file FIRST and insert
  *   the row second; if the insert fails, the orphan file is removed again.
+ *
+ * Phase 2 (notes sync) — in client mode the pin / archive / rename /
+ * edit writes are optimistic + frame (the `ConversationRepositoryImpl`
+ * pattern: the hub is authoritative, the sender reverts on
+ * `ok:false`), while the deletes send FIRST and delete locally only
+ * on the hub's success (a deleted row cannot be reverted). The
+ * mirror methods (`upsertSynced*`, `pruneSyncedNotes`) are the
+ * engine's write path and never send frames.
+ *
+ * TooManyFunctions is suppressed like the interface: the sync
+ * section alone adds 14 methods to an already-wide store, and
+ * splitting the single write path would cost more than it saves.
  */
+@Suppress("TooManyFunctions")
 @Singleton
 class NoteRepositoryImpl @Inject constructor(
     private val database: AppDatabase,
@@ -52,6 +74,7 @@ class NoteRepositoryImpl @Inject constructor(
     private val noteMessageDao: NoteMessageDao,
     private val noteAttachmentDao: NoteAttachmentDao,
     private val attachmentCrypto: NoteAttachmentCrypto,
+    private val clientActions: ClientActionGateway = NoOpClientActionGateway,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : NoteRepository {
 
@@ -140,6 +163,8 @@ class NoteRepositoryImpl @Inject constructor(
         uuid: String,
         createdAt: Long,
         updatedAt: Long,
+        hubNoteId: Long?,
+        clientNoteId: String?,
     ): Note = withContext(io) {
         val id = noteDao.insert(
             NoteEntity(
@@ -153,19 +178,45 @@ class NoteRepositoryImpl @Inject constructor(
                 pinned = false,
                 archived = false,
                 bubbleColorArgb = null,
-                hubNoteId = null,
-                clientNoteId = null,
+                hubNoteId = hubNoteId,
+                clientNoteId = clientNoteId,
             ),
         )
         noteDao.findById(id)?.toDomain()
             ?: error("createNote: row $id vanished immediately after insert")
     }
 
-    override suspend fun renameNote(noteId: Long, title: String) = withContext(io) {
-        noteDao.rename(noteId, title, System.currentTimeMillis())
+    override suspend fun renameNote(noteId: Long, title: String) {
+        withContext(io) {
+            // Phase 2 — client mode: optimistic local rename, then the
+            // `rename_note` frame; the sender reverts on `ok:false`.
+            if (clientActions.isClientMode()) {
+                val previous = noteDao.findById(noteId)?.title
+                noteDao.rename(noteId, title, System.currentTimeMillis())
+                clientActions.sendAction(ClientAction.RenameNote(noteId, title)) {
+                    if (previous != null) {
+                        noteDao.rename(noteId, previous, System.currentTimeMillis())
+                    }
+                }
+            } else {
+                noteDao.rename(noteId, title, System.currentTimeMillis())
+            }
+        }
     }
 
     override suspend fun deleteNote(noteId: Long) = withContext(io) {
+        // Phase 2 — client mode: the delete sends FIRST and the local
+        // row goes only on the hub's success — a deleted row cannot
+        // be reverted. On failure the note stays, as if nothing
+        // happened (the caller shows the error).
+        if (clientActions.isClientMode()) {
+            if (clientActions.deleteNote(noteId) is Outcome.Success) deleteNoteLocal(noteId)
+            return@withContext
+        }
+        deleteNoteLocal(noteId)
+    }
+
+    private suspend fun deleteNoteLocal(noteId: Long) {
         // Collect the file paths BEFORE the rows go — after the delete there is nothing
         // left to tell us which files belonged to the note.
         val files = noteAttachmentDao.findLocalUrisForNote(noteId)
@@ -175,12 +226,39 @@ class NoteRepositoryImpl @Inject constructor(
         files.forEach { attachmentCrypto.deleteFileQuietly(it) }
     }
 
-    override suspend fun setPinned(noteId: Long, pinned: Boolean) = withContext(io) {
-        noteDao.setPinned(noteId, pinned, System.currentTimeMillis())
+    override suspend fun setPinned(noteId: Long, pinned: Boolean) {
+        withContext(io) {
+            // Phase 2 — client mode: optimistic local change, then the
+            // `set_note_pin` frame; the sender reverts on `ok:false`.
+            if (clientActions.isClientMode()) {
+                val previous = noteDao.findById(noteId)?.pinned
+                noteDao.setPinned(noteId, pinned, System.currentTimeMillis())
+                clientActions.sendAction(ClientAction.SetNotePin(noteId, pinned)) {
+                    if (previous != null) {
+                        noteDao.setPinned(noteId, previous, System.currentTimeMillis())
+                    }
+                }
+            } else {
+                noteDao.setPinned(noteId, pinned, System.currentTimeMillis())
+            }
+        }
     }
 
-    override suspend fun setArchived(noteId: Long, archived: Boolean) = withContext(io) {
-        noteDao.setArchived(noteId, archived, System.currentTimeMillis())
+    override suspend fun setArchived(noteId: Long, archived: Boolean) {
+        withContext(io) {
+            // Phase 2 — client mode: same optimistic + `set_note_archived` frame pattern.
+            if (clientActions.isClientMode()) {
+                val previous = noteDao.findById(noteId)?.archived
+                noteDao.setArchived(noteId, archived, System.currentTimeMillis())
+                clientActions.sendAction(ClientAction.SetNoteArchived(noteId, archived)) {
+                    if (previous != null) {
+                        noteDao.setArchived(noteId, previous, System.currentTimeMillis())
+                    }
+                }
+            } else {
+                noteDao.setArchived(noteId, archived, System.currentTimeMillis())
+            }
+        }
     }
 
     override suspend fun setDraft(noteId: Long, draft: String?) = withContext(io) {
@@ -198,6 +276,8 @@ class NoteRepositoryImpl @Inject constructor(
         body: String,
         uuid: String,
         date: Long,
+        hubNoteMessageId: Long?,
+        clientMessageId: String?,
     ): NoteMessage = withContext(io) {
         database.withTransaction {
             val id = noteMessageDao.insert(
@@ -207,8 +287,8 @@ class NoteRepositoryImpl @Inject constructor(
                     body = body,
                     date = date,
                     attachmentsCount = 0,
-                    hubNoteMessageId = null,
-                    clientMessageId = null,
+                    hubNoteMessageId = hubNoteMessageId,
+                    clientMessageId = clientMessageId,
                 ),
             )
             refreshPreview(noteId)
@@ -217,8 +297,50 @@ class NoteRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun editMessage(messageId: Long, body: String) = withContext(io) {
+        // Phase 2 — client mode: optimistic local edit, then the
+        // `edit_note_message` frame; the sender reverts (body AND
+        // edited flag) on `ok:false`. Hub mode edits directly — the
+        // hub's edits collector pushes `note_message_updated`.
+        if (clientActions.isClientMode()) {
+            val previous = noteMessageDao.findById(messageId) ?: return@withContext
+            database.withTransaction {
+                noteMessageDao.setBodyEdited(messageId, body)
+                refreshPreview(previous.noteId)
+            }
+            clientActions.sendAction(
+                ClientAction.EditNoteMessage(previous.noteId, messageId, body),
+            ) {
+                database.withTransaction {
+                    noteMessageDao.setBody(messageId, previous.body, previous.edited)
+                    refreshPreview(previous.noteId)
+                }
+            }
+        } else {
+            val message = noteMessageDao.findById(messageId) ?: return@withContext
+            database.withTransaction {
+                noteMessageDao.setBodyEdited(messageId, body)
+                refreshPreview(message.noteId)
+            }
+        }
+    }
+
     override suspend fun deleteMessage(messageId: Long) = withContext(io) {
-        val message = noteMessageDao.findById(messageId) ?: return@withContext
+        // Phase 2 — client mode: the delete sends FIRST and the local
+        // row goes only on the hub's success (a deleted row cannot
+        // be reverted).
+        if (clientActions.isClientMode()) {
+            val message = noteMessageDao.findById(messageId) ?: return@withContext
+            if (clientActions.deleteNoteMessage(message.noteId, messageId) is Outcome.Success) {
+                deleteMessageLocal(messageId)
+            }
+            return@withContext
+        }
+        deleteMessageLocal(messageId)
+    }
+
+    private suspend fun deleteMessageLocal(messageId: Long) {
+        val message = noteMessageDao.findById(messageId) ?: return
         val files = noteAttachmentDao.findForMessage(messageId).map { it.localUri }
         database.withTransaction {
             noteMessageDao.deleteById(messageId)
@@ -311,6 +433,195 @@ class NoteRepositoryImpl @Inject constructor(
 
     override suspend fun listAllAttachments(): List<Attachment> = withContext(io) {
         noteAttachmentDao.listAll().map { it.toDomain() }
+    }
+
+    // ------------------------------------------------------------------ sync (phase 2)
+
+    override suspend fun noteHubId(localNoteId: Long): Long? = withContext(io) {
+        noteDao.findById(localNoteId)?.hubNoteId
+    }
+
+    override suspend fun messageHubId(localMessageId: Long): Long? = withContext(io) {
+        noteMessageDao.findById(localMessageId)?.hubNoteMessageId
+    }
+
+    override suspend fun findNoteByHubId(hubNoteId: Long): Note? = withContext(io) {
+        noteDao.findByHubId(hubNoteId)?.toDomain()
+    }
+
+    override suspend fun findNoteByClientId(clientNoteId: String): Note? = withContext(io) {
+        noteDao.findByClientNoteId(clientNoteId)?.toDomain()
+    }
+
+    override suspend fun findMessageByHubId(hubMessageId: Long): NoteMessage? = withContext(io) {
+        val entity = noteMessageDao.findByHubId(hubMessageId) ?: return@withContext null
+        entity.toDomain(noteAttachmentDao.findForMessage(entity.id).map { it.toDomain() })
+    }
+
+    override suspend fun findMessageByClientId(clientMessageId: String): NoteMessage? =
+        withContext(io) {
+            val entity = noteMessageDao.findByClientMessageId(clientMessageId)
+                ?: return@withContext null
+            entity.toDomain(noteAttachmentDao.findForMessage(entity.id).map { it.toDomain() })
+        }
+
+    override suspend fun findAttachmentByHubId(hubAttachmentId: Long): Attachment? =
+        withContext(io) {
+            noteAttachmentDao.findByHubId(hubAttachmentId)?.toDomain()
+        }
+
+    override suspend fun linkMessageToHub(clientMessageId: String, hubMessageId: Long) =
+        withContext(io) {
+            noteMessageDao.linkToHub(clientMessageId, hubMessageId)
+        }
+
+    override suspend fun upsertSyncedNote(data: SyncedNoteData): SyncedNoteResult =
+        withContext(io) {
+            database.withTransaction {
+                val existing = noteDao.findByHubId(data.hubNoteId)
+                if (existing == null) {
+                    val id = noteDao.insert(
+                        NoteEntity(
+                            uuid = UUID.randomUUID().toString(),
+                            title = data.title,
+                            createdAt = data.createdAt,
+                            updatedAt = data.updatedAt,
+                            lastMessageAt = data.lastMessageAt,
+                            lastMessagePreview = data.lastMessagePreview,
+                            draft = null,
+                            pinned = data.pinned,
+                            archived = data.archived,
+                            bubbleColorArgb = null,
+                            hubNoteId = data.hubNoteId,
+                            clientNoteId = null,
+                        ),
+                    )
+                    SyncedNoteResult(id, true)
+                } else {
+                    // The draft and the bubble color are local-only:
+                    // the wire carries neither, so the copy keeps
+                    // them untouched.
+                    noteDao.update(
+                        existing.copy(
+                            title = data.title,
+                            updatedAt = data.updatedAt,
+                            lastMessageAt = data.lastMessageAt,
+                            lastMessagePreview = data.lastMessagePreview,
+                            pinned = data.pinned,
+                            archived = data.archived,
+                        ),
+                    )
+                    SyncedNoteResult(existing.id, false)
+                }
+            }
+        }
+
+    override suspend fun upsertSyncedMessage(
+        data: SyncedNoteMessageData,
+    ): SyncedNoteMessageResult? = withContext(io) {
+        database.withTransaction {
+            val note = noteDao.findByHubId(data.hubNoteId) ?: return@withTransaction null
+            val existing = noteMessageDao.findByHubId(data.hubMessageId)
+                ?: data.clientMessageId?.let { noteMessageDao.findByClientMessageId(it) }
+            val localId = if (existing == null) {
+                noteMessageDao.insert(
+                    NoteMessageEntity(
+                        uuid = UUID.randomUUID().toString(),
+                        noteId = note.id,
+                        body = data.body,
+                        date = data.date,
+                        attachmentsCount = data.attachments.size,
+                        hubNoteMessageId = data.hubMessageId,
+                        clientMessageId = data.clientMessageId,
+                        edited = data.edited,
+                    ),
+                )
+            } else {
+                // An optimistic row (client save) is adopted: its hub
+                // id is set, and its attachments are linked to the
+                // hub's by position — the hub echoes attachments in
+                // send order.
+                noteMessageDao.update(
+                    existing.copy(
+                        body = data.body,
+                        date = data.date,
+                        attachmentsCount = data.attachments.size,
+                        hubNoteMessageId = data.hubMessageId,
+                        edited = data.edited,
+                    ),
+                )
+                val localAttachments = noteAttachmentDao.findForMessage(existing.id)
+                if (localAttachments.any { it.hubAttachmentId == null }) {
+                    localAttachments.zip(data.attachments).forEach { (local, wire) ->
+                        noteAttachmentDao.setHubId(local.id, wire.hubAttachmentId)
+                    }
+                }
+                existing.id
+            }
+            upsertMessageAttachments(localId, data.attachments)
+            refreshPreview(note.id)
+            SyncedNoteMessageResult(localId, existing == null)
+        }
+    }
+
+    /**
+     * Inserts the wire attachments the message does not have yet
+     * (matched by hub id). Mirrored rows start with a blank
+     * `localUri` — the downloader fills it once the bytes land, and
+     * the blank is what makes the download tile render. Attachments
+     * are append-only on the hub (there is no attachment delete),
+     * so nothing is ever removed here; removals arrive as message
+     * deletes.
+     */
+    private suspend fun upsertMessageAttachments(
+        localMessageId: Long,
+        attachments: List<SyncedNoteAttachmentData>,
+    ) {
+        val known = noteAttachmentDao.findForMessage(localMessageId)
+            .mapNotNull { it.hubAttachmentId }.toSet()
+        for (attachment in attachments) {
+            if (attachment.hubAttachmentId !in known) {
+                noteAttachmentDao.insert(
+                    NoteAttachmentEntity(
+                        uuid = UUID.randomUUID().toString(),
+                        noteMessageId = localMessageId,
+                        mimeType = attachment.mimeType,
+                        fileName = attachment.fileName,
+                        sizeBytes = attachment.sizeBytes,
+                        localUri = "",
+                        width = attachment.width,
+                        height = attachment.height,
+                        durationMs = attachment.durationMs,
+                        hubAttachmentId = attachment.hubAttachmentId,
+                    ),
+                )
+            }
+        }
+    }
+
+    override suspend fun deleteSyncedNote(hubNoteId: Long) = withContext(io) {
+        val note = noteDao.findByHubId(hubNoteId) ?: return@withContext
+        deleteNoteLocal(note.id)
+    }
+
+    override suspend fun deleteSyncedMessage(hubMessageId: Long) = withContext(io) {
+        val message = noteMessageDao.findByHubId(hubMessageId) ?: return@withContext
+        deleteMessageLocal(message.id)
+    }
+
+    override suspend fun hubNoteIds(): Set<Long> = withContext(io) {
+        noteDao.hubNoteIds().toSet()
+    }
+
+    override suspend fun pruneSyncedNotes(keepHubIds: Set<Long>): Int = withContext(io) {
+        var pruned = 0
+        for (hubId in noteDao.hubNoteIds()) {
+            if (hubId !in keepHubIds) {
+                noteDao.findByHubId(hubId)?.let { deleteNoteLocal(it.id) }
+                pruned++
+            }
+        }
+        pruned
     }
 
     // ------------------------------------------------------------------ internals

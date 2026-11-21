@@ -11,10 +11,14 @@ import androidx.lifecycle.viewModelScope
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.oneShotEvents
 import com.filestech.sms.core.io.LectureBornee
+import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.data.voice.VoiceRecorder
 import com.filestech.sms.di.IoDispatcher
+import com.filestech.sms.domain.clientmode.ClientSendGateway
+import com.filestech.sms.domain.clientmode.NoOpClientSendGateway
+import com.filestech.sms.domain.clientmode.NoteSaveAttachment
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.NOTE_TITLE_MAX_LENGTH
 import com.filestech.sms.domain.model.Note
@@ -22,6 +26,7 @@ import com.filestech.sms.domain.model.NoteMessage
 import com.filestech.sms.domain.notes.NoteAttachmentResolver
 import com.filestech.sms.domain.repository.NoteRepository
 import com.filestech.sms.domain.usecase.ExportNotePdfUseCase
+import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.screens.thread.ContactCardSource
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -54,6 +59,15 @@ import javax.inject.Inject
  * thread uses for outgoing MMS) and are deleted after the save, win
  * or lose. Decrypted playback files are tracked and released (see
  * [registerExternalPlaybackFile] and [onCleared]).
+ *
+ * Round 36 phase 2 — client mode: the thread works off the mirror.
+ * [save] sends via the gateway ([ClientSendGateway.saveNoteMessage],
+ * awaited — the draft + staged files stay until it answers, so a
+ * failed save keeps them for a retry), the pin / archive / rename /
+ * edit / delete actions route through the repository (which frames
+ * them to the hub), and note attachment downloads flow through the
+ * downloader ([noteDownloads], reached via the entry point like
+ * [ThreadViewModel]).
  */
 @HiltViewModel
 class NoteThreadViewModel @Inject constructor(
@@ -70,6 +84,8 @@ class NoteThreadViewModel @Inject constructor(
     private val playbackController: VoicePlaybackController,
     @ApplicationContext private val context: Context,
     @IoDispatcher private val io: CoroutineDispatcher,
+    /** Round 36 phase 2 — the client-mode send seam (a no-op in hub mode). */
+    private val sendGateway: ClientSendGateway = NoOpClientSendGateway,
 ) : ViewModel() {
 
     val noteId: Long = savedStateHandle.get<Long>("noteId") ?: -1L
@@ -111,6 +127,10 @@ class NoteThreadViewModel @Inject constructor(
          * attached (the details panel groups and filters on them).
          */
         val panelAttachments: List<Attachment> = emptyList(),
+        /** Round 36 phase 2 — true when this device is a linked client (checked once in init). */
+        val isClientMode: Boolean = false,
+        /** Round 36 phase 2 — client mode: the note download states, keyed by local attachment id. */
+        val noteDownloads: Map<Long, ClientDownloadState> = emptyMap(),
     ) {
         /** PDF export needs at least one entry. */
         val canExport: Boolean get() = messages.isNotEmpty()
@@ -203,6 +223,20 @@ class NoteThreadViewModel @Inject constructor(
                 _state.update { it.copy(panelAttachments = paired) }
             }
         }
+        // Round 36 phase 2 — client mode: the mode is checked once
+        // (it cannot change while this screen is open — a mode
+        // switch restarts the app), and the note download states
+        // flow in from the downloader (a missing downloader leaves
+        // the map empty, like ThreadViewModel).
+        viewModelScope.launch {
+            _state.update { it.copy(isClientMode = sendGateway.isClientMode()) }
+        }
+        viewModelScope.launch {
+            val downloader = runCatching { clientAttachmentDownloader() }.getOrNull() ?: return@launch
+            downloader.noteStates.collect { states ->
+                _state.update { it.copy(noteDownloads = states) }
+            }
+        }
     }
 
     /** Widens the tail window by one page (the "load older" row). */
@@ -227,6 +261,10 @@ class NoteThreadViewModel @Inject constructor(
      * No MMS budget, no image compression: notes store originals.
      * Image dimensions are probed (bounds-only) for the sticker
      * filter and the panel; video duration is probed best-effort.
+     *
+     * Round 36 phase 2 — client mode sends via the hub instead
+     * ([saveViaHub]): the save is awaited, and the draft + staged
+     * files stay until it answers.
      */
     fun save() {
         val current = _state.value
@@ -234,6 +272,10 @@ class NoteThreadViewModel @Inject constructor(
         val body = current.draft
         val staged = current.pendingAttachments
         if (body.isBlank() && staged.isEmpty()) return
+        if (current.isClientMode) {
+            saveViaHub(body, staged)
+            return
+        }
         val revision = draftRevision
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
@@ -302,6 +344,101 @@ class NoteThreadViewModel @Inject constructor(
     /** Deletes one entry (its attachment rows + files cascade in the repository). */
     fun deleteMessage(messageId: Long) {
         viewModelScope.launch { noteRepo.deleteMessage(messageId) }
+    }
+
+    /** Round 36 phase 2 — edits a text entry's body (the repository routes client mode). */
+    fun editMessage(messageId: Long, newBody: String) {
+        if (newBody.isBlank()) return
+        viewModelScope.launch { noteRepo.editMessage(messageId, newBody) }
+    }
+
+    /** Round 36 phase 2 — client mode: requests one note attachment's bytes, by local id. */
+    fun requestNoteDownload(localAttachmentId: Long) {
+        viewModelScope.launch {
+            runCatching { clientAttachmentDownloader().requestNote(localAttachmentId) }
+        }
+    }
+
+    /** Round 36 phase 2 — the attachment downloader, via the entry point (see [ThreadViewModel]). */
+    private fun clientAttachmentDownloader(): com.filestech.sms.sync.client.ClientAttachmentDownloader =
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context,
+            com.filestech.sms.sync.client.ClientAttachmentDownloaderEntryPoint::class.java,
+        ).clientAttachmentDownloader()
+
+    /**
+     * Round 36 phase 2 — the client-mode save: the gateway inserts
+     * the optimistic row + encrypted attachment copies, uploads
+     * each file, sends `save_note_message`, and awaits the ack.
+     * Success clears the draft + staged files (as in hub mode);
+     * failure KEEPS them — the gateway already deleted the
+     * optimistic row + files, so the user retries from the draft
+     * and the staged files. A staged file that vanished before the
+     * send fails the save before anything is sent.
+     */
+    private fun saveViaHub(body: String, staged: List<PendingNoteAttachment>) {
+        val revision = draftRevision
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val attachments = staged.mapNotNull { item ->
+                val file = File(item.path)
+                if (!file.exists()) return@mapNotNull null
+                val bytes = withContext(io) { runCatching { file.readBytes() }.getOrNull() }
+                val dims = if (bytes != null && item.mimeType.startsWith("image/", ignoreCase = true)) {
+                    probeImageDimensions(bytes)
+                } else {
+                    null
+                }
+                val duration = item.durationMs
+                    ?: if (item.mimeType.startsWith("video/", ignoreCase = true)) {
+                        probeVideoDuration(file)
+                    } else {
+                        null
+                    }
+                NoteSaveAttachment(
+                    file = file,
+                    mimeType = item.mimeType,
+                    fileName = item.fileName,
+                    width = dims?.first,
+                    height = dims?.second,
+                    durationMs = duration,
+                )
+            }
+            if (attachments.size != staged.size) {
+                _state.update { it.copy(isSaving = false) }
+                _events.tryEmit(
+                    Event.ShowSnackbar(context.getString(R.string.note_attachment_failed), isError = true),
+                )
+                return@launch
+            }
+            when (val result = sendGateway.saveNoteMessage(noteId, body, attachments)) {
+                is Outcome.Success -> {
+                    withContext(io) {
+                        staged.forEach { runCatching { File(it.path).delete() } }
+                    }
+                    val draftIntact = draftRevision == revision
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            pendingAttachments = emptyList(),
+                            draft = if (draftIntact) "" else it.draft,
+                        )
+                    }
+                    if (draftIntact) noteRepo.setDraft(noteId, null)
+                }
+
+                is Outcome.Failure -> {
+                    _state.update { it.copy(isSaving = false) }
+                    val message = when (result.error) {
+                        is AppError.ClientOffline ->
+                            context.getString(R.string.error_send_client_offline)
+
+                        else -> context.getString(R.string.note_save_failed)
+                    }
+                    _events.tryEmit(Event.ShowSnackbar(message, isError = true))
+                }
+            }
+        }
     }
 
     /**

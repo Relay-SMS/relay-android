@@ -172,6 +172,8 @@
     <string name="conversations_delete_kept_local">La conversation n’a pas été supprimée : une partie n’a pas pu être retirée de ce téléphone. Réessayez.</string>
     <string name="conversations_draft_prefix">Brouillon : %1$s</string>
     <string name="conversations_preview_attachment">Pièce jointe</string>
+    <string name="invite_friends">Inviter des amis</string>
+    <string name="invite_friends_settings">Invitez vos amis</string>
 
     <string name="thread_compose_placeholder">Relay message</string>
     <string name="thread_compose_emoji">Emoji</string>
@@ -780,7 +782,7 @@
     <string name="about_perm_notifications">Afficher les notifications de nouveaux messages.</string>
     <string name="about_perm_biometric">Déverrouillage biométrique facultatif.</string>
     <string name="about_perm_record_audio">Enregistrer les messages vocaux joints aux MMS sortants.</string>
-    <string name="about_perm_internet">Recherche de GIF uniquement (Klipy). L\'application fonctionne sans elle.</string>
+    <string name="about_perm_internet">Recherche de GIF (Klipy), aperçus de liens et synchronisation entre appareils. L\'application fonctionne sans elle.</string>
     <string name="about_perm_foreground_service">Migration et sauvegarde de longue durée.</string>
     <string name="about_perm_location">Mode urgence uniquement, si vous l\'activez : une position au moment de l\'alerte, exacte ou approximative.</string>
     <string name="about_perm_call_phone">Tuiles d\'appel d\'urgence : appel direct. Refusée, elles ouvrent le composeur.</string>
@@ -793,6 +795,7 @@
     <string name="about_source_code">Code source</string>
     <string name="about_report_issue">Signaler un problème</string>
     <string name="about_website">Site web</string>
+    <string name="about_contact_support">Contacter le support</string>
     <string name="about_license">Licence</string>
     <string name="license_notice_heading">© 2026 Relay. All rights reserved.</string>
     <string name="license_notice_body">The original application interface, user experience design, visual assets, branding, and original design implementations are the intellectual property of Relay and its respective copyright holder.\n\nThese original works may not be copied, reproduced, redistributed, or used in another product without prior written permission, except where otherwise permitted by applicable law.\n\nThis application incorporates portions of SMS Tech, Copyright © Patrice Haltaya, licensed under the Apache License, Version 2.0.\n\nSee the accompanying license and third-party notices for additional information.</string>
@@ -829,6 +832,8 @@
 
     <string name="error_log_title">Journal d\'erreurs</string>
     <string name="error_log_info">Les rapports de plantage restent sur cet appareil. Envoyez-nous-en un uniquement si vous le souhaitez.</string>
+    <string name="error_log_toggle_title">Enregistrer le journal d\'erreurs</string>
+    <string name="error_log_toggle_desc">Enregistre les rapports de plantage sur cet appareil pour que vous puissiez les partager en cas de problème. Rien n\'est jamais envoyé ailleurs.</string>
     <string name="error_log_empty">Aucun rapport de plantage pour l\'instant.</string>
     <string name="error_log_share">Partager</string>
     <string name="error_log_clear_all">Tout effacer</string>
@@ -991,7 +996,7 @@
     <string name="about_feat_ui_label">UI fluide</string>
     <string name="about_feat_ui_desc">Compose + recomposition isolée par bulle. Tri des conversations dans le menu 3 points.</string>
     <string name="about_feat_noads_label">Zéro pub, zéro traceur</string>
-    <string name="about_feat_noads_desc">Aucune analytics. Internet sert uniquement à la recherche de GIF (Klipy) ; les MMS sont acheminés par le service MMS d\'Android.</string>
+    <string name="about_feat_noads_desc">Aucune analytics, aucun service Google. Internet sert uniquement à la recherche de GIF (Klipy), aux aperçus de liens et à la synchronisation entre appareils ; les MMS sont acheminés par le service MMS d\'Android.</string>
 
     <!-- Recettes d'aide (7 titres + steps) -->
     <string name="about_help_default_title">Définir comme app SMS par défaut</string>
@@ -1331,6 +1336,8 @@
     <string name="note_delete_message_body">Cette entrée sera définitivement supprimée.</string>
     <string name="note_rename_title">Renommer la note</string>
     <string name="note_rename_placeholder">Nom de la note</string>
+    <string name="note_edit_entry_title">Modifier l\'entrée</string>
+    <string name="note_message_edited">Modifié</string>
     <string name="note_save_failed">Impossible d\'enregistrer cette entrée</string>
     <string name="note_attachment_failed">Impossible d\'ajouter cette pièce jointe</string>
     <string name="note_open_failed">Impossible d\'ouvrir ce fichier</string>

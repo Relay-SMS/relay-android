@@ -1,10 +1,16 @@
 package com.filestech.sms.sync.client
 
 import android.content.Context
+import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.MessageDao
+import com.filestech.sms.data.local.db.dao.NoteAttachmentDao
+import com.filestech.sms.data.local.db.dao.NoteMessageDao
 import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
+import com.filestech.sms.data.local.db.entity.NoteAttachmentEntity
+import com.filestech.sms.data.local.db.entity.NoteMessageEntity
+import com.filestech.sms.data.notes.NoteAttachmentCrypto
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.MessageType
@@ -14,6 +20,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -71,7 +78,21 @@ class ClientAttachmentDownloaderTest {
             every { context.filesDir } returns filesDir
         }
 
-        val downloader = ClientAttachmentDownloader(channel, attachmentDao, messageDao, context, scope)
+        // Round 36 phase 2 — the note DAOs + crypto (the note download tests seed them).
+        val noteAttachmentDao = mockk<NoteAttachmentDao>(relaxed = true)
+        val noteMessageDao = mockk<NoteMessageDao>(relaxed = true)
+        val noteCrypto = mockk<NoteAttachmentCrypto>(relaxed = true)
+
+        val downloader = ClientAttachmentDownloader(
+            channel,
+            attachmentDao,
+            messageDao,
+            context,
+            scope,
+            noteAttachmentDao,
+            noteMessageDao,
+            noteCrypto,
+        )
 
         /** Seeds one synced attachment row + its message row (both lookups the downloader needs). */
         fun seed(
@@ -118,6 +139,40 @@ class ClientAttachmentDownloaderTest {
             .filter { it["type"]?.jsonPrimitive?.content == "attachment_request" }
 
         fun state(localId: Long): ClientDownloadState? = downloader.states.value[localId]
+
+        /** Round 36 phase 2 — seeds one mirrored note attachment row + its parent entry. */
+        fun seedNote(
+            localId: Long,
+            hubId: Long,
+            messageLocalId: Long = 2L,
+            hubMessageId: Long = 7L,
+            uuid: String = "att-uuid",
+            size: Long = 5L,
+            localUri: String = "",
+        ): NoteAttachmentEntity {
+            val entity = NoteAttachmentEntity(
+                id = localId,
+                uuid = uuid,
+                noteMessageId = messageLocalId,
+                mimeType = "image/jpeg",
+                fileName = "photo.jpg",
+                sizeBytes = size,
+                localUri = localUri,
+                hubAttachmentId = hubId,
+            )
+            coEvery { noteAttachmentDao.findById(localId) } returns entity
+            coEvery { noteMessageDao.findById(messageLocalId) } returns NoteMessageEntity(
+                id = messageLocalId,
+                uuid = "msg-uuid",
+                noteId = 3L,
+                body = "",
+                date = 1700000000000,
+                hubNoteMessageId = hubMessageId,
+            )
+            return entity
+        }
+
+        fun noteState(localId: Long): ClientDownloadState? = downloader.noteStates.value[localId]
 
         fun downloadedFile(hubId: Long, ext: String = "jpg"): File =
             File(filesDir, "mms_attachments/$hubId.$ext")
@@ -445,5 +500,96 @@ class ClientAttachmentDownloaderTest {
 
         assertThat(f.requestFrames()).isEmpty()
         assertThat(f.state(999L)).isNull()
+    }
+
+    // -- Round 36 phase 2: note attachments ---------------------------
+
+    @Test fun `requestNote sends the prefixed ids`() = runTest {
+        val f = fixture()
+        f.seedNote(localId = 1L, hubId = 42L)
+
+        f.downloader.requestNote(1L)
+
+        assertThat(f.requestFrames()).hasSize(1)
+        assertThat(f.requestFrames().single()["attachment_id"]?.jsonPrimitive?.content)
+            .isEqualTo("note:42")
+        assertThat(f.requestFrames().single()["message_id"]?.jsonPrimitive?.content)
+            .isEqualTo("note:7")
+    }
+
+    @Test fun `note chunks reassemble, encrypt to the uuid file, and set localUri`() = runTest {
+        val f = fixture()
+        f.seedNote(localId = 1L, hubId = 42L)
+        val target = File(f.filesDir, "notes/attachments/att-uuid")
+        every { f.noteCrypto.fileForUuid("att-uuid") } returns target
+        val encrypted = slot<ByteArray>()
+        every { f.noteCrypto.encryptToFile(capture(encrypted), target) } returns
+            Outcome.Success(target)
+
+        f.downloader.requestNote(1L)
+        f.downloader.onChunk(chunk("note:42", 0, "hel".toByteArray(), final = false))
+        f.downloader.onChunk(
+            chunk("note:42", 3, "lo".toByteArray(), final = true, sha = sha256Hex(hello), size = 5L),
+        )
+
+        assertThat(encrypted.captured).isEqualTo(hello)
+        assertThat(f.noteState(1L)).isEqualTo(ClientDownloadState.Downloaded)
+        coVerify { f.noteAttachmentDao.updateLocalUri(1L, target.absolutePath) }
+        // The MMS state map never heard about it.
+        assertThat(f.state(1L)).isNull()
+    }
+
+    @Test fun `note and MMS states do not collide on the same local id`() = runTest {
+        val f = fixture()
+        f.seed(localId = 1L, hubId = 42L)
+        f.seedNote(localId = 1L, hubId = 42L)
+        val target = File(f.filesDir, "notes/attachments/att-uuid")
+        every { f.noteCrypto.fileForUuid("att-uuid") } returns target
+        every { f.noteCrypto.encryptToFile(any(), target) } returns Outcome.Success(target)
+
+        f.downloader.request(1L)
+        f.downloader.requestNote(1L)
+        f.downloader.onChunk(
+            chunk("note:42", 0, hello, final = true, sha = sha256Hex(hello), size = 5L),
+        )
+
+        assertThat(f.noteState(1L)).isEqualTo(ClientDownloadState.Downloaded)
+        assertThat(f.state(1L)).isNotEqualTo(ClientDownloadState.Downloaded)
+    }
+
+    @Test fun `requestNote with a cached file reports Downloaded without a frame`() = runTest {
+        val f = fixture()
+        // The ciphertext file is 29 bytes larger than the plaintext size.
+        val cached = File(f.filesDir, "notes/attachments/att-uuid").also {
+            it.parentFile?.mkdirs()
+            it.writeBytes(ByteArray(5 + 29))
+        }
+        f.seedNote(localId = 1L, hubId = 42L, localUri = cached.absolutePath)
+
+        f.downloader.requestNote(1L)
+
+        assertThat(f.requestFrames()).isEmpty()
+        assertThat(f.noteState(1L)).isEqualTo(ClientDownloadState.Downloaded)
+    }
+
+    @Test fun `requestNote for an unknown row sends nothing`() = runTest {
+        val f = fixture()
+        coEvery { f.noteAttachmentDao.findById(999L) } returns null
+
+        f.downloader.requestNote(999L)
+
+        assertThat(f.requestFrames()).isEmpty()
+        assertThat(f.noteState(999L)).isNull()
+    }
+
+    @Test fun `requestNote for a row with no hub id sends nothing`() = runTest {
+        val f = fixture()
+        val entity = f.seedNote(localId = 1L, hubId = 42L).copy(hubAttachmentId = null)
+        coEvery { f.noteAttachmentDao.findById(1L) } returns entity
+
+        f.downloader.requestNote(1L)
+
+        assertThat(f.requestFrames()).isEmpty()
+        assertThat(f.noteState(1L)).isNull()
     }
 }

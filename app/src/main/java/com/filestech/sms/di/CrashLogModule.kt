@@ -1,6 +1,7 @@
 package com.filestech.sms.di
 
 import android.content.Context
+import com.filestech.sms.crashlog.CrashLogSettings
 import com.filestech.sms.crashlog.CrashReportStore
 import dagger.Module
 import dagger.Provides
@@ -18,6 +19,12 @@ import javax.inject.Singleton
  * own store in `MainApplication.onCreate` — it runs before Hilt
  * is ready to provide anything — pointing at the same directory,
  * so both sides see the same reports.
+ *
+ * The settings ([com.filestech.sms.crashlog.CrashLogSettings])
+ * are provided the same way, for the toggle ViewModel (round
+ * 36). The handler and the tracker build their own instances at startup
+ * (also before Hilt) — all instances share the same underlying
+ * preferences file, so the flag stays single-sourced.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -27,4 +34,9 @@ object CrashLogModule {
     @Singleton
     fun crashReportStore(@ApplicationContext context: Context): CrashReportStore =
         CrashReportStore(File(context.filesDir, CrashReportStore.DIR_NAME))
+
+    @Provides
+    @Singleton
+    fun crashLogSettings(@ApplicationContext context: Context): CrashLogSettings =
+        CrashLogSettings(context)
 }

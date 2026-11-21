@@ -8,7 +8,10 @@ import com.filestech.sms.domain.otp.OtpCodeDetector
 /**
  * Sorts a message — and, through [classifyConversation], a conversation by
  * its latest message — into one of the home-screen tab categories
- * ([MessageCategory]).
+ * ([MessageCategory]). Round 35 adds the sticky category: a stranger's
+ * conversation keeps the category its latest incoming message earned at
+ * receive time (full body) until the user replies — see
+ * [nextStickyCategory] and [effectiveCategory].
  *
  * Priority, first match wins:
  * 1. **OTP** — [OtpCodeDetector] finds a login code in the body.
@@ -200,26 +203,41 @@ object MessageClassifier {
      * (see [classify]: gated on `!isContact && !isGroup`). A campaign text
      * from a non-contact still matches; a contact or group talking politics
      * does not.
+     *
+     * Round 35 — "voter(s)", "governor", "polling place" and "elect" join
+     * the English list (a campaign text naming voters and the governor's
+     * race was filing Personal), with the unambiguous equivalents in the
+     * other locales. "elect" never matches "election" — word-boundary
+     * matching — and "election" has its own keyword anyway.
+     *
+     * Deliberately SKIPPED: DE "wählen" (also "to choose" / "to dial") and
+     * ES "elegir" (also "to choose") — both are everyday verbs, not
+     * campaign markers. DE "wähler" is in: it only means "voter".
      */
     private val POLITICAL_KEYWORDS = listOf(
         // EN
         "election", "ballot", "vote for",
         "vote now", "your vote", "voting day", "candidate", "campaign",
         "donate", "donation",
+        "voter", "voters", "governor", "polling place", "elect",
         // FR
         "scrutin", "votez pour",
         "candidat", "campagne electorale", "faites un don", "faire un don",
+        "electeur", "gouverneur", "bureau de vote", "elire",
         // DE
         "wahltag", "wahlen", "stimmzettel",
         "kandidat", "kampagne", "spenden", "spende",
+        "wahler",
         // ES
         "elecciones", "dia de las elecciones", "boleta", "vota por",
         "tu voto", "candidato", "campana electoral", "campana politica",
         "dona ahora", "donar",
+        "votante", "gobernador", "lugar de votacion",
         // IT
         "elezioni", "elezione",
         "scheda elettorale", "vota per", "il tuo voto", "candidato",
         "campagna elettorale", "dona ora", "donazione",
+        "elettore", "governatore", "seggio elettorale", "eleggere",
     )
 
     /**
@@ -242,6 +260,10 @@ object MessageClassifier {
      * "vents", "cleaning") and house investors ("investor", "investors")
      * join the nouns. [COLD_PITCH_CLOSERS] is the pitch's call to action
      * for the list rule in [isColdSalesPitch].
+     *
+     * Round 35 — "providing" joins the offer markers ("We're providing
+     * affordable tree care") and "would you like" joins the closers
+     * ("Would you like pricing for trimming or removal?").
      */
     private val COLD_PITCH_OFFER_MARKERS = listOf(
         "no cost",
@@ -249,6 +271,7 @@ object MessageClassifier {
         "complimentary",
         "offering",
         "reaching out",
+        "providing",
     )
     private val COLD_PITCH_SERVICE_NOUNS = listOf(
         "roof", "roofing", "solar", "inspection", "inspections",
@@ -259,7 +282,48 @@ object MessageClassifier {
         "tree", "trimming", "removal", "arborist", "vent", "vents",
         "cleaning", "investor", "investors",
     )
-    private val COLD_PITCH_CLOSERS = listOf("interested")
+    private val COLD_PITCH_CLOSERS = listOf("interested", "would you like")
+
+    /**
+     * Round 35 — the real-estate pitch family ("Have you ever considered
+     * selling 123 Main St?"). Stranger-gated like every other pitch rule:
+     * a contact asking about a house stays Personal. The nouns are
+     * real-estate nouns only — "are you selling your bike?" stays
+     * Personal, contact or stranger, because "bike" is not one.
+     */
+    private val REAL_ESTATE_NOUNS = listOf("home", "house", "property", "condo", "land")
+
+    /**
+     * Round 35 — survey spam: "survey" plus an incentive marker. Bare
+     * "survey" is deliberately NOT a signal ("can you take my survey for
+     * class?" from a stranger stays Personal — a real person). "$5" cannot
+     * be a keyword: `$` folds to a space, so "$5" becomes " 5 ".
+     */
+    private val SURVEY_INCENTIVE_MARKERS = listOf(
+        "we ll send you",
+        "send you",
+        "reward",
+        "gift card",
+        "get paid",
+        "earn",
+    )
+
+    /**
+     * Round 35 — pitch-follow-up signals: a follow-up that reveals the
+     * pitch ("Touching base again about 123 Main St. Do you have a
+     * moment this week?"). Stranger-gated and standalone — the follow-up
+     * carries no service nouns, so the list rule cannot catch it. Bare
+     * "following up" is deliberately NOT here ("just following up on the
+     * homework" is everyday language); only "following up again" counts.
+     * These matter less once the sticky category lands, but they catch
+     * the case where the FIRST message was plain and only the follow-up
+     * reveals the pitch.
+     */
+    private val PITCH_FOLLOW_UP_SIGNALS = listOf(
+        "touching base",
+        "do you have a moment",
+        "following up again",
+    )
 
     /**
      * Round 17 — a business self-introduction in the folded body: "it's
@@ -269,9 +333,13 @@ object MessageClassifier {
      * never matches either, so "Hi, it's Frank from the gym" stays
      * Personal. Two-word first names ("Mary Jane") do not match — the
      * offer half of [isColdSalesPitch] still catches those pitches.
+     *
+     * Round 35 — "i m" joins the alternation ("Hi, I'm Jade with SSRS").
+     * The lookahead still blocks determiners and pronouns after "with",
+     * so "I'm Sarah with the kids" stays Personal.
      */
     private val BUSINESS_INTRO_REGEX = Regex(
-        " (?:it s|this is) [a-z]+ with " +
+        " (?:it s|this is|i m) [a-z]+ with " +
             "(?!the |my |a |an |our |your |his |her |me |us |them |him )[a-z]+ ",
     )
 
@@ -309,7 +377,9 @@ object MessageClassifier {
      * so a contact or a group stays Personal and only a stranger's
      * message can match. This covers the political phrases
      * ([POLITICAL_KEYWORDS], e.g. "vote for"), the vote+party pair
-     * ([isPoliticalVote]) and the cold-pitch pair ([isColdSalesPitch]);
+     * ([isPoliticalVote]), the cold-pitch pair ([isColdSalesPitch]) and —
+     * round 35 — the real-estate pitch ([isRealEstatePitch]), the survey
+     * pair ([isSurveySpam]) and the pitch follow-up ([isPitchFollowUp]);
      * without the guard any of them caught a contact's chat.
      */
     private fun isStrangerOnlyPromo(
@@ -319,8 +389,55 @@ object MessageClassifier {
     ): Boolean {
         if (isContact || isGroup) return false
         return containsAny(paddedBody, POLITICAL_KEYWORDS) || isPoliticalVote(paddedBody) ||
-            isColdSalesPitch(paddedBody)
+            isColdSalesPitch(paddedBody) || isRealEstatePitch(paddedBody) ||
+            isSurveySpam(paddedBody) || isPitchFollowUp(paddedBody)
     }
+
+    /**
+     * Round 35 — a real-estate cold pitch: "considered selling" on its
+     * own ("Have you ever considered selling 123 Main St?"), "available
+     * to own", "sell"/"selling" together with a real-estate noun, "cash
+     * offer" together with a real-estate noun, or "interested in buying
+     * your home/house/property". "ever considered selling" needs no
+     * separate phrase — it contains "considered selling".
+     *
+     * "seiling" is the observed filter-evasion spelling of "selling"
+     * (a capital I in place of the first L — the reported sample spells
+     * it "seIling", which folds to "seiling", NOT "selling"), covered
+     * both as a phrase and as a sell-word variant. General homoglyph
+     * normalization is out of scope: only this observed spelling is
+     * handled.
+     */
+    private fun isRealEstatePitch(paddedBody: String): Boolean {
+        val hasConsideredSelling = paddedBody.contains(" considered selling ") ||
+            paddedBody.contains(" considered seiling ")
+        val hasAvailableToOwn = paddedBody.contains(" available to own ")
+        val hasRealEstateNoun = containsAny(paddedBody, REAL_ESTATE_NOUNS)
+        val hasSellWord = containsAny(paddedBody, listOf("selling", "sell", "seiling"))
+        val hasCashOffer = paddedBody.contains(" cash offer ")
+        val hasInterestedInBuying = containsAny(
+            paddedBody,
+            listOf(
+                "interested in buying your home",
+                "interested in buying your house",
+                "interested in buying your property",
+            ),
+        )
+        return hasConsideredSelling || hasAvailableToOwn ||
+            (hasRealEstateNoun && (hasSellWord || hasCashOffer)) || hasInterestedInBuying
+    }
+
+    /**
+     * Round 35 — survey spam: "survey" together with an incentive
+     * marker ("We'll send you $5", "earn a gift card"). Either half
+     * alone is ordinary language, so only the pair counts.
+     */
+    private fun isSurveySpam(paddedBody: String): Boolean =
+        paddedBody.contains(" survey ") && containsAny(paddedBody, SURVEY_INCENTIVE_MARKERS)
+
+    /** Round 35 — a pitch follow-up; see [PITCH_FOLLOW_UP_SIGNALS]. */
+    private fun isPitchFollowUp(paddedBody: String): Boolean =
+        containsAny(paddedBody, PITCH_FOLLOW_UP_SIGNALS)
 
     /**
      * Round 17 — a cold sales pitch: the lead-gen template ("Hey Kristin,
@@ -372,16 +489,56 @@ object MessageClassifier {
      * the first address of a group is one member, not the sender — so a
      * group is Personal unless an earlier rule matched its latest message.
      * [Conversation.displayName] being non-null is what marks a contact.
+     *
+     * Round 35 — a stored sticky category wins for a stranger 1:1 (see
+     * [effectiveCategory]): it was computed from the FULL body of the
+     * latest incoming message at receive time, while the preview is a
+     * 240-character prefix, so live classification can only under-match
+     * relative to it.
      */
     fun classifyConversation(conversation: Conversation): MessageCategory {
         val sender = if (conversation.isGroup) null else conversation.addresses.firstOrNull()
-        return classify(
+        val isContact = conversation.displayName != null
+        val fresh = classify(
             body = conversation.lastMessagePreview,
             sender = sender,
-            isContact = conversation.displayName != null,
+            isContact = isContact,
             isGroup = conversation.isGroup,
         )
+        return effectiveCategory(conversation.stickyCategory, fresh, isContact, conversation.isGroup)
     }
+
+    /**
+     * Round 35 — the sticky store rule, applied at receive time to the
+     * FULL message body (see `StickyCategoryStore`): OTP and Transactions
+     * always win and overwrite; Promotional is stored; Personal and Other
+     * are stored UNLESS the stored value is currently Promotional — that
+     * is the sticky rule (a plain follow-up must not re-file a spam thread
+     * as Personal). Contacts and groups never store (their caller returns
+     * early), so this function never sees them.
+     */
+    fun nextStickyCategory(current: MessageCategory?, fresh: MessageCategory): MessageCategory? =
+        when {
+            fresh == MessageCategory.OTP || fresh == MessageCategory.TRANSACTIONS -> fresh
+            fresh == MessageCategory.PROMOTIONAL -> MessageCategory.PROMOTIONAL
+            current == MessageCategory.PROMOTIONAL -> MessageCategory.PROMOTIONAL
+            else -> fresh
+        }
+
+    /**
+     * Round 35 — the render rule, shared by [classifyConversation] and
+     * the notification mute gate: a stored sticky category wins, but
+     * only for a stranger 1:1, evaluated with the CURRENT contact status
+     * — a sender added to contacts later un-sticks via this check.
+     * Anything else falls back to the fresh classification.
+     */
+    fun effectiveCategory(
+        stickyCategory: MessageCategory?,
+        fresh: MessageCategory,
+        isContact: Boolean,
+        isGroup: Boolean,
+    ): MessageCategory =
+        if (stickyCategory != null && !isContact && !isGroup) stickyCategory else fresh
 
     /**
      * Folds the body for matching: lowercase + accents stripped, every

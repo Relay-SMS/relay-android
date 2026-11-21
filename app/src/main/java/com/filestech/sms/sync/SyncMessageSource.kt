@@ -155,12 +155,14 @@ interface SyncMessageSource {
     ): AttachmentOpenResult
 
     /**
-     * Begins an upload session: validates the size (one file over
-     * the 280 KB MMS cap is refused — it could never be sent
-     * anyway), sweeps staging dirs older than 24 h, and creates the
-     * staging file for this [index] of the send keyed by
-     * [clientMessageId]. A re-begin restarts the upload from
-     * scratch.
+     * Begins an upload session: validates the size, sweeps staging
+     * dirs older than 24 h, and creates the staging file for this
+     * [index] of the send keyed by [clientMessageId]. A re-begin
+     * restarts the upload from scratch. The cap depends on [kind]:
+     * `"note"` (round 36 phase 2) allows up to
+     * [SyncProtocol.MAX_NOTE_ATTACHMENT_UPLOAD_BYTES]; anything
+     * else keeps the 280 KB MMS cap — a file over it could never be
+     * sent anyway.
      */
     suspend fun beginUpload(
         clientMessageId: String,
@@ -169,6 +171,7 @@ interface SyncMessageSource {
         fileName: String?,
         sizeBytes: Long,
         sha256: String,
+        kind: String? = null,
     ): UploadResult
 
     /**
@@ -567,6 +570,50 @@ data class SyncedAttachment(
     @SerialName("width") val width: Int?,
     @SerialName("height") val height: Int?,
     @SerialName("duration_ms") val durationMs: Long?,
+)
+
+/**
+ * Round 36 phase 2 — one note on the wire (§4.1 NOTE). Ids are
+ * decimal strings of the hub's Room ids, like the SMS types. The
+ * bubble color does NOT sync (it is a per-device display choice),
+ * and neither does the draft. [messageCount] is the entry count
+ * the list shows; the mobile mirror does not need it (it shows the
+ * preview), the desktop does.
+ */
+@Serializable
+data class SyncedNote(
+    @SerialName("id") val id: String,
+    @SerialName("title") val title: String,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("updated_at") val updatedAt: Long,
+    @SerialName("last_message_at") val lastMessageAt: Long?,
+    @SerialName("last_message_preview") val lastMessagePreview: String?,
+    @SerialName("pinned") val pinned: Boolean,
+    @SerialName("archived") val archived: Boolean,
+    @SerialName("message_count") val messageCount: Int,
+)
+
+/**
+ * Round 36 phase 2 — one note entry on the wire (§4.1
+ * NOTE_MESSAGE). [attachments] reuses [SyncedAttachment]
+ * (metadata only — the bytes download lazily, and a note
+ * attachment's download ids carry the `"note:"` prefix, see
+ * [NoteSyncEngine.runNoteAttachmentRequest]). [clientMessageId] is the
+ * client's UUID key, present only on entries the client itself
+ * saved (the hub stamps the key on the row at save time).
+ * [edited] is the "Edited" marker — true once the entry's text
+ * was edited; it defaults to `false` so a frame from an older hub
+ * still parses.
+ */
+@Serializable
+data class SyncedNoteMessage(
+    @SerialName("id") val id: String,
+    @SerialName("note_id") val noteId: String,
+    @SerialName("body") val body: String,
+    @SerialName("date") val date: Long,
+    @SerialName("attachments") val attachments: List<SyncedAttachment>,
+    @SerialName("edited") val edited: Boolean = false,
+    @SerialName("client_message_id") val clientMessageId: String? = null,
 )
 
 /**

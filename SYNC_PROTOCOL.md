@@ -894,6 +894,139 @@ Android clients ignore `category_mutes` for now (an unknown
 server frame is dropped, never an error) — applying the hub's
 set on a linked tablet is a later round.
 
+## Notes sync (round 36 phase 2, protocol version 1)
+
+Notes sync to every linked device (desktop + tablets) over the
+same device link. The phone is the source of truth: a linked
+device mirrors the phone's notes and writes through it. Same
+JSON envelope, same `type` field, same rules. No protocol bump:
+every addition is additive. A note's bubble color does NOT sync
+(each device keeps its own).
+
+Wire shapes (per `notes-feature-design.md` §4.1):
+
+- `SyncedNote`: `id`, `title`, `created_at`, `updated_at`,
+  `last_message_at?`, `last_message_preview?`, `pinned`,
+  `archived`, `message_count` (the desktop uses the count; the
+  mobile mirror drops it — the list shows the preview only).
+- `SyncedNoteMessage`: `id`, `note_id`, `body`, `date`,
+  `attachments` (a list of `SyncedAttachment`, as in
+  `messages_batch`), `client_message_id?`, and `edited`
+  (round 36 phase 2 — the "Edited" marker; older clients ignore
+  the unknown field, new clients reading old frames get `false`).
+
+| Direction | Message | Shape |
+|---|---|---|
+| Server → client | `notes` | `{"type":"notes","notes":[…],"has_more":false}` |
+| Server → client | `note_messages_batch` | `{"type":"note_messages_batch","note_id":"7","messages":[…],"has_more":false,"next_before_id":"42"}` |
+| Server → client | `note_created` | `{"type":"note_created","note":{…}}` |
+| Server → client | `note_new` | `{"type":"note_new","note":{…}}` |
+| Server → client | `note_updated` | `{"type":"note_updated","note":{…}}` |
+| Server → client | `note_deleted` | `{"type":"note_deleted","note_id":"7"}` |
+| Server → client | `note_message_new` | `{"type":"note_message_new","message":{…}}` |
+| Server → client | `note_message_deleted` | `{"type":"note_message_deleted","note_id":"7","message_id":"42"}` |
+| Server → client | `note_message_updated` | `{"type":"note_message_updated","message":{…}}` |
+| Server → client | `note_message_saved` | `{"type":"note_message_saved","client_message_id":"…","message_id":"42","note_id":"7"}` |
+| Server → client | `note_message_failed` | `{"type":"note_message_failed","client_message_id":"…","note_id":"7","code":"unknown_note","message":"…"}` |
+| Client → server | `create_note` | `{"type":"create_note","client_note_id":"…","title":"Shopping"}` |
+| Client → server | `save_note_message` | `{"type":"save_note_message","client_message_id":"…","note_id":"7","body":"…","attachments":[…]}` |
+| Client → server | `edit_note_message` | `{"type":"edit_note_message","note_id":"7","message_id":"42","body":"…"}` |
+| Client → server | `rename_note` | `{"type":"rename_note","note_id":"7","title":"…"}` |
+| Client → server | `delete_note` | `{"type":"delete_note","note_id":"7"}` |
+| Client → server | `delete_note_message` | `{"type":"delete_note_message","note_id":"7","message_id":"42"}` |
+| Client → server | `set_note_pin` | `{"type":"set_note_pin","note_id":"7","value":true}` |
+| Client → server | `set_note_archived` | `{"type":"set_note_archived","note_id":"7","value":true}` |
+| Client → server | `note_messages_request` | `{"type":"note_messages_request","note_id":"7","before_id":"42","limit":200}` |
+
+### Stream order + cursors
+
+The notes phase runs inside `runStream` after conversations and
+before `messages_batch`: the note snapshot in 100-note batches
+(`notes`), then — in FULL mode — the per-note entry pages
+(`note_messages_batch`, 200 per page, newest first). `sync_request`
+gains `since_note_message_id` (the note cursor, same rule as the
+message cursor: absent on a first sync); `sync_started` and
+`sync_complete` gain `cursor_note_message_id` (+ `total_notes` on
+`sync_started`). FULL mode with a cursor above 0 streams only the
+entries above it, per note (the delta — same shape as the SMS
+delta); FULL mode with cursor 0 streams every entry; NEW_ONLY
+streams the list only, no entries (live pushes cover new ones).
+The note snapshot always streams in full, delta runs included,
+so the client prunes mirrored notes absent from it (there is no
+tombstone feed). The cursor is the max note message id the client
+durably stored — never the server's cursor. Live pushes dedup by
+upsert-by-id.
+
+### Writes
+
+`create_note` carries a client UUID dedup key (`client_note_id`):
+the hub stores it on the row, so a retried create lands on the
+same note instead of duplicating it. Success answers
+`note_created` (full row, requesting session only); the other
+sessions learn about it via `note_new`. A refusal answers
+`action_result` (`action: "create_note"`, `ok: false`).
+
+`save_note_message` carries a client UUID dedup key
+(`client_message_id`) and reuses the `SendAttachment` shape for
+its `attachments` array (upload references, as in
+`send_message`). Success answers `note_message_saved`; failure
+answers `note_message_failed` with one of `unknown_note`,
+`unknown_message`, `message_too_long`, `upload_expired`,
+`internal` (the `message_failed` codes, reused). `upload_expired`
+means the staged upload is gone — the client re-uploads and
+re-sends once, automatically (the desktop rule).
+
+`edit_note_message` carries `{note_id, message_id, body}` — no
+client key (edits are idempotent). The hub answers
+`action_result` on success AND on failure (like every other
+write-back action), and ALSO broadcasts `note_message_updated`
+(the full edited row, `edited: true`) to ALL sessions, including
+the requester. Either success signal confirms the edit. Failure
+codes: `unknown_note`, `unknown_message`, `message_too_long`,
+`internal`. Editing is text-only entries only.
+
+`rename_note`, `delete_note`, `delete_note_message`,
+`set_note_pin`, `set_note_archived` are answered by
+`action_result` (the hub note id echoed in the `conversation_id`
+slot, the hub entry id in `message_id`). `note_messages_request`
+fetches one page of one note's entries (the server caps `limit`
+at 200); the answer is a `note_messages_batch`.
+
+### Note attachments
+
+Attachment bytes reuse the chunk protocol (Slice 4), with two
+differences:
+
+- **Namespaced ids.** Hub note-attachment ids and MMS attachment
+  ids are independent autoincrement sequences, so a bare id is
+  ambiguous across the two tables. A note download request
+  carries `attachment_id: "note:<hub id>"` and `message_id:
+  "note:<hub entry id>"` (the `avatar:<number>` convention);
+  chunk frames echo the prefixed id, so the client routes them
+  back to the note download. Note frames themselves (`notes`,
+  `note_messages_batch`, …) always carry RAW ids — the prefix
+  applies only to the download request + its chunks.
+- **Upload cap.** The MMS upload cap is the 280 KB carrier
+  payload, which would break note photos (notes store originals).
+  A note upload marks its `attachment_upload_start` with
+  `kind: "note"`, which lifts the cap to 25 MB (the same value as
+  the download cap and the note thread's staging cap). An upload
+  without `kind` keeps the MMS cap.
+
+Note attachment bytes cross the link as PLAINTEXT — decrypted
+from the hub's AES-256-GCM envelope, re-encrypted by the
+receiving device into its own envelope. Plaintext exists only in
+transit inside the TLS device link; note text stays SQLCipher
+and attachments stay envelope-encrypted at rest on both ends.
+
+Desktop note: the `SYNC_MESSAGE_TYPES` allowlist in
+`channel.rs` must include every new server→client type above
+(`notes`, `note_messages_batch`, `note_created`, `note_new`,
+`note_updated`, `note_deleted`, `note_message_new`,
+`note_message_deleted`, `note_message_updated`,
+`note_message_saved`, `note_message_failed`) — a missing type is
+silently dropped.
+
 ## VPN / tunnel (protocol version 1)
 
 When the user runs a VPN tunnel on the phone (WireGuard to their

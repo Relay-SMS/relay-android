@@ -31,6 +31,7 @@ fun NoteMessageEntity.toDomain(attachments: List<Attachment> = emptyList()): Not
         body = body,
         date = date,
         attachments = attachments,
+        edited = edited,
     )
 
 /**

@@ -86,12 +86,18 @@ interface NoteRepository {
     /**
      * Creates a note with the given [title] and returns it. The title is required (a note
      * with no title has no identity in the list).
+     *
+     * Phase 2 — [hubNoteId] / [clientNoteId] carry the sync keys: the hub's `create_note`
+     * stores the client's dedup key ([clientNoteId]) so a retried create lands on the same
+     * row; both stay null for a local create.
      */
     suspend fun createNote(
         title: String,
         uuid: String = UUID.randomUUID().toString(),
         createdAt: Long = System.currentTimeMillis(),
         updatedAt: Long = createdAt,
+        hubNoteId: Long? = null,
+        clientNoteId: String? = null,
     ): Note
 
     suspend fun renameNote(noteId: Long, title: String)
@@ -117,13 +123,27 @@ interface NoteRepository {
      * Appends an entry to the note and refreshes the note preview. The caller passes a
      * non-blank [body], or adds at least one attachment afterwards — an entry with an
      * empty body and no attachments has no preview and renders as an empty bubble.
+     *
+     * Phase 2 — [hubNoteMessageId] / [clientMessageId] carry the sync keys: the hub's
+     * `save_note_message` stores the client's dedup key ([clientMessageId]) so a retried
+     * save lands on the same row; both stay null for a local save.
      */
     suspend fun insertMessage(
         noteId: Long,
         body: String,
         uuid: String = UUID.randomUUID().toString(),
         date: Long = System.currentTimeMillis(),
+        hubNoteMessageId: Long? = null,
+        clientMessageId: String? = null,
     ): NoteMessage
+
+    /**
+     * Phase 2 — edits a text entry's body and marks it edited (the thread renders an
+     * "Edited" marker under the bubble). The note preview refreshes when this entry is
+     * the newest one. In client mode the edit is applied locally first and sent to the
+     * hub as `edit_note_message`; a hub refusal reverts it.
+     */
+    suspend fun editMessage(messageId: Long, body: String)
 
     /** Deletes the entry, its attachment rows and their encrypted files. */
     suspend fun deleteMessage(messageId: Long)
@@ -167,4 +187,65 @@ interface NoteRepository {
 
     /** Every attachment, by id — the export snapshot (flat list). */
     suspend fun listAllAttachments(): List<Attachment>
+
+    // ------------------------------------------------------------------ sync (phase 2)
+
+    /** The hub note id of a local note, or null when the note is not mirrored. */
+    suspend fun noteHubId(localNoteId: Long): Long?
+
+    /** The hub message id of a local entry, or null when the entry is not mirrored. */
+    suspend fun messageHubId(localMessageId: Long): Long?
+
+    /** Mirror lookup: the note carrying this hub id, if any. */
+    suspend fun findNoteByHubId(hubNoteId: Long): Note?
+
+    /** Hub dedup lookup: the note carrying this client create key, if any. */
+    suspend fun findNoteByClientId(clientNoteId: String): Note?
+
+    /** Mirror lookup: the entry carrying this hub id, if any. */
+    suspend fun findMessageByHubId(hubMessageId: Long): NoteMessage?
+
+    /** Hub dedup lookup: the entry carrying this client save key, if any. */
+    suspend fun findMessageByClientId(clientMessageId: String): NoteMessage?
+
+    /** Mirror lookup: the attachment carrying this hub id, if any. */
+    suspend fun findAttachmentByHubId(hubAttachmentId: Long): Attachment?
+
+    /**
+     * Links a client-saved entry to its hub id (the `note_message_saved` ack). No-op
+     * when no row carries [clientMessageId] (the live echo may have reconciled it first).
+     */
+    suspend fun linkMessageToHub(clientMessageId: String, hubMessageId: Long)
+
+    /**
+     * Upserts one synced note by hub id: inserts a mirrored row (with its hub id) or
+     * updates the mirrored row's title / timestamps / preview / pin / archive. A local
+     * (hub-mode) note is never touched — the match is by hub id only, never by title.
+     */
+    suspend fun upsertSyncedNote(data: SyncedNoteData): SyncedNoteResult
+
+    /**
+     * Upserts one synced entry by hub id, with its attachment rows (metadata only — the
+     * bytes download lazily, and a mirrored attachment row starts with a blank
+     * `localUri` until they land). An optimistic row carrying the same client key is
+     * adopted (its hub id is set) instead of duplicated. Null when the parent note is
+     * unknown — the entry cannot be stored without its note.
+     */
+    suspend fun upsertSyncedMessage(data: SyncedNoteMessageData): SyncedNoteMessageResult?
+
+    /** Deletes the mirrored note with this hub id, with its entries + attachment files. */
+    suspend fun deleteSyncedNote(hubNoteId: Long)
+
+    /** Deletes the mirrored entry with this hub id, with its attachments + files. */
+    suspend fun deleteSyncedMessage(hubMessageId: Long)
+
+    /** Every hub note id currently mirrored. */
+    suspend fun hubNoteIds(): Set<Long>
+
+    /**
+     * Snapshot prune: deletes every locally mirrored note whose hub id is absent from
+     * [keepHubIds] (the snapshot just received — deletions included, there is no
+     * tombstone feed). Local (hub-mode) notes are never pruned. Returns the pruned count.
+     */
+    suspend fun pruneSyncedNotes(keepHubIds: Set<Long>): Int
 }

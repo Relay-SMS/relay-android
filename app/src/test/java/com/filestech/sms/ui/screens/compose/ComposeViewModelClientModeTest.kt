@@ -67,6 +67,16 @@ class ComposeViewModelClientModeTest {
             createCalls += addresses to customName
             return createResult
         }
+
+        override suspend fun createNote(title: String): Outcome<Long> = createResult
+
+        override suspend fun deleteNote(localNoteId: Long): Outcome<Unit> =
+            Outcome.Success(Unit)
+
+        override suspend fun deleteNoteMessage(
+            localNoteId: Long,
+            localMessageId: Long,
+        ): Outcome<Unit> = Outcome.Success(Unit)
     }
 
     private class Harness(

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Tune
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.filestech.sms.R
 import com.filestech.sms.ui.components.RelaySettingRow
 import com.filestech.sms.ui.components.RelaySettingsGroup
 
@@ -78,6 +80,10 @@ internal fun SettingsLandingContent(
     onOpenHelp: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenLanguage: () -> Unit,
+    // Round 36 — "Invite your friends" at the bottom of the
+    // landing: the same share sheet as the conversation-list
+    // menu's "Invite friends".
+    onInviteFriends: () -> Unit,
 ) {
     val sdkInt = android.os.Build.VERSION.SDK_INT
     val onTap: (SettingsSection) -> Unit = { section ->
@@ -101,6 +107,15 @@ internal fun SettingsLandingContent(
                     )
                 }
             }
+        }
+        // Round 36 — "Invite your friends", the last row of the
+        // landing. No chevron: it opens the share sheet, not a
+        // screen. Visible in every mode (a public share).
+        item(onClick = onInviteFriends) {
+            RelaySettingRow(
+                icon = Icons.Outlined.PersonAdd,
+                title = stringResource(R.string.invite_friends_settings),
+            )
         }
     }
 }

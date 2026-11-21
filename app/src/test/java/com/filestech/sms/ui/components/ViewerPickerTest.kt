@@ -70,4 +70,21 @@ class ViewerPickerTest {
         assertThat(ViewerKind.fromMimeType("application/pdf")).isNull()
         assertThat(ViewerKind.fromMimeType("text/vcard")).isNull()
     }
+
+    @Test
+    fun `just once opens the chosen app without remembering`() {
+        // Round 36 — the Just-once tap used to drop the pick and
+        // open the plain intent, which raised the system chooser
+        // a second time instead of opening the app the user just
+        // picked. The outcome carries the chosen package (an
+        // explicit intent) and no remember flag.
+        assertThat(viewerPickOutcome(true, gallery))
+            .isEqualTo(ViewerPickOutcome("com.example.gallery", remember = false))
+    }
+
+    @Test
+    fun `always opens the chosen app and remembers it`() {
+        assertThat(viewerPickOutcome(false, photos))
+            .isEqualTo(ViewerPickOutcome("com.example.photos", remember = true))
+    }
 }

@@ -20,4 +20,10 @@ data class NoteMessage(
     /** Epoch ms the entry was saved (or imported). */
     val date: Long,
     val attachments: List<Attachment> = emptyList(),
+    /**
+     * Phase 2 — true once the entry's text was edited (hub or
+     * client). The thread renders an "Edited" marker under the
+     * bubble; the flag crosses the wire on `SyncedNoteMessage`.
+     */
+    val edited: Boolean = false,
 )

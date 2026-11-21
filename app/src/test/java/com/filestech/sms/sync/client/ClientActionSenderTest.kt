@@ -4,8 +4,12 @@ import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
+import com.filestech.sms.data.local.db.dao.NoteDao
+import com.filestech.sms.data.local.db.dao.NoteMessageDao
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
+import com.filestech.sms.data.local.db.entity.NoteEntity
+import com.filestech.sms.data.local.db.entity.NoteMessageEntity
 import com.filestech.sms.domain.clientmode.ClientAction
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
@@ -15,6 +19,8 @@ import com.filestech.sms.domain.settings.AppSettingsSource
 import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.sync.SyncProtocol
 import com.filestech.sms.sync.SyncedConversation
+import com.filestech.sms.sync.SyncedNote
+import com.filestech.sms.sync.SyncedNoteMessage
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -60,6 +66,9 @@ class ClientActionSenderTest {
         val channel: FakeChannel,
         val conversationDao: ConversationDao,
         val messageDao: MessageDao,
+        /** Round 36 phase 2 — the note DAOs (the note action tests seed them). */
+        val noteDao: NoteDao,
+        val noteMessageDao: NoteMessageDao,
     )
 
     private fun harness(channelOnline: Boolean = true): Harness {
@@ -91,8 +100,40 @@ class ClientActionSenderTest {
         )
         val settings = mockk<AppSettingsSource>()
         coEvery { settings.hydratedOrNull() } returns AppSettings(mode = DeviceMode.CLIENT)
-        val sender = ClientActionSender(channel, conversationDao, messageDao, settings)
-        return Harness(sender, channel, conversationDao, messageDao)
+        // Round 36 phase 2 — the note DAOs resolve local ids to hub
+        // ids (note 3 ↔ hub 30, entry 40 ↔ hub 400).
+        val noteDao = mockk<NoteDao>(relaxed = true)
+        val noteMessageDao = mockk<NoteMessageDao>(relaxed = true)
+        coEvery { noteDao.findById(3L) } returns NoteEntity(
+            id = 3L,
+            uuid = "note-uuid",
+            title = "Shopping",
+            createdAt = 1000L,
+            updatedAt = 1000L,
+            lastMessageAt = null,
+            lastMessagePreview = null,
+            hubNoteId = 30L,
+        )
+        coEvery { noteMessageDao.findById(40L) } returns NoteMessageEntity(
+            id = 40L,
+            uuid = "msg-uuid",
+            noteId = 3L,
+            body = "milk",
+            date = 1000L,
+            hubNoteMessageId = 400L,
+        )
+        coEvery { noteDao.findByHubId(30L) } returns NoteEntity(
+            id = 3L,
+            uuid = "note-uuid",
+            title = "Shopping",
+            createdAt = 1000L,
+            updatedAt = 1000L,
+            lastMessageAt = null,
+            lastMessagePreview = null,
+            hubNoteId = 30L,
+        )
+        val sender = ClientActionSender(channel, conversationDao, messageDao, settings, noteDao, noteMessageDao)
+        return Harness(sender, channel, conversationDao, messageDao, noteDao, noteMessageDao)
     }
 
     private fun sentFrame(h: Harness): JsonObject {
@@ -433,6 +474,237 @@ class ClientActionSenderTest {
         val result = h.sender.dial("+33612345678")
 
         assertThat(result).isEqualTo(Outcome.Failure(AppError.ClientOffline))
+    }
+    // -- Round 36 phase 2: notes --------------------------------------
+
+    @Test fun `set_note_pin and set_note_archived carry the hub note id and value`() = runTest {
+        val h = harness()
+
+        assertThat(h.sender.sendAction(ClientAction.SetNotePin(3L, true))).isTrue()
+        assertThat(h.sender.sendAction(ClientAction.SetNoteArchived(3L, false))).isTrue()
+
+        assertThat(h.channel.sent).hasSize(2)
+        val frames = h.channel.sent.map { it.asActionObject() }
+        assertThat(frames[0].actionType()).isEqualTo("set_note_pin")
+        assertThat(frames[0]["note_id"]?.jsonPrimitive?.content).isEqualTo("30")
+        assertThat(frames[0]["value"]?.jsonPrimitive?.boolean).isTrue()
+        assertThat(frames[1].actionType()).isEqualTo("set_note_archived")
+        assertThat(frames[1]["note_id"]?.jsonPrimitive?.content).isEqualTo("30")
+        assertThat(frames[1]["value"]?.jsonPrimitive?.boolean).isFalse()
+    }
+
+    @Test fun `rename_note sends the hub note id and title`() = runTest {
+        val h = harness()
+
+        assertThat(h.sender.sendAction(ClientAction.RenameNote(3L, "New name"))).isTrue()
+
+        val frame = sentFrame(h)
+        assertThat(frame.actionType()).isEqualTo("rename_note")
+        assertThat(frame["note_id"]?.jsonPrimitive?.content).isEqualTo("30")
+        assertThat(frame["title"]?.jsonPrimitive?.content).isEqualTo("New name")
+    }
+
+    @Test fun `edit_note_message sends hub ids and the new body`() = runTest {
+        val h = harness()
+
+        assertThat(
+            h.sender.sendAction(ClientAction.EditNoteMessage(3L, 40L, "milk, eggs")),
+        ).isTrue()
+
+        val frame = sentFrame(h)
+        assertThat(frame.actionType()).isEqualTo("edit_note_message")
+        assertThat(frame["note_id"]?.jsonPrimitive?.content).isEqualTo("30")
+        assertThat(frame["message_id"]?.jsonPrimitive?.content).isEqualTo("400")
+        assertThat(frame["body"]?.jsonPrimitive?.content).isEqualTo("milk, eggs")
+    }
+
+    @Test fun `a refused note action reverts, an accepted one does not`() = runTest {
+        val h = harness()
+        var pinReverted = 0
+        var renameReverted = 0
+
+        h.sender.sendAction(ClientAction.SetNotePin(3L, true)) { pinReverted++ }
+        h.sender.sendAction(ClientAction.RenameNote(3L, "New")) { renameReverted++ }
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult("set_note_pin", "30", null, null, false, "internal", "boom"),
+        )
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult("rename_note", "30", null, null, true, null, null),
+        )
+
+        assertThat(pinReverted).isEqualTo(1)
+        assertThat(renameReverted).isEqualTo(0)
+    }
+
+    @Test fun `note_message_updated drops the pending edit revert`() = runTest {
+        val h = harness()
+        var reverted = 0
+
+        h.sender.sendAction(ClientAction.EditNoteMessage(3L, 40L, "milk, eggs")) { reverted++ }
+        // The broadcast lands first: the edit is on the hub, so the
+        // revert is dropped (not run). A late `action_result`
+        // `ok:false` then finds nothing to revert.
+        h.sender.onNoteMessageUpdated(
+            SyncProtocol.NoteMessageUpdated(
+                SyncedNoteMessage(
+                    id = "400",
+                    noteId = "30",
+                    body = "milk, eggs",
+                    date = 1000L,
+                    attachments = emptyList(),
+                    edited = true,
+                ),
+            ),
+        )
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult(
+                "edit_note_message",
+                "30",
+                "400",
+                null,
+                false,
+                "internal",
+                "boom",
+            ),
+        )
+
+        assertThat(reverted).isEqualTo(0)
+    }
+
+    @Test fun `create_note awaits note_created and returns the local id`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.createNote("Ideas") }
+        runCurrent()
+        val frame = sentFrame(h)
+        assertThat(frame.actionType()).isEqualTo("create_note")
+        assertThat(frame["title"]?.jsonPrimitive?.content).isEqualTo("Ideas")
+        assertThat(frame["client_note_id"]?.jsonPrimitive?.content).isNotEmpty()
+
+        h.sender.onNoteCreated(
+            SyncProtocol.NoteCreated(
+                SyncedNote(
+                    id = "30",
+                    title = "Ideas",
+                    createdAt = 1000L,
+                    updatedAt = 1000L,
+                    lastMessageAt = null,
+                    lastMessagePreview = null,
+                    pinned = false,
+                    archived = false,
+                    messageCount = 0,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Success(3L))
+    }
+
+    @Test fun `a refused create_note fails with the hub reason`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.createNote("Ideas") }
+        runCurrent()
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult("create_note", null, null, null, false, "internal", "boom"),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Failure(AppError.Validation("boom")))
+    }
+
+    @Test fun `create_note with a blank title fails without a frame`() = runTest {
+        val h = harness()
+
+        val result = h.sender.createNote("   ")
+
+        assertThat(result).isInstanceOf(Outcome.Failure::class.java)
+        assertThat(h.channel.sent).isEmpty()
+    }
+
+    @Test fun `delete_note awaits the action_result`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.deleteNote(3L) }
+        runCurrent()
+        val frame = sentFrame(h)
+        assertThat(frame.actionType()).isEqualTo("delete_note")
+        assertThat(frame["note_id"]?.jsonPrimitive?.content).isEqualTo("30")
+
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult("delete_note", "30", null, null, true, null, null),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Success(Unit))
+    }
+
+    @Test fun `delete_note_message awaits the action_result`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.deleteNoteMessage(3L, 40L) }
+        runCurrent()
+        val frame = sentFrame(h)
+        assertThat(frame.actionType()).isEqualTo("delete_note_message")
+        assertThat(frame["note_id"]?.jsonPrimitive?.content).isEqualTo("30")
+        assertThat(frame["message_id"]?.jsonPrimitive?.content).isEqualTo("400")
+
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult(
+                "delete_note_message",
+                "30",
+                "400",
+                null,
+                true,
+                null,
+                null,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Success(Unit))
+    }
+
+    @Test fun `a refused delete fails`() = runTest {
+        val h = harness()
+
+        val deferred = async { h.sender.deleteNote(3L) }
+        runCurrent()
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult("delete_note", "30", null, null, false, "unknown_note", "gone"),
+        )
+        advanceUntilIdle()
+
+        assertThat(deferred.await()).isEqualTo(Outcome.Failure(AppError.Validation("gone")))
+    }
+
+    @Test fun `delete of an unsynced note fails without a frame`() = runTest {
+        val h = harness()
+        coEvery { h.noteDao.findById(9L) } returns null
+
+        val result = h.sender.deleteNote(9L)
+
+        assertThat(result).isInstanceOf(Outcome.Failure::class.java)
+        assertThat(h.channel.sent).isEmpty()
+    }
+
+    @Test fun `a second delete of the same note awaits the first instead of sending twice`() = runTest {
+        val h = harness()
+
+        val first = async { h.sender.deleteNote(3L) }
+        runCurrent()
+        val second = async { h.sender.deleteNote(3L) }
+        runCurrent()
+        assertThat(h.channel.sent).hasSize(1)
+
+        h.sender.onActionResult(
+            SyncProtocol.ActionResult("delete_note", "30", null, null, true, null, null),
+        )
+        advanceUntilIdle()
+
+        assertThat(first.await()).isEqualTo(Outcome.Success(Unit))
+        assertThat(second.await()).isEqualTo(Outcome.Success(Unit))
     }
 }
 

@@ -64,6 +64,16 @@ class ConversationRepositoryClientBranchTest {
             return createResult
         }
 
+        override suspend fun createNote(title: String): Outcome<Long> = createResult
+
+        override suspend fun deleteNote(localNoteId: Long): Outcome<Unit> =
+            Outcome.Success(Unit)
+
+        override suspend fun deleteNoteMessage(
+            localNoteId: Long,
+            localMessageId: Long,
+        ): Outcome<Unit> = Outcome.Success(Unit)
+
         /** Simulates the hub answering `ok:false` for the last action. */
         suspend fun revertLast() {
             reverts.lastOrNull()?.invoke()

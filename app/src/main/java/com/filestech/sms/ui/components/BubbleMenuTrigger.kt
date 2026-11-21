@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.DropdownMenu
@@ -73,6 +74,12 @@ fun BubbleMenu(
      * `null` for bubbles where copy makes no sense (audio MMS, attachment without caption).
      */
     onCopy: (() -> Unit)? = null,
+    /**
+     * Round 36 phase 2 — edit the bubble's text (note entries
+     * only: SMS has no edit). Caller passes `null` for bubbles
+     * where editing makes no sense (media, audio, empty body).
+     */
+    onEdit: (() -> Unit)? = null,
     /**
      * v1.3.11 (F5) — forward the message to another conversation or new recipient. Caller
      * passes `null` for bubbles where forwarding is not yet supported.
@@ -142,6 +149,23 @@ fun BubbleMenu(
                 onClick = {
                     onDismissRequest()
                     onCopy()
+                },
+            )
+        }
+        // Round 36 phase 2 — Edit right under Copy: same "do
+        // something with this text" intent group (note entries only).
+        if (onEdit != null) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = null,
+                    )
+                },
+                text = { Text(stringResource(R.string.action_edit)) },
+                onClick = {
+                    onDismissRequest()
+                    onEdit()
                 },
             )
         }

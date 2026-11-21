@@ -10,7 +10,8 @@ import java.io.File
  * recorded crash deletes the session marker (no double-report
  * at the next startup), a failed write keeps it (the startup
  * check then records the death from the exit reason instead),
- * and nothing here ever throws.
+ * and nothing here ever throws. Round 36 — when the error log
+ * is off, nothing is written at all.
  */
 class CrashLogHandlerTest {
 
@@ -77,5 +78,23 @@ class CrashLogHandlerTest {
             RuntimeException("boom"),
         )
         assertThat(written).isFalse()
+    }
+
+    @Test
+    fun `recordCrash writes nothing when the error log is off`() {
+        val store = CrashReportStore(dir())
+        val markerStore = SessionMarkerStore(dir())
+        val marker = SessionMarker(500L, 900L, 1111, true, "Thread", null)
+        markerStore.write(marker)
+        val written = CrashLogHandler.recordCrash(
+            store,
+            markerStore,
+            metadata,
+            RuntimeException("boom"),
+            enabled = { false },
+        )
+        assertThat(written).isFalse()
+        assertThat(store.listReports()).isEmpty()
+        assertThat(markerStore.read()).isEqualTo(marker)
     }
 }

@@ -39,6 +39,22 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE uuid = :uuid LIMIT 1")
     suspend fun findByUuid(uuid: String): NoteEntity?
 
+    /** Phase 2 — mirror lookup: the note carrying this hub id, if any. */
+    @Query("SELECT * FROM notes WHERE hub_note_id = :hubId LIMIT 1")
+    suspend fun findByHubId(hubId: Long): NoteEntity?
+
+    /** Phase 2 — hub dedup lookup: the note carrying this client create key, if any. */
+    @Query("SELECT * FROM notes WHERE client_note_id = :clientId LIMIT 1")
+    suspend fun findByClientNoteId(clientId: String): NoteEntity?
+
+    /** Phase 2 — every hub note id currently mirrored (the snapshot-prune input). */
+    @Query("SELECT hub_note_id FROM notes WHERE hub_note_id IS NOT NULL")
+    suspend fun hubNoteIds(): List<Long>
+
+    /** Phase 2 — the note count (the `total_notes` of `sync_started`). */
+    @Query("SELECT COUNT(*) FROM notes")
+    suspend fun count(): Int
+
     /** Snapshot read for the notes backup pipeline (includes archived rows). */
     @Query("SELECT * FROM notes ORDER BY id ASC")
     suspend fun listAll(): List<NoteEntity>

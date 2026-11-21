@@ -620,6 +620,15 @@ data class AdvancedSettings(
      */
     val emptyConversationsPurgedV1272: Boolean = false,
     /**
+     * Round 35 (schema v20) — the one-shot sticky-category backfill has
+     * run: every 1:1 stranger conversation was filed from the full bodies
+     * of its recent incoming messages, so conversations the spammers
+     * already reached move to their tab without waiting for another
+     * message. Independent of [startupDbMigrationsDone]: the fleet it
+     * targets already has that flag set.
+     */
+    val stickyCategoryBackfilledV20: Boolean = false,
+    /**
      * v1.3.10 — **opt-in** : démarre [com.filestech.sms.system.service.KeepAliveService]
      * qui maintient le processus Relay vivant via une notification persistante
      * discrète (canal `IMPORTANCE_MIN`, ne fait ni son ni vibration). Indispensable pour

@@ -704,8 +704,18 @@ class RepositorySyncMessageSource @Inject constructor(
         fileName: String?,
         sizeBytes: Long,
         sha256: String,
+        kind: String?,
     ): UploadResult = sendMutex.withLock {
-        if (sizeBytes > MmsConstants.CARRIER_PAYLOAD_CAP_BYTES) {
+        // Round 36 phase 2 — note uploads (`kind: "note"`) store
+        // originals, so they get the 25 MB note cap; anything else
+        // keeps the 280 KB carrier cap (a file over it could never
+        // be sent as MMS anyway).
+        val cap = if (kind == SyncProtocol.UPLOAD_KIND_NOTE) {
+            SyncProtocol.MAX_NOTE_ATTACHMENT_UPLOAD_BYTES
+        } else {
+            MmsConstants.CARRIER_PAYLOAD_CAP_BYTES
+        }
+        if (sizeBytes > cap) {
             return UploadResult.Failed(
                 SyncProtocol.AttachmentUploadError.UPLOAD_TOO_LARGE,
                 "This file is too big to send.",
@@ -1201,11 +1211,11 @@ private fun isValidUploadStart(index: Int, mimeType: String, sizeBytes: Long, sh
     index >= 0 && sizeBytes > 0L && mimeType.isNotBlank() && sha256.isNotBlank()
 
 /** The staging dir for one send key: `cacheDir/sync_uploads/<sanitized key>/`. */
-private fun uploadDir(cacheDir: File, clientMessageId: String): File =
+internal fun uploadDir(cacheDir: File, clientMessageId: String): File =
     File(File(cacheDir, UPLOADS_DIR), sanitizeClientKey(clientMessageId))
 
 /** The in-flight upload key: the sanitized client key + the attachment index. */
-private fun uploadKey(clientMessageId: String, index: Int): String =
+internal fun uploadKey(clientMessageId: String, index: Int): String =
     "${sanitizeClientKey(clientMessageId)}:$index"
 
 /**
@@ -1213,7 +1223,7 @@ private fun uploadKey(clientMessageId: String, index: Int): String =
  * so it can never escape the staging root (`..` becomes `__`). A
  * UUID passes through unchanged.
  */
-private fun sanitizeClientKey(clientMessageId: String): String =
+internal fun sanitizeClientKey(clientMessageId: String): String =
     clientMessageId
         .map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '_' }
         .joinToString("")
@@ -1228,7 +1238,7 @@ private fun sanitizeClientKey(clientMessageId: String): String =
  * the MIME extension. The stem is capped (the extension is kept) so
  * over-long names can't break the filesystem limit.
  */
-private fun stagedFileName(index: Int, fileName: String?, mimeType: String?): String {
+internal fun stagedFileName(index: Int, fileName: String?, mimeType: String?): String {
     val base = fileName
         ?.substringAfterLast('/')
         ?.substringAfterLast('\\')
@@ -1292,8 +1302,9 @@ private fun sweepStaleUploads(
 }
 
 /**
- * SHA-256 hex of a staged file, streamed (files are ≤ 280 KB, so one
- * extra pass is trivial). `null` when the file can't be read.
+ * SHA-256 hex of a staged file, streamed (note uploads run to
+ * 25 MB, so the streaming pass matters). `null` when the file
+ * can't be read.
  */
 private fun sha256Hex(file: File): String? = try {
     val digest = MessageDigest.getInstance("SHA-256")

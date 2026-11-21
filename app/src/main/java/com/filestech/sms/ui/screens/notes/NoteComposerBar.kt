@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
+import com.filestech.sms.ui.components.EmojiPickerButton
 import com.filestech.sms.ui.components.RelayTextField
 import com.filestech.sms.ui.theme.BrandDanger
 import com.filestech.sms.ui.theme.MessageTextSize
@@ -69,9 +71,11 @@ import java.util.Locale
  * Differences from the thread composer, all deliberate (design
  * §5.3/§5.5):
  *
- *   - the leading smiley focuses the text field (the system
- *     keyboard's emoji key), instead of opening a picker panel —
- *     there is no emoji/GIF/sticker panel in v1;
+ *   - the leading smiley opens the emoji/GIF/sticker picker panel
+ *     below the composer (round 36 — the thread's round 13–14
+ *     shape, same [EmojiPickerPanel]; a GIF or sticker stages
+ *     through the note attachment path, an emoji appends to the
+ *     draft), instead of only focusing the text field;
  *   - the mic is tap-to-start / tap-to-stop (the thread's is
  *     press-and-hold with slide-to-cancel): a finished clip stages
  *     as a pending audio chip, with no pre-save playback review;
@@ -93,6 +97,17 @@ fun NoteComposerBar(
     onCancelRecording: () -> Unit,
     onAttachClick: () -> Unit,
     onCameraClick: () -> Unit,
+    /**
+     * Round 36 — the picker button (the last-used tab's icon +
+     * the tap that toggles the panel), the thread's
+     * [EmojiPickerButton].
+     */
+    emojiPickerButton: EmojiPickerButton,
+    /**
+     * Round 36 — the text field took focus (the keyboard is coming
+     * up): the screen closes the picker panel, like the thread.
+     */
+    onTextFieldFocused: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The thread's rule: the mic shows only while there is nothing
@@ -121,7 +136,8 @@ fun NoteComposerBar(
                         onValueChange = onDraftChanged,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp),
+                            .heightIn(min = 48.dp)
+                            .onFocusChanged { if (it.hasFocus) onTextFieldFocused() },
                         placeholder = stringResource(R.string.note_compose_placeholder),
                         maxLines = 5,
                         keyboardOptions = KeyboardOptions(
@@ -135,13 +151,15 @@ fun NoteComposerBar(
                         textStyle = MaterialTheme.typography.bodyLarge,
                         focusRequester = composerFocus,
                         leadingIcon = {
-                            // No picker panel in v1: the smiley focuses
-                            // the field, so the keyboard pops up and its
-                            // own emoji key is one tap away.
+                            // Round 36 — the smiley toggles the
+                            // picker panel (the thread's round 14
+                            // shape); the icon is the last-used
+                            // tab's, so it reads as the panel's
+                            // button, not a keyboard hint.
                             NoteComposerIconButton(
-                                painter = painterResource(R.drawable.ic_emoji_happy_outline),
+                                painter = painterResource(emojiPickerButton.iconRes),
                                 contentDescription = stringResource(R.string.thread_compose_emoji),
-                                onClick = { runCatching { composerFocus.requestFocus() } },
+                                onClick = emojiPickerButton.onClick,
                             )
                         },
                         trailingIcon = {

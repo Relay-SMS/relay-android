@@ -77,6 +77,25 @@ interface ClientSendGateway {
      * (offline) — the caller keeps the row PENDING.
      */
     suspend fun cancelScheduled(clientMessageId: String): Boolean
+
+    /**
+     * Phase 2 — saves a note entry via the `save_note_message`
+     * frame: inserts the optimistic row + attachment rows, uploads
+     * each file in turn (`kind: "note"`), sends the frame, and
+     * awaits the hub's ack (up to 20 s). Returns the LOCAL message
+     * id. On failure the optimistic row + files are deleted and the
+     * caller keeps its draft + staged attachments for a retry —
+     * note entries have no FAILED status, so a failed row cannot
+     * stay visible. Offline → [AppError.ClientOffline]. A save to
+     * a local (hub-mode) note fails validation — it has no hub id,
+     * so the frame has nowhere to go.
+     */
+    suspend fun saveNoteMessage(
+        localNoteId: Long,
+        body: String,
+        attachments: List<NoteSaveAttachment>,
+        clientMessageId: String? = null,
+    ): Outcome<Long>
 }
 
 /**
@@ -115,4 +134,12 @@ object NoOpClientSendGateway : ClientSendGateway {
     ): Boolean = false
 
     override suspend fun cancelScheduled(clientMessageId: String): Boolean = false
+
+    override suspend fun saveNoteMessage(
+        localNoteId: Long,
+        body: String,
+        attachments: List<NoteSaveAttachment>,
+        clientMessageId: String?,
+    ): Outcome<Long> =
+        Outcome.Failure(AppError.Validation("client send gateway not provided"))
 }

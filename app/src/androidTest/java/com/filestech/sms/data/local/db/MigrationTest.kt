@@ -879,6 +879,105 @@ class MigrationTest {
     }
 
     /**
+     * Round 35 (spam protection) — 19 → 20 : `conversations.sticky_category
+     * TEXT`, nulle sur l'existant, et inscriptible par nom de catégorie.
+     * Strictement additive : les lignes existantes ne bougent pas.
+     *
+     * Nécessite `20.json` dans les assets (émis par Room à la compilation).
+     */
+    @Test
+    fun migrate19To20_ajouteLaCategorieCollante_nulleSurLExistant_etInscriptible() {
+        helper.createDatabase(TEST_DB, 19).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO conversations
+                    (id, thread_id, addresses_csv, display_name, last_message_at,
+                     last_message_preview, unread_count, pinned, archived, muted, in_vault)
+                VALUES (1, 7, '+33600000001', NULL, 1700000000000, 'a', 0, 0, 0, 0, 0)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 20, true, Migrations.MIGRATION_19_20)
+
+        db.query("SELECT display_name, sticky_category FROM conversations WHERE id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.isNull(0)).isTrue()
+            assertThat(c.isNull(1)).isTrue()
+        }
+        db.execSQL("UPDATE conversations SET sticky_category = 'PROMOTIONAL' WHERE id = 1")
+        db.query("SELECT sticky_category FROM conversations WHERE id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("PROMOTIONAL")
+        }
+        db.execSQL("UPDATE conversations SET sticky_category = NULL WHERE id = 1")
+        db.query("SELECT sticky_category FROM conversations WHERE id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.isNull(0)).isTrue()
+        }
+    }
+
+    /**
+     * Round 36 phase 2 (notes sync + editing) — 20 → 21 :
+     * `note_messages.edited INTEGER NOT NULL DEFAULT 0` et
+     * `client_sync_state.note_last_message_id TEXT NOT NULL DEFAULT
+     * '0'`. Strictement additive : les lignes existantes projettent
+     * les défauts (non modifié, curseur à zéro), et les deux
+     * colonnes sont inscriptibles.
+     *
+     * Nécessite `21.json` dans les assets (émis par Room à la compilation).
+     */
+    @Test
+    fun migrate20To21_ajouteLeMarqueurModifieEtLeCurseurNotes_avecDefauts_etInscriptibles() {
+        helper.createDatabase(TEST_DB, 20).use { db ->
+            db.execSQL(
+                "INSERT INTO notes (uuid, title, created_at, updated_at) " +
+                    "VALUES ('uuid-note-1', 'Courses', 1700000000000, 1700000000000)",
+            )
+            db.execSQL(
+                "INSERT INTO note_messages (uuid, note_id, body, date) " +
+                    "VALUES ('uuid-msg-1', 1, 'lait', 1700000000000)",
+            )
+            db.execSQL(
+                "INSERT INTO client_sync_state " +
+                    "(hub_id, mode, global_last_message_id, initial_sync_done) " +
+                    "VALUES ('hub-1', 'full', '42', 1)",
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 21, true, Migrations.MIGRATION_20_21)
+
+        // Les défauts s'appliquent aux lignes existantes.
+        db.query("SELECT edited FROM note_messages WHERE uuid = 'uuid-msg-1'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.query(
+            "SELECT global_last_message_id, note_last_message_id " +
+                "FROM client_sync_state WHERE hub_id = 'hub-1'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("42")
+            assertThat(c.getString(1)).isEqualTo("0")
+        }
+        // Les deux colonnes sont inscriptibles.
+        db.execSQL("UPDATE note_messages SET edited = 1 WHERE uuid = 'uuid-msg-1'")
+        db.query("SELECT edited FROM note_messages WHERE uuid = 'uuid-msg-1'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(1)
+        }
+        db.execSQL(
+            "UPDATE client_sync_state SET note_last_message_id = '7' WHERE hub_id = 'hub-1'",
+        )
+        db.query(
+            "SELECT note_last_message_id FROM client_sync_state WHERE hub_id = 'hub-1'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("7")
+        }
+    }
+
+    /**
      * Notes phase 1 — 18 → 19 : trois tables neuves (`notes`, `note_messages`,
      * `note_attachments`), qui naissent vides. Strictement additive : les lignes
      * existantes ne bougent pas. Les défauts SQL (`pinned`/`archived` 0, `body` '',

@@ -13,7 +13,10 @@ import java.io.File
  * the flag and refresh last-alive; the heartbeat refreshes
  * last-alive only. The lifecycle observer and the scheduler are
  * not exercised here — they only call these same transitions —
- * so this runs on plain JVM with a fake clock.
+ * so this runs on plain JVM with a fake clock. Round 36 — when
+ * the error log is off, the marker is deleted and nothing is
+ * written; [SessionMarkerTracker.clearMarker] and
+ * [SessionMarkerTracker.restartSession] are the toggle's edges.
  */
 class SessionMarkerTrackerTest {
 
@@ -23,9 +26,15 @@ class SessionMarkerTrackerTest {
     private var now = 10_000L
     private val clock = { now }
 
+    private var logEnabled = true
+    private val enabled = { logEnabled }
+
     private fun store(): SessionMarkerStore = SessionMarkerStore(File(tempDir, "crash-reports"))
 
     private fun tracker(): SessionMarkerTracker = SessionMarkerTracker(store(), clock, pid = 4321)
+
+    private fun gatedTracker(): SessionMarkerTracker =
+        SessionMarkerTracker(store(), clock, pid = 4321, enabled = enabled)
 
     @Test
     fun `beginSession writes a marker and returns null with no previous session`() {
@@ -125,6 +134,65 @@ class SessionMarkerTrackerTest {
         tracker.updateScreen("Thread")
         tracker.updateSyncState("syncing")
         tracker.heartbeat()
+        assertThat(store().read()).isNull()
+    }
+
+    @Test
+    fun `beginSession with the log off deletes the stale marker and writes nothing`() {
+        val markerStore = store()
+        val previous = SessionMarker(1_000L, 2_000L, 1111, true, "Thread", "syncing")
+        markerStore.write(previous)
+        logEnabled = false
+        assertThat(gatedTracker().beginSession()).isNull()
+        assertThat(markerStore.read()).isNull()
+    }
+
+    @Test
+    fun `updates and heartbeat with the log off write nothing`() {
+        val tracker = gatedTracker()
+        tracker.beginSession()
+        tracker.updateScreen("Thread")
+        logEnabled = false
+        now = 20_000L
+        tracker.updateScreen("Settings")
+        tracker.updateSyncState("syncing")
+        tracker.onForeground()
+        tracker.heartbeat()
+        tracker.onBackground()
+        val written = store().read()
+        assertThat(written?.screen).isEqualTo("Thread")
+        assertThat(written?.syncState).isNull()
+        assertThat(written?.lastAliveMillis).isEqualTo(10_000L)
+        assertThat(written?.foreground).isFalse()
+    }
+
+    @Test
+    fun `clearMarker drops the marker and restartSession writes a fresh one`() {
+        val tracker = gatedTracker()
+        tracker.beginSession()
+        tracker.updateScreen("Thread")
+        tracker.clearMarker()
+        assertThat(store().read()).isNull()
+        // Updates after the clear are dropped until the restart.
+        tracker.updateScreen("Settings")
+        assertThat(store().read()).isNull()
+        now = 20_000L
+        tracker.restartSession()
+        val written = store().read()
+        assertThat(written).isNotNull()
+        assertThat(written!!.sessionStartMillis).isEqualTo(20_000L)
+        assertThat(written.screen).isNull()
+        tracker.updateScreen("Settings")
+        assertThat(store().read()?.screen).isEqualTo("Settings")
+    }
+
+    @Test
+    fun `restartSession with the log off writes nothing`() {
+        val tracker = gatedTracker()
+        tracker.beginSession()
+        logEnabled = false
+        tracker.clearMarker()
+        tracker.restartSession()
         assertThat(store().read()).isNull()
     }
 }

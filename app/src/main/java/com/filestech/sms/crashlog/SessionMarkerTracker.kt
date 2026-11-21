@@ -36,11 +36,24 @@ import java.util.concurrent.TimeUnit
  *
  * The process id in the marker is captured at construction; the
  * clock is injectable so tests can drive the timestamps.
+ *
+ * Round 36 — the error-log switch ([CrashLogSettings]): the
+ * marker is part of the error log, so it is gated by the same
+ * flag. When the log is off, [beginSession] deletes any stale
+ * marker instead of writing one, every update is a no-op, and
+ * the heartbeat ticks without writing — logging off means no
+ * trace, and a session that ran with the log off is never
+ * reported as an unexpected stop when the log comes back on.
+ * [enabled] is read live on every write, so flipping the
+ * switch mid-session takes effect at once; [clearMarker] and
+ * [restartSession] are the toggle's edges (see
+ * `CrashLogSettingsViewModel`).
  */
 class SessionMarkerTracker internal constructor(
     private val store: SessionMarkerStore,
     private val clock: () -> Long = System::currentTimeMillis,
     private val pid: Int = Process.myPid(),
+    private val enabled: () -> Boolean = { true },
 ) {
 
     companion object {
@@ -68,8 +81,10 @@ class SessionMarkerTracker internal constructor(
          */
         fun install(application: Application): SessionMarker? {
             if (current != null) return null
+            val settings = CrashLogSettings(application)
             val tracker = SessionMarkerTracker(
                 SessionMarkerStore(File(application.filesDir, CrashReportStore.DIR_NAME)),
+                enabled = settings::enabled,
             )
             val previous = tracker.beginSession()
             tracker.startLifecycleTracking()
@@ -97,8 +112,20 @@ class SessionMarkerTracker internal constructor(
      * when the first activity starts, and a process that never
      * shows an activity (started for a service or a receiver)
      * correctly stays backgrounded.
+     *
+     * When the error log is off, no marker is written at all:
+     * any stale marker is deleted instead, so re-enabling the
+     * log later starts from a clean slate, and null is returned
+     * so the startup check has nothing to report.
      */
     internal fun beginSession(): SessionMarker? {
+        if (!enabled()) {
+            synchronized(lock) {
+                currentMarker = null
+                runCatching { store.delete() }
+            }
+            return null
+        }
         val previous = runCatching { store.read() }.getOrNull()
         val now = clock()
         val marker = SessionMarker(
@@ -112,6 +139,32 @@ class SessionMarkerTracker internal constructor(
             runCatching { store.write(marker) }
         }
         return previous
+    }
+
+    /**
+     * Drops this session's marker, in memory and on disk, and
+     * stops tracking until [restartSession]. The error-log
+     * toggle calls this when the log is turned off, so the
+     * marker is gone at once instead of lingering until the
+     * next cold start. Never throws.
+     */
+    fun clearMarker() {
+        synchronized(lock) {
+            currentMarker = null
+            runCatching { store.delete() }
+        }
+    }
+
+    /**
+     * Starts tracking this session again after [clearMarker]
+     * (or after an install with the log off): writes a fresh
+     * marker. The previous marker, if one somehow survived, is
+     * discarded — a session that ran with the log off is not
+     * reported. The error-log toggle calls this when the log
+     * is turned back on. Never throws.
+     */
+    fun restartSession() {
+        runCatching { beginSession() }
     }
 
     /**
@@ -198,10 +251,11 @@ class SessionMarkerTracker internal constructor(
 
     /**
      * Applies a change to the marker and writes it, unless the
-     * change is a no-op (the new marker equals the current one).
-     * Callers hold [lock]. Never throws.
+     * change is a no-op (the new marker equals the current one)
+     * or the error log is off. Callers hold [lock]. Never throws.
      */
     private fun updateLocked(transform: (SessionMarker) -> SessionMarker) {
+        if (!enabled()) return
         val current = currentMarker ?: return
         val updated = transform(current)
         if (updated == current) return

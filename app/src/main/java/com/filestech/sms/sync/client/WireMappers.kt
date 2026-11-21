@@ -6,9 +6,14 @@ import com.filestech.sms.data.repository.SyncedMessageData
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.MessageType
+import com.filestech.sms.domain.repository.SyncedNoteAttachmentData
+import com.filestech.sms.domain.repository.SyncedNoteData
+import com.filestech.sms.domain.repository.SyncedNoteMessageData
 import com.filestech.sms.sync.SyncedAttachment
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
+import com.filestech.sms.sync.SyncedNote
+import com.filestech.sms.sync.SyncedNoteMessage
 
 /**
  * Client mode — wire → mirror mapping. Pure functions, unit-tested.
@@ -115,5 +120,53 @@ fun SyncedConversation.toData(): SyncedConversationData? {
         isBlocked = blocked,
         pinnedMessageHubId = pinnedMessageId?.let(::parseHubId),
         pinnedMessageAt = pinnedMessageAt,
+    )
+}
+
+/**
+ * Round 36 phase 2 — wire note → mirror data, or null when its id
+ * does not parse. The wire's `message_count` is dropped: the mobile
+ * mirror shows the preview, never a count (the desktop uses it).
+ */
+fun SyncedNote.toData(): SyncedNoteData? {
+    val hubId = parseHubId(id) ?: return null
+    return SyncedNoteData(
+        hubNoteId = hubId,
+        title = title,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        lastMessageAt = lastMessageAt,
+        lastMessagePreview = lastMessagePreview,
+        pinned = pinned,
+        archived = archived,
+    )
+}
+
+/** Round 36 phase 2 — wire note attachment metadata → mirror data, or null when its id does not parse. */
+fun SyncedAttachment.toNoteData(): SyncedNoteAttachmentData? {
+    val hubId = parseHubId(id) ?: return null
+    return SyncedNoteAttachmentData(
+        hubAttachmentId = hubId,
+        mimeType = mimeType,
+        fileName = fileName,
+        sizeBytes = sizeBytes,
+        width = width,
+        height = height,
+        durationMs = durationMs,
+    )
+}
+
+/** Round 36 phase 2 — wire note entry → mirror data, or null when its id or note id does not parse. */
+fun SyncedNoteMessage.toData(): SyncedNoteMessageData? {
+    val hubId = parseHubId(id) ?: return null
+    val hubNoteId = parseHubId(noteId) ?: return null
+    return SyncedNoteMessageData(
+        hubMessageId = hubId,
+        hubNoteId = hubNoteId,
+        body = body,
+        date = date,
+        edited = edited,
+        clientMessageId = clientMessageId,
+        attachments = attachments.mapNotNull { it.toNoteData() },
     )
 }

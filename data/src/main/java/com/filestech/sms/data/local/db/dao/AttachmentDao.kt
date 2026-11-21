@@ -77,10 +77,13 @@ interface AttachmentDao {
      *
      * Round 32 — the query also returns the carrying message's date + body (the details panel
      * groups media by date and needs the body for its sticker check).
+     *
+     * Round 36 — it also returns the message's system MMS id, for the gallery's fallback probe
+     * when the cache file is gone (see `MediaGalleryViewModel`).
      */
     @Query(
         """
-        SELECT a.*, m.date AS message_date, m.body AS message_body FROM attachments a
+        SELECT a.*, m.date AS message_date, m.body AS message_body, m.mms_system_id AS message_mms_system_id FROM attachments a
         JOIN messages m ON m.id = a.message_id
         WHERE m.conversation_id = :conversationId
           AND m.hidden = 0
@@ -97,10 +100,14 @@ interface AttachmentDao {
      *
      * Round 32 — also returns the carrying message's date + body,
      * like [observeMediaForConversation].
+     *
+     * Round 36 — also returns the system MMS id, like the media
+     * query (Room needs every projection field in every query);
+     * nothing reads it here.
      */
     @Query(
         """
-        SELECT a.*, m.date AS message_date, m.body AS message_body FROM attachments a
+        SELECT a.*, m.date AS message_date, m.body AS message_body, m.mms_system_id AS message_mms_system_id FROM attachments a
         JOIN messages m ON m.id = a.message_id
         WHERE m.conversation_id = :conversationId
           AND m.hidden = 0

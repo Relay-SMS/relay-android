@@ -105,6 +105,9 @@ import java.util.concurrent.ConcurrentHashMap
  * @param callDialer the dial executor for `dial_request`, or null
  * when the session has none (tests): a dial then answers
  * `dial_result` `failed` instead of crashing.
+ * @param noteSource the note store seam, or null when the session
+ * has none (tests): the notes phase is skipped and note frames are
+ * ignored.
  */
 class SyncEngine(
     private val source: SyncMessageSource,
@@ -112,9 +115,18 @@ class SyncEngine(
     private val send: suspend (String) -> Unit,
     private val wakelock: SyncWakelock,
     private val callDialer: CallDialer? = null,
+    private val noteSource: NoteSyncSource? = null,
 ) {
     private val engineJob = SupervisorJob(parentScope.coroutineContext[Job])
     private val scope = CoroutineScope(parentScope.coroutineContext + engineJob)
+
+    /**
+     * Round 36 phase 2 — the note engine for this session, or null
+     * when the session has no note source. Public so the session
+     * handler can dispatch note frames through it.
+     */
+    val noteEngine: NoteSyncEngine? =
+        noteSource?.let { NoteSyncEngine(it, parentScope, send) }
 
     private var streamJob: Job? = null
 
@@ -145,6 +157,7 @@ class SyncEngine(
         scope.launch { collectConversations() }
         scope.launch { collectMessageStates() }
         scope.launch { collectCategoryMutes() }
+        noteEngine?.start()
     }
 
     /**
@@ -307,6 +320,25 @@ class SyncEngine(
     fun onAttachmentRequest(request: SyncProtocol.AttachmentRequest) {
         scope.launch {
             try {
+                // Round 36 phase 2 — a note download carries the
+                // `"note:"` prefix on BOTH ids; the note engine
+                // streams it (no note engine = no note source, so
+                // the id is unknown — same answer as a missing file).
+                if (request.attachmentId.startsWith(SyncProtocol.NOTE_ATTACHMENT_ID_PREFIX)) {
+                    val engine = noteEngine
+                    if (engine == null) {
+                        send(
+                            attachmentError(
+                                request.attachmentId,
+                                SyncProtocol.AttachmentError.UNKNOWN_ATTACHMENT,
+                                "This attachment couldn't be found.",
+                            ),
+                        )
+                    } else {
+                        engine.runNoteAttachmentRequest(request)
+                    }
+                    return@launch
+                }
                 runAttachmentRequest(source, send, request)
             } catch (e: CancellationException) {
                 throw e
@@ -512,6 +544,7 @@ class SyncEngine(
     fun stop() {
         streamJob?.cancel()
         streamJob = null
+        noteEngine?.stop()
         engineJob.cancel()
     }
 
@@ -545,6 +578,13 @@ class SyncEngine(
         val conversations = source.conversations()
         val totalMessages = source.totalMessageCount()
         val cursor = source.maxMessageId()
+        // Round 36 phase 2 — the notes snapshot is read once, before
+        // `sync_started`: the count + cursor feed the frame, and the
+        // same list streams right after the conversations. A session
+        // without a note source streams no notes at all.
+        val notes = noteEngine?.notesForStream().orEmpty()
+        val totalNotes = noteEngine?.totalNotes() ?: 0
+        val noteCursor = noteEngine?.maxNoteMessageId() ?: 0L
         send(
             SyncProtocol.encodeSyncStarted(
                 SyncProtocol.SyncStarted(
@@ -555,6 +595,8 @@ class SyncEngine(
                     hubIsDefaultSms = source.isDefaultSmsApp(),
                     hubTunnelIp = source.tunnelIp(),
                     totalContacts = totalContacts,
+                    cursorNoteMessageId = noteCursor.toString(),
+                    totalNotes = totalNotes,
                 ),
             ),
         )
@@ -563,13 +605,18 @@ class SyncEngine(
             is ContactsRead.Error -> send(contactsError(contactsRead.code, contactsRead.message))
         }
         streamConversations(send, conversations)
+        noteEngine?.streamNotesPhase(request, notes)
         if (request.mode == SyncProtocol.SyncRequest.FULL) {
             if (sinceId > 0L) streamDelta(conversations, sinceId) else streamAllMessages(conversations)
         }
         val endCursor = source.maxMessageId()
+        val endNoteCursor = noteEngine?.maxNoteMessageId() ?: 0L
         // Val-extracted (was a 5-line nested `send(encode(...))`): keeps the
         // class under the LargeClass limit after the wrapping fixes above.
-        val complete = SyncProtocol.SyncComplete(cursorMessageId = endCursor.toString())
+        val complete = SyncProtocol.SyncComplete(
+            cursorMessageId = endCursor.toString(),
+            cursorNoteMessageId = endNoteCursor.toString(),
+        )
         send(SyncProtocol.encodeSyncComplete(complete))
         // Category mutes — the full set rides right after the
         // snapshot, so a fresh connection learns it without waiting
@@ -1354,7 +1401,8 @@ private suspend fun runAttachmentRequest(
  * the socket stays up. The stream is always closed, including on
  * cancellation (session end).
  */
-private suspend fun streamAttachment(
+/** Shared with [NoteSyncEngine]: the note download streams through the same chunker. */
+internal suspend fun streamAttachment(
     attachmentId: String,
     data: AttachmentData,
     send: suspend (String) -> Unit,
@@ -1461,6 +1509,7 @@ private suspend fun runUploadStart(
             request.fileName,
             request.sizeBytes,
             request.sha256,
+            request.kind,
         )
     ) {
         UploadResult.Ok -> send(
@@ -1517,7 +1566,8 @@ private suspend fun runUploadChunk(
     }
 }
 
-private fun attachmentError(attachmentId: String, code: String, message: String): String =
+/** Shared with [NoteSyncEngine]: the note download answers the same errors. */
+internal fun attachmentError(attachmentId: String, code: String, message: String): String =
     SyncProtocol.encodeAttachmentError(
         SyncProtocol.AttachmentError(attachmentId, code, message),
     )

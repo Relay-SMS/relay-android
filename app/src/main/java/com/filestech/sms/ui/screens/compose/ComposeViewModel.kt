@@ -45,10 +45,9 @@ class ComposeViewModel @Inject constructor(
     private val conversationRepo: ConversationRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
     /**
-     * Notes — the note repository, for [createNote]. Phase 1 is
-     * hub-only: the "New note" entry is hidden in client mode (the
-     * screen gates on [isClientMode]), so no `create_note` frame
-     * exists yet.
+     * Notes — the note repository, for [createNote] in hub mode. In
+     * client mode the note is created on the hub instead (the
+     * `create_note` frame, via [clientActions] — round 36 phase 2).
      */
     private val noteRepo: NoteRepository,
     /**
@@ -257,11 +256,22 @@ class ComposeViewModel @Inject constructor(
      * group name, the title is REQUIRED (a note with no title has
      * no identity in the list): a blank title does nothing. Every
      * note is a new row — there is no `findOrCreate` for notes.
+     * Round 36 phase 2 — client mode creates via the `create_note`
+     * frame (no optimistic note: the hub answers with the row, and
+     * the engine upserts it before the answer lands); a failure
+     * emits [Event.CreateFailed].
      */
     fun createNote(title: String) {
         val clean = title.trim().take(NOTE_TITLE_MAX_LENGTH)
         if (clean.isBlank()) return
         viewModelScope.launch {
+            if (clientActions.isClientMode()) {
+                when (val res = clientActions.createNote(clean)) {
+                    is Outcome.Success -> events.tryEmit(Event.NoteCreated(res.value))
+                    is Outcome.Failure -> events.tryEmit(Event.CreateFailed(res.error))
+                }
+                return@launch
+            }
             val note = noteRepo.createNote(clean)
             events.tryEmit(Event.NoteCreated(note.id))
         }

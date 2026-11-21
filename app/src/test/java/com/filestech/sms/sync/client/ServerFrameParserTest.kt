@@ -283,4 +283,114 @@ class ServerFrameParserTest {
         assertThat(obj["type"]?.jsonPrimitive?.content).isEqualTo("dial_request")
         assertThat(obj["number"]?.jsonPrimitive?.content).isEqualTo("+33612345678")
     }
+
+    // -- Round 36 phase 2: notes --------------------------------------
+
+    private fun noteJson(id: String = "7") =
+        """{"id":"$id","title":"Groceries","created_at":1794670000000,""" +
+            """"updated_at":1794670100000,"last_message_at":1794670100000,""" +
+            """"last_message_preview":"Milk","pinned":true,"archived":false,"message_count":3}"""
+
+    private fun messageJson(id: String = "42", edited: Boolean? = null) =
+        """{"id":"$id","note_id":"7","body":"Milk, eggs","date":1794670100000,"attachments":[]""" +
+            (if (edited == null) "" else ""","edited":$edited""") + "}"
+
+    @Test fun `notes parses a snapshot batch`() {
+        val frame = ServerFrameParser.parse(
+            """{"type":"notes","notes":[${noteJson()}],"has_more":true}""",
+        )
+        assertThat(frame).isInstanceOf(ServerFrame.Notes::class.java)
+        val value = (frame as ServerFrame.Notes).value
+        assertThat(value.hasMore).isTrue()
+        assertThat(value.notes).hasSize(1)
+        assertThat(value.notes[0].title).isEqualTo("Groceries")
+        assertThat(value.notes[0].messageCount).isEqualTo(3)
+    }
+
+    @Test fun `note_messages_batch parses a page with its cursor`() {
+        val frame = ServerFrameParser.parse(
+            """{"type":"note_messages_batch","note_id":"7","messages":[${messageJson()}],"has_more":true,"next_before_id":"40"}""",
+        )
+        assertThat(frame).isInstanceOf(ServerFrame.NoteMessagesBatch::class.java)
+        val value = (frame as ServerFrame.NoteMessagesBatch).value
+        assertThat(value.noteId).isEqualTo("7")
+        assertThat(value.messages).hasSize(1)
+        assertThat(value.nextBeforeId).isEqualTo("40")
+    }
+
+    @Test fun `note_created note_new and note_updated parse the full row`() {
+        for (type in listOf("note_created", "note_new", "note_updated")) {
+            val frame = ServerFrameParser.parse(
+                """{"type":"$type","note":${noteJson()}}""",
+            )
+            val note = when (frame) {
+                is ServerFrame.NoteCreated -> frame.value.note
+                is ServerFrame.NoteNew -> frame.value.note
+                is ServerFrame.NoteUpdated -> frame.value.note
+                else -> null
+            }
+            assertThat(note).isNotNull()
+            assertThat(note!!.id).isEqualTo("7")
+        }
+    }
+
+    @Test fun `note_deleted parses the id`() {
+        val frame = ServerFrameParser.parse("""{"type":"note_deleted","note_id":"7"}""")
+        assertThat(frame).isInstanceOf(ServerFrame.NoteDeleted::class.java)
+        assertThat((frame as ServerFrame.NoteDeleted).value.noteId).isEqualTo("7")
+    }
+
+    @Test fun `note_message_new parses the row`() {
+        val frame = ServerFrameParser.parse(
+            """{"type":"note_message_new","message":${messageJson()}}""",
+        )
+        assertThat(frame).isInstanceOf(ServerFrame.NoteMessageNew::class.java)
+        assertThat((frame as ServerFrame.NoteMessageNew).value.message.body)
+            .isEqualTo("Milk, eggs")
+    }
+
+    @Test fun `note_message_updated parses the edited row`() {
+        val frame = ServerFrameParser.parse(
+            """{"type":"note_message_updated","message":${messageJson(edited = true)}}""",
+        )
+        assertThat(frame).isInstanceOf(ServerFrame.NoteMessageUpdated::class.java)
+        assertThat((frame as ServerFrame.NoteMessageUpdated).value.message.edited).isTrue()
+    }
+
+    @Test fun `a note entry without the edited key defaults to unedited`() {
+        // An older hub never sends `edited` — the default must be false.
+        val frame = ServerFrameParser.parse(
+            """{"type":"note_message_new","message":${messageJson()}}""",
+        )
+        assertThat((frame as ServerFrame.NoteMessageNew).value.message.edited).isFalse()
+    }
+
+    @Test fun `note_message_deleted parses both ids`() {
+        val frame = ServerFrameParser.parse(
+            """{"type":"note_message_deleted","note_id":"7","message_id":"42"}""",
+        )
+        assertThat(frame).isInstanceOf(ServerFrame.NoteMessageDeleted::class.java)
+        val value = (frame as ServerFrame.NoteMessageDeleted).value
+        assertThat(value.noteId).isEqualTo("7")
+        assertThat(value.messageId).isEqualTo("42")
+    }
+
+    @Test fun `note_message_saved and note_message_failed parse the ack pair`() {
+        val saved = ServerFrameParser.parse(
+            """{"type":"note_message_saved","client_message_id":"uuid-1","message_id":"42","note_id":"7"}""",
+        )
+        assertThat(saved).isInstanceOf(ServerFrame.NoteMessageSaved::class.java)
+        assertThat((saved as ServerFrame.NoteMessageSaved).value.messageId).isEqualTo("42")
+        val failed = ServerFrameParser.parse(
+            """{"type":"note_message_failed","client_message_id":"uuid-1","note_id":"7","code":"unknown_note","message":"No note."}""",
+        )
+        assertThat(failed).isInstanceOf(ServerFrame.NoteMessageFailed::class.java)
+        assertThat((failed as ServerFrame.NoteMessageFailed).value.code)
+            .isEqualTo("unknown_note")
+    }
+
+    @Test fun `a note frame missing a required field is malformed`() {
+        val frame = ServerFrameParser.parse("""{"type":"note_deleted"}""")
+        assertThat(frame).isEqualTo(ServerFrame.Malformed)
+    }
 }

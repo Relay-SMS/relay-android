@@ -397,27 +397,35 @@ class ConversationsViewModel @Inject constructor(
         // be stale (its category emptied out, or categories switched off),
         // so the list honours the *effective* selection: All when the
         // stored tab has no conversations left to show.
+        // Round 36 — notes live in Personal as well as All: the
+        // Personal tab exists (and a stored Personal selection
+        // stays effective) while notes exist in this view, even
+        // with no Personal conversation.
+        val hasNotes = notes.any { it.archived == archivedFlag }
         val effectiveSelected = effectiveSelectedCategory(
             rows,
             selected,
             s.conversations.showCategories,
+            hasNotes,
         )
         val (visible, tabs) = applyCategoryFilter(
             matched,
             effectiveSelected,
             s.conversations.mutedCategories,
             s.conversations.showCategories,
+            hasNotes,
         )
         val sorted = trierConversations(visible, s.conversations.sortMode)
-        // Notes — the merged list: notes join only when the effective
-        // category is All (notes have no category, and the tabs are
-        // computed from conversations only), filtered by the archived
+        // Notes — the merged list: notes join when the effective
+        // category is All or Personal (round 36 — notes are
+        // personal, not spam/OTP/transactions; see
+        // [notesVisibleInCategory]), filtered by the archived
         // flag and by the search query (title only — note CONTENT is
         // not searched in phase 1: there is no FTS table for
         // `note_messages`, and adding one is a data-layer follow-up).
         // The merged sort is the same order as the conversation sort,
         // so a note and a conversation interleave by pinned + recency.
-        val noteItems = if (effectiveSelected == null) {
+        val noteItems = if (notesVisibleInCategory(effectiveSelected)) {
             notes
                 .filter { it.archived == archivedFlag && noteMatchesQuery(it, q) }
                 .map { ConversationListItem.NoteItem(it) }
@@ -1145,16 +1153,31 @@ class ConversationsViewModel @Inject constructor(
  * not the search-filtered `matched`: while searching, the tab row is
  * hidden anyway and the filter must keep applying to the query, even
  * when it matches nothing in that category.
+ *
+ * Round 36 — notes live in Personal: a stored Personal tab stays
+ * effective while notes exist ([hasNotes]), even with no Personal
+ * conversation left to show.
  */
-private fun effectiveSelectedCategory(
+internal fun effectiveSelectedCategory(
     rows: List<Conversation>,
     selected: MessageCategory?,
     showCategories: Boolean,
+    hasNotes: Boolean = false,
 ): MessageCategory? {
     if (!showCategories || selected == null) return null
-    val hasAny = rows.any { MessageClassifier.classifyConversation(it) == selected }
+    val hasAny = rows.any { MessageClassifier.classifyConversation(it) == selected } ||
+        (hasNotes && selected == MessageCategory.PERSONAL)
     return if (hasAny) selected else null
 }
+
+/**
+ * Round 36 — notes live in All and in Personal (notes are personal,
+ * not spam/OTP/transactions). Every other tab hides them. The gate
+ * for the note merge in the list combine (see
+ * [ConversationsViewModel.state]).
+ */
+internal fun notesVisibleInCategory(selected: MessageCategory?): Boolean =
+    selected == null || selected == MessageCategory.PERSONAL
 
 /**
  * Round 11 — applies the selected category to the search-filtered list
@@ -1163,20 +1186,25 @@ private fun effectiveSelectedCategory(
  * category because it is selected, and the visible list keeps its
  * relative order (each category keeps its encounter order in `matched`).
  *
+ * Round 36 — notes live in Personal: [hasNotes] makes the Personal
+ * tab exist even with no Personal conversation (the notes themselves
+ * join later, at the list merge — they are not conversations).
+ *
  * Returns the visible conversations and the tabs (All first, then each
  * non-empty category in enum order).
  */
-private fun applyCategoryFilter(
+internal fun applyCategoryFilter(
     matched: List<Conversation>,
     selected: MessageCategory?,
     muted: Set<MessageCategory>,
     showCategories: Boolean,
+    hasNotes: Boolean = false,
 ): Pair<List<Conversation>, List<CategoryTab>> {
     // Round 12 — categories hidden: the full list, no tabs, no filter —
     // even if a category was selected before the toggle went off.
     if (!showCategories) return matched to emptyList()
     val byCategory = matched.groupBy { MessageClassifier.classifyConversation(it) }
-    val tabs = buildCategoryTabs(byCategory, matched.sumOf { it.unreadCount }, muted)
+    val tabs = buildCategoryTabs(byCategory, matched.sumOf { it.unreadCount }, muted, hasNotes)
     val visible = if (selected == null) matched else byCategory[selected].orEmpty()
     return visible to tabs
 }
@@ -1184,17 +1212,23 @@ private fun applyCategoryFilter(
 /**
  * Round 11 — All (always, with the total unread) plus each category
  * holding at least one conversation. Empty categories get no tab.
+ *
+ * Round 36 — notes live in Personal: [hasNotes] gives Personal a tab
+ * even with no Personal conversation (notes are always read, so they
+ * add no unread count).
  */
-private fun buildCategoryTabs(
+internal fun buildCategoryTabs(
     byCategory: Map<MessageCategory, List<Conversation>>,
     totalUnread: Int,
     muted: Set<MessageCategory>,
+    hasNotes: Boolean = false,
 ): List<CategoryTab> {
     val tabs = ArrayList<CategoryTab>(MessageCategory.entries.size + 1)
     tabs += CategoryTab(category = null, unreadCount = totalUnread, muted = false)
     for (category in MessageCategory.entries) {
         val inCategory = byCategory[category].orEmpty()
-        if (inCategory.isNotEmpty()) {
+        val hasNoteItems = hasNotes && category == MessageCategory.PERSONAL
+        if (inCategory.isNotEmpty() || hasNoteItems) {
             tabs += CategoryTab(
                 category = category,
                 unreadCount = inCategory.sumOf { it.unreadCount },

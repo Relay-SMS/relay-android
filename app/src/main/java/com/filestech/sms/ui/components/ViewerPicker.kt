@@ -119,6 +119,29 @@ internal fun resolveViewerOpen(
 }
 
 /**
+ * What a picker tap resolves to: the package to open with, and
+ * whether to remember it. Both taps open with the CHOSEN package
+ * (an explicit intent — `setPackage` — straight to that app, no
+ * resolver); only Always remembers. Round 36 — the round-33 code
+ * dropped the package on the Just-once path and opened the plain
+ * intent, which raised the system chooser a second time instead
+ * of opening the app the user just picked.
+ */
+internal data class ViewerPickOutcome(
+    val packageName: String,
+    val remember: Boolean,
+)
+
+/**
+ * The outcome of a picker tap: Just once ([once]) opens the
+ * chosen app without remembering; Always remembers it first.
+ * The package is the pick's in both cases — never null, so the
+ * open never falls back to the plain intent (and its chooser).
+ */
+internal fun viewerPickOutcome(once: Boolean, app: ViewerApp): ViewerPickOutcome =
+    ViewerPickOutcome(packageName = app.packageName, remember = !once)
+
+/**
  * Every app that handles ACTION_VIEW for ([uri], [mimeType]),
  * Relay itself excluded (it must never offer itself as its own
  * viewer), deduped by package and sorted by name. Empty when the
@@ -206,17 +229,23 @@ internal fun rememberAttachmentOpener(): (Attachment) -> Unit {
     }
     var pending by remember { mutableStateOf<PendingViewerPick?>(null) }
     pending?.let { pick ->
+        // Round 36 — one path for both taps, driven by the outcome:
+        // Just once and Always both open the chosen app directly
+        // (explicit intent, no resolver); only Always remembers.
+        // A single open call means a later edit cannot re-break one
+        // tap by dropping the package from its branch.
+        val onPick: (ViewerApp, Boolean) -> Unit = { app, once ->
+            pending = null
+            val outcome = viewerPickOutcome(once = once, app = app)
+            if (outcome.remember) {
+                scope.launch { store.remember(pick.kind, outcome.packageName) }
+            }
+            ouvrirPieceJointe(context, pick.attachment, packageName = outcome.packageName)
+        }
         ViewerPickerDialog(
             apps = pick.apps,
-            onPickOnce = {
-                pending = null
-                ouvrirPieceJointe(context, pick.attachment)
-            },
-            onPickAlways = { app ->
-                pending = null
-                scope.launch { store.remember(pick.kind, app.packageName) }
-                ouvrirPieceJointe(context, pick.attachment, packageName = app.packageName)
-            },
+            onPickOnce = { app -> onPick(app, true) },
+            onPickAlways = { app -> onPick(app, false) },
             onDismiss = { pending = null },
         )
     }

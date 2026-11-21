@@ -638,6 +638,34 @@ interface MessageDao {
     ): List<MessageEntity>
 
     /**
+     * Round 35 — the sticky-category backfill's window: the [limit] most
+     * recent INCOMING messages of [conversationId] that arrived after the
+     * latest OUTGOING message in the thread (newest first). Direction
+     * INCOMING = `0`, OUTGOING = `1` (cf. [com.filestech.sms.domain.model
+     * .MessageDirection]). A thread the user replied to last yields an
+     * empty list — nothing to file. Reaction sentinels (`hidden = 1`)
+     * stay in: their empty body classifies Personal and can never file
+     * a thread as Promotional.
+     */
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE conversation_id = :conversationId
+          AND direction = 0
+          AND date > (
+              SELECT COALESCE(MAX(date), 0) FROM messages
+              WHERE conversation_id = :conversationId AND direction = 1
+          )
+        ORDER BY date DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun findRecentIncomingSinceLastOutgoing(
+        conversationId: Long,
+        limit: Int,
+    ): List<MessageEntity>
+
+    /**
      * v1.6.2 (Tapback fold bugfix) — returns the [limit] most recent OUTGOING messages of
      * [conversationId]. Used as a fallback by [com.filestech.sms.data.repository
      * .ConversationMirror.applyIncomingReaction] when the SQL `LIKE prefix%` match fails
