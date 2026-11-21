@@ -1,157 +1,111 @@
 package com.filestech.sms.system.receiver
 
-import android.content.BroadcastReceiver
-import android.content.Intent
 import android.provider.Telephony
-import android.telephony.SmsMessage
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
 import com.filestech.sms.domain.settings.DeviceMode
+import com.filestech.sms.e2e.E2eDataSmsGate
 import com.filestech.sms.e2e.E2eHandshakeHandler
+import com.filestech.sms.e2e.ParsedDataSms
+import com.google.common.truth.Truth.assertThat
 import dagger.Lazy
-import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.unmockkAll
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 
 /**
- * The client-mode gate on [E2eDataSmsReceiver]: a linked device drops
- * handshake data SMS silently instead of provisioning an E2E identity
- * it must never hold (no default-SMS role, no SMS_DELIVER — it cannot
- * do E2E messaging at all). Hub mode hands the packet to the handler
- * unchanged.
+ * The client-mode gate on [E2eDataSmsReceiver], tested through
+ * [E2eDataSmsGate] — the receiver delegates every decision to it.
  *
- * Plain JVM, no Robolectric: the Telephony lookup is a static mock,
- * and the scope is the test scope so `runCurrent()` drives the
- * launched coroutine to completion deterministically. The receiver
- * itself is a mock running its real `onReceive` (see [receiver]):
- * `BroadcastReceiver()`'s constructor throws `Stub!` on the plain
- * JVM, so no real instance can be built here.
+ * The receiver itself cannot be exercised on plain JVM: it is a Hilt
+ * entry point, and Hilt weaves an `inject(context)` call into its real
+ * `onReceive` — a mocked `Context` has no application component, so
+ * calling it under MockK throws `MockKException` (CI run 44935640392:
+ * all three tests failed at the `callOriginal()` stub, while the same
+ * tests passed locally where no Hilt transform runs). The gate holds
+ * the whole decision, so testing it directly covers the behavior.
  *
  * Every test ends with a void assertion — JUnit silently skips a `@Test`
  * whose `runTest` body returns a value.
  */
 class E2eDataSmsReceiverTest {
 
-    /** A settings source fixed at [mode], always hydrated. */
-    private class FakeSettings(mode: DeviceMode) : AppSettingsSource {
-        private val value = AppSettings().copy(mode = mode)
+    /**
+     * A settings source fixed at [mode], always hydrated. A null mode
+     * fails on any read — for the test that must return before the
+     * settings are consulted at all.
+     */
+    private class FakeSettings(private val mode: DeviceMode?) : AppSettingsSource {
+        private val value = AppSettings().copy(mode = mode ?: DeviceMode.HUB)
         override val flow: Flow<AppSettings> = flowOf(value)
         override val state: StateFlow<AppSettings> = MutableStateFlow(value)
-        override suspend fun hydratedOrNull(): AppSettings = value
+        override suspend fun hydratedOrNull(): AppSettings =
+            mode?.let { AppSettings().copy(mode = it) }
+                ?: error("settings must not be read for this action")
         override suspend fun update(transform: (AppSettings) -> AppSettings) = Unit
     }
 
-    @AfterEach
-    fun tearDown() {
-        unmockkAll()
-    }
-
-    /**
-     * A receiver wired by hand (Hilt does this on device): the handler
-     * and the settings source are fakes, the scope is the test scope.
-     *
-     * A mock, not a spy: `BroadcastReceiver()`'s constructor throws
-     * `Stub!` on the plain JVM, so no real instance can be built here.
-     * MockK allocates the instance without running any constructor;
-     * `onReceive` and the four injected-property accessors run their
-     * real implementations via `callOriginal()`, and only `goAsync()`
-     * is stubbed (it would throw `Stub!` too).
-     */
-    private fun receiver(
-        mode: DeviceMode,
-        handler: E2eHandshakeHandler,
-        scope: CoroutineScope,
-    ): E2eDataSmsReceiver {
-        val receiver = mockk<E2eDataSmsReceiver>()
-        every { receiver.handshakeHandlerLazy } answers { callOriginal() }
-        every { receiver.handshakeHandlerLazy = any() } answers { callOriginal() }
-        every { receiver.settingsLazy } answers { callOriginal() }
-        every { receiver.settingsLazy = any() } answers { callOriginal() }
-        every { receiver.scope } answers { callOriginal() }
-        every { receiver.scope = any() } answers { callOriginal() }
-        every { receiver.ioDispatcher } answers { callOriginal() }
-        every { receiver.ioDispatcher = any() } answers { callOriginal() }
-        every { receiver.onReceive(any(), any()) } answers { callOriginal() }
-        val pending = mockk<BroadcastReceiver.PendingResult>()
-        every { pending.finish() } just Runs
-        every { receiver.goAsync() } returns pending
-        receiver.handshakeHandlerLazy = Lazy { handler }
-        receiver.settingsLazy = Lazy { FakeSettings(mode) }
-        receiver.scope = scope
-        receiver.ioDispatcher = Dispatchers.Unconfined
-        return receiver
-    }
-
-    /** An intent carrying one data SMS from [address] with [data] as its user data. */
-    private fun dataSmsIntent(address: String, data: ByteArray): Intent {
-        val sms = mockk<SmsMessage>()
-        every { sms.displayOriginatingAddress } returns address
-        every { sms.userData } returns data
-        mockkStatic(Telephony.Sms.Intents::class)
-        every { Telephony.Sms.Intents.getMessagesFromIntent(any()) } returns arrayOf(sms)
-        val intent = mockk<Intent>()
-        every { intent.action } returns Telephony.Sms.Intents.DATA_SMS_RECEIVED_ACTION
-        every { intent.getIntExtra(any(), any()) } returns -1
-        return intent
-    }
+    private fun gate(mode: DeviceMode?, handler: E2eHandshakeHandler) = E2eDataSmsGate(
+        Lazy { FakeSettings(mode) },
+        Lazy { handler },
+        Dispatchers.Unconfined,
+    )
 
     @Test
-    fun `client mode drops the handshake packet without calling the handler`() = runTest {
-        val handler = mockk<E2eHandshakeHandler>()
-        coEvery { handler.handleDataSms(any(), any(), any(), any()) } returns true
-        val intent = dataSmsIntent("+33612345678", byteArrayOf(1, 2, 3))
+    fun `client mode drops the handshake packet without parsing it or calling the handler`() =
+        runTest {
+            val handler = mockk<E2eHandshakeHandler>()
+            coEvery { handler.handleDataSms(any(), any(), any(), any()) } returns true
 
-        receiver(DeviceMode.CLIENT, handler, this).onReceive(mockk(), intent)
-        runCurrent()
+            val handled = gate(DeviceMode.CLIENT, handler).handle(
+                Telephony.Sms.Intents.DATA_SMS_RECEIVED_ACTION,
+                null,
+            ) { error("the packet must not be parsed in client mode") }
 
-        // The packet is dropped silently: no identity is provisioned,
-        // no bundle reply goes out.
-        coVerify(exactly = 0) { handler.handleDataSms(any(), any(), any(), any()) }
-    }
+            // The packet is dropped silently: no identity is
+            // provisioned, no bundle reply goes out.
+            assertThat(handled).isFalse()
+            coVerify(exactly = 0) { handler.handleDataSms(any(), any(), any(), any()) }
+        }
 
     @Test
     fun `hub mode hands the packet to the handler unchanged`() = runTest {
         val handler = mockk<E2eHandshakeHandler>()
         coEvery { handler.handleDataSms(any(), any(), any(), any()) } returns true
         val data = byteArrayOf(9, 8, 7)
-        val intent = dataSmsIntent("+33612345678", data)
 
-        receiver(DeviceMode.HUB, handler, this).onReceive(mockk(), intent)
-        runCurrent()
+        val handled = gate(DeviceMode.HUB, handler).handle(
+            Telephony.Sms.Intents.DATA_SMS_RECEIVED_ACTION,
+            3,
+        ) { ParsedDataSms("+33612345678", data) }
 
         // The fourth argument is `now`, defaulted to the current time
         // at the call site, so it can only be matched with `any()` —
         // an `eq` on the default would compare two different instants
         // (and an `exactly = 0` check with the default could false-pass).
+        assertThat(handled).isTrue()
         coVerify(exactly = 1) {
-            handler.handleDataSms("+33612345678", data, null, any())
+            handler.handleDataSms("+33612345678", data, 3, any())
         }
     }
 
     @Test
     fun `a non-data-sms intent is ignored before any mode read`() = runTest {
         val handler = mockk<E2eHandshakeHandler>()
-        val intent = mockk<Intent>()
-        every { intent.action } returns "android.intent.action.SMS_RECEIVED"
 
-        receiver(DeviceMode.HUB, handler, this).onReceive(mockk(), intent)
-        runCurrent()
+        val handled = gate(null, handler).handle(
+            "android.intent.action.SMS_RECEIVED",
+            null,
+        ) { error("the packet must not be parsed for this action") }
 
+        assertThat(handled).isFalse()
         coVerify(exactly = 0) { handler.handleDataSms(any(), any(), any(), any()) }
     }
 }
