@@ -506,6 +506,14 @@ sealed interface UploadResult {
  * The nullable fields have no defaults, so they are always encoded
  * (as explicit JSON nulls) — the wire shape of §3.3, not the
  * omit-when-null shape `encodeDefaults = false` would give them.
+ *
+ * E2E — [encrypted] is true when the 1:1 peer's state is ENCRYPTED
+ * (design §9.1): the hub computes it from the peer state, and a flip
+ * to ENCRYPTED re-emits the conversation list so the engine pushes a
+ * `conversation_updated` (the desktop re-renders the row badge + the
+ * composer placeholder). It defaults to `false`, so a frame from an
+ * older hub still parses — and with `encodeDefaults = false` it is
+ * omitted on the wire while false.
  */
 @Serializable
 data class SyncedConversation(
@@ -525,6 +533,7 @@ data class SyncedConversation(
     @SerialName("message_count") val messageCount: Int,
     @SerialName("pinned_message_id") val pinnedMessageId: String?,
     @SerialName("pinned_message_at") val pinnedMessageAt: Long?,
+    @SerialName("encrypted") val encrypted: Boolean = false,
 )
 
 /**
@@ -539,6 +548,16 @@ data class SyncedConversation(
  * the key on the row at send time). It is the one field with a
  * default, so it is OMITTED when null — unlike the other nullable
  * fields, which encode as explicit nulls.
+ *
+ * E2E (design §9.1) — [encrypted] is true when this message was
+ * encrypted on the wire; [decryptFailed] marks the placeholder row
+ * for a message whose ciphertext arrived but could not be decrypted
+ * (the desktop renders "This message couldn't be decrypted." instead
+ * of a bubble). Both default to `false`, so a frame from an older hub
+ * still parses — and with `encodeDefaults = false` they are omitted
+ * on the wire while false. The raw ciphertext is NEVER synced (the
+ * `ciphertext` column stays on the hub); linked devices get the
+ * flags, not the bytes.
  */
 @Serializable
 data class SyncedMessage(
@@ -558,6 +577,8 @@ data class SyncedMessage(
     @SerialName("reaction") val reaction: String?,
     @SerialName("attachments") val attachments: List<SyncedAttachment>,
     @SerialName("client_message_id") val clientMessageId: String? = null,
+    @SerialName("encrypted") val encrypted: Boolean = false,
+    @SerialName("decrypt_failed") val decryptFailed: Boolean = false,
 )
 
 /** One attachment's metadata on the wire (§3.3 ATTACHMENT) — no bytes in Slice 2. */

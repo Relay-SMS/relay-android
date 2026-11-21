@@ -37,4 +37,31 @@ interface SmsSender {
         requestDeliveryReport: Boolean = false,
         attempt: Int = 0,
     ): Outcome<Unit>
+
+    /**
+     * E2E (design §3.4) — sends ONE ciphertext fragment as its own
+     * single-part SMS. [fragmentIndex] (0-based) and [fragmentTotal]
+     * ride as the part index / part count in the tracking
+     * `PendingIntent`s, so each fragment of a message gets distinct
+     * sent/delivery intents (plain [send] would give every fragment
+     * part index 0 and collapse them onto one `PendingIntent`) and the
+     * delivery receiver can hold the DELIVERED promotion until ALL
+     * fragments report delivered.
+     *
+     * Default implementation delegates to [send]: test fakes keep
+     * compiling, and the real implementation
+     * ([com.filestech.sms.data.sms.SmsSenderImpl]) overrides it with the
+     * fragment-indexed intents.
+     */
+    fun sendFragment(
+        localMessageId: Long,
+        destination: String,
+        text: String,
+        fragmentIndex: Int,
+        fragmentTotal: Int,
+        subId: Int? = null,
+        requestDeliveryReport: Boolean = false,
+        attempt: Int = 0,
+    ): Outcome<Unit> =
+        send(localMessageId, destination, text, subId, requestDeliveryReport, attempt)
 }

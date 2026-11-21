@@ -100,6 +100,11 @@ fun MessageEntity.toDomain(attachments: List<Attachment> = emptyList()): Message
     replyToMessageId = replyToMessageId,
     reactionEmoji = reactionEmoji,
     clientMessageId = clientMessageId,
+    // E2E (schema v22) — the lock on the timestamp line and the undecryptable
+    // placeholder both render from the domain model. `ciphertext` stays on the
+    // entity: it never reaches the UI or the sync layer.
+    encrypted = encrypted,
+    decryptFailed = decryptFailed,
 )
 
 /**

@@ -187,4 +187,51 @@ data class MessageEntity(
      */
     @kotlinx.serialization.Transient
     @ColumnInfo(name = "hub_message_id") val hubMessageId: Long? = null,
+    /**
+     * E2E (schema v22) — **this message was encrypted on the wire**
+     * (Relay-to-Relay 1:1 text). The UI shows a lock on its timestamp
+     * line; plain messages (MMS, attachments, the first plain message
+     * to a new contact) carry no lock. Threaded through to the domain
+     * [com.filestech.sms.domain.model.Message] like `reactionEmoji` —
+     * the thread renders from the domain model, so the flag must
+     * survive the mapping.
+     *
+     * `@Transient` for the backup, like `hub_message_id`: the flag
+     * describes this install's wire history, and a restored message
+     * simply shows no lock — the sessions are gone on a new install
+     * anyway, and the strict backup parser refuses unknown keys.
+     */
+    @kotlinx.serialization.Transient
+    @ColumnInfo(name = "encrypted", defaultValue = "0") val encrypted: Boolean = false,
+    /**
+     * E2E (schema v22) — **placeholder: the ciphertext arrived but
+     * could not be decrypted** (no session, reinstalled peer). The
+     * body is empty and the UI renders the "couldn't be decrypted"
+     * notice-style row instead of a bubble. Threaded through to the
+     * domain model with [encrypted].
+     *
+     * `@Transient` for the backup, like [encrypted]: a restored
+     * placeholder could never be retried (the ciphertext is not
+     * backed up either), so restoring it as a plain empty row is
+     * the honest outcome.
+     */
+    @kotlinx.serialization.Transient
+    @ColumnInfo(name = "decrypt_failed", defaultValue = "0") val decryptFailed: Boolean = false,
+    /**
+     * E2E (schema v22) — **the raw base64 ciphertext**, kept in two
+     * cases: on a `decrypt_failed` row (kept so a later session can
+     * retry after a re-probe re-establishes the exchange), and on an
+     * OUTGOING encrypted row (kept so a retry re-sends the EXACT bytes
+     * of the first attempt — same fragment set, same message id).
+     * NULL otherwise. Never synced (the desktop gets `decrypt_failed`,
+     * not the bytes), never in previews, search, or notifications, and
+     * never on the domain model — the retry paths read it via
+     * [com.filestech.sms.data.local.db.dao.MessageDao.findDecryptFailed]
+     * (incoming) and `findById` (outgoing).
+     *
+     * `@Transient` for the backup, like the flags: ciphertext from a
+     * dead install is undecryptable forever.
+     */
+    @kotlinx.serialization.Transient
+    @ColumnInfo(name = "ciphertext") val ciphertext: String? = null,
 )

@@ -5,6 +5,7 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.core.result.map
 import com.filestech.sms.domain.clientmode.ClientActionGateway
 import com.filestech.sms.domain.clientmode.NoOpClientActionGateway
+import com.filestech.sms.domain.e2e.E2ePayloadType
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.ReactionFormat
 import com.filestech.sms.domain.model.SendReport
@@ -61,6 +62,19 @@ import javax.inject.Inject
  * fenêtre 60 s) empêche le double-envoi en cas de tap répété sur le même emoji.
  *
  * Erreurs propagées sans transformation depuis [SendSmsUseCase].
+ *
+ * E2E (design §3.2) — a reaction in a 1:1 conversation to an ENCRYPTED
+ * peer rides the encrypted path instead of leaking as plain SMS: the
+ * formatted body (unchanged — the same tapback string a plain reaction
+ * would have contained) is encrypted with payload type REACTION, and
+ * the receiver decrypts and folds it onto its target exactly like a
+ * plain tapback. Only single-target reactions in a 1:1 conversation
+ * qualify: a group reaction, and a reaction to one member's message in
+ * a group (F2 — one target, but a group conversation), stay plain
+ * byte-identically, as does any reaction to a peer that is not
+ * ENCRYPTED. The local mirror is unchanged (`localMirrorBody = ""` —
+ * no bubble; the local badge is applied by the caller via
+ * `setReaction`). Client mode keeps its early return.
  */
 class SendReactionUseCase @Inject constructor(
     private val sendSms: SendSmsUseCase,
@@ -79,6 +93,13 @@ class SendReactionUseCase @Inject constructor(
     private data class ReactionRecipient(
         val message: com.filestech.sms.domain.model.Message,
         val targets: List<PhoneAddress>,
+        /**
+         * E2E — `true` when the message's conversation is 1:1 (exactly
+         * one address). Decided here, not from [targets]: an incoming
+         * group message has ONE target (F2 — its sender) but is still a
+         * group conversation, and group reactions never encrypt.
+         */
+        val isOneToOne: Boolean,
     )
 
     /**
@@ -95,8 +116,14 @@ class SendReactionUseCase @Inject constructor(
         if (!message.isOutgoing) {
             // F2 — the sender is `message.address`: for a 1-1 or group message, only
             // that sender is notified, never the other group participants.
+            // E2E — one target is not enough to encrypt: the conversation
+            // itself must be 1:1. A missing conversation fails OPEN to
+            // plain (the reaction still sends); it cannot fail the send,
+            // which never needed the conversation before.
+            val isOneToOne = conversationRepo.findById(message.conversationId)
+                ?.let { it.addresses.size == 1 } ?: false
             return validateSenderAddress(message.address.trim())
-                .map { target -> ReactionRecipient(message, listOf(target)) }
+                .map { target -> ReactionRecipient(message, listOf(target), isOneToOne) }
         }
         return resolveOutgoingRecipients(message)
     }
@@ -129,7 +156,9 @@ class SendReactionUseCase @Inject constructor(
                 is Outcome.Failure -> return validated
             }
         }
-        return Outcome.Success(ReactionRecipient(message, targets))
+        return Outcome.Success(
+            ReactionRecipient(message, targets, isOneToOne = conversation.addresses.size == 1),
+        )
     }
 
     /**
@@ -209,7 +238,7 @@ class SendReactionUseCase @Inject constructor(
 
         val resolved = resolveRecipient(messageId)
         if (resolved is Outcome.Failure) return resolved
-        val (message, targets) = (resolved as Outcome.Success).value
+        val (message, targets, isOneToOne) = (resolved as Outcome.Success).value
 
         // Own-message reactions always carry context: a bare emoji
         // (`EMOJI_ONLY`) would land on the recipient's phone with no
@@ -223,6 +252,16 @@ class SendReactionUseCase @Inject constructor(
             format
         }
 
+        // E2E (design §3.2) — a single target in a 1:1 conversation
+        // encrypts as a reaction payload when the peer is ENCRYPTED
+        // (the gate decides; a non-encrypted peer gets the plain send
+        // and a background probe, exactly as before). Anything else —
+        // group, multi-target — keeps TEXT and stays plain.
+        val e2ePayloadType = if (targets.size == 1 && isOneToOne) {
+            E2ePayloadType.REACTION
+        } else {
+            E2ePayloadType.TEXT
+        }
         return sendSms(
             recipients = targets,
             // v1.8.0 (bug 5 fix) — switch sur les formats de réaction. Le retrait
@@ -260,7 +299,11 @@ class SendReactionUseCase @Inject constructor(
             // already the right feedback). The wire body + `content://sms`
             // writeback still carry the full Tapback so the correspondent's app
             // (Relay, iMessage, Google Messages) can fold or render it.
+            // Unchanged for encrypted reactions: the mirror row stays
+            // empty (hidden, no bubble) and the fragments carry the
+            // ciphertext instead.
             localMirrorBody = "",
+            e2ePayloadType = e2ePayloadType,
         )
     }
 

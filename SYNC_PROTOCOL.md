@@ -169,6 +169,24 @@ authoritative for display), `last_message_at`,
 `pinned_message_at`. Not synced: `draft`, bubble color, avatar.
 Vault conversations never leave the phone, by design.
 
+E2E adds the optional `encrypted` (CONVERSATION + MESSAGE) and
+`decrypt_failed` (MESSAGE) — fields, not frame types, so no new
+frame is needed and the channel allowlist is untouched. All three
+default to `false` and are omitted on the wire while false (the
+encoder drops defaults), so a frame from an older hub still parses
+on a new client and a new frame still parses on an older client
+(unknown keys are ignored). `encrypted` on a conversation is true
+when the 1:1 peer's state is ENCRYPTED on the hub (groups are never
+encrypted in v1); when a peer's state flips to ENCRYPTED the hub
+pushes a `conversation_updated` carrying the new flag, so the
+desktop re-renders the row badge + composer placeholder without a
+re-sync. `encrypted` on a message is true when it was encrypted on
+the wire; `decrypt_failed` marks the placeholder row for a message
+whose ciphertext arrived but could not be decrypted (the client
+renders "This message couldn't be decrypted." instead of a bubble).
+The raw ciphertext is NEVER synced — the `ciphertext` column stays
+on the hub; linked devices get the flags, not the bytes.
+
 MESSAGE: `id`, `conversation_id`, `address` (the sender, not the
 group), `body`, `type` (`sms` | `mms`), `direction` (`incoming` |
 `outgoing`), `date`, `date_sent`, `read`, `starred`, `status`

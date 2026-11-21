@@ -1,0 +1,15 @@
+<!-- Kristin's icon (lock-encrypted.svg, 9x11 viewBox): the padlock glyph for
+     end-to-end encrypted messages — the avatar lock badge, the timestamp lock
+     and the details-panel encryption row. The glyph is white in the source;
+     the tint is applied at the Icon() call site from the theme, so it follows
+     light/dark mode (white on the brand-blue badge disc, the bubble meta
+     colour on a timestamp line). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="9dp"
+    android:height="11dp"
+    android:viewportWidth="9"
+    android:viewportHeight="11">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.6 4.03333H6.23333V2.2C6.23333 1.61652 6.00155 1.05695 5.58897 0.644365C5.17639 0.231785 4.61681 0 4.03333 0C3.44986 0 2.89028 0.231785 2.4777 0.644365C2.06512 1.05695 1.83333 1.61652 1.83333 2.2V4.03333H1.46667C1.07781 4.03376 0.705007 4.18842 0.430046 4.46338C0.155084 4.73834 0.000424613 5.11115 0 5.5V9.53333C0.000424613 9.92219 0.155084 10.295 0.430046 10.57C0.705007 10.8449 1.07781 10.9996 1.46667 11H6.6C6.98885 10.9996 7.36166 10.8449 7.63662 10.57C7.91158 10.295 8.06624 9.92219 8.06667 9.53333V5.5C8.06624 5.11115 7.91158 4.73834 7.63662 4.46338C7.36166 4.18842 6.98885 4.03376 6.6 4.03333ZM5.5 4.03333H2.56667V2.2C2.56667 1.81102 2.72119 1.43796 2.99624 1.16291C3.2713 0.887857 3.64435 0.733333 4.03333 0.733333C4.42232 0.733333 4.79537 0.887857 5.07042 1.16291C5.34548 1.43796 5.5 1.81102 5.5 2.2V4.03333Z" />
+</vector>

@@ -1,0 +1,176 @@
+package com.filestech.sms.e2e
+
+import com.filestech.sms.data.local.db.dao.ConversationDao
+import com.filestech.sms.di.ApplicationScope
+import com.filestech.sms.domain.model.PhoneAddress
+import com.filestech.sms.domain.repository.BlockedNumberRepository
+import com.filestech.sms.domain.settings.AppSettingsSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import timber.log.Timber
+import javax.inject.Inject
+import javax.inject.Singleton
+import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
+
+/**
+ * Probe orchestration (design §2.3–§2.4): the "automatic" half of
+ * "Relay to Relay auto-encrypts".
+ *
+ * A probe is a 70-byte data SMS carrying our identity keys. It goes out
+ * on two triggers — opening a 1:1 thread ([onThreadOpened]) and sending
+ * a 1:1 message ([probeForSend]) — for a peer in state UNKNOWN,
+ * PROBING, or NOT_RELAY, gated by the probe budget (at most 3 attempts
+ * per 30 days, at least 24 hours apart, owned by
+ * [E2ePeerRepository]) and by eligibility ([E2eProbePolicy]: 1:1 only,
+ * real phone number, not blocked).
+ *
+ * On the state gate: the design's trigger text names UNKNOWN /
+ * NOT_RELAY, but the budget only makes sense if a PROBING peer with
+ * attempts left is re-probed (the repository always records a probe as
+ * PROBING, so a strict UNKNOWN/NOT_RELAY gate would make attempts 2–3
+ * unreachable and the 3-attempt budget dead code). The state machine
+ * ([E2ePeerStateMachine.canProbe]) is the authority here: every
+ * non-ENCRYPTED state is probeable within the budget, and the 3rd
+ * attempt flips the peer to NOT_RELAY until the window elapses.
+ *
+ * The decrypt-failure re-probe ([reprobeAfterDecryptFailure]) is the
+ * one path that probes an ENCRYPTED peer: an undecryptable message from
+ * a known contact usually means they reinstalled, and the re-probe
+ * re-establishes the session (design §3.5, §4.4). It respects the same
+ * budget — the state exclusion is the only thing lifted.
+ *
+ * All entry points are fire-and-forget (non-suspend, own scope): a
+ * probe must never delay opening a thread or sending a message. The
+ * suspend cores ([probeConversation], [probeAddress]) are the testable
+ * surface. Probes serialize on one mutex: a thread-open racing a send
+ * must not spend two attempts on the same peer.
+ *
+ * The account manager is taken lazily: resolving it provisions
+ * [E2eCrypto] (the first native call loads the crypto library, and
+ * the Account load that follows does Keystore + database I/O), and
+ * this manager is injected into the thread ViewModel — it must be
+ * cheap to construct on the main thread. Resolution happens inside the
+ * background probe coroutine.
+ */
+@Singleton
+class E2eProbeManager @Inject constructor(
+    private val conversationDao: ConversationDao,
+    private val blockedRepo: BlockedNumberRepository,
+    private val peers: E2ePeerRepository,
+    private val accountManager: dagger.Lazy<E2eAccountManager>,
+    private val dataSmsSender: E2eDataSmsSender,
+    private val settings: AppSettingsSource,
+    @ApplicationScope private val scope: CoroutineScope,
+) {
+    private val probeMutex = Mutex()
+
+    /**
+     * Thread-open trigger (design §2.4): opening a 1:1 thread is intent
+     * to talk, so the session is usually live by the time the user hits
+     * send. Called by the thread ViewModel; non-suspend by contract.
+     */
+    fun onThreadOpened(conversationId: Long) {
+        scope.launch {
+            runCatching { probeConversation(conversationId) }
+                .onFailure { Timber.w(it, "E2E: probe on thread open failed") }
+        }
+    }
+
+    /**
+     * Send-path trigger (design §2.4): covers sends that never opened
+     * the thread (notification reply, desktop, scheduled). Called by
+     * the send hook when the peer is not ENCRYPTED; non-suspend.
+     */
+    fun probeForSend(address: String, subId: Int?) {
+        scope.launch {
+            runCatching { probeAddress(address, subId) }
+                .onFailure { Timber.w(it, "E2E: probe on send failed") }
+        }
+    }
+
+    /**
+     * Decrypt-failure re-probe (design §3.5): an undecryptable message
+     * from a known contact usually means they reinstalled. Probes even
+     * an ENCRYPTED peer; the budget still applies.
+     */
+    fun reprobeAfterDecryptFailure(address: String, subId: Int?) {
+        scope.launch {
+            runCatching { probeAddress(address, subId, allowEncrypted = true) }
+                .onFailure { Timber.w(it, "E2E: re-probe after decrypt failure failed") }
+        }
+    }
+
+    /**
+     * Probes the single address of a conversation, if probeable.
+     * Returns `true` when a probe data SMS went out.
+     */
+    suspend fun probeConversation(
+        conversationId: Long,
+        now: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val conversation = conversationDao.findById(conversationId) ?: return false
+        val addresses = PhoneAddress.list(conversation.addressesCsv).map { it.raw }
+        if (addresses.size != 1) return false
+        val address = addresses.first()
+        // The probe leaves on the same subscription the thread's sends
+        // use (design §11.1): the default SMS subscription from
+        // settings, `null` (system default) when unreadable.
+        val subId = runCatching { settings.hydratedOrNull()?.sending?.defaultSubId }
+            .getOrNull()
+        return probeAddress(address, subId, now = now)
+    }
+
+    /**
+     * Probes one address, if probeable. Returns `true` when a probe data
+     * SMS went out. [allowEncrypted] lifts the ENCRYPTED exclusion for
+     * the decrypt-failure re-probe only.
+     */
+    suspend fun probeAddress(
+        address: String,
+        subId: Int?,
+        allowEncrypted: Boolean = false,
+        now: Long = System.currentTimeMillis(),
+    ): Boolean = probeMutex.withLock {
+        val state = peers.state(address)
+        if (!isProbeable(address, state, allowEncrypted, now)) return@withLock false
+        // Lazy account creation: the first probe sent (or received) is
+        // the first E2E use, and the identity is created here — users
+        // who never use E2E pay nothing (design §4.1).
+        val keys = accountManager.get().ensureAccount()
+        val probe = E2eHandshake.encodeProbe(keys.curve25519, keys.ed25519)
+        val sent = dataSmsSender.sendDataMessage(
+            address = address,
+            subId = subId,
+            port = E2eHandshake.E2E_DATA_SMS_PORT,
+            data = probe,
+        )
+        // A failed send must not consume budget: record only after the
+        // radio accepted the probe.
+        if (!sent) return@withLock false
+        peers.recordProbeSent(address, now)
+        // The 3rd unanswered attempt exhausts the budget: the peer
+        // becomes NOT_RELAY until the window elapses (state machine
+        // `onProbeSent`). Re-read: the repository owns the counting.
+        val attempts = peers.getPeer(address)?.probeAttempts ?: 0
+        if (attempts >= E2ePeerRepository.MAX_PROBE_ATTEMPTS) {
+            peers.setState(address, StoredPeerState.NOT_RELAY, now)
+        }
+        Timber.i("E2E: probe sent (state=%s, attempts=%d)", state, attempts)
+        true
+    }
+
+    /** Eligibility + state + budget, in one place (see the class KDoc). */
+    private suspend fun isProbeable(
+        address: String,
+        state: StoredPeerState,
+        allowEncrypted: Boolean,
+        now: Long,
+    ): Boolean {
+        if (!E2eProbePolicy.isProbeableAddress(address)) return false
+        if (blockedRepo.isBlocked(address)) return false
+        if (state == StoredPeerState.ENCRYPTED && !allowEncrypted) return false
+        return peers.canProbe(address, now)
+    }
+}

@@ -335,6 +335,22 @@
             </intent-filter>
         </receiver>
 
+        <!-- 1b) E2E handshake data SMS (probes + bundle replies, port 47832).
+             Data SMS are addressed by port, not by the default-SMS-app role:
+             any app may receive them on its own port. -->
+        <receiver
+            android:name=".system.receiver.E2eDataSmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.intent.action.DATA_SMS_RECEIVED" />
+                <data
+                    android:host="localhost"
+                    android:port="47832"
+                    android:scheme="sms" />
+            </intent-filter>
+        </receiver>
+
         <!-- 2) MMS WAP_PUSH receiver -->
         <receiver
             android:name=".system.receiver.MmsWapPushReceiver"

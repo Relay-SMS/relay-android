@@ -54,6 +54,17 @@ data class Conversation(
      * preview. Cleared when the user replies in the thread.
      */
     val stickyCategory: MessageCategory? = null,
+    /**
+     * E2E — `true` when the conversation's latest visible message is an
+     * undecryptable placeholder (`decrypt_failed = 1`). Computed at read
+     * time by `ConversationRepositoryImpl` from the messages table, never
+     * persisted: the placeholder's stored body is empty, so the list
+     * preview would otherwise read as blank (or fall back to the
+     * attachment label) — the row renders "This message couldn't be
+     * decrypted." instead. Like [blocked], only the list streams set
+     * it; one-shot reads keep the default `false`.
+     */
+    val lastMessageDecryptFailed: Boolean = false,
 ) {
     val isGroup: Boolean get() = addresses.size > 1
 

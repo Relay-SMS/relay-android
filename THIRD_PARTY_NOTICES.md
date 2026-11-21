@@ -72,6 +72,8 @@ the library publishes — not from memory.
 | CameraX (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`) | 1.6.2 | Google / AOSP | Apache 2.0 |
 | ZXing core (`com.google.zxing:core`) | 3.5.4 | ZXing authors | Apache 2.0 |
 | BouncyCastle (`bcprov-jdk18on`, `bcpkix-jdk18on`) | 1.87 | Legion of the Bouncy Castle Inc. | MIT |
+| Trixnity vodozemac bindings (`de.connect2x.trixnity:trixnity-vodozemac-android`) | 5.11.0 | connect2x GmbH / Trixnity contributors | Apache 2.0 |
+| vodozemac (embedded native library, via `trixnity-vodozemac-binaries-android`) | 0.11.2 | Matrix.org Foundation | Apache 2.0 |
 | **SQLCipher for Android** | 4.19.0 | Zetetic LLC | **BSD-3-Clause** — full text below |
 
 OkHttp is present because Coil depends on it. SMS Relay uses Coil to display contact photos and
@@ -95,6 +97,17 @@ decodes the pairing code on-device, and BouncyCastle verifies Ed25519 signatures
 fallback TLS certificate. None of them contacts any server or collects usage data; CameraX is a
 local camera wrapper, not a service, and ZXing is used instead of ML Kit precisely because it
 needs no Play Services.
+
+Trixnity vodozemac is new with end-to-end encryption (Relay-to-Relay 1:1 texts): it is the
+Kotlin binding for vodozemac, Matrix's Olm double-ratchet library (audited by Least Authority
+in 2022), and it is pure cryptography — no network use, no telemetry. The binding's only
+transitive dependencies are the Kotlin standard library and the binaries AAR carrying the
+compiled `libvodozemac.so` per ABI (arm64-v8a, armeabi-v7a, x86, x86_64). SHA-256 of the AARs
+as downloaded from Maven Central (2026-11-20): bindings
+`f6bb3fc7a23853d063de5c6bd8a306c2dd82b851867bd6c46035a845f018437e`, binaries
+`1fbf2a832e5b0d3040e8c91bfb0717b5cd218e3254383f99cb50f1e5e34b5c80`. The embedded vodozemac
+must stay at 0.10.0 or newer (older versions carry the flaws Soatok reported in February 2026,
+fixed in 0.10.0).
 
 ## Licence texts
 

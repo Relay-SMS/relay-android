@@ -390,6 +390,13 @@ dependencies {
     implementation(libs.bouncycastle.prov)
     implementation(libs.bouncycastle.pkix)
 
+    // E2E encryption (Relay-to-Relay 1:1 texts): vodozemac via Trixnity.
+    // Only VodozemacCrypto (com.filestech.sms.e2e) imports these types;
+    // everything else talks to the E2eCrypto interface. The artifact
+    // pulls in only kotlin-stdlib + the native-binaries AAR — no Matrix
+    // client, no networking, no telemetry.
+    implementation(libs.trixnity.vodozemac.android)
+
     // Logging
     implementation(libs.timber)
 

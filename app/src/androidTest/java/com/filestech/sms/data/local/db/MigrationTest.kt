@@ -1079,4 +1079,136 @@ class MigrationTest {
             assertThat(c.getInt(0)).isEqualTo(1)
         }
     }
+
+    /**
+     * E2E encryption phase 1 — 21 → 22 : cinq tables neuves (`e2e_account`,
+     * `e2e_peers`, `e2e_sessions`, `e2e_fragments`, `e2e_notices`), qui naissent
+     * vides, + trois colonnes sur `messages` (`encrypted`, `decrypt_failed`,
+     * `ciphertext`). Strictement additive : les lignes existantes projettent les
+     * défauts (non chiffré, déchiffrement non échoué, pas de chiffré), et les
+     * défauts SQL des tables neuves (`verified`/`probe_attempts`/`is_current` à 0)
+     * sont vérifiés, ainsi que l'unicité (adresse, session) et la clé composite
+     * des fragments.
+     *
+     * Nécessite `22.json` dans les assets (émis par Room à la compilation).
+     */
+    @Test
+    fun migrate21To22_createsE2eTablesAndMessageColumns_emptyWithDefaultsAndUniques() {
+        helper.createDatabase(TEST_DB, 21).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO conversations
+                    (id, thread_id, addresses_csv, display_name, last_message_at,
+                     last_message_preview, unread_count, pinned, archived, muted, in_vault)
+                VALUES (1, 7, '+33600000001', 'Alice', 1700000000000, 'a', 0, 0, 0, 0, 0)
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO messages
+                    (id, conversation_id, telephony_uri, address, body, type, direction,
+                     date, date_sent, read, starred, status, attachments_count)
+                VALUES (1, 1, NULL, '+33600000001', 'salut', 0, 0,
+                        1700000000000, NULL, 1, 0, 4, 0)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 22, true, Migrations.MIGRATION_21_22)
+
+        // La ligne existante ne bouge pas ; les nouvelles colonnes projettent les défauts.
+        db.query(
+            "SELECT body, encrypted, decrypt_failed, ciphertext FROM messages WHERE id = 1",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("salut")
+            assertThat(c.getInt(1)).isEqualTo(0)
+            assertThat(c.getInt(2)).isEqualTo(0)
+            assertThat(c.isNull(3)).isTrue()
+        }
+
+        // Les cinq tables neuves existent, naissent vides, et l'index unique est là.
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN " +
+                "('e2e_account', 'e2e_peers', 'e2e_sessions', 'e2e_fragments', 'e2e_notices')",
+        ).use { c -> assertThat(c.count).isEqualTo(5) }
+        db.query("SELECT COUNT(*) FROM e2e_peers").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name = " +
+                "'index_e2e_sessions_address_session_id'",
+        ).use { c -> assertThat(c.count).isEqualTo(1) }
+
+        // Les défauts SQL s'appliquent aux colonnes omises.
+        db.execSQL("INSERT INTO e2e_account (id, pickle) VALUES (1, 'pickle-1')")
+        db.execSQL(
+            "INSERT INTO e2e_peers (address, state, updated_at) " +
+                "VALUES ('+33600000001', 'UNKNOWN', 1700000000000)",
+        )
+        db.query(
+            "SELECT verified, probe_attempts, last_bundle_reply_at FROM e2e_peers " +
+                "WHERE address = '+33600000001'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+            assertThat(c.getInt(1)).isEqualTo(0)
+            assertThat(c.isNull(2)).isTrue()
+        }
+        db.execSQL(
+            "INSERT INTO e2e_sessions (address, session_id, pickle, created_at, last_used_at) " +
+                "VALUES ('+33600000001', 's1', 'pickle-s1', 1700000000000, 1700000000000)",
+        )
+        db.query(
+            "SELECT is_current FROM e2e_sessions WHERE session_id = 's1'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+
+        // L'index UNIQUE tient sur (adresse, session) : un doublon est refusé.
+        val doublonSession = runCatching {
+            db.execSQL(
+                "INSERT INTO e2e_sessions (address, session_id, pickle, created_at, last_used_at) " +
+                    "VALUES ('+33600000001', 's1', 'pickle-s1-bis', 1700000000000, 1700000000000)",
+            )
+        }
+        assertThat(doublonSession.isFailure).isTrue()
+        assertThat(doublonSession.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
+        // Contrôle positif : une autre session pour le même correspondant passe.
+        db.execSQL(
+            "INSERT INTO e2e_sessions (address, session_id, pickle, created_at, last_used_at) " +
+                "VALUES ('+33600000001', 's2', 'pickle-s2', 1700000000000, 1700000000000)",
+        )
+
+        // La clé composite des fragments refuse un doublon (expéditeur, msg, index).
+        db.execSQL(
+            "INSERT INTO e2e_fragments (sender, msg_id, idx, total, chunk, received_at) " +
+                "VALUES ('+33600000001', 'ab12cd', 0, 2, 'QUJD', 1700000000000)",
+        )
+        val doublonFragment = runCatching {
+            db.execSQL(
+                "INSERT INTO e2e_fragments (sender, msg_id, idx, total, chunk, received_at) " +
+                    "VALUES ('+33600000001', 'ab12cd', 0, 2, 'QUJD', 1700000000000)",
+            )
+        }
+        assertThat(doublonFragment.isFailure).isTrue()
+        assertThat(doublonFragment.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
+        // Contrôle positif : l'index suivant du même ensemble passe.
+        db.execSQL(
+            "INSERT INTO e2e_fragments (sender, msg_id, idx, total, chunk, received_at) " +
+                "VALUES ('+33600000001', 'ab12cd', 1, 2, 'REVG', 1700000000000)",
+        )
+
+        // Les avis s'insèrent et se relisent.
+        db.execSQL(
+            "INSERT INTO e2e_notices (conversation_id, kind, date) " +
+                "VALUES (1, 'ACTIVATED', 1700000000000)",
+        )
+        db.query("SELECT kind FROM e2e_notices WHERE conversation_id = 1").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("ACTIVATED")
+        }
+    }
 }

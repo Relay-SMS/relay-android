@@ -2,6 +2,7 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.SendErrorCode
@@ -21,6 +22,12 @@ import javax.inject.Inject
  * produce a duplicate SMS at the recipient. We log a clear warning so the dev surfaces this
  * in telemetry; the UI layer is expected to display a confirmation dialog on those retries
  * (covered in v1.1 UX polish, the data side is already wired here).
+ *
+ * E2E (design §3.4) — retrying an encrypted message re-sends the FULL
+ * fragment set with the SAME message id (the receiver dedupes by
+ * sender + id + index): the gate re-sends the stored ciphertext bytes
+ * when the row still holds them, so the retry is byte-identical to the
+ * first attempt. A failed encrypted message is NEVER retried in plain.
  */
 class RetrySendUseCase @Inject constructor(
     private val conversationRepo: ConversationRepository,
@@ -28,6 +35,12 @@ class RetrySendUseCase @Inject constructor(
     private val mirror: OutgoingMessageMirror,
     // v1.27.2 (audit de cohérence 2026-08-04) — cf. la garde de liste noire ci-dessous.
     private val blockedRepo: BlockedNumberRepository,
+    /**
+     * E2E send gate. Default [E2eSendGate.NoOp] keeps the existing
+     * tests compiling untouched; Hilt always provides the real gate
+     * (bound in `E2eModule`).
+     */
+    private val e2eGate: E2eSendGate = E2eSendGate.NoOp,
 ) {
     suspend operator fun invoke(messageId: Long): Outcome<Unit> {
         val msg = conversationRepo.findMessageForResend(messageId)
@@ -93,7 +106,24 @@ class RetrySendUseCase @Inject constructor(
     }
 
     private suspend fun dispatcher(msg: Message, messageId: Long, attempt: Int): Outcome<Unit> {
-        return when (val r = sender.send(messageId, msg.address, msg.body, msg.subId, attempt = attempt)) {
+        // E2E — the mirror holds the PLAINTEXT for an encrypted message;
+        // the gate re-sends the stored ciphertext bytes (same fragment
+        // set, same id) and never falls back to plain. A plain message
+        // keeps the historical path byte-identically.
+        val result = if (msg.encrypted) {
+            e2eGate.sendEncrypted(
+                localMessageId = messageId,
+                address = msg.address,
+                body = msg.body,
+                date = msg.date,
+                subId = msg.subId,
+                requestDeliveryReport = false,
+                attempt = attempt,
+            )
+        } else {
+            sender.send(messageId, msg.address, msg.body, msg.subId, attempt = attempt)
+        }
+        return when (result) {
             is Outcome.Success -> Outcome.Success(Unit)
             is Outcome.Failure -> {
                 // `attempt` explicite : cet échec-ci est bien celui de la tentative qu'on vient
@@ -104,7 +134,7 @@ class RetrySendUseCase @Inject constructor(
                     errorCode = SendErrorCode.SYNCHRONOUS,
                     attempt = attempt,
                 )
-                r
+                result
             }
         }
     }

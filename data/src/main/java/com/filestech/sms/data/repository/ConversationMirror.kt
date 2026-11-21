@@ -119,6 +119,13 @@ class ConversationMirror @Inject constructor(
         date: Long,
         telephonyUri: String?,
         subId: Int? = null,
+        /**
+         * E2E (schema v22) — `true` when the body is the DECRYPTED text of
+         * an encrypted message: the row carries `encrypted = 1` (the
+         * ciphertext fragments themselves are never inserted as messages).
+         * Défaut `false` = SMS en clair, inchangé.
+         */
+        encrypted: Boolean = false,
     ): Long = withContext(io) {
         database.withTransaction {
             val convId = ensureConversation(listOf(PhoneAddress.of(address)))
@@ -138,6 +145,7 @@ class ConversationMirror @Inject constructor(
                 subId = subId,
                 scheduledAt = null,
                 attachmentsCount = 0,
+                encrypted = encrypted,
             )
             // v1.26.1 (audit M11) — on distingue une INSERTION RÉELLE d'un conflit ignoré.
             //
@@ -752,6 +760,12 @@ class ConversationMirror @Inject constructor(
         // Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil lié, écrite sur la
         // ligne AVANT la remise au radio (c'est ce qui rend la dédup durable).
         clientMessageId: String?,
+        /**
+         * E2E (schema v22) — `true` quand le SMS part chiffré : la ligne
+         * miroir porte le clair avec `encrypted = 1`. (No default here:
+         * an override may not declare one — the interface provides it.)
+         */
+        encrypted: Boolean,
     ): Long = withContext(io) {
         val mirrorBody = localMirrorBody ?: body
         database.withTransaction {
@@ -774,6 +788,7 @@ class ConversationMirror @Inject constructor(
                 attachmentsCount = 0,
                 replyToMessageId = replyToMessageId,
                 clientMessageId = clientMessageId,
+                encrypted = encrypted,
                 // v1.28.4 — la sentinelle de réaction sortante se DÉCLARE, elle n'est plus devinée.
                 hidden = localMirrorBody != null && localMirrorBody.isEmpty(),
             )
@@ -1407,6 +1422,17 @@ class ConversationMirror @Inject constructor(
         // A local function (not a member): the importer is the only caller,
         // and this class is at its Detekt function-count limit.
         suspend fun importSmsThreadGroup(systemThreadId: Long, group: List<MessageEntity>) {
+            // E2E (design §3.5) — ciphertext fragments in the system store
+            // are NOT messages: they are the wire form of an encrypted
+            // message, reassembled live by the receive path. Skipping them
+            // here keeps a re-import (fresh install, resync) from
+            // surfacing `RLY1:` gibberish as text bubbles — and from
+            // letting a fragment become the conversation preview via
+            // `last` below. An all-fragment group creates no conversation
+            // at all. The literal mirrors `E2eWireFormat.MAGIC`, which
+            // lives in `:app` and is unreachable from `:data`.
+            val rows = group.filterNot { it.body.startsWith(E2E_FRAGMENT_PREFIX) }
+            if (rows.isEmpty()) return
             // Local: only this importer folds rows. Decodes the body, and on a
             // Tapback match applies it to its target and writes the sentinel —
             // the text row itself is never inserted. Returns `true` when the row
@@ -1451,12 +1477,12 @@ class ConversationMirror @Inject constructor(
                 return true
             }
 
-            val first = group.first()
+            val first = rows.first()
             val convId = ensureConversationByThread(
                 systemThreadId = systemThreadId,
                 addresses = listOf(PhoneAddress.of(first.address)),
             )
-            val withConv = group.map { it.copy(conversationId = convId) }
+            val withConv = rows.map { it.copy(conversationId = convId) }
             val tapbackRows = ArrayList<MessageEntity>()
             val plainRows = ArrayList<MessageEntity>(withConv.size)
             for (row in withConv) {
@@ -2147,7 +2173,10 @@ class ConversationMirror @Inject constructor(
      * `message_new` / `message_updated`). Found by hub id; the update
      * path patches only the live-mutable fields (status, read,
      * starred, reaction, reply target, error code) — body, type,
-     * direction, date and address never change after a sync.
+     * direction, date and address never change after a sync. The E2E
+     * flags (`encrypted`, `decrypt_failed`) ride the update too: they
+     * are immutable in practice, but a re-sync re-sends the message
+     * and the stored row must agree with the frame.
      *
      * When the conversation is unknown (a live message beat its
      * `conversation_updated`, or a gap-fill reply for a pruned
@@ -2179,6 +2208,8 @@ class ConversationMirror @Inject constructor(
                             errorCode = data.errorCode,
                             replyToMessageId = replyLocalId ?: existing.replyToMessageId,
                             clientMessageId = data.clientMessageId ?: existing.clientMessageId,
+                            encrypted = data.encrypted,
+                            decryptFailed = data.decryptFailed,
                         ),
                     )
                     upsertSyncedAttachments(attachmentDao, existing.id, data.attachments)
@@ -2223,6 +2254,11 @@ class ConversationMirror @Inject constructor(
                                 replyToMessageId = keyReplyLocalId ?: optimistic.replyToMessageId,
                                 address = data.address,
                                 attachmentsCount = data.attachments.size,
+                                // The hub encrypted our send (the
+                                // optimistic row was written plain) —
+                                // the echo carries the real flags.
+                                encrypted = data.encrypted,
+                                decryptFailed = data.decryptFailed,
                             ),
                         )
                         upsertSyncedAttachments(attachmentDao, optimistic.id, data.attachments)
@@ -2278,6 +2314,8 @@ class ConversationMirror @Inject constructor(
                         reactionEmoji = data.reaction,
                         clientMessageId = data.clientMessageId,
                         hubMessageId = data.hubMessageId,
+                        encrypted = data.encrypted,
+                        decryptFailed = data.decryptFailed,
                     ),
                 )
                 if (localId == -1L) {
@@ -2421,6 +2459,15 @@ class ConversationMirror @Inject constructor(
          * que la réaction ne peut pas être ce à quoi on a réagi.
          */
         const val REACTION_DATE_TOLERANCE_MS: Long = 60_000L
+
+        /**
+         * E2E (design §3.2) — magic prefix of a ciphertext fragment SMS.
+         * Mirrors `E2eWireFormat.MAGIC`, which lives in `:app` and is
+         * unreachable from `:data`; `bulkImportFromTelephony` skips rows
+         * starting with it. If the wire format ever changes its magic,
+         * this literal must change with it.
+         */
+        const val E2E_FRAGMENT_PREFIX = "RLY1:"
     }
 }
 

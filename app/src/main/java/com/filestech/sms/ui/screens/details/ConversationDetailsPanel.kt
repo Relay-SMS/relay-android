@@ -58,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,8 +69,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -81,10 +84,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Note
@@ -121,6 +127,12 @@ data class ConversationDetailsActions(
     val onRename: (() -> Unit)?,
     val onCreateContact: () -> Unit,
     val onAddContact: () -> Unit,
+    /**
+     * Group member tap — the ViewModel looks the number up, then
+     * opens the contact to edit it if saved, or a blank form
+     * prefilled with the number if not.
+     */
+    val onMemberClick: (String) -> Unit,
     val onMoveVault: (() -> Unit)?,
     /** Sets the conversation avatar (`null` = back to the default). */
     val onSetAvatar: (String?) -> Unit,
@@ -179,12 +191,24 @@ fun ConversationDetailsPanel(
     memberPhotos: Map<String, String>,
     /** 1:1 thread, no saved contact, hub mode — the Add to contacts row. */
     showAddToContacts: Boolean,
+    /** 1:1 thread, saved contact, hub mode — the Edit contact row. */
+    showEditContact: Boolean,
     canSchedule: Boolean,
     canExport: Boolean,
     isExporting: Boolean,
     actions: ConversationDetailsActions,
     onDismiss: () -> Unit,
     mediaViewModel: MediaGalleryViewModel = hiltViewModel(),
+    /**
+     * E2E — this 1:1 peer's encryption state; null = no encryption
+     * row (groups, and client mode — a linked device holds no
+     * identity keys, so it never probes or shows its own state).
+     */
+    e2ePeerState: E2ePeerState? = null,
+    /** E2E — the peer is marked verified (local flag). */
+    e2eVerified: Boolean = false,
+    /** E2E — opens the safety-number sheet for this thread's peer. */
+    onOpenE2eVerification: (() -> Unit)? = null,
 ) {
     DetailsPanelShell(onDismiss = onDismiss) { onClose ->
         DetailsPanelContent(
@@ -196,12 +220,16 @@ fun ConversationDetailsPanel(
             memberNames = memberNames,
             memberPhotos = memberPhotos,
             showAddToContacts = showAddToContacts,
+            showEditContact = showEditContact,
             canSchedule = canSchedule,
             canExport = canExport,
             isExporting = isExporting,
             actions = actions,
             onClose = onClose,
             mediaViewModel = mediaViewModel,
+            e2ePeerState = e2ePeerState,
+            e2eVerified = e2eVerified,
+            onOpenE2eVerification = onOpenE2eVerification,
         )
     }
 }
@@ -282,6 +310,27 @@ private fun DetailsPanelShell(
             decorFitsSystemWindows = false,
         ),
     ) {
+        // The dialog owns its own window, so the activity's bar
+        // treatment (Theme.kt) never reaches it — without this the
+        // status and navigation bars stay dark in light mode. Same
+        // treatment as the activity window: transparent bars, dark
+        // icons in light mode, light icons in dark mode (judged by
+        // the surface luminance, like the group background does).
+        val dialogView = LocalView.current
+        val dialogDark = with(MaterialTheme.colorScheme.surface) {
+            0.2126f * red + 0.7152f * green + 0.0722f * blue
+        } < 0.5f
+        SideEffect {
+            val window = (dialogView.parent as? DialogWindowProvider)?.window
+                ?: return@SideEffect
+            @Suppress("DEPRECATION")
+            window.statusBarColor = Color.Transparent.toArgb()
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = Color.Transparent.toArgb()
+            val controller = WindowCompat.getInsetsController(window, dialogView)
+            controller.isAppearanceLightStatusBars = !dialogDark
+            controller.isAppearanceLightNavigationBars = !dialogDark
+        }
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.CenterEnd,
@@ -319,12 +368,19 @@ private fun DetailsPanelContent(
     memberNames: Map<String, String>,
     memberPhotos: Map<String, String>,
     showAddToContacts: Boolean,
+    showEditContact: Boolean,
     canSchedule: Boolean,
     canExport: Boolean,
     isExporting: Boolean,
     actions: ConversationDetailsActions,
     onClose: () -> Unit,
     mediaViewModel: MediaGalleryViewModel,
+    /** E2E — this 1:1 peer's encryption state; null = no encryption row. */
+    e2ePeerState: E2ePeerState? = null,
+    /** E2E — the peer is marked verified (local flag). */
+    e2eVerified: Boolean = false,
+    /** E2E — opens the safety-number sheet for this thread's peer. */
+    onOpenE2eVerification: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -430,10 +486,14 @@ private fun DetailsPanelContent(
                 DetailsActionRows(
                     conversation = conversation,
                     showAddToContacts = showAddToContacts,
+                    showEditContact = showEditContact,
                     canSchedule = canSchedule,
                     canExport = canExport,
                     isExporting = isExporting,
                     actions = actions,
+                    e2ePeerState = e2ePeerState,
+                    e2eVerified = e2eVerified,
+                    onOpenE2eVerification = onOpenE2eVerification,
                 )
             }
             if (conversation.isGroup) {
@@ -442,6 +502,7 @@ private fun DetailsPanelContent(
                         conversation = conversation,
                         memberNames = memberNames,
                         memberPhotos = memberPhotos,
+                        onMemberClick = actions.onMemberClick,
                     )
                 }
             }
@@ -1046,18 +1107,98 @@ private fun groupMemberAvatars(
     }
 }
 
+/**
+ * E2E — the encryption row, first in the action rows (design §7.2).
+ * 1:1 only — the caller passes no state for groups and client
+ * mode, so this never renders there.
+ *
+ * ENCRYPTED shows the closed lock glyph and taps open the
+ * safety-number sheet ("Tap to verify NAME's safety number", or
+ * "Verified ✓" once marked); PROBING reads "Encryption / Setting
+ * up encryption…"; UNKNOWN and NOT_RELAY read "Not encrypted"
+ * with the open lock glyph and the matching subtitle. The
+ * non-encrypted states are status, not tap targets.
+ */
+@Composable
+private fun E2eDetailsEncryptionRow(
+    peerState: E2ePeerState,
+    verified: Boolean,
+    contactName: String,
+    onOpenVerification: (() -> Unit)?,
+) {
+    val cs = MaterialTheme.colorScheme
+    val encrypted = peerState == E2ePeerState.ENCRYPTED
+    val title = when (peerState) {
+        E2ePeerState.ENCRYPTED -> stringResource(R.string.e2e_details_encrypted)
+        E2ePeerState.PROBING -> stringResource(R.string.e2e_encryption)
+        E2ePeerState.UNKNOWN, E2ePeerState.NOT_RELAY ->
+            stringResource(R.string.e2e_details_not_encrypted)
+    }
+    val subtitle = when (peerState) {
+        E2ePeerState.ENCRYPTED -> if (verified) {
+            stringResource(R.string.e2e_details_verified)
+        } else {
+            stringResource(R.string.e2e_details_verify_tap, contactName)
+        }
+        E2ePeerState.PROBING -> stringResource(R.string.e2e_details_setting_up)
+        E2ePeerState.UNKNOWN -> stringResource(R.string.e2e_details_auto_start, contactName)
+        E2ePeerState.NOT_RELAY -> stringResource(R.string.e2e_details_not_relay, contactName)
+    }
+    DetailsActionRow(
+        label = title,
+        subtitle = subtitle,
+        icon = {
+            if (encrypted) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_lock_encrypted),
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(width = 14.dp, height = 17.dp),
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.LockOpen,
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        },
+        onClick = { onOpenVerification?.invoke() },
+        isClickable = encrypted && onOpenVerification != null,
+    )
+}
+
 @Composable
 private fun DetailsActionRows(
     conversation: Conversation,
     showAddToContacts: Boolean,
+    showEditContact: Boolean,
     canSchedule: Boolean,
     canExport: Boolean,
     isExporting: Boolean,
     actions: ConversationDetailsActions,
+    /** E2E — this 1:1 peer's encryption state; null = no encryption row. */
+    e2ePeerState: E2ePeerState? = null,
+    /** E2E — the peer is marked verified (local flag). */
+    e2eVerified: Boolean = false,
+    /** E2E — opens the safety-number sheet for this thread's peer. */
+    onOpenE2eVerification: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     var addContactMenuOpen by remember { mutableStateOf(false) }
     Column(modifier = Modifier.padding(top = 16.dp)) {
+        // E2E — the encryption row, first in the list, under the
+        // header: the thread's encryption state at a glance.
+        val e2eState = e2ePeerState
+        if (e2eState != null) {
+            E2eDetailsEncryptionRow(
+                peerState = e2eState,
+                verified = e2eVerified,
+                contactName = conversation.title,
+                onOpenVerification = onOpenE2eVerification,
+            )
+        }
         DetailsActionRow(
             label = stringResource(R.string.details_schedule),
             icon = {
@@ -1157,6 +1298,25 @@ private fun DetailsActionRows(
                 }
             }
         }
+        if (showEditContact) {
+            // The mirror of Add to contacts: the thread's number is
+            // already saved, so this opens the system editor on the
+            // existing contact (ACTION_INSERT_OR_EDIT with the
+            // number — the same intent the thread's own "update a
+            // contact" flow uses).
+            DetailsActionRow(
+                label = stringResource(R.string.details_edit_contact),
+                icon = {
+                    Icon(
+                        Icons.Outlined.Edit,
+                        contentDescription = null,
+                        tint = cs.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp),
+                    )
+                },
+                onClick = actions.onAddContact,
+            )
+        }
         val renameAction = actions.onRename
         if (conversation.isGroup && renameAction != null) {
             DetailsActionRow(
@@ -1233,6 +1393,14 @@ private fun DetailsActionRow(
     icon: @Composable () -> Unit,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    /** E2E — a second line under the label (the encryption row's status). */
+    subtitle: String? = null,
+    /**
+     * E2E — `false` renders the row as plain status: full alpha, no
+     * ripple, no tap. Unlike [enabled] = false, the row does not look
+     * greyed out — it is information, not an unavailable action.
+     */
+    isClickable: Boolean = true,
 ) {
     val cs = MaterialTheme.colorScheme
     Row(
@@ -1241,7 +1409,13 @@ private fun DetailsActionRow(
             .padding(horizontal = 8.dp)
             .clip(RoundedCornerShape(ACTION_ROW_CORNER))
             .alpha(if (enabled) 1f else DISABLED_ALPHA)
-            .clickable(enabled = enabled, onClick = onClick)
+            .then(
+                if (isClickable) {
+                    Modifier.clickable(enabled = enabled, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1252,11 +1426,26 @@ private fun DetailsActionRow(
             icon()
         }
         Spacer(Modifier.width(16.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = cs.onSurface,
-        )
+        if (subtitle != null) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = cs.onSurface,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = cs.onSurfaceVariant,
+                )
+            }
+        } else {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = cs.onSurface,
+            )
+        }
     }
 }
 
@@ -1265,6 +1454,7 @@ private fun DetailsMembersSection(
     conversation: Conversation,
     memberNames: Map<String, String>,
     memberPhotos: Map<String, String>,
+    onMemberClick: (String) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     Column(modifier = Modifier.padding(top = 16.dp)) {
@@ -1283,6 +1473,7 @@ private fun DetailsMembersSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable(onClick = { onMemberClick(address.raw) })
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1553,16 +1744,15 @@ private fun DetailsFileRow(
             .padding(start = 22.dp, top = 12.dp, bottom = 13.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 42dp box: the document vector's ink fills 0.625 x 0.8125 of
-        // its box, so 42dp renders a ~26x34 glyph — the mockup's
-        // 27x34. The other type icons share the box so every row
-        // lines up, and with 12/13dp of vertical padding the card is
-        // 67dp tall — the mockup's height.
+        // 32dp box: the document vector's ink fills 0.625 x 0.8125 of
+        // its box, so 32dp renders a ~20x26 glyph — small enough to
+        // sit next to the file name without dominating the row. The
+        // other type icons share the box so every row lines up.
         Icon(
             painter = painterResource(fileIconFor(attachment)),
             contentDescription = null,
             tint = cs.onSurfaceVariant,
-            modifier = Modifier.size(42.dp),
+            modifier = Modifier.size(32.dp),
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {

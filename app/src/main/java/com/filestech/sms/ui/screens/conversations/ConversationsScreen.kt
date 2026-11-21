@@ -150,6 +150,37 @@ private fun rowGating(
     hideVault = isPanicDecoy || selectionMode,
 )
 
+/**
+ * E2E — whether this conversation shows its avatar lock badge: it
+ * is 1:1 and its single address has a live encryption session. A
+ * group never shows one (no single peer). A top-level function,
+ * not an inline lambda: [ConversationsScreen] sits at the Detekt
+ * complexity ceiling.
+ */
+internal fun isConversationEncrypted(
+    conv: Conversation,
+    encryptedAddresses: Set<String>,
+): Boolean =
+    !conv.isGroup && conv.firstAddress?.normalized?.let { it in encryptedAddresses } == true
+
+/**
+ * v1.23.x — the number under a conversation's name, shown only
+ * when the name is ambiguous (shared by ≥2 conversations), the
+ * conversation is 1-to-1, and the setting is on (off by default).
+ * A helper so the branches stay out of [ConversationsScreen],
+ * which sits at the complexity ceiling.
+ */
+internal fun duplicateNameSubtitleNumber(
+    conv: Conversation,
+    duplicateDisplayNames: Set<String>,
+    showDuplicateNameNumber: Boolean,
+): String? = conv.displayName
+    ?.takeIf {
+        showDuplicateNameNumber && it in duplicateDisplayNames &&
+            conv.addresses.size == 1
+    }
+    ?.let { conv.addresses.firstOrNull()?.raw }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationsScreen(
@@ -188,6 +219,10 @@ fun ConversationsScreen(
     val messageHits by viewModel.messageHits.collectAsStateWithLifecycle()
     val contactPhotos by viewModel.contactPhotos.collectAsStateWithLifecycle()
     val groupMemberPhotos by viewModel.groupMemberPhotos.collectAsStateWithLifecycle()
+    // E2E — the addresses with a live encryption session: a 1:1 row
+    // whose single address is in this set shows its avatar lock badge
+    // (see [isConversationEncrypted]).
+    val encryptedAddresses by viewModel.encryptedAddresses.collectAsStateWithLifecycle()
     val cs = MaterialTheme.colorScheme
     // Feedback round 10 — the app's locale (for the date-group week
     // boundary, which follows the locale's first day of week, like
@@ -769,6 +804,9 @@ fun ConversationsScreen(
             // sous le nom que pour celles-là. v1.28.3 (audit global C-03) — calculé dans le
             // ViewModel, sur IO, avec le filtre et le tri.
             val duplicateDisplayNames = state.duplicateDisplayNames
+            // The disambiguation number under a shared name is
+            // opt-in (Settings → Appearance, off by default).
+            val showDuplicateNameNumber = state.settings.conversations.showDuplicateNameNumber
             when {
                 state.isImporting -> ImportingPlaceholder(
                     count = state.importedCount,
@@ -823,11 +861,11 @@ fun ConversationsScreen(
                     // ne peut pas optimiser le recyclage entre rows sélectionnés / non-sél.
                     val conversationItem: @Composable LazyItemScope.(Conversation) -> Unit = { conv ->
                         val isSelected = state.selectedIds.contains(conv.id)
-                        // v1.23.x — numéro affiché sous le nom seulement si ce nom est ambigu
-                        // (partagé par ≥2 conversations) et que la conversation est 1-to-1.
-                        val rowSubtitleNumber = conv.displayName
-                            ?.takeIf { it in duplicateDisplayNames && conv.addresses.size == 1 }
-                            ?.let { conv.addresses.firstOrNull()?.raw }
+                        val rowSubtitleNumber = duplicateNameSubtitleNumber(
+                            conv,
+                            duplicateDisplayNames,
+                            showDuplicateNameNumber,
+                        )
                         // Laggy scrolling: every one of these callbacks was a fresh lambda
                         // (and `rowActions` a fresh object) on every screen recomposition,
                         // so no row could ever skip — each `state` emission (incoming SMS,
@@ -886,6 +924,7 @@ fun ConversationsScreen(
                             previewLines = state.settings.conversations.previewLines.coerceIn(1, 2),
                             contactPhotoUri = contactPhotos[conv.id],
                             groupMemberPhotos = groupMemberPhotos[conv.id],
+                            isEncrypted = isConversationEncrypted(conv, encryptedAddresses),
                             // Client mode C3 — the row gates what is
                             // not wired (right swipe = delete, rename,
                             // delete in the sheet); the rest is live
@@ -1002,6 +1041,7 @@ fun ConversationsScreen(
                                     .coerceIn(1, 2),
                                 contactPhotoUri = contactPhotos[conv.id],
                                 groupMemberPhotos = groupMemberPhotos[conv.id],
+                                isEncrypted = isConversationEncrypted(conv, encryptedAddresses),
                                 // v1.25.3 — les lignes bloquées ne participent PAS au mode
                                 // sélection : elles utilisent `ConversationRow` nu, sans l'état
                                 // visuel de sélection de `SwipeableConversationRow`. Les y
@@ -1828,6 +1868,11 @@ private fun SwipeableConversationRow(
      * fallback branch — [ConversationsScreen] sits at the Detekt complexity ceiling.
      */
     groupMemberPhotos: List<String?>? = null,
+    /**
+     * E2E — this 1:1 conversation has a live encryption session: the
+     * row shows its avatar lock badge. Groups always pass `false`.
+     */
+    isEncrypted: Boolean = false,
     onOpenThread: () -> Unit,
     onDelete: () -> Unit,
     onBlock: () -> Unit,
@@ -1969,6 +2014,7 @@ private fun SwipeableConversationRow(
                 previewLines = previewLines,
                 contactPhotoUri = contactPhotoUri,
                 groupMemberPhotos = groupMemberPhotos,
+                isEncrypted = isEncrypted,
                 // v1.13.1 — long-press routing :
                 //  - en mode sélection multiple → toggle de l'item (pattern Gmail).
                 //  - sinon → ActionsSheet legacy (Block/Delete/Move to vault +

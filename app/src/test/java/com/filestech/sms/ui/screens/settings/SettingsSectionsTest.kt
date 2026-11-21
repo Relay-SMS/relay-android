@@ -41,8 +41,8 @@ class SettingsSectionsTest {
     }
 
     @Test
-    fun `total item count is 49 - a dropped row fails here, not on device`() {
-        assertThat(SettingsItem.entries).hasSize(49)
+    fun `total item count is 51 - a dropped row fails here, not on device`() {
+        assertThat(SettingsItem.entries).hasSize(51)
     }
 
     @Test
@@ -54,7 +54,7 @@ class SettingsSectionsTest {
     }
 
     @Test
-    fun `appearance holds exactly its seven rows`() {
+    fun `appearance holds exactly its eight rows`() {
         assertThat(SettingsSectionMapping.itemsFor(SettingsSection.APPEARANCE))
             .containsExactly(
                 SettingsItem.APPEARANCE_THEME_MODE,
@@ -62,6 +62,7 @@ class SettingsSectionsTest {
                 SettingsItem.APPEARANCE_AMOLED_TRUE_BLACK,
                 SettingsItem.APPEARANCE_TEXT_SCALE,
                 SettingsItem.APPEARANCE_SHOW_AVATARS,
+                SettingsItem.APPEARANCE_SHOW_DUPLICATE_NUMBER,
                 SettingsItem.APPEARANCE_SHOW_CATEGORIES,
                 SettingsItem.APPEARANCE_SIGNATURE,
             ).inOrder()
@@ -96,7 +97,7 @@ class SettingsSectionsTest {
     }
 
     @Test
-    fun `security and privacy holds exactly its nineteen rows`() {
+    fun `security and privacy holds exactly its twenty rows`() {
         assertThat(SettingsSectionMapping.itemsFor(SettingsSection.SECURITY_PRIVACY))
             .containsExactly(
                 SettingsItem.SECURITY_APP_LOCK,
@@ -118,6 +119,7 @@ class SettingsSectionsTest {
                 SettingsItem.SECURITY_EMERGENCY_INCLUDE_LOCATION,
                 SettingsItem.SECURITY_BLOCK_UNKNOWN,
                 SettingsItem.SECURITY_MANAGE_BLOCKED,
+                SettingsItem.SECURITY_ENCRYPTION,
             ).inOrder()
     }
 

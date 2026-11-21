@@ -78,23 +78,109 @@ class SmsSenderImpl @Inject constructor(
             // sends. Only the wire address is affected; the Room/provider rows keep the raw form.
             val wireDestination = wireFormatter.toWireFormat(destination, subId)
             val parts = partiesAEnvoyer(text) { manager.divideMessage(it) }
-            val sentIntents = ArrayList<PendingIntent>(parts.size)
-            val deliveredIntents = ArrayList<PendingIntent>(parts.size)
-            for (i in parts.indices) {
-                sentIntents += buildPendingIntent(ACTION_SMS_SENT, localMessageId, i, parts.size, attempt)
-                deliveredIntents += buildPendingIntent(ACTION_SMS_DELIVERED, localMessageId, i, parts.size, attempt)
-            }
-            manager.sendMultipartTextMessage(
-                wireDestination,
-                /* scAddress = */ null,
-                parts,
-                sentIntents,
-                if (requestDeliveryReport) deliveredIntents else null,
+            sendParts(
+                manager = manager,
+                wireDestination = wireDestination,
+                parts = parts,
+                localMessageId = localMessageId,
+                firstPartIndex = 0,
+                partCount = parts.size,
+                requestDeliveryReport = requestDeliveryReport,
+                attempt = attempt,
+                e2eFragment = false,
             )
-            Outcome.Success(Unit)
         } catch (t: Throwable) {
             Outcome.Failure(AppError.Telephony("sendMultipartTextMessage failed", t))
         }
+    }
+
+    /**
+     * E2E (design §3.4) — one ciphertext fragment, one single-part SMS.
+     * The fragment is already a complete SMS (≤ 160 chars) so it is NOT
+     * passed through `divideMessage` — splitting it again would change
+     * the wire bytes. Its index rides as the part index, so each
+     * fragment gets distinct tracking `PendingIntent`s (plain [send]
+     * would give every fragment part index 0 and collapse them onto one
+     * `PendingIntent` via `FLAG_UPDATE_CURRENT`), and the
+     * `EXTRA_E2E_FRAGMENT` marker lets the delivery receiver hold the
+     * DELIVERED promotion until ALL fragments report delivered.
+     */
+    override fun sendFragment(
+        localMessageId: Long,
+        destination: String,
+        text: String,
+        fragmentIndex: Int,
+        fragmentTotal: Int,
+        subId: Int?,
+        requestDeliveryReport: Boolean,
+        attempt: Int,
+    ): Outcome<Unit> {
+        return try {
+            val manager = subscriptionAwareManager(subId)
+            val wireDestination = wireFormatter.toWireFormat(destination, subId)
+            sendParts(
+                manager = manager,
+                wireDestination = wireDestination,
+                parts = arrayListOf(text),
+                localMessageId = localMessageId,
+                firstPartIndex = fragmentIndex,
+                partCount = fragmentTotal,
+                requestDeliveryReport = requestDeliveryReport,
+                attempt = attempt,
+                e2eFragment = true,
+            )
+        } catch (t: Throwable) {
+            Outcome.Failure(AppError.Telephony("sendMultipartTextMessage failed", t))
+        }
+    }
+
+    /**
+     * Shared dispatch: builds one sent/delivery `PendingIntent` pair per
+     * part (part indices start at [firstPartIndex] and the total is
+     * [partCount] — for a plain send those are 0 and the part count; for
+     * an E2E fragment they are the fragment's index/total within its
+     * set) and hands the parts to the radio.
+     */
+    private fun sendParts(
+        manager: SmsManager,
+        wireDestination: String,
+        parts: ArrayList<String>,
+        localMessageId: Long,
+        firstPartIndex: Int,
+        partCount: Int,
+        requestDeliveryReport: Boolean,
+        attempt: Int,
+        e2eFragment: Boolean,
+    ): Outcome<Unit> {
+        val sentIntents = ArrayList<PendingIntent>(parts.size)
+        val deliveredIntents = ArrayList<PendingIntent>(parts.size)
+        for (i in parts.indices) {
+            val partIndex = firstPartIndex + i
+            sentIntents += buildPendingIntent(
+                ACTION_SMS_SENT,
+                localMessageId,
+                partIndex,
+                partCount,
+                attempt,
+                e2eFragment,
+            )
+            deliveredIntents += buildPendingIntent(
+                ACTION_SMS_DELIVERED,
+                localMessageId,
+                partIndex,
+                partCount,
+                attempt,
+                e2eFragment,
+            )
+        }
+        manager.sendMultipartTextMessage(
+            wireDestination,
+            /* scAddress = */ null,
+            parts,
+            sentIntents,
+            if (requestDeliveryReport) deliveredIntents else null,
+        )
+        return Outcome.Success(Unit)
     }
 
     /**
@@ -124,6 +210,7 @@ class SmsSenderImpl @Inject constructor(
         partIndex: Int,
         total: Int,
         attempt: Int,
+        e2eFragment: Boolean = false,
     ): PendingIntent {
         // Audit F36: derive the request code from a 64-bit mix so two distinct (localId, partIndex)
         // pairs cannot collide on Int wraparound when localId > Int.MAX_VALUE / MAX_PARTS.
@@ -157,6 +244,12 @@ class SmsSenderImpl @Inject constructor(
             putExtra(EXTRA_PART_INDEX, partIndex)
             putExtra(EXTRA_PART_COUNT, total)
             putExtra(EXTRA_ATTEMPT, attempt)
+            // E2E — marks this intent as one fragment of an encrypted
+            // message, so the delivery receiver can hold the DELIVERED
+            // promotion until every fragment of the set has reported.
+            // Absent (false) on every plain send: the plain receivers
+            // read the same extras they always did.
+            if (e2eFragment) putExtra(EXTRA_E2E_FRAGMENT, true)
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val request = smsTrackingRequestCode(action, localId, partIndex, attempt)
@@ -178,6 +271,15 @@ class SmsSenderImpl @Inject constructor(
          * des lignes existantes après la migration 10 → 11. L'accusé s'applique donc normalement.
          */
         const val EXTRA_ATTEMPT = "com.filestech.sms.extra.ATTEMPT"
+
+        /**
+         * E2E (design §3.4) — `true` when this tracking intent belongs to
+         * one fragment of an encrypted message. The delivery receiver
+         * counts distinct fragment indices per (message, attempt) and
+         * only promotes the row to DELIVERED once every fragment has
+         * reported. Absent on plain sends.
+         */
+        const val EXTRA_E2E_FRAGMENT = "com.filestech.sms.extra.E2E_FRAGMENT"
 
         internal const val MAX_PARTS = 256L
 

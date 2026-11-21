@@ -35,6 +35,23 @@ data class Message(
      * porte — celle que l'appareil affiche.
      */
     val clientMessageId: String? = null,
+    /**
+     * E2E (schema v22) — this message was encrypted on the wire
+     * (Relay-to-Relay 1:1 text). The UI shows a lock on its
+     * timestamp line; plain messages (MMS, attachments, the first
+     * plain message to a new contact) carry no lock.
+     */
+    val encrypted: Boolean = false,
+    /**
+     * E2E (schema v22) — placeholder: the ciphertext arrived but
+     * could not be decrypted (no session, reinstalled peer). The
+     * UI renders the "couldn't be decrypted" notice-style row
+     * instead of a bubble. The raw ciphertext stays on the entity
+     * ([com.filestech.sms.data.local.db.entity.MessageEntity.ciphertext])
+     * for a later retry — it never reaches this model, the UI, or
+     * the sync layer.
+     */
+    val decryptFailed: Boolean = false,
 ) {
     enum class Type { SMS, MMS }
     enum class Direction { INCOMING, OUTGOING }

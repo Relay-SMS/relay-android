@@ -121,6 +121,14 @@ data class ConversationSettings(
      * own refused-contacts row). UI state only — no Settings row.
      */
     val contactsBannerDismissed: Boolean = false,
+    /**
+     * The number under a conversation's name when two conversations
+     * share a contact name (the v1.23.x disambiguation). OFF by
+     * default — most people never have two threads with the same
+     * name, and the number under one row reads as a glitch.
+     * Toggled in Settings → Appearance.
+     */
+    val showDuplicateNameNumber: Boolean = false,
 )
 
 /**
@@ -628,6 +636,17 @@ data class AdvancedSettings(
      * targets already has that flag set.
      */
     val stickyCategoryBackfilledV20: Boolean = false,
+    /**
+     * Spam follow-up (schema v22) — the second one-shot sticky-category
+     * backfill has run. The classifier gained new signals after the
+     * round-35 pass, so conversations the first pass filed as all-plain
+     * (or that a plain follow-up later filed Personal) are re-examined
+     * once, so already-received spam moves to its tab without waiting
+     * for another message. Same placement and semantics as
+     * [stickyCategoryBackfilledV20]: independent of
+     * [startupDbMigrationsDone], set only after a complete pass.
+     */
+    val stickyCategoryBackfilledV22: Boolean = false,
     /**
      * v1.3.10 — **opt-in** : démarre [com.filestech.sms.system.service.KeepAliveService]
      * qui maintient le processus Relay vivant via une notification persistante

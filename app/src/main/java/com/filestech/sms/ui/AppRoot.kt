@@ -42,6 +42,7 @@ import com.filestech.sms.ui.navigation.Compose
 import com.filestech.sms.ui.navigation.Conversations
 import com.filestech.sms.ui.navigation.Emergency
 import com.filestech.sms.ui.navigation.EmergencySetup
+import com.filestech.sms.ui.navigation.Encryption
 import com.filestech.sms.ui.navigation.ErrorLog
 import com.filestech.sms.ui.navigation.Help
 import com.filestech.sms.ui.navigation.License
@@ -68,6 +69,7 @@ import com.filestech.sms.ui.screens.media.MediaGalleryScreen
 import com.filestech.sms.ui.screens.migration.MigrationScreen
 import com.filestech.sms.ui.screens.notes.NoteThreadScreen
 import com.filestech.sms.ui.screens.settings.AdvancedScreen
+import com.filestech.sms.ui.screens.settings.EncryptionScreen
 import com.filestech.sms.ui.screens.settings.ErrorLogScreen
 import com.filestech.sms.ui.screens.settings.SettingsScreen
 import com.filestech.sms.ui.screens.splash.SplashScreen
@@ -475,6 +477,8 @@ fun AppRoot() {
                 onOpenEmergencySetup = { nav.navigate(EmergencySetup) },
                 // Slice 1 — Linked devices (LAN server + QR pairing).
                 onOpenLinkedDevices = { nav.navigate(LinkedDevices) },
+                // E2E — Encryption (Security & Privacy → Encryption).
+                onOpenEncryption = { nav.navigate(Encryption) },
             )
         }
         // Slice 1 — Linked devices slides in from the right like the
@@ -585,6 +589,15 @@ fun AppRoot() {
             popExitTransition = { glissementSortant },
         ) {
             ErrorLogScreen(onBack = { nav.popBackStack() })
+        }
+        // E2E — Encryption screen, reached from Settings → Security
+        // & Privacy: same slide-in transition as the other Settings
+        // sub-screens.
+        composable<Encryption>(
+            enterTransition = { glissementEntrant },
+            popExitTransition = { glissementSortant },
+        ) {
+            EncryptionScreen(onBack = { nav.popBackStack() })
         }
         composable<Lock> {
             LockScreen(

@@ -1,0 +1,178 @@
+package com.filestech.sms.e2e
+
+/**
+ * The probe / bundle handshake packets (design §2.2), carried by data SMS
+ * on port [E2E_DATA_SMS_PORT]. Data SMS is invisible and never stored in
+ * the system inbox, so a probe to a phone without Relay is silently
+ * dropped by the OS — the recipient sees nothing.
+ *
+ * Both packets share a header — magic `RLYH` (4 bytes) + version `0x01`
+ * (1 byte) + type (1 byte) — and both fit in one 140-byte data-SMS
+ * segment:
+ *
+ *     Probe:  "RLYH" 0x01 0x01 <curve32> <ed32>                    = 70 bytes
+ *     Bundle: "RLYH" 0x01 0x02 <curve32> <ed32> <one-time-key32>   = 102 bytes
+ *
+ * No signature on the reply: this is TOFU — a man-in-the-middle who swaps
+ * the whole bundle defeats any signature on it anyway. Detection is the
+ * safety-number verification ([E2eSafetyNumber]). The Olm pre-key message
+ * itself is authenticated, so a forged bundle yields a session that fails
+ * to decrypt and is dropped.
+ *
+ * Pure Kotlin, no Android APIs — fully unit-testable on the JVM.
+ */
+object E2eHandshake {
+
+    /** Data-SMS port for the handshake (adjacent to the sync port 47831). */
+    const val E2E_DATA_SMS_PORT: Int = 47832
+
+    /** Total size of a probe packet, in bytes. */
+    const val PROBE_SIZE: Int = 70
+
+    /** Total size of a bundle-reply packet, in bytes. */
+    const val BUNDLE_SIZE: Int = 102
+
+    private const val HEADER_SIZE: Int = 6
+    private const val VERSION: Byte = 0x01
+    private const val TYPE_PROBE: Byte = 0x01
+    private const val TYPE_BUNDLE: Byte = 0x02
+    private val MAGIC: ByteArray = byteArrayOf(0x52, 0x4C, 0x59, 0x48) // "RLYH"
+
+    /**
+     * A decoded handshake packet. Plain classes (not data classes):
+     * data-class equality on [ByteArray] is referential, which would
+     * silently break key comparisons.
+     */
+    sealed interface HandshakePacket {
+
+        /** Our / their Curve25519 identity key (32 bytes). */
+        val curveKey: ByteArray
+
+        /** Our / their Ed25519 identity key (32 bytes). */
+        val edKey: ByteArray
+
+        /** A probe: "I run Relay, here are my identity keys". */
+        class Probe(override val curveKey: ByteArray, override val edKey: ByteArray) :
+            HandshakePacket {
+
+            init {
+                require(curveKey.size == E2E_KEY_LENGTH) { "curve key must be 32 bytes" }
+                require(edKey.size == E2E_KEY_LENGTH) { "ed key must be 32 bytes" }
+            }
+
+            override fun equals(other: Any?): Boolean {
+                if (this === other) return true
+                if (other !is Probe) return false
+                return curveKey.contentEquals(other.curveKey) && edKey.contentEquals(other.edKey)
+            }
+
+            override fun hashCode(): Int {
+                var result = curveKey.contentHashCode()
+                result = 31 * result + edKey.contentHashCode()
+                return result
+            }
+
+            override fun toString(): String = "Probe(<32-byte curve key>, <32-byte ed key>)"
+        }
+
+        /** A bundle reply: identity keys + one one-time public key. */
+        class Bundle(
+            override val curveKey: ByteArray,
+            override val edKey: ByteArray,
+            val oneTimeKey: ByteArray,
+        ) : HandshakePacket {
+
+            init {
+                require(curveKey.size == E2E_KEY_LENGTH) { "curve key must be 32 bytes" }
+                require(edKey.size == E2E_KEY_LENGTH) { "ed key must be 32 bytes" }
+                require(oneTimeKey.size == E2E_KEY_LENGTH) { "one-time key must be 32 bytes" }
+            }
+
+            override fun equals(other: Any?): Boolean {
+                if (this === other) return true
+                if (other !is Bundle) return false
+                return curveKey.contentEquals(other.curveKey) &&
+                    edKey.contentEquals(other.edKey) &&
+                    oneTimeKey.contentEquals(other.oneTimeKey)
+            }
+
+            override fun hashCode(): Int {
+                var result = curveKey.contentHashCode()
+                result = 31 * result + edKey.contentHashCode()
+                result = 31 * result + oneTimeKey.contentHashCode()
+                return result
+            }
+
+            override fun toString(): String =
+                "Bundle(<32-byte curve key>, <32-byte ed key>, <32-byte one-time key>)"
+        }
+    }
+
+    /** Encode a probe packet (70 bytes). */
+    fun encodeProbe(curveKey: ByteArray, edKey: ByteArray): ByteArray {
+        require(curveKey.size == E2E_KEY_LENGTH) { "curve key must be 32 bytes" }
+        require(edKey.size == E2E_KEY_LENGTH) { "ed key must be 32 bytes" }
+        return encode(TYPE_PROBE, curveKey, edKey, null)
+    }
+
+    /** Encode a bundle-reply packet (102 bytes). */
+    fun encodeBundle(curveKey: ByteArray, edKey: ByteArray, oneTimeKey: ByteArray): ByteArray {
+        require(curveKey.size == E2E_KEY_LENGTH) { "curve key must be 32 bytes" }
+        require(edKey.size == E2E_KEY_LENGTH) { "ed key must be 32 bytes" }
+        require(oneTimeKey.size == E2E_KEY_LENGTH) { "one-time key must be 32 bytes" }
+        return encode(TYPE_BUNDLE, curveKey, edKey, oneTimeKey)
+    }
+
+    /**
+     * Decode a received packet. Returns null for anything that is not one
+     * of our packets (bad magic, version, type, or length) — the receiver
+     * drops those silently, since a random data SMS to this port is not
+     * our business. Never throws on input.
+     */
+    fun decode(bytes: ByteArray): HandshakePacket? {
+        if (bytes.size < HEADER_SIZE) return null
+        if (!bytes.copyOfRange(0, 4).contentEquals(MAGIC)) return null
+        if (bytes[4] != VERSION) return null
+        return when (bytes[5]) {
+            TYPE_PROBE -> decodeProbe(bytes)
+            TYPE_BUNDLE -> decodeBundle(bytes)
+            else -> null
+        }
+    }
+
+    private fun encode(type: Byte, curveKey: ByteArray, edKey: ByteArray, oneTimeKey: ByteArray?): ByteArray {
+        val size = if (oneTimeKey == null) PROBE_SIZE else BUNDLE_SIZE
+        return ByteArray(size).apply {
+            MAGIC.copyInto(this, 0)
+            this[4] = VERSION
+            this[5] = type
+            curveKey.copyInto(this, HEADER_SIZE)
+            edKey.copyInto(this, HEADER_SIZE + E2E_KEY_LENGTH)
+            oneTimeKey?.copyInto(this, HEADER_SIZE + 2 * E2E_KEY_LENGTH)
+        }
+    }
+
+    private fun decodeProbe(bytes: ByteArray): HandshakePacket.Probe? =
+        if (bytes.size != PROBE_SIZE) {
+            null
+        } else {
+            HandshakePacket.Probe(
+                curveKey = bytes.copyOfRange(HEADER_SIZE, HEADER_SIZE + E2E_KEY_LENGTH),
+                edKey = bytes.copyOfRange(HEADER_SIZE + E2E_KEY_LENGTH, PROBE_SIZE),
+            )
+        }
+
+    private fun decodeBundle(bytes: ByteArray): HandshakePacket.Bundle? =
+        if (bytes.size != BUNDLE_SIZE) {
+            null
+        } else {
+            HandshakePacket.Bundle(
+                curveKey = bytes.copyOfRange(HEADER_SIZE, HEADER_SIZE + E2E_KEY_LENGTH),
+                edKey = bytes.copyOfRange(
+                    HEADER_SIZE + E2E_KEY_LENGTH,
+                    HEADER_SIZE + 2 * E2E_KEY_LENGTH,
+                ),
+                oneTimeKey = bytes.copyOfRange(HEADER_SIZE + 2 * E2E_KEY_LENGTH, BUNDLE_SIZE),
+            )
+        }
+}

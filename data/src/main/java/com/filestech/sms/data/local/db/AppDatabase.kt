@@ -8,6 +8,11 @@ import com.filestech.sms.data.local.db.dao.BlockedNumberDao
 import com.filestech.sms.data.local.db.dao.ClientConversationStateDao
 import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
+import com.filestech.sms.data.local.db.dao.E2eAccountDao
+import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eNoticeDao
+import com.filestech.sms.data.local.db.dao.E2ePeerDao
+import com.filestech.sms.data.local.db.dao.E2eSessionDao
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.dao.NoteAttachmentDao
 import com.filestech.sms.data.local.db.dao.NoteDao
@@ -20,6 +25,11 @@ import com.filestech.sms.data.local.db.entity.BlockedNumberEntity
 import com.filestech.sms.data.local.db.entity.ClientConversationStateEntity
 import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
+import com.filestech.sms.data.local.db.entity.E2eAccountEntity
+import com.filestech.sms.data.local.db.entity.E2eFragmentEntity
+import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
+import com.filestech.sms.data.local.db.entity.E2ePeerEntity
+import com.filestech.sms.data.local.db.entity.E2eSessionEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.local.db.entity.MessageFts
 import com.filestech.sms.data.local.db.entity.NoteAttachmentEntity
@@ -46,6 +56,11 @@ import com.filestech.sms.data.local.db.entity.SyncedContactEntity
         NoteEntity::class,
         NoteMessageEntity::class,
         NoteAttachmentEntity::class,
+        E2eAccountEntity::class,
+        E2ePeerEntity::class,
+        E2eSessionEntity::class,
+        E2eFragmentEntity::class,
+        E2eNoticeEntity::class,
     ],
 )
 // v1.16.0 — TypeConverters pour les 3 enums MessageStatus/Type/Direction ↔ Int.
@@ -64,6 +79,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun noteMessageDao(): NoteMessageDao
     abstract fun noteAttachmentDao(): NoteAttachmentDao
+    abstract fun e2eAccountDao(): E2eAccountDao
+    abstract fun e2ePeerDao(): E2ePeerDao
+    abstract fun e2eSessionDao(): E2eSessionDao
+    abstract fun e2eFragmentDao(): E2eFragmentDao
+    abstract fun e2eNoticeDao(): E2eNoticeDao
 
     companion object {
         const val DATABASE_NAME = "smstech.db"
@@ -164,6 +184,16 @@ abstract class AppDatabase : RoomDatabase() {
         //   et `client_sync_state.note_last_message_id TEXT NOT NULL DEFAULT '0'` (le
         //   curseur des messages de notes). Strictement additive : les lignes
         //   existantes projettent les défauts (non modifié, curseur à zéro).
-        const val SCHEMA_VERSION = 21
+        // v22 (2026-11-21, E2E encryption phase 1): cinq tables neuves —
+        //   `e2e_account` (le pickle du compte Olm, une seule ligne), `e2e_peers`
+        //   (la machine à états par correspondant), `e2e_sessions` (les pickles de
+        //   session, 3 max par correspondant), `e2e_fragments` (les fragments de
+        //   chiffré en vol) et `e2e_notices` (les avis en fil) — plus trois
+        //   colonnes sur `messages` : `encrypted` et `decrypt_failed`
+        //   (`INTEGER NOT NULL DEFAULT 0`) et `ciphertext` (TEXT nullable, le
+        //   chiffré brut gardé pour une nouvelle tentative). Strictement additive :
+        //   les tables naissent vides et les lignes existantes projettent les
+        //   défauts (non chiffré, déchiffrement non échoué, pas de chiffré).
+        const val SCHEMA_VERSION = 22
     }
 }

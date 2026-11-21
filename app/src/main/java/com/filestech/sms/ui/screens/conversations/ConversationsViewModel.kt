@@ -30,6 +30,7 @@ import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.settings.SortMode
 import com.filestech.sms.domain.usecase.BlockNumberUseCase
 import com.filestech.sms.domain.usecase.ToggleConversationStateUseCase
+import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.sync.client.ClientSyncEngine
 import com.filestech.sms.sync.client.ClientSyncUiState
@@ -124,6 +125,11 @@ class ConversationsViewModel @Inject constructor(
      * 5-arg typed limit), so the list merges notes with conversations.
      */
     private val noteRepo: NoteRepository,
+    /**
+     * E2E — the peer repository, for the list's lock badges: the
+     * addresses whose peer state is ENCRYPTED ([encryptedAddresses]).
+     */
+    private val e2ePeers: E2ePeerRepository,
 ) : ViewModel() {
 
     private val archivedFlag: Boolean = savedStateHandle.get<Boolean>("archived") ?: false
@@ -142,6 +148,19 @@ class ConversationsViewModel @Inject constructor(
             if (mode == DeviceMode.CLIENT) syncEngine.get().ui else flowOf(ClientSyncUiState())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClientSyncUiState())
+
+    /**
+     * E2E — the addresses with a live encryption session, as a SEPARATE
+     * flow (the UiState combine is already at the 5-arg typed limit). A
+     * conversation is encrypted when it is 1:1 and its single address
+     * is in this set; the row shows its avatar lock badge then. No mode
+     * branch: on a linked device the rows are DERIVED — the client
+     * mirror records ENCRYPTED from the synced conversation flag
+     * (phase 2), so the badge renders in client mode too.
+     */
+    val encryptedAddresses: StateFlow<Set<String>> = e2ePeers
+        .observeEncryptedAddresses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     /** Client mode C2 — re-issues the sync request after an error (the Retry affordance). */
     fun retryClientSync() {
@@ -436,7 +455,14 @@ class ConversationsViewModel @Inject constructor(
             sorted.map { ConversationListItem.ConversationItem(it) } + noteItems,
             s.conversations.sortMode,
         )
+        // A blocked twin must not force the number onto an active row:
+        // blocked rows render in their own section at the bottom, via a
+        // bare `ConversationRow` with no subtitle — so they can neither
+        // be confused with the active row nor show a number of their
+        // own. Only conversations whose rows actually render with a
+        // subtitle count toward the ambiguity.
         val nomsPartages = sorted
+            .filter { !it.blocked }
             .mapNotNull { it.displayName?.takeIf { n -> n.isNotBlank() } }
             .groupingBy { it }
             .eachCount()

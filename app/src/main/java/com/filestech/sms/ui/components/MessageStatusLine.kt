@@ -2,13 +2,20 @@ package com.filestech.sms.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.filestech.sms.R
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.RelayText
@@ -98,6 +105,24 @@ internal fun BubbleTimestamp(
                 color = metaColor,
                 style = RelayText.BubbleMeta,
             )
+            // E2E — the lock glyph at the end of an encrypted message's
+            // timestamp line (sent and received, e.g. "8:10 PM •
+            // Delivered 🔒", per the encrypted-thread reference).
+            // Text-only SMS only: MMS and attachments stay plain and
+            // carry no lock. Decorative for screen readers — the
+            // message is announced by its text, and a lock on every
+            // message would be noise.
+            if (message.encrypted &&
+                message.type == Message.Type.SMS && message.attachments.isEmpty()
+            ) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_lock_encrypted),
+                    contentDescription = null,
+                    tint = metaColor,
+                    modifier = Modifier.size(9.dp, 11.dp),
+                )
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ import com.filestech.sms.data.sms.SmsSenderImpl
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.repository.OutgoingMessageMirror
+import com.filestech.sms.e2e.E2eFragmentDeliveryTracker
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -22,6 +23,10 @@ class SmsDeliveredReceiver : BroadcastReceiver() {
     @Inject lateinit var mirrorLazy: dagger.Lazy<OutgoingMessageMirror>
     @Inject @ApplicationScope lateinit var scope: CoroutineScope
 
+    // E2E — in-memory fragment counting (no DAO: cheap to resolve, but
+    // kept lazy for symmetry with the mirror).
+    @Inject lateinit var fragmentTrackerLazy: dagger.Lazy<E2eFragmentDeliveryTracker>
+
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != SmsSenderImpl.ACTION_SMS_DELIVERED) return
         val localId = intent.getLongExtra(SmsSenderImpl.EXTRA_LOCAL_ID, -1L)
@@ -29,6 +34,14 @@ class SmsDeliveredReceiver : BroadcastReceiver() {
         // v1.28.3 (F23) — cf. `SmsSentReceiver` : un accuse tardif appartient a SA tentative.
         val attempt = intent.getIntExtra(SmsSenderImpl.EXTRA_ATTEMPT, 0)
         if (resultCode != Activity.RESULT_OK) return
+        // E2E — a fragment's delivery report promotes the message to
+        // DELIVERED only once ALL fragments of the set reported (design
+        // §3.4). A malformed fragment report is dropped, not promoted.
+        if (intent.getBooleanExtra(SmsSenderImpl.EXTRA_E2E_FRAGMENT, false)) {
+            val index = intent.getIntExtra(SmsSenderImpl.EXTRA_PART_INDEX, -1)
+            val total = intent.getIntExtra(SmsSenderImpl.EXTRA_PART_COUNT, -1)
+            if (!fragmentTrackerLazy.get().recordDelivered(localId, attempt, index, total)) return
+        }
         val pending = goAsync()
         scope.launch {
             try {

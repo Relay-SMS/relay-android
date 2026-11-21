@@ -1,6 +1,8 @@
 package com.filestech.sms.data.local.db
 
 import androidx.room.TypeConverter
+import com.filestech.sms.data.local.db.entity.E2eNoticeKind
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
@@ -60,4 +62,26 @@ class MessageEnumConverters {
 
     @TypeConverter
     fun stickyCategoryToRaw(category: MessageCategory?): String? = category?.name
+
+    // E2E (schema v22) — the peer state machine, stored BY NAME like the sticky
+    // category. An unknown name — a row from a future build — reads as UNKNOWN
+    // (no session assumed, probing may resume) instead of crashing the read.
+    @TypeConverter
+    fun e2ePeerStateFromRaw(rawValue: String?): E2ePeerState =
+        rawValue?.let { runCatching { E2ePeerState.valueOf(it) }.getOrNull() }
+            ?: E2ePeerState.UNKNOWN
+
+    @TypeConverter
+    fun e2ePeerStateToRaw(state: E2ePeerState): String = state.name
+
+    // E2E (schema v22) — the notice kind, stored BY NAME. An unknown name reads
+    // as ACTIVATED (the notice still renders as an encryption event, not as a
+    // key-change warning) instead of crashing the read.
+    @TypeConverter
+    fun e2eNoticeKindFromRaw(rawValue: String?): E2eNoticeKind =
+        rawValue?.let { runCatching { E2eNoticeKind.valueOf(it) }.getOrNull() }
+            ?: E2eNoticeKind.ACTIVATED
+
+    @TypeConverter
+    fun e2eNoticeKindToRaw(kind: E2eNoticeKind): String = kind.name
 }

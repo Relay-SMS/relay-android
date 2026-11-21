@@ -136,6 +136,7 @@
     <string name="details_panel_title">Détails</string>
     <string name="details_schedule">Programmer</string>
     <string name="details_add_to_contacts">Ajouter aux contacts</string>
+    <string name="details_edit_contact">Modifier le contact</string>
     <string name="details_member_count">%1$d membres</string>
     <string name="details_change_photo">Changer la photo du contact</string>
     <string name="details_tab_photos">Photos</string>
@@ -175,7 +176,39 @@
     <string name="invite_friends">Inviter des amis</string>
     <string name="invite_friends_settings">Invitez vos amis</string>
 
-    <string name="thread_compose_placeholder">Relay message</string>
+    <string name="thread_compose_placeholder">Message</string>
+    <string name="thread_compose_placeholder_encrypted">Relay message</string>
+
+    <!-- End-to-end encryption -->
+    <string name="e2e_too_long">Trop long pour être envoyé chiffré</string>
+    <string name="e2e_notice_activated">Les messages sont désormais chiffrés de bout en bout.</string>
+    <string name="e2e_notice_key_changed">Le code de sécurité de %1$s a changé. Les messages restent chiffrés de bout en bout.</string>
+    <string name="e2e_notice_key_changed_verified">Le code de sécurité de %1$s a changé. %1$s était vérifié — compare à nouveau le numéro de sécurité pour confirmer que c’est bien la même personne.</string>
+    <string name="e2e_decrypt_failed">Ce message n’a pas pu être déchiffré.</string>
+    <string name="e2e_decrypt_failed_notif">Ce message n’a pas pu être déchiffré.</string>
+    <string name="e2e_encryption">Chiffrement</string>
+    <string name="e2e_details_encrypted">Chiffré de bout en bout</string>
+    <string name="e2e_details_verify_tap">Appuie pour vérifier le numéro de sécurité de %1$s</string>
+    <string name="e2e_details_verified">Vérifié ✓</string>
+    <string name="e2e_details_setting_up">Configuration du chiffrement…</string>
+    <string name="e2e_details_not_encrypted">Non chiffré</string>
+    <string name="e2e_details_not_relay">%1$s n’utilise pas encore Relay</string>
+    <string name="e2e_details_auto_start">Le chiffrement démarrera automatiquement quand %1$s utilisera Relay</string>
+    <string name="e2e_verify_title">Numéro de sécurité</string>
+    <string name="e2e_verify_explainer">Compare ce numéro avec %1$s en personne ou par un autre canal — un appel, ou une autre application. Si les numéros correspondent, vous vous parlez directement, sans personne entre vous.</string>
+    <string name="e2e_verify_mark">Marquer comme vérifié</string>
+    <string name="e2e_verify_remove">Retirer la vérification</string>
+    <string name="e2e_verify_verified">Vérifié</string>
+    <string name="e2e_verify_copy">Copier</string>
+    <string name="e2e_verify_load_failed">Impossible de charger le numéro de sécurité.</string>
+    <string name="e2e_settings_explainer">De Relay à Relay, le chiffrement est automatique. Quand les deux personnes utilisent Relay, vos messages 1:1 sont chiffrés de bout en bout automatiquement — aucune configuration nécessaire. Les messages aux personnes sans Relay, les discussions de groupe, les photos et les fichiers sont envoyés en SMS/MMS ordinaires. Les messages chiffrés utilisent quelques segments de texte de plus que les messages ordinaires.</string>
+    <string name="e2e_settings_status_subtitle">Automatique quand les deux personnes utilisent Relay</string>
+    <string name="e2e_settings_fingerprint">Ton empreinte</string>
+    <string name="e2e_settings_fingerprint_hint">Partage-la avec un contact pour qu’il puisse vérifier que c’est bien toi.</string>
+    <string name="e2e_settings_verified_contacts">Contacts vérifiés</string>
+    <string name="e2e_settings_verified_count">%1$d contacts</string>
+    <string name="e2e_settings_no_verified">Aucun contact vérifié pour l’instant</string>
+    <string name="e2e_settings_attribution">Le chiffrement de bout en bout de Relay utilise vodozemac, la bibliothèque de chiffrement open source de Matrix, auditée de manière indépendante par Least Authority en 2022.</string>
     <string name="thread_compose_emoji">Emoji</string>
     <string name="thread_status_pending">Envoi…</string>
     <string name="thread_status_sent">Envoyé</string>
@@ -435,6 +468,8 @@
 
     <string name="settings_section_conversations">Conversations</string>
     <string name="settings_show_avatars">Afficher les avatars</string>
+    <string name="settings_show_duplicate_number">Afficher le numéro sous les noms en double</string>
+    <string name="settings_show_duplicate_number_subtitle">Quand deux conversations partagent un nom, affiche le numéro en dessous.</string>
     <string name="settings_show_categories">Afficher les catégories</string>
     <string name="settings_show_categories_subtitle">Si désactivé, le filtrage est aussi désactivé et toutes les conversations apparaissent dans une seule liste.</string>
     <string name="settings_signature">Signature automatique</string>
@@ -1341,7 +1376,7 @@
     <string name="note_save_failed">Impossible d\'enregistrer cette entrée</string>
     <string name="note_attachment_failed">Impossible d\'ajouter cette pièce jointe</string>
     <string name="note_open_failed">Impossible d\'ouvrir ce fichier</string>
-    <string name="note_compose_placeholder">Écrire une note…</string>
+    <string name="note_compose_placeholder">Écrire une note</string>
     <string name="note_attach_sheet_subtitle">Les photos, vidéos et fichiers sont stockés chiffrés dans cette note.</string>
     <string name="note_pdf_header_subtitle">Exporté le %1$s</string>
     <string name="note_empty_photos">Les photos enregistrées dans cette note s\'afficheront ici.</string>

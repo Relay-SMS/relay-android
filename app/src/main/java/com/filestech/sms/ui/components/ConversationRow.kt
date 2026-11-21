@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +39,8 @@ import com.filestech.sms.ui.theme.LocalMessageTextFactor
 import com.filestech.sms.ui.theme.MessageTextSize
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.blockedTextColor
+import com.filestech.sms.ui.theme.brandBlue
+import com.filestech.sms.ui.theme.onBrandBlue
 import com.filestech.sms.ui.theme.scaledBy
 import com.filestech.sms.ui.util.relativeRowLabel
 import com.filestech.sms.ui.util.rememberChatFormatters
@@ -83,6 +87,12 @@ fun ConversationRow(
      * member without a photo keeps the initials or grey glyph. 1-to-1 rows ignore this.
      */
     groupMemberPhotos: List<String?>? = null,
+    /**
+     * E2E — this 1:1 conversation has a live encryption session: a
+     * lock badge overlaps the avatar's bottom-left. Groups are never
+     * encrypted and always pass `false`.
+     */
+    isEncrypted: Boolean = false,
     /**
      * v1.23.x — numéro affiché sous le nom UNIQUEMENT pour lever l'ambiguïté quand plusieurs
      * conversations partagent le même nom de contact (ex. un contact avec un numéro FR et un
@@ -139,7 +149,34 @@ fun ConversationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showAvatars) {
-                ConversationAvatar(conversation, contactPhotoUri, groupMemberPhotos)
+                // E2E — the lock badge on an encrypted 1:1 row: a small
+                // brand-blue disc overlapping the avatar's bottom-left
+                // (per the encrypted-list reference), carrying the white
+                // lock glyph. The surface-coloured ring separates the
+                // disc from a photo avatar; the glyph is decorative for
+                // screen readers (the row is announced by its title).
+                Box {
+                    ConversationAvatar(conversation, contactPhotoUri, groupMemberPhotos)
+                    if (isEncrypted) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .offset(x = (-2).dp, y = 2.dp)
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(brandBlue())
+                                .border(1.5.dp, cs.surface, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_lock_encrypted),
+                                contentDescription = null,
+                                tint = onBrandBlue(),
+                                modifier = Modifier.size(9.dp, 11.dp),
+                            )
+                        }
+                    }
+                }
                 // Feedback round 6 — 17dp between the avatar and the text
                 // (was 12dp): a touch more air on the home screen.
                 Spacer(Modifier.width(17.dp))
@@ -261,8 +298,18 @@ fun ConversationRow(
                                 // `lastMessageAt > 0` distingue « message sans texte » de
                                 // « conversation sans aucun message » — cette dernière reste muette,
                                 // ce qui est exact.
+                                //
+                                // E2E — when the latest message is an undecryptable
+                                // placeholder, its stored body is empty: the row says
+                                // so instead of falling back to the attachment label
+                                // (the message is not an attachment, it just could
+                                // not be decrypted). The stored body is untouched.
                                 val preview = conversation.lastMessagePreview.orEmpty()
-                                if (preview.isBlank() && conversation.lastMessageAt > 0L) {
+                                if (conversation.lastMessageDecryptFailed) {
+                                    androidx.compose.ui.res.stringResource(
+                                        id = com.filestech.sms.R.string.e2e_decrypt_failed,
+                                    )
+                                } else if (preview.isBlank() && conversation.lastMessageAt > 0L) {
                                     androidx.compose.ui.res.stringResource(
                                         id = com.filestech.sms.R.string.conversations_preview_attachment,
                                     )

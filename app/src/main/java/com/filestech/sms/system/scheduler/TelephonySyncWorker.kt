@@ -23,6 +23,7 @@ import com.filestech.sms.domain.purge.MS_PER_DAY
 import com.filestech.sms.domain.purge.SAFETY_NET_DAYS
 import com.filestech.sms.domain.purge.purgeCutoffMs
 import com.filestech.sms.domain.repository.BlockedNumberRepository
+import com.filestech.sms.e2e.E2eFragmentStore
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -60,6 +61,8 @@ class TelephonySyncWorker @AssistedInject constructor(
     // v1.26.1 (audit H9) — nécessaire pour rendre la purge automatique atomique, cf. plus bas.
     // v1.28.9 (F17) — pour replanifier la reprise des PDU gardés, cf. plus bas.
     private val pdusEnAttente: com.filestech.sms.data.mms.PdusEnAttente,
+    // E2E (schema v22) — prune les fragments de chiffré incomplets de plus de 24 h.
+    private val e2eFragmentStore: E2eFragmentStore,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -98,6 +101,12 @@ class TelephonySyncWorker @AssistedInject constructor(
             // Voice-recorder drafts have their own pruner; we just trigger it on the same cadence.
             runCatching { voiceRecorder.pruneOld() }
                 .onFailure { Timber.w(it, "VoiceRecorder.pruneOld failed") }
+            // E2E (schema v22) — fragment sets that never completed (a lost SMS) expire
+            // after 24 h; the sender already saw Delivered, so nothing can complete them.
+            runCatching {
+                val pruned = e2eFragmentStore.pruneExpired()
+                if (pruned > 0) Timber.i("E2E: %d expired fragments pruned", pruned)
+            }.onFailure { Timber.w(it, "E2E fragment prune failed") }
             // Audit M-5: stalls-watchdog. Promote outgoing messages stuck in PENDING past 15 min
             // to FAILED so the UI stops showing the "Sending…" spinner indefinitely. The 15 min
             // threshold is loose on purpose — a real-world carrier roundtrip is usually < 30 s,

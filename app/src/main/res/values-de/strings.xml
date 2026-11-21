@@ -137,6 +137,7 @@
     <string name="details_panel_title">Details</string>
     <string name="details_schedule">Planen</string>
     <string name="details_add_to_contacts">Zu Kontakten hinzufügen</string>
+    <string name="details_edit_contact">Kontakt bearbeiten</string>
     <string name="details_member_count">%1$d Mitglieder</string>
     <string name="details_change_photo">Kontaktfoto ändern</string>
     <string name="details_tab_photos">Fotos</string>
@@ -179,7 +180,39 @@
     <string name="invite_friends_settings">Laden Sie Ihre Freunde ein</string>
 
     <!-- Thread -->
-    <string name="thread_compose_placeholder">Relay message</string>
+    <string name="thread_compose_placeholder">Nachricht</string>
+    <string name="thread_compose_placeholder_encrypted">Relay message</string>
+
+    <!-- End-to-end encryption -->
+    <string name="e2e_too_long">Zu lang für eine verschlüsselte Nachricht</string>
+    <string name="e2e_notice_activated">Nachrichten sind jetzt Ende-zu-Ende-verschlüsselt.</string>
+    <string name="e2e_notice_key_changed">Der Sicherheitscode von %1$s hat sich geändert. Nachrichten sind weiterhin Ende-zu-Ende-verschlüsselt.</string>
+    <string name="e2e_notice_key_changed_verified">Der Sicherheitscode von %1$s hat sich geändert. %1$s war verifiziert – vergleiche die Sicherheitsnummer erneut, um sicherzugehen, dass es noch dieselbe Person ist.</string>
+    <string name="e2e_decrypt_failed">Diese Nachricht konnte nicht entschlüsselt werden.</string>
+    <string name="e2e_decrypt_failed_notif">Diese Nachricht konnte nicht entschlüsselt werden.</string>
+    <string name="e2e_encryption">Verschlüsselung</string>
+    <string name="e2e_details_encrypted">Ende-zu-Ende-verschlüsselt</string>
+    <string name="e2e_details_verify_tap">Tippe, um die Sicherheitsnummer von %1$s zu prüfen</string>
+    <string name="e2e_details_verified">Verifiziert ✓</string>
+    <string name="e2e_details_setting_up">Verschlüsselung wird eingerichtet…</string>
+    <string name="e2e_details_not_encrypted">Nicht verschlüsselt</string>
+    <string name="e2e_details_not_relay">%1$s nutzt Relay noch nicht</string>
+    <string name="e2e_details_auto_start">Die Verschlüsselung startet automatisch, sobald %1$s Relay nutzt</string>
+    <string name="e2e_verify_title">Sicherheitsnummer</string>
+    <string name="e2e_verify_explainer">Vergleiche diese Nummer mit %1$s persönlich oder über einen anderen Kanal – einen Anruf oder eine andere App. Wenn die Nummern übereinstimmen, sprecht ihr miteinander und niemand sitzt dazwischen.</string>
+    <string name="e2e_verify_mark">Als verifiziert markieren</string>
+    <string name="e2e_verify_remove">Verifizierung entfernen</string>
+    <string name="e2e_verify_verified">Verifiziert</string>
+    <string name="e2e_verify_copy">Kopieren</string>
+    <string name="e2e_verify_load_failed">Die Sicherheitsnummer konnte nicht geladen werden.</string>
+    <string name="e2e_settings_explainer">Relay-zu-Relay verschlüsselt automatisch. Wenn beide Relay nutzen, sind eure 1:1-Nachrichten automatisch Ende-zu-Ende-verschlüsselt – ganz ohne Einrichtung. Nachrichten an Personen ohne Relay, Gruppenchats sowie Fotos und Dateien werden als normale SMS/MMS gesendet. Verschlüsselte Nachrichten verbrauchen ein paar mehr Textsegmente als unverschlüsselte.</string>
+    <string name="e2e_settings_status_subtitle">Automatisch, wenn beide Relay nutzen</string>
+    <string name="e2e_settings_fingerprint">Dein Fingerabdruck</string>
+    <string name="e2e_settings_fingerprint_hint">Teile diesen Fingerabdruck mit einem Kontakt, damit er prüfen kann, dass du es wirklich bist.</string>
+    <string name="e2e_settings_verified_contacts">Verifizierte Kontakte</string>
+    <string name="e2e_settings_verified_count">%1$d Kontakte</string>
+    <string name="e2e_settings_no_verified">Noch keine verifizierten Kontakte</string>
+    <string name="e2e_settings_attribution">Die Ende-zu-Ende-Verschlüsselung von Relay nutzt vodozemac, die Open-Source-Verschlüsselungsbibliothek von Matrix, die 2022 von Least Authority unabhängig geprüft wurde.</string>
     <string name="thread_compose_emoji">Emoji</string>
     <string name="thread_status_pending">Wird gesendet…</string>
     <string name="thread_status_sent">Gesendet</string>
@@ -445,6 +478,8 @@
 
     <string name="settings_section_conversations">Unterhaltungen</string>
     <string name="settings_show_avatars">Kontaktbilder anzeigen</string>
+    <string name="settings_show_duplicate_number">Nummer unter doppelten Namen anzeigen</string>
+    <string name="settings_show_duplicate_number_subtitle">Wenn zwei Unterhaltungen denselben Namen haben, wird die Nummer darunter angezeigt.</string>
     <string name="settings_show_categories">Kategorien anzeigen</string>
     <string name="settings_show_categories_subtitle">Wenn deaktiviert, ist auch die Filterung deaktiviert und alle Unterhaltungen werden in einer Liste angezeigt.</string>
     <string name="settings_signature">Automatische Signatur</string>
@@ -1339,7 +1374,7 @@
     <string name="note_save_failed">Dieser Eintrag konnte nicht gespeichert werden</string>
     <string name="note_attachment_failed">Dieser Anhang konnte nicht hinzugefügt werden</string>
     <string name="note_open_failed">Diese Datei konnte nicht geöffnet werden</string>
-    <string name="note_compose_placeholder">Notiz schreiben…</string>
+    <string name="note_compose_placeholder">Notiz schreiben</string>
     <string name="note_attach_sheet_subtitle">Fotos, Videos und Dateien werden in dieser Notiz verschlüsselt gespeichert.</string>
     <string name="note_pdf_header_subtitle">Exportiert %1$s</string>
     <string name="note_empty_photos">Fotos, die in dieser Notiz gespeichert sind, werden hier angezeigt.</string>

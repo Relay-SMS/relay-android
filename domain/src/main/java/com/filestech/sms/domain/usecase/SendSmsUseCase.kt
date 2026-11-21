@@ -2,6 +2,8 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.e2e.E2ePayloadType
+import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendReport
@@ -25,6 +27,18 @@ import javax.inject.Inject
  *  4. For each recipient: insert sent row in Android provider, mirror in Room, dispatch SmsManager
  *
  * For multi-recipient broadcasts each recipient becomes its own row (one private SMS each).
+ *
+ * E2E (design §3.4) — a 1:1 text-only send to an ENCRYPTED peer goes out
+ * encrypted: the decision is taken at the top of [invoke] (before the
+ * multi-recipient fan-out), the mirror row holds the plaintext with
+ * `encrypted = 1`, and the fragments go out through the normal
+ * [SmsSender] path with the plaintext never touching the system sent
+ * box. A 1:1 send to a peer that is not ENCRYPTED triggers a probe in
+ * the background and sends plain. Groups and MMS skip encryption
+ * entirely; a 1:1 reaction ([e2ePayloadType] is [E2ePayloadType.REACTION])
+ * encrypts as a reaction payload instead of leaking as plain SMS.
+ * A message over the 8,000-character encrypted cap is REFUSED — never
+ * silently sent plain.
  */
 class SendSmsUseCase @Inject constructor(
     private val defaultAppManager: DefaultSmsAppChecker,
@@ -33,6 +47,12 @@ class SendSmsUseCase @Inject constructor(
     private val mirror: OutgoingMessageMirror,
     private val blockedRepo: BlockedNumberRepository,
     private val settings: AppSettingsSource,
+    /**
+     * E2E send gate. Default [E2eSendGate.NoOp] keeps the existing
+     * `:domain` tests compiling untouched; Hilt always provides the
+     * real gate (bound in `E2eModule`).
+     */
+    private val e2eGate: E2eSendGate = E2eSendGate.NoOp,
 ) {
     private val envoi = EnvoiParDestinataire(blockedRepo, mirror)
 
@@ -94,6 +114,18 @@ class SendSmsUseCase @Inject constructor(
          * lignes avec la même clé feraient échouer l'insertion (IGNORE → id -1).
          */
         clientMessageId: String? = null,
+        /**
+         * E2E (design §3.2) — the payload kind when this send goes out
+         * encrypted. [E2ePayloadType.TEXT] (the default) is an ordinary
+         * message; [E2ePayloadType.REACTION] is a 1:1 reaction, passed
+         * only by [SendReactionUseCase] after it has established that
+         * the reaction is single-target in a 1:1 conversation. A
+         * reaction payload encrypts the formatted tapback body; the
+         * receiver folds it onto its target instead of showing a
+         * bubble. Any other reaction (group, multi-target) keeps
+         * [E2ePayloadType.TEXT] and stays plain, exactly as before.
+         */
+        e2ePayloadType: E2ePayloadType = E2ePayloadType.TEXT,
     ): Outcome<SendReport> {
         refusPrealable(recipients, body)?.let { return Outcome.Failure(it) }
 
@@ -118,6 +150,45 @@ class SendSmsUseCase @Inject constructor(
         val finalBody = if (appendSignature && signature != null) "$body\n--\n$signature" else body
         val deliveryReports = s.sending.deliveryReports
         val effectiveSubId = subId ?: s.sending.defaultSubId
+
+        // E2E (design §3.4 + §2.4) — the encryption decision for a 1:1
+        // send, taken BEFORE the fan-out. A 1:1 text (`localMirrorBody
+        // == null`) or a 1:1 reaction (`e2ePayloadType == REACTION`,
+        // which only SendReactionUseCase passes, and only once it has
+        // established single-target + 1:1 conversation) consults the
+        // gate; multi-recipient sends and any other reaction never
+        // encrypt, but a 1:1 reaction still triggers a probe (sending
+        // to the thread is intent to talk). A peer that is not
+        // ENCRYPTED gets a background probe and a plain send; an
+        // over-cap encrypted send is refused here, before any row is
+        // written — never silently sent plain.
+        val singleRecipient = recipients.singleOrNull()
+        val e2eDecision =
+            if (singleRecipient != null &&
+                (localMirrorBody == null || e2ePayloadType == E2ePayloadType.REACTION)
+            ) {
+                e2eGate.decideSend(singleRecipient.raw, finalBody)
+            } else {
+                null
+            }
+        val e2eEncrypted = when (e2eDecision) {
+            E2eSendGate.Decision.Encrypted -> true
+            E2eSendGate.Decision.RefuseOverCap -> return Outcome.Failure(
+                AppError.Validation("message too long to send encrypted"),
+            )
+            E2eSendGate.Decision.Plain -> {
+                // Plain implies a single recipient (the decision is only
+                // consulted for one); the safe call is for the compiler.
+                singleRecipient?.let { e2eGate.probeForSend(it.raw, effectiveSubId) }
+                false
+            }
+            null -> {
+                if (singleRecipient != null) {
+                    e2eGate.probeForSend(singleRecipient.raw, effectiveSubId)
+                }
+                false
+            }
+        }
 
         val now = System.currentTimeMillis()
         // v1.28.3 (F21) — un destinataire bloqué laisse une TRACE, dans le miroir local
@@ -155,28 +226,62 @@ class SendSmsUseCase @Inject constructor(
             recipients = recipients,
             sansRemise = "no message dispatched",
             miroir = { r, bloque ->
-                mirror.upsertOutgoingSms(
-                    address = r.raw,
-                    body = finalBody,
-                    date = now,
-                    telephonyUri = if (bloque) {
-                        null
-                    } else {
-                        sentSmsRecorder.insertSentSms(
-                            address = r.raw,
-                            body = finalBody,
-                            date = now,
-                            subId = effectiveSubId,
-                        )
-                    },
-                    subId = effectiveSubId,
-                    initialStatus = MessageStatus.PENDING,
-                    replyToMessageId = replyToMessageId,
-                    localMirrorBody = localMirrorBody,
-                    clientMessageId = cleSurLigne,
-                )
+                if (e2eEncrypted && !bloque) {
+                    // E2E — the mirror row holds the PLAINTEXT with
+                    // `encrypted = 1`; the plaintext NEVER goes into the
+                    // system sent box (the fragment ciphertext rows are
+                    // written by the send step, next to the radio send, so
+                    // the row has no `telephonyUri` — like a group echo).
+                    mirror.upsertOutgoingSms(
+                        address = r.raw,
+                        body = finalBody,
+                        date = now,
+                        telephonyUri = null,
+                        subId = effectiveSubId,
+                        initialStatus = MessageStatus.PENDING,
+                        replyToMessageId = replyToMessageId,
+                        localMirrorBody = localMirrorBody,
+                        clientMessageId = cleSurLigne,
+                        encrypted = true,
+                    )
+                } else {
+                    mirror.upsertOutgoingSms(
+                        address = r.raw,
+                        body = finalBody,
+                        date = now,
+                        telephonyUri = if (bloque) {
+                            null
+                        } else {
+                            sentSmsRecorder.insertSentSms(
+                                address = r.raw,
+                                body = finalBody,
+                                date = now,
+                                subId = effectiveSubId,
+                            )
+                        },
+                        subId = effectiveSubId,
+                        initialStatus = MessageStatus.PENDING,
+                        replyToMessageId = replyToMessageId,
+                        localMirrorBody = localMirrorBody,
+                        clientMessageId = cleSurLigne,
+                    )
+                }
             },
-            envoi = { localId, r -> sender.send(localId, r.raw, finalBody, effectiveSubId, deliveryReports) },
+            envoi = { localId, r ->
+                if (e2eEncrypted) {
+                    e2eGate.sendEncrypted(
+                        localMessageId = localId,
+                        address = r.raw,
+                        body = finalBody,
+                        date = now,
+                        subId = effectiveSubId,
+                        requestDeliveryReport = deliveryReports,
+                        payloadType = e2ePayloadType,
+                    )
+                } else {
+                    sender.send(localId, r.raw, finalBody, effectiveSubId, deliveryReports)
+                }
+            },
             // v1.28.3 (groupes) — la copie dans le fil du groupe. Pas pour une réaction (corps
             // local vide, filtré à l'affichage).
             echoDeGroupe = if (echoInGroup && localMirrorBody != "") {

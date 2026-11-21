@@ -22,6 +22,9 @@ interface OutgoingMessageMirror {
      * @param clientMessageId Slice 3 — clé d'idempotence d'un envoi fait depuis un appareil
      * lié, écrite sur la ligne. L'appelant garantit qu'une seule ligne par envoi la porte
      * (la colonne porte un index UNIQUE).
+     * @param encrypted E2E (schema v22) — `true` quand le SMS est parti chiffré : la ligne
+     * miroir porte le clair avec `encrypted = 1` (le fil, la recherche, la sauvegarde et la
+     * synchro voient le texte, pas le chiffré). Défaut `false` = envoi en clair, inchangé.
      */
     suspend fun upsertOutgoingSms(
         address: String,
@@ -33,6 +36,7 @@ interface OutgoingMessageMirror {
         replyToMessageId: Long? = null,
         localMirrorBody: String? = null,
         clientMessageId: String? = null,
+        encrypted: Boolean = false,
     ): Long
 
     /**

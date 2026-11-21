@@ -5,6 +5,7 @@ import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.ClientConversationStateEntity
 import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.repository.SyncedConversationData
@@ -14,6 +15,8 @@ import com.filestech.sms.data.repository.SyncedMessageResult
 import com.filestech.sms.domain.model.MessageDirection
 import com.filestech.sms.domain.model.MessageStatus
 import com.filestech.sms.domain.model.MessageType
+import com.filestech.sms.domain.model.PhoneAddress
+import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.sync.SyncProtocol
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
@@ -85,11 +88,23 @@ class ConversationMirrorAdapterTest {
         val conversationDao = mockk<ConversationDao>(relaxed = true)
         val messageDao = mockk<MessageDao>(relaxed = true)
         val stateStore = FakeStateStore()
+        val peerRepository = mockk<E2ePeerRepository>()
+
+        init {
+            // E2E — the adapter reads the peer state for every 1:1
+            // upsert now (both directions of the derivation), so the
+            // strict mock needs a default: unknown, and a no-op
+            // write. Tests that care re-stub (the last stub wins).
+            coEvery { peerRepository.state(any()) } returns E2ePeerState.UNKNOWN
+            coEvery { peerRepository.setState(any(), any(), any()) } returns Unit
+        }
+
         val adapter = ConversationMirrorAdapter(
             mirror,
             conversationDao,
             messageDao,
             stateStore,
+            peerRepository,
         )
     }
 
@@ -145,6 +160,83 @@ class ConversationMirrorAdapterTest {
         assertThat(result).isNull()
         coVerify(exactly = 0) { f.mirror.upsertSyncedMessage(any()) }
     }
+
+    // -- E2E (§9.1, §9.4): the flags reach the mirror, and the
+    // conversation flag derives the client's peer state -----------
+
+    @Test fun `upsertSyncedConversation passes the E2E flag to the mirror`() = runTest {
+        val f = Fixture()
+        coEvery { f.peerRepository.state(any()) } returns E2ePeerState.ENCRYPTED
+        val slot = slot<SyncedConversationData>()
+        f.adapter.upsertSyncedConversation(sampleConversation().copy(encrypted = true))
+        coVerify { f.mirror.upsertSyncedConversation(capture(slot)) }
+        assertThat(slot.captured.encrypted).isTrue()
+    }
+
+    @Test fun `upsertSyncedMessage passes the E2E flags to the mirror`() = runTest {
+        val f = Fixture()
+        val slot = slot<SyncedMessageData>()
+        f.adapter.upsertSyncedMessage(
+            sampleMessage().copy(encrypted = true, decryptFailed = true),
+        )
+        coVerify { f.mirror.upsertSyncedMessage(capture(slot)) }
+        assertThat(slot.captured.encrypted).isTrue()
+        assertThat(slot.captured.decryptFailed).isTrue()
+    }
+
+    @Test fun `upsertSyncedConversation derives the peer state from an encrypted 1-1 flag`() =
+        runTest {
+            val f = Fixture()
+            coEvery { f.peerRepository.state(any()) } returns E2ePeerState.UNKNOWN
+            coEvery { f.peerRepository.setState(any(), any(), any()) } returns Unit
+            f.adapter.upsertSyncedConversation(sampleConversation().copy(encrypted = true))
+            coVerify(exactly = 1) {
+                f.peerRepository.setState(
+                    PhoneAddress.of("+33612345678").normalized,
+                    E2ePeerState.ENCRYPTED,
+                    any(),
+                )
+            }
+        }
+
+    @Test fun `upsertSyncedConversation does not derive peer state for a plain thread`() = runTest {
+        val f = Fixture()
+        f.adapter.upsertSyncedConversation(sampleConversation())
+        coVerify(exactly = 0) { f.peerRepository.setState(any(), any(), any()) }
+    }
+
+    @Test fun `upsertSyncedConversation does not derive peer state for a group`() = runTest {
+        val f = Fixture()
+        f.adapter.upsertSyncedConversation(
+            sampleConversation().copy(
+                addresses = listOf("+33612345678", "+33698765432"),
+                encrypted = true,
+            ),
+        )
+        coVerify(exactly = 0) { f.peerRepository.setState(any(), any(), any()) }
+    }
+
+    @Test fun `upsertSyncedConversation does not rewrite an already encrypted peer row`() =
+        runTest {
+            val f = Fixture()
+            coEvery { f.peerRepository.state(any()) } returns E2ePeerState.ENCRYPTED
+            f.adapter.upsertSyncedConversation(sampleConversation().copy(encrypted = true))
+            coVerify(exactly = 0) { f.peerRepository.setState(any(), any(), any()) }
+        }
+
+    @Test fun `upsertSyncedConversation drops a derived peer row to unknown for a plain flag`() =
+        runTest {
+            val f = Fixture()
+            coEvery { f.peerRepository.state(any()) } returns E2ePeerState.ENCRYPTED
+            f.adapter.upsertSyncedConversation(sampleConversation())
+            coVerify(exactly = 1) {
+                f.peerRepository.setState(
+                    PhoneAddress.of("+33612345678").normalized,
+                    E2ePeerState.UNKNOWN,
+                    any(),
+                )
+            }
+        }
 
     @Test fun `applyMessageUpdated patches only the present fields`() = runTest {
         val f = Fixture()

@@ -371,6 +371,39 @@ class ConversationMirrorSyncTest {
         assertThat(rows.single().localUri).isEqualTo("/files/mms_attachments/9.jpg")
     }
 
+    /**
+     * E2E (§9.4) — the flags survive into the client's Room mirror:
+     * the insert stores them, and a re-sync re-applies them (the
+     * update path patches them too, so a re-sent frame can never
+     * leave a stale plain row behind). The ciphertext column is
+     * never populated from sync — the hub never sends the bytes.
+     */
+    @Test fun `upsertSyncedMessage stores the E2E flags and re-applies them on re-sync`() =
+        runTest {
+            val conv = mirror.upsertSyncedConversation(convData(7))
+            val first = mirror.upsertSyncedMessage(
+                msgData(50, 7).copy(encrypted = true, decryptFailed = false),
+            )
+            assertThat(first.inserted).isTrue()
+            val inserted = db.messageDao().findById(first.localId)
+            assertThat(inserted?.encrypted).isTrue()
+            assertThat(inserted?.decryptFailed).isFalse()
+            assertThat(inserted?.ciphertext).isNull()
+
+            // A re-sync of the same message (now a placeholder on the
+            // hub — the decrypt failed after all) updates the row.
+            val second = mirror.upsertSyncedMessage(
+                msgData(50, 7).copy(encrypted = true, decryptFailed = true),
+            )
+            assertThat(second.inserted).isFalse()
+            assertThat(second.localId).isEqualTo(first.localId)
+            val updated = db.messageDao().findById(first.localId)
+            assertThat(updated?.encrypted).isTrue()
+            assertThat(updated?.decryptFailed).isTrue()
+            assertThat(updated?.ciphertext).isNull()
+            assertThat(db.messageDao().countForConversation(conv.localId)).isEqualTo(1)
+        }
+
     @Test fun `deleteSynced clears synced rows but keeps hub rows and schedules`() = runTest {
         val conv = mirror.upsertSyncedConversation(convData(7))
         mirror.upsertSyncedMessage(msgData(50, 7))

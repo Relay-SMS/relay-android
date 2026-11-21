@@ -303,6 +303,7 @@ class SettingsRepository(
                 previewLines = p[K.previewLines] ?: 2,
                 showAvatars = p[K.showAvatars] ?: true,
                 showCategories = p[K.showCategories] ?: true,
+                showDuplicateNameNumber = p[K.showDuplicateNameNumber] ?: false,
                 signature = p[K.signature],
                 // Round 11 — unknown names are dropped, like every stored enum.
                 mutedCategories = (p[K.mutedCategories] ?: emptySet())
@@ -459,6 +460,7 @@ class SettingsRepository(
                 identityDedupRepairedV1272 = p[K.identityDedupRepairedV1272] ?: false,
                 emptyConversationsPurgedV1272 = p[K.emptyConversationsPurgedV1272] ?: false,
                 stickyCategoryBackfilledV20 = p[K.stickyCategoryBackfilledV20] ?: false,
+                stickyCategoryBackfilledV22 = p[K.stickyCategoryBackfilledV22] ?: false,
             ),
         )
     }
@@ -487,6 +489,7 @@ class SettingsRepository(
         this[K.previewLines] = s.conversations.previewLines
         this[K.showAvatars] = s.conversations.showAvatars
         this[K.showCategories] = s.conversations.showCategories
+        this[K.showDuplicateNameNumber] = s.conversations.showDuplicateNameNumber
         s.conversations.signature?.let { this[K.signature] = it } ?: remove(K.signature)
         this[K.mutedCategories] = s.conversations.mutedCategories.map { it.name }.toSet()
         s.conversations.selectedCategory?.let { this[K.selectedCategory] = it.name }
@@ -593,6 +596,7 @@ class SettingsRepository(
         this[K.identityDedupRepairedV1272] = s.advanced.identityDedupRepairedV1272
         this[K.emptyConversationsPurgedV1272] = s.advanced.emptyConversationsPurgedV1272
         this[K.stickyCategoryBackfilledV20] = s.advanced.stickyCategoryBackfilledV20
+        this[K.stickyCategoryBackfilledV22] = s.advanced.stickyCategoryBackfilledV22
     }
 
     private inline fun <reified E : Enum<E>> enumOr(p: Preferences, key: Preferences.Key<String>, def: E, valueOf: (String) -> E): E =
@@ -646,6 +650,7 @@ class SettingsRepository(
         val previewLines = intPreferencesKey("conv.previewLines")
         val showAvatars = booleanPreferencesKey("conv.avatars")
         val showCategories = booleanPreferencesKey("conv.showCategories")
+        val showDuplicateNameNumber = booleanPreferencesKey("conv.duplicateNameNumber")
         val signature = stringPreferencesKey("conv.signature")
 
         // Round 11 — muted categories, stored as enum names. An empty set
@@ -824,5 +829,9 @@ class SettingsRepository(
         /** Round 35 (schema v20) — backfill one-shot des categories collantes. */
         val stickyCategoryBackfilledV20 =
             booleanPreferencesKey("advanced.stickyCategoryBackfilledV20")
+
+        /** Spam follow-up (schema v22) — second passe du backfill one-shot. */
+        val stickyCategoryBackfilledV22 =
+            booleanPreferencesKey("advanced.stickyCategoryBackfilledV22")
     }
 }

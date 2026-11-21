@@ -66,6 +66,12 @@ class ConversationEraser @Inject constructor(
     // 1.28.6 par la relecture sécurité du delta final (S2/S3), où un premier commentaire
     // affirmait à tort que ce point les couvrait tous.
     private val notifications: ConversationNotificationCanceller,
+    // E2E (schema v22) — les notices « Messages are now end-to-end
+    // encrypted » / « security code changed » d'une conversation partent
+    // avec elle. Le DAO direct, pas le store (`:app` est inaccessible
+    // depuis `:data`) ; la suppression a lieu dans la transaction finale
+    // d'[erase], avec la ligne de conversation elle-même.
+    private val noticeDao: com.filestech.sms.data.local.db.dao.E2eNoticeDao,
 ) {
 
     private companion object {
@@ -210,6 +216,9 @@ class ConversationEraser @Inject constructor(
                 else -> {
                     if (tardif) systemCopyGone = false
                     for (envoi in programmesRestants) scheduledDao.delete(envoi.id)
+                    // E2E — les notices de chiffrement de la conversation
+                    // partent avec elle, dans la même transaction.
+                    noticeDao.deleteForConversation(id)
                     conversationDao.delete(id)
                     null
                 }

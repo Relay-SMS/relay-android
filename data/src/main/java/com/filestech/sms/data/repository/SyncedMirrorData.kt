@@ -71,6 +71,17 @@ data class SyncedMessageData(
     /** The linked device's UUID send key, when this device sent it (Slice 3). */
     val clientMessageId: String?,
     val attachments: List<SyncedAttachmentData>,
+    /**
+     * E2E (§9.1) — this message was encrypted on the wire. Stored on
+     * the client's Room mirror, like the hub's own rows.
+     */
+    val encrypted: Boolean = false,
+    /**
+     * E2E (§9.1) — the ciphertext arrived but could not be decrypted
+     * on the hub: the client renders the placeholder row, never the
+     * bytes (the hub never sends the `ciphertext` column).
+     */
+    val decryptFailed: Boolean = false,
 )
 
 /** A synced conversation, parsed — mirrors `SyncedConversation` on the wire. */
@@ -100,6 +111,16 @@ data class SyncedConversationData(
     /** The pinned message (hub id) with its pin time, when one is pinned. */
     val pinnedMessageHubId: Long? = null,
     val pinnedMessageAt: Long? = null,
+    /**
+     * E2E (§9.1) — the 1:1 peer's state is ENCRYPTED on the hub.
+     * There is no `encrypted` column on `ConversationEntity` (the
+     * design stores only the message flags on the mirror): the
+     * client derives its own peer state from this flag instead (see
+     * `ConversationMirrorAdapter`) — the same read path the hub UI
+     * uses, so the row badge and composer placeholder render from
+     * the same source on both devices.
+     */
+    val encrypted: Boolean = false,
 )
 
 /**

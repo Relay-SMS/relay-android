@@ -66,6 +66,17 @@ netty = "4.2.17.Final"
 camerax = "1.6.2"
 zxing = "3.5.4"
 bouncycastle = "1.87"
+# E2E encryption — Trixnity's Kotlin binding for vodozemac (Matrix's Olm
+# double-ratchet library, Apache-2.0, audited by Least Authority 2022).
+# PINNED 5.11.0: it embeds vodozemac 0.11.2 — the HARD FLOOR is 0.10.0
+# (Soatok's Feb 2026 audit findings were fixed in 0.10.0; never ship a
+# Trixnity version embedding an older vodozemac). Verified 2026-11-20:
+# the -android POM pulls in only kotlin-stdlib (2.3.21 — older than this
+# project's 2.4.10, so Gradle resolves stdlib to 2.4.10) and the
+# -binaries-android AAR (the compiled .so per ABI). No Matrix client,
+# no ktor, no networking. SHA-256 of both AARs recorded in
+# THIRD_PARTY_NOTICES.md. Never libsignal (AGPL) — see the design doc.
+trixnity-vodozemac = "5.11.0"
 
 # Logging
 timber = "5.0.1"
@@ -219,6 +230,12 @@ zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 # and the self-signed-certificate fallback (bcpkix carries the X.509 builder).
 bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 bouncycastle-pkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }
+# E2E encryption — vodozemac via Trixnity (see the version note above).
+# Only the bindings artifact is declared: the -binaries-android AAR
+# (native .so per ABI) arrives transitively. The local harness needs the
+# bindings classes.jar in ~/workspace/tools/app-deps/ (see
+# trixnity-vodozemac-android-5.11.0.jar there) — Gradle/CI need nothing.
+trixnity-vodozemac-android = { module = "de.connect2x.trixnity:trixnity-vodozemac-android", version.ref = "trixnity-vodozemac" }
 
 # Logging
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }

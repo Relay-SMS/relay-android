@@ -99,6 +99,8 @@ fun SyncedMessage.toData(): SyncedMessageData? {
         reaction = reaction,
         clientMessageId = clientMessageId,
         attachments = attachments.mapNotNull { it.toData() },
+        encrypted = encrypted,
+        decryptFailed = decryptFailed,
     )
 }
 
@@ -120,6 +122,7 @@ fun SyncedConversation.toData(): SyncedConversationData? {
         isBlocked = blocked,
         pinnedMessageHubId = pinnedMessageId?.let(::parseHubId),
         pinnedMessageAt = pinnedMessageAt,
+        encrypted = encrypted,
     )
 }
 

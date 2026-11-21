@@ -137,6 +137,36 @@ class WireMappersTest {
         assertThat(sampleConversation(id = "nope").toData()).isNull()
     }
 
+    // -- E2E (§9.1): the flags survive the wire → mirror mapping ------
+
+    @Test fun `message toData carries the E2E flags`() {
+        val data = sampleMessage().copy(encrypted = true, decryptFailed = true).toData()
+        assertThat(data).isNotNull()
+        assertThat(data!!.encrypted).isTrue()
+        assertThat(data.decryptFailed).isTrue()
+    }
+
+    @Test fun `message toData defaults the E2E flags to false`() {
+        // An older hub omits the fields — the wire defaults apply,
+        // and the mirror stores plain rows, never null flags.
+        val data = sampleMessage().toData()
+        assertThat(data).isNotNull()
+        assertThat(data!!.encrypted).isFalse()
+        assertThat(data.decryptFailed).isFalse()
+    }
+
+    @Test fun `conversation toData carries the E2E flag`() {
+        val data = sampleConversation().copy(encrypted = true).toData()
+        assertThat(data).isNotNull()
+        assertThat(data!!.encrypted).isTrue()
+    }
+
+    @Test fun `conversation toData defaults the E2E flag to false`() {
+        val data = sampleConversation().toData()
+        assertThat(data).isNotNull()
+        assertThat(data!!.encrypted).isFalse()
+    }
+
     private fun sampleMessage(
         id: String = "50",
         conversationId: String = "7",

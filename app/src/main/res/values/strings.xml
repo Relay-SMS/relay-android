@@ -138,6 +138,7 @@
     <string name="details_panel_title">Details</string>
     <string name="details_schedule">Schedule</string>
     <string name="details_add_to_contacts">Add to contacts</string>
+    <string name="details_edit_contact">Edit contact</string>
     <string name="details_member_count">%1$d members</string>
     <string name="details_change_photo">Change contact photo</string>
     <string name="details_tab_photos">Photos</string>
@@ -180,7 +181,38 @@
     <string name="invite_friends_settings">Invite your friends</string>
 
     <!-- Thread -->
-    <string name="thread_compose_placeholder">Relay message</string>
+    <string name="thread_compose_placeholder">Message</string>
+    <string name="thread_compose_placeholder_encrypted">Relay message</string>
+
+    <!-- End-to-end encryption -->
+    <string name="e2e_too_long">Too long to send encrypted</string>
+    <string name="e2e_notice_activated">Messages are now end-to-end encrypted.</string>
+    <string name="e2e_notice_key_changed">%1$s\'s security code changed. Messages are still end-to-end encrypted.</string>
+    <string name="e2e_notice_key_changed_verified">%1$s\'s security code changed. %1$s was verified — compare the safety number again to confirm it\'s still them.</string>
+    <string name="e2e_decrypt_failed">This message couldn\'t be decrypted.</string>
+    <string name="e2e_encryption">Encryption</string>
+    <string name="e2e_details_encrypted">End-to-end encrypted</string>
+    <string name="e2e_details_verify_tap">Tap to verify %1$s\'s safety number</string>
+    <string name="e2e_details_verified">Verified ✓</string>
+    <string name="e2e_details_setting_up">Setting up encryption…</string>
+    <string name="e2e_details_not_encrypted">Not encrypted</string>
+    <string name="e2e_details_not_relay">%1$s doesn\'t use Relay yet</string>
+    <string name="e2e_details_auto_start">Encryption starts automatically when %1$s uses Relay</string>
+    <string name="e2e_verify_title">Safety number</string>
+    <string name="e2e_verify_explainer">Compare this number with %1$s in person or over another channel — a call, or another app. If the numbers match, you\'re talking to each other and no one in between.</string>
+    <string name="e2e_verify_mark">Mark as verified</string>
+    <string name="e2e_verify_remove">Remove verification</string>
+    <string name="e2e_verify_verified">Verified</string>
+    <string name="e2e_verify_copy">Copy</string>
+    <string name="e2e_verify_load_failed">Couldn\'t load the safety number.</string>
+    <string name="e2e_settings_explainer">Relay to Relay auto-encrypts. When both people use Relay, your 1:1 texts are end-to-end encrypted automatically — no setup needed. Messages to anyone without Relay, group chats, and photos and files are sent as plain SMS/MMS. Encrypted messages use a few more text segments than plain messages.</string>
+    <string name="e2e_settings_status_subtitle">Automatic when both people use Relay</string>
+    <string name="e2e_settings_fingerprint">Your fingerprint</string>
+    <string name="e2e_settings_fingerprint_hint">Share this with a contact so they can check it\'s really you.</string>
+    <string name="e2e_settings_verified_contacts">Verified contacts</string>
+    <string name="e2e_settings_verified_count">%1$d contacts</string>
+    <string name="e2e_settings_no_verified">No verified contacts yet</string>
+    <string name="e2e_settings_attribution">Relay\'s end-to-end encryption uses vodozemac, the open-source encryption library from Matrix, independently audited by Least Authority in 2022.</string>
     <string name="thread_compose_emoji">Emoji</string>
     <string name="thread_status_pending">Sending…</string>
     <string name="thread_status_sent">Sent</string>
@@ -445,6 +477,8 @@
 
     <string name="settings_section_conversations">Conversations</string>
     <string name="settings_show_avatars">Show avatars</string>
+    <string name="settings_show_duplicate_number">Show number under duplicate names</string>
+    <string name="settings_show_duplicate_number_subtitle">When two conversations share a name, show the number underneath.</string>
     <string name="settings_show_categories">Show categories</string>
     <string name="settings_show_categories_subtitle">When off, filtering is off too and all conversations show in one list.</string>
     <string name="settings_signature">Automatic signature</string>
@@ -680,6 +714,8 @@
     <!-- v1.6.1 — body of the system notification fired when someone reacts to our message -->
     <string name="reaction_notif_body_with_preview">Reacted %1$s to: %2$s</string>
     <string name="reaction_notif_body_no_preview">Reacted %1$s to your message</string>
+    <!-- E2E: notification body for an undecryptable message (the raw ciphertext is never shown). -->
+    <string name="e2e_decrypt_failed_notif">This message couldn\'t be decrypted.</string>
     <!-- v1.6.1 — snackbar shown when PDF export fails (audit QUAL-07 i18n fix) -->
     <string name="snack_pdf_export_failed">PDF export failed</string>
 
@@ -1355,7 +1391,7 @@
     <string name="note_save_failed">Couldn\'t save this entry</string>
     <string name="note_attachment_failed">Couldn\'t add this attachment</string>
     <string name="note_open_failed">Couldn\'t open this file</string>
-    <string name="note_compose_placeholder">Write a note…</string>
+    <string name="note_compose_placeholder">Write a note</string>
     <string name="note_attach_sheet_subtitle">Photos, videos and files are stored encrypted in this note.</string>
     <string name="note_pdf_header_subtitle">Exported %1$s</string>
     <string name="note_empty_photos">Photos saved in this note will show here.</string>

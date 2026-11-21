@@ -2,9 +2,12 @@ package com.filestech.sms.sync.client
 
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.data.repository.SyncedConversationResult
 import com.filestech.sms.data.repository.SyncedMessageResult
+import com.filestech.sms.domain.model.PhoneAddress
+import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.sync.SyncProtocol
 import com.filestech.sms.sync.SyncedConversation
 import com.filestech.sms.sync.SyncedMessage
@@ -74,6 +77,17 @@ interface ClientMirror {
  * Client mode — the [ClientMirror] backed by the real store:
  * [ConversationMirror] for the upserts, the DAOs for prune /
  * delete / patch.
+ *
+ * E2E (design §9.4): the client never probes, never holds keys,
+ * never encrypts — it only stores and renders flags. The message
+ * flags land on the Room mirror via [ConversationMirror]; the
+ * conversation flag is DERIVED into the local peer state instead
+ * (there is no `encrypted` column on the conversation row): an
+ * `encrypted` 1:1 frame records its peer as ENCRYPTED, with no keys
+ * attached, so the thread UI reads the same peer state on the
+ * client as on the hub. A derived row is state only — it can never
+ * encrypt (there is no session behind it) and the client never
+ * probes from it.
  */
 @Singleton
 class ConversationMirrorAdapter @Inject constructor(
@@ -81,6 +95,10 @@ class ConversationMirrorAdapter @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val syncStateStore: SyncStateStore,
+    // The E2E peer state, or null in tests (which never need a
+    // derived peer row — the conversation flag is then stored
+    // nowhere, as before).
+    private val e2ePeerRepository: E2ePeerRepository? = null,
 ) : ClientMirror {
 
     override suspend fun upsertSyncedConversation(
@@ -92,6 +110,27 @@ class ConversationMirrorAdapter @Inject constructor(
         // by default) so gap-fill can find it — including ones whose
         // stream batches never arrived.
         syncStateStore.ensureConversationState(data.hubConversationId)
+        // E2E (§9.4): derive the peer state from the synced flag, in
+        // BOTH directions — 1:1 only (groups are never encrypted). An
+        // encrypted frame records ENCRYPTED; a plain frame drops a
+        // derived ENCRYPTED row back to UNKNOWN, so the list badge
+        // clears when the hub's session lapses. Either way the row is
+        // only written when it disagrees — a re-sync must not rewrite
+        // it on every snapshot. The peer key is the normalized number,
+        // like the hub's own peer rows. The row carries state only, no
+        // keys: the client never encrypts, it only renders the badge.
+        if (data.addresses.size == 1) {
+            val peerRepository = e2ePeerRepository
+            if (peerRepository != null) {
+                val address = PhoneAddress.of(data.addresses.first()).normalized
+                val current = peerRepository.state(address)
+                if (data.encrypted && current != E2ePeerState.ENCRYPTED) {
+                    peerRepository.setState(address, E2ePeerState.ENCRYPTED)
+                } else if (!data.encrypted && current == E2ePeerState.ENCRYPTED) {
+                    peerRepository.setState(address, E2ePeerState.UNKNOWN)
+                }
+            }
+        }
         return result
     }
 

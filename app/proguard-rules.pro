@@ -126,6 +126,22 @@
 -keep,includedescriptorclasses class net.zetetic.database.sqlcipher.SQLiteDatabase { *; }
 -keep class net.zetetic.database.sqlcipher.SQLiteDatabaseHook { *; }
 
+# ----- Trixnity vodozemac (E2E encryption) --------------------------------------------------
+# E2E round — NEITHER AAR ships consumer ProGuard rules (verified
+# 2026-11-20: no proguard.txt in trixnity-vodozemac-android-5.11.0.aar
+# or trixnity-vodozemac-binaries-android-5.11.0.aar). The JNI entry
+# points are private `external` functions on the `*BindingsKt` classes
+# (e.g. `AccountBindingsKt.vodozemac_olm_account_new`, verified by
+# javap on the 5.11.0 classes.jar), resolved from libvodozemac.so by
+# their JNI-mangled names — R8 must not rename the classes or the
+# methods, or every native call fails at runtime. The public API
+# classes (Account, Session, OlmMessage, keys) need no keep: they are
+# reached by direct references from VodozemacCrypto. Release R8
+# verification is CI-only (the local harness never runs R8).
+-keepclasseswithmembernames class de.connect2x.trixnity.vodozemac.bindings.** {
+    native <methods>;
+}
+
 # ----- DataStore (protobuf-free path) ----------------------------------------------------------
 -keep class androidx.datastore.preferences.protobuf.** { *; }
 

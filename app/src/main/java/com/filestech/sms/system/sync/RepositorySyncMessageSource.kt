@@ -31,6 +31,7 @@ import com.filestech.sms.domain.usecase.ScheduleMessageUseCase
 import com.filestech.sms.domain.usecase.SendMediaMmsUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
 import com.filestech.sms.domain.usecase.UnblockNumberUseCase
+import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.sync.ActionResult
 import com.filestech.sms.sync.AttachmentData
 import com.filestech.sms.sync.AttachmentOpenResult
@@ -138,6 +139,17 @@ import com.filestech.sms.domain.model.MessageState as DomainMessageState
  * lowercase wire strings — explicit `when` mappings, never
  * `name.lowercase()` (locale). An unknown wire category is
  * refused with `invalid_request`, never a crash.
+ *
+ * E2E adds the `encrypted` / `decrypt_failed` wire flags (design
+ * §9.1): messages carry their stored flags, and a 1:1 conversation
+ * is `encrypted` when its peer's state is ENCRYPTED (read from
+ * [E2ePeerRepository]). [observeConversations] also watches the
+ * encrypted-address set, so a state flip to ENCRYPTED re-emits the
+ * list and the engine's whole-DTO diff pushes a
+ * `conversation_updated` for the flipped thread — the desktop
+ * re-renders the row badge + composer placeholder. The raw
+ * ciphertext is never synced: the DTOs carry the flags, not the
+ * bytes.
  */
 @Singleton
 class RepositorySyncMessageSource @Inject constructor(
@@ -157,6 +169,10 @@ class RepositorySyncMessageSource @Inject constructor(
     // The tunnel-address provider, or null in tests (which never
     // need a tunnel address — [tunnelIp] then answers null).
     private val vpnAddressProvider: VpnAddressProvider? = null,
+    // The E2E peer state, or null in tests (which never need an
+    // encrypted conversation — every conversation then maps
+    // `encrypted = false`).
+    private val e2ePeerRepository: E2ePeerRepository? = null,
 ) : SyncMessageSource {
 
     /** Serializes all send handling — see the class KDoc. */
@@ -177,17 +193,28 @@ class RepositorySyncMessageSource @Inject constructor(
 
     override suspend fun conversations(): List<SyncedConversation> {
         val counts = repository.messageCountsByConversation()
+        val encrypted = e2ePeerRepository?.encryptedAddresses().orEmpty()
         return allConversations().first()
             .sortedByDescending { it.lastMessageAt }
-            .map { it.toSynced(counts[it.id] ?: 0) }
+            .map { it.toSynced(counts[it.id] ?: 0, encrypted) }
     }
 
-    override fun observeConversations(): Flow<List<SyncedConversation>> =
-        allConversations().map { list ->
+    override fun observeConversations(): Flow<List<SyncedConversation>> {
+        // E2E (§9.2): the list also re-emits when the
+        // encrypted-address set changes, so a peer-state flip to
+        // ENCRYPTED reaches the engine's whole-DTO diff — which
+        // pushes a `conversation_updated` for the flipped thread —
+        // without any conversation row changing. Without the peer
+        // repository (tests) the set is empty and every conversation
+        // maps `encrypted = false`, as before.
+        val encryptedAddresses = e2ePeerRepository?.observeEncryptedAddresses()
+            ?: flowOf(emptySet())
+        return combine(allConversations(), encryptedAddresses) { list, encrypted ->
             val counts = repository.messageCountsByConversation()
             list.sortedByDescending { it.lastMessageAt }
-                .map { it.toSynced(counts[it.id] ?: 0) }
+                .map { it.toSynced(counts[it.id] ?: 0, encrypted) }
         }
+    }
 
     /**
      * `observeAll`'s parameter means "archived ONLY", not "include
@@ -641,8 +668,12 @@ class RepositorySyncMessageSource @Inject constructor(
                 // The real count, from the same read `conversations()`
                 // uses — for an already-existing group the count must
                 // be real so the desktop opens it with its history.
+                // The encrypted set, from the same read too — a
+                // created 1:1 with an ENCRYPTED peer opens with its
+                // lock, not on the next list emission.
                 val count = repository.messageCountsByConversation()[created.id] ?: 0
-                CreateConversationResult.Created(fresh.toSynced(count))
+                val encrypted = e2ePeerRepository?.encryptedAddresses().orEmpty()
+                CreateConversationResult.Created(fresh.toSynced(count, encrypted))
             }
         }
     }
@@ -1322,25 +1353,43 @@ private fun sha256Hex(file: File): String? = try {
     null
 }
 
-/** Domain → wire mapping. Ids are decimal strings of the Room ids. */
-private fun Conversation.toSynced(messageCount: Int): SyncedConversation = SyncedConversation(
-    id = id.toString(),
-    threadId = threadId,
-    addresses = addresses.map { it.raw },
-    displayName = displayName,
-    customName = customName,
-    title = title,
-    lastMessageAt = lastMessageAt,
-    lastMessagePreview = lastMessagePreview,
-    unread = unreadCount,
-    pinned = pinned,
-    archived = archived,
-    muted = muted,
-    blocked = blocked,
-    messageCount = messageCount,
-    pinnedMessageId = pinnedMessageId?.toString(),
-    pinnedMessageAt = pinnedMessageAt,
-)
+/**
+ * Domain → wire mapping. Ids are decimal strings of the Room ids.
+ * E2E (§9.1): [encryptedAddresses] is the set of addresses whose
+ * peer state is ENCRYPTED — a conversation is `encrypted` only when
+ * it is 1:1 and its single address is in the set (groups are never
+ * encrypted in v1). The peer rows are keyed by the normalized number
+ * the app stores, and the raw form is checked too — the two agree
+ * for a stored number, and the raw check covers a peer row keyed
+ * before normalization.
+ */
+private fun Conversation.toSynced(
+    messageCount: Int,
+    encryptedAddresses: Set<String> = emptySet(),
+): SyncedConversation {
+    val single = addresses.singleOrNull()
+    val encrypted = single != null &&
+        (single.normalized in encryptedAddresses || single.raw in encryptedAddresses)
+    return SyncedConversation(
+        id = id.toString(),
+        threadId = threadId,
+        addresses = addresses.map { it.raw },
+        displayName = displayName,
+        customName = customName,
+        title = title,
+        lastMessageAt = lastMessageAt,
+        lastMessagePreview = lastMessagePreview,
+        unread = unreadCount,
+        pinned = pinned,
+        archived = archived,
+        muted = muted,
+        blocked = blocked,
+        messageCount = messageCount,
+        pinnedMessageId = pinnedMessageId?.toString(),
+        pinnedMessageAt = pinnedMessageAt,
+        encrypted = encrypted,
+    )
+}
 
 private fun Message.toSynced(): SyncedMessage = SyncedMessage(
     id = id.toString(),
@@ -1359,6 +1408,10 @@ private fun Message.toSynced(): SyncedMessage = SyncedMessage(
     reaction = reactionEmoji,
     attachments = attachments.map { it.toSynced() },
     clientMessageId = clientMessageId,
+    // E2E (§9.1): the stored flags, not the bytes — the `ciphertext`
+    // column never leaves the hub.
+    encrypted = encrypted,
+    decryptFailed = decryptFailed,
 )
 
 private fun Attachment.toSynced(): SyncedAttachment = SyncedAttachment(

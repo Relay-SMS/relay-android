@@ -97,6 +97,14 @@ fun AdvancedScreen(
     crashLogViewModel: CrashLogSettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // The error-log switch, read HERE (not inside [ErrorLogRows]):
+    // the group's `item {}` lambdas capture the value at registration
+    // time, and a state read inside [ErrorLogRows] recomposes only
+    // that function — which re-registers the rows without re-rendering
+    // them, so the switch would never flip. Read at screen level, a
+    // flip recomposes the screen and the group re-registers with the
+    // new value, like every other toggle here.
+    val crashLogEnabled by crashLogViewModel.enabled.collectAsStateWithLifecycle()
     var showNuke by remember { mutableStateOf(false) }
     // v1.28.6 — le compte rendu de la purge, lu avant de redemarrer l'application. `null` = pas de
     // dialogue ; sinon il confirme, ou dit ce qui a resiste — cf. [SettingsViewModel.Event.DataWiped].
@@ -286,6 +294,7 @@ fun AdvancedScreen(
                 // plus the on/off switch (see [ErrorLogRows]).
                 ErrorLogRows(
                     onOpenErrorLog = onOpenErrorLog,
+                    crashLogEnabled = crashLogEnabled,
                     crashLogViewModel = crashLogViewModel,
                 )
                 // Round 33 — the viewers remembered with "Always" in
@@ -566,11 +575,14 @@ private fun rememberViewerChoicesState(snackbarHost: SnackbarHostState): ViewerC
 @Composable
 private fun RelayGroupScope.ErrorLogRows(
     onOpenErrorLog: () -> Unit,
+    crashLogEnabled: Boolean,
     crashLogViewModel: CrashLogSettingsViewModel,
 ) {
-    // The switch, read live from the toggle ViewModel (see
-    // [CrashLogSettingsViewModel]).
-    val crashLogEnabled by crashLogViewModel.enabled.collectAsStateWithLifecycle()
+    // The switch value arrives as a parameter, read at screen level
+    // (see [AdvancedScreen]) — never read the flow here: the group's
+    // `item {}` lambdas capture the value at registration, and a
+    // state read in this function recomposes only this function,
+    // which re-registers the rows without re-rendering them.
     // Local-only error log — the saved crash reports, for
     // sending us what went wrong. Nothing here uploads
     // anything; see `crashlog`.

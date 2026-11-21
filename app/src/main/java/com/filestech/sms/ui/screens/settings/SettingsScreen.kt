@@ -152,6 +152,8 @@ fun SettingsScreen(
     onOpenEmergencySetup: () -> Unit,
     // Slice 1 — Linked devices (LAN server toggle, linked devices, QR pairing).
     onOpenLinkedDevices: () -> Unit,
+    // E2E — the Encryption sub-screen (Security & Privacy → Encryption).
+    onOpenEncryption: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -537,6 +539,28 @@ fun SettingsScreen(
                         positionAccordee = localisation.accordee,
                         onRequestLocationPermission = localisation.demander,
                     )
+                    // E2E — the Encryption sub-screen, its own group
+                    // after the security card (so `SecuritySection`,
+                    // with its Detekt-baselined parameter list, stays
+                    // untouched). Hidden on a linked device — a
+                    // client holds no identity keys, so its
+                    // fingerprint row would wrongly create one.
+                    if (!isClientMode) {
+                        RelaySettingsGroup(
+                            modifier = Modifier.padding(top = 16.dp),
+                        ) {
+                            item(onClick = onOpenEncryption) {
+                                RelaySettingRow(
+                                    icon = Icons.Outlined.Lock,
+                                    title = stringResource(R.string.e2e_encryption),
+                                    subtitle = stringResource(
+                                        R.string.e2e_settings_status_subtitle,
+                                    ),
+                                    chevron = true,
+                                )
+                            }
+                        }
+                    }
                 }
                 SettingsSection.BACKUP -> SettingsPageColumn(padding) {
                     BackupSectionContent(
@@ -1031,6 +1055,20 @@ private fun AppearanceSectionContent(
                 title = stringResource(R.string.settings_show_avatars),
                 checked = conversations.showAvatars,
                 onCheckedChange = { v -> onUpdate { it.copy(conversations = it.conversations.copy(showAvatars = v)) } },
+            )
+        }
+        // The number under a conversation's name when two
+        // conversations share one — off by default, so a lone
+        // number under one row never reads as a glitch.
+        item {
+            RelaySwitchRow(
+                icon = Icons.Outlined.Phone,
+                title = stringResource(R.string.settings_show_duplicate_number),
+                subtitle = stringResource(R.string.settings_show_duplicate_number_subtitle),
+                checked = conversations.showDuplicateNameNumber,
+                onCheckedChange = { v ->
+                    onUpdate { it.copy(conversations = it.conversations.copy(showDuplicateNameNumber = v)) }
+                },
             )
         }
         // Round 12 — hide the category tab row on the main screen.

@@ -110,6 +110,15 @@ class KeystoreManager @Inject constructor() {
         const val ALIAS_NOTES_AEAD = "smstech_notes_aead"
 
         /**
+         * E2E encryption (schema v22) — wraps the pickle key
+         * ([com.filestech.sms.e2e.E2eKeyManager]), the random 32-byte
+         * passphrase that encrypts the Olm Account and session
+         * pickles. Its caller passes `allowUserIv = true`, like the
+         * DB master key: the fresh IV comes from [AeadCipher].
+         */
+        const val ALIAS_E2E_PICKLE = "smstech_e2e_pickle"
+
+        /**
          * v1.25.3 — clé adossée à la biométrie, seule à porter `userAuthRequired = true`.
          *
          * Elle ne chiffre aucune donnée : elle sert de **preuve**. Le déverrouillage biométrique

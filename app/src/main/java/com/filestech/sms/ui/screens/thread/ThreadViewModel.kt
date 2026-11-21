@@ -9,6 +9,7 @@ import com.filestech.sms.core.ext.oneShotEvents
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.datastore.SettingsRepository
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.data.sms.SmsSegmentCounter
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.data.voice.VoiceRecorder
@@ -26,6 +27,9 @@ import com.filestech.sms.domain.usecase.RetrySendUseCase
 import com.filestech.sms.domain.usecase.SendMediaMmsUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
 import com.filestech.sms.domain.usecase.SendVoiceMmsUseCase
+import com.filestech.sms.e2e.E2eNoticeUi
+import com.filestech.sms.e2e.E2eThreadEntryPoint
+import com.filestech.sms.e2e.E2eWireFormat
 import com.filestech.sms.sync.client.ClientSendManagerEntryPoint
 import com.filestech.sms.sync.client.ClientSyncEngineEntryPoint
 import com.filestech.sms.system.notifications.ActiveConversationTracker
@@ -516,6 +520,22 @@ class ThreadViewModel @Inject constructor(
          * hub mode (and before the first download starts).
          */
         val attachmentDownloads: Map<Long, com.filestech.sms.sync.client.ClientDownloadState> = emptyMap(),
+        /**
+         * E2E — this conversation's peer state (1:1 only; groups stay
+         * UNKNOWN and render plain). Observed live from
+         * [com.filestech.sms.e2e.E2ePeerRepository]: the composer
+         * placeholder and the send icon flip the moment the key
+         * exchange completes, without reopening the thread.
+         */
+        val e2ePeerState: E2ePeerState = E2ePeerState.UNKNOWN,
+        /** E2E — the peer was verified by comparing safety numbers. */
+        val e2eVerified: Boolean = false,
+        /**
+         * E2E — this conversation's in-thread notices (activation /
+         * key change), oldest first. The screen interleaves them with
+         * the messages by date ([com.filestech.sms.e2e.E2eThreadNotices]).
+         */
+        val e2eNotices: List<E2eNoticeUi> = emptyList(),
     )
 
     /** Staged attachment awaiting user confirmation in the composer. */
@@ -577,6 +597,9 @@ class ThreadViewModel @Inject constructor(
 
     /** Client mode C2 — the fetch-on-open guard (once per ViewModel, see `init`). */
     private var fetchOnOpenDone = false
+
+    /** E2E — the probe-on-open guard (once per ViewModel, see `init`). */
+    private var e2eProbeOnOpenDone = false
 
     /**
      * Feedback round 7 — re-resolution trigger for the header contact photo.
@@ -757,6 +780,24 @@ class ThreadViewModel @Inject constructor(
                     }
                 }
             }
+            // E2E — probe on thread open (design §2.4): opening a 1:1
+            // thread is intent to talk, so the key exchange starts here
+            // and the first message is usually encrypted already. Once
+            // per ViewModel (the row re-emits on every message). Hub
+            // mode only: a linked device holds no identity keys and
+            // must never probe. The manager gates the rest itself
+            // (probeable number, budget, state). The four-way gate
+            // reads as one named condition (and keeps the `if` under
+            // Detekt's complexity ceiling).
+            val e2eShouldProbe = conv != null && !conv.isGroup && !e2eProbeOnOpenDone &&
+                settings.state.value.mode != DeviceMode.CLIENT
+            if (e2eShouldProbe) {
+                e2eProbeOnOpenDone = true
+                runCatching { e2eEntryPoint().probeManager().onThreadOpened(conversationId) }
+                    .onFailure {
+                        timber.log.Timber.w(it, "ThreadViewModel: e2e probe-on-open failed")
+                    }
+            }
         }.launchIn(viewModelScope)
         combine(
             convFlow.map { conv ->
@@ -839,6 +880,49 @@ class ThreadViewModel @Inject constructor(
             scheduleDeferredMarkRead()
         }.launchIn(viewModelScope)
 
+        // E2E — the peer state + notices for this conversation, observed
+        // live (see [E2eThreadEntryPoint] for why the entry point, not
+        // the constructor). A failed resolution (JVM tests with a mocked
+        // context) leaves the thread plain: E2E is additive, never
+        // load-bearing. Groups have no peer row — the address is null
+        // there and the state stays UNKNOWN.
+        runCatching { e2eEntryPoint() }.getOrNull()?.let { e2e ->
+            convFlow.map { conv ->
+                conv?.takeIf { !it.isGroup }?.firstAddress?.normalized
+            }.distinctUntilChanged()
+                .flatMapLatest { address ->
+                    if (address == null) {
+                        flowOf(null)
+                    } else {
+                        e2e.peerRepository().observePeer(address)
+                    }
+                }
+                .onEach { peer ->
+                    _state.update {
+                        it.copy(
+                            e2ePeerState = peer?.state ?: E2ePeerState.UNKNOWN,
+                            e2eVerified = peer?.verified == true,
+                        )
+                    }
+                }
+                .launchIn(viewModelScope)
+            e2e.noticeStore().observeNotices(conversationId)
+                .onEach { notices ->
+                    _state.update {
+                        it.copy(
+                            e2eNotices = notices.map { notice ->
+                                E2eNoticeUi(
+                                    id = notice.id,
+                                    kind = notice.kind,
+                                    date = notice.date,
+                                )
+                            },
+                        )
+                    }
+                }
+                .launchIn(viewModelScope)
+        }
+
         // Best-effort: drop yesterday's orphan recordings from the cache on screen open.
         voiceRecorder.pruneOld()
     }
@@ -879,6 +963,27 @@ class ThreadViewModel @Inject constructor(
         repo.setDraft(conversationId, null)
     }
 
+    /**
+     * E2E — whether this text-only send is too long to go out encrypted
+     * (design §3.2: 8,000 characters — the fragment budget). MMS is
+     * never encrypted, so attachments skip the cap; plain threads do
+     * too. The use case enforces the same cap; the composer refuses
+     * first, with the UI message.
+     */
+    private fun isTooLongForEncrypted(body: String, hasAttachments: Boolean): Boolean =
+        _state.value.e2ePeerState == E2ePeerState.ENCRYPTED &&
+            !hasAttachments && E2eWireFormat.plaintextExceedsCap(body)
+
+    /** E2E — the "Too long to send encrypted" refusal (red snackbar). */
+    private fun refuseTooLongEncrypted() {
+        _events.tryEmit(
+            Event.ShowSnackbar(
+                context.getString(com.filestech.sms.R.string.e2e_too_long),
+                isError = true,
+            ),
+        )
+    }
+
     fun send() {
         val body = _state.value.draft.trim()
         val hasAttachments = _state.value.pendingAttachments.isNotEmpty()
@@ -890,6 +995,14 @@ class ThreadViewModel @Inject constructor(
         // v1.26.1 (audit H7) — garde en vol, calqué sur celui du chemin vocal. Sans lui, un
         // double appui rapide produisait deux SMS (ou deux MMS) réellement envoyés et facturés.
         if (_state.value.isSending) return
+        // E2E — a text-only send over 8,000 characters is refused in
+        // the composer (the use case enforces the same cap; this is the
+        // UI message). Refused BEFORE the confirm dialog: asking first
+        // would promise a send that cannot happen.
+        if (isTooLongForEncrypted(body, hasAttachments)) {
+            refuseTooLongEncrypted()
+            return
+        }
         viewModelScope.launch {
             // v1.28.3 (F30) — la confirmation se lit AVANT de router, pour les deux chemins.
             //
@@ -981,6 +1094,13 @@ class ThreadViewModel @Inject constructor(
                 context.getString(com.filestech.sms.R.string.thread_schedule_invalid_past),
                 isError = true,
             ))
+            return
+        }
+        // E2E — the same 8,000-character refusal as the immediate send:
+        // a scheduled message that cannot go out encrypted must be
+        // refused now, not fail silently at fire time.
+        if (isTooLongForEncrypted(body, _state.value.pendingAttachments.isNotEmpty())) {
+            refuseTooLongEncrypted()
             return
         }
         viewModelScope.launch {
@@ -1789,6 +1909,18 @@ class ThreadViewModel @Inject constructor(
             com.filestech.sms.sync.client.ClientAttachmentDownloaderEntryPoint::class.java,
         ).clientAttachmentDownloader()
 
+    /**
+     * E2E — the peer repository, notice store and probe manager, via the
+     * entry point (the constructor is at the Detekt 20-parameter cap).
+     * Throws when Hilt cannot serve it (JVM unit tests with a mocked
+     * context) — callers catch.
+     */
+    private fun e2eEntryPoint(): E2eThreadEntryPoint =
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context,
+            E2eThreadEntryPoint::class.java,
+        )
+
     fun deleteMessage(messageId: Long) {
         viewModelScope.launch { repo.deleteMessage(messageId) }
     }
@@ -2096,6 +2228,29 @@ class ThreadViewModel @Inject constructor(
     fun requestCreateContact() {
         val addr = _state.value.conversation?.addresses?.firstOrNull()?.raw ?: return
         _events.tryEmit(Event.OpenCreateContact(addr))
+    }
+
+    /**
+     * A group member tap in the details panel: a saved contact
+     * opens in the system editor, an unknown number opens a blank
+     * contact form prefilled with the number. The lookup decides
+     * which — `memberNames` only covers members who sent a
+     * message, so it cannot answer "is this a contact" for the
+     * whole member list.
+     */
+    fun openMemberContact(rawAddress: String) {
+        viewModelScope.launch {
+            val isContact = runCatching {
+                contactRepo.lookupByPhone(rawAddress) != null
+            }.getOrDefault(false)
+            _events.tryEmit(
+                if (isContact) {
+                    Event.OpenAddContact(rawAddress)
+                } else {
+                    Event.OpenCreateContact(rawAddress)
+                },
+            )
+        }
     }
 
     fun requestCall() {

@@ -8,6 +8,11 @@ import com.filestech.sms.data.local.db.dao.BlockedNumberDao
 import com.filestech.sms.data.local.db.dao.ClientConversationStateDao
 import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
+import com.filestech.sms.data.local.db.dao.E2eAccountDao
+import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eNoticeDao
+import com.filestech.sms.data.local.db.dao.E2ePeerDao
+import com.filestech.sms.data.local.db.dao.E2eSessionDao
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.dao.NoteAttachmentDao
 import com.filestech.sms.data.local.db.dao.NoteDao
@@ -51,4 +56,15 @@ object DatabaseModule {
     @Provides fun noteMessageDao(db: AppDatabase): NoteMessageDao = db.noteMessageDao()
 
     @Provides fun noteAttachmentDao(db: AppDatabase): NoteAttachmentDao = db.noteAttachmentDao()
+
+    // E2E encryption (schema v22) — the Account, peer, session, fragment, notice tables.
+    @Provides fun e2eAccountDao(db: AppDatabase): E2eAccountDao = db.e2eAccountDao()
+
+    @Provides fun e2ePeerDao(db: AppDatabase): E2ePeerDao = db.e2ePeerDao()
+
+    @Provides fun e2eSessionDao(db: AppDatabase): E2eSessionDao = db.e2eSessionDao()
+
+    @Provides fun e2eFragmentDao(db: AppDatabase): E2eFragmentDao = db.e2eFragmentDao()
+
+    @Provides fun e2eNoticeDao(db: AppDatabase): E2eNoticeDao = db.e2eNoticeDao()
 }

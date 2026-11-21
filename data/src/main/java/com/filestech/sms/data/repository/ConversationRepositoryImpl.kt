@@ -119,7 +119,8 @@ class ConversationRepositoryImpl @Inject constructor(
         combine(
             conversationDao.observe(includeArchived),
             blockedRepo.observe(),
-        ) { rows, blocked ->
+            decryptFailedLatestIds(),
+        ) { rows, blocked, decryptFailedIds ->
             // v1.27.2 (audit Codex du 2026-08-05, C-08) — MEME comparaison que le filtre de
             // reception, region comprise. La v1.25.3 avait deja diverge ici, avec des
             // conversations annoncees bloquees qui continuaient de recevoir ; retomber sur la cle
@@ -130,9 +131,30 @@ class ConversationRepositoryImpl @Inject constructor(
                 val conv = row.toDomain()
                 val allBlocked = conv.addresses.isNotEmpty() &&
                     conv.addresses.all { addr -> isBlockedAddress(addr.raw) }
-                if (allBlocked) conv.copy(blocked = true) else conv
+                // E2E — the latest message is an undecryptable
+                // placeholder: the row renders "This message couldn't
+                // be decrypted." instead of a blank preview.
+                val decryptFailed = conv.id in decryptFailedIds
+                if (allBlocked || decryptFailed) {
+                    conv.copy(blocked = allBlocked, lastMessageDecryptFailed = decryptFailed)
+                } else {
+                    conv
+                }
             }
         }.flowOn(io)
+
+    /**
+     * E2E — the conversations whose latest visible message is an
+     * undecryptable placeholder, as a set, re-emitted only when the set
+     * itself changes. The DAO flow re-runs on ANY messages-table write
+     * (a status update, a read mark), so without the
+     * `distinctUntilChanged` every such write would re-emit the whole
+     * conversation list.
+     */
+    private fun decryptFailedLatestIds(): Flow<Set<Long>> =
+        messageDao.observeDecryptFailedLatestConversationIds()
+            .distinctUntilChanged()
+            .map { it.toSet() }
 
     /**
      * Vault listing — **gated against [AppLockManager.LockState.PanicDecoy]**.
@@ -165,11 +187,21 @@ class ConversationRepositoryImpl @Inject constructor(
             appLock.state,
             conversationDao.observeVault(),
             vaultSession.unlocked,
-        ) { lockState, list, vaultOpen ->
+            decryptFailedLatestIds(),
+        ) { lockState, list, vaultOpen, decryptFailedIds ->
             if (lockState is AppLockManager.LockState.PanicDecoy || !vaultOpen) {
                 emptyList()
             } else {
-                list.map { it.toDomain() }
+                // E2E — same decrypt-failed preview flag as the main
+                // list (see [observeAll]).
+                list.map { row ->
+                    val conv = row.toDomain()
+                    if (conv.id in decryptFailedIds) {
+                        conv.copy(lastMessageDecryptFailed = true)
+                    } else {
+                        conv
+                    }
+                }
             }
         }.flowOn(io)
 

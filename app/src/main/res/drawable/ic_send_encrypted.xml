@@ -1,0 +1,17 @@
+<!-- Kristin's icon (send-encrypted.svg, 20x23 viewBox): a paper plane with a
+     padlock, for the send button of an end-to-end encrypted thread. Both
+     paths are white in the source; the tint is applied at the Icon() call
+     site (white on the brand-blue send circle). The artwork is taller than
+     it is wide — call sites size it 21x24dp, not square, to keep the ratio. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="23dp"
+    android:viewportWidth="20"
+    android:viewportHeight="23">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20 9L13.0654 12.1201C12.4263 11.4315 11.5136 11 10.5 11C8.56709 11 7.00013 12.5671 7 14.5V14.8496L0 18V11L13 9L0 7V0L20 9Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12.8666 16.0336H12.4999V14.2002C12.4999 13.6168 12.2682 13.0572 11.8556 12.6446C11.443 12.232 10.8834 12.0002 10.2999 12.0002C9.71646 12.0002 9.15688 12.232 8.7443 12.6446C8.33172 13.0572 8.09993 13.6168 8.09993 14.2002V16.0336H7.73327C7.34441 16.034 6.97161 16.1887 6.69665 16.4636C6.42169 16.7386 6.26703 17.1114 6.2666 17.5002V21.5336C6.26703 21.9224 6.42169 22.2952 6.69665 22.5702C6.97161 22.8452 7.34441 22.9998 7.73327 23.0002H12.8666C13.2555 22.9998 13.6283 22.8452 13.9032 22.5702C14.1782 22.2952 14.3328 21.9224 14.3333 21.5336V17.5002C14.3328 17.1114 14.1782 16.7386 13.9032 16.4636C13.6283 16.1887 13.2555 16.034 12.8666 16.0336ZM11.7666 16.0336H8.83327V14.2002C8.83327 13.8113 8.98779 13.4382 9.26285 13.1632C9.5379 12.8881 9.91095 12.7336 10.2999 12.7336C10.6889 12.7336 11.062 12.8881 11.337 13.1632C11.6121 13.4382 11.7666 13.8113 11.7666 14.2002V16.0336Z" />
+</vector>

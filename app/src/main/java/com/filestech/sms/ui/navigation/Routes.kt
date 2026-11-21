@@ -59,3 +59,7 @@ import kotlinx.serialization.Serializable
 // Slice 1 — Linked devices screen (LAN server toggle, linked devices,
 // QR pairing), reached from Settings.
 @Serializable data object LinkedDevices : Route
+
+// E2E — Encryption screen, reached from Settings → Security & Privacy.
+// Status, own fingerprint, verified contacts (design §7.1).
+@Serializable data object Encryption : Route

@@ -178,6 +178,7 @@ internal class NoopMirror(
         replyToMessageId: Long?,
         localMirrorBody: String?,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long = prochainId++
 
     override suspend fun updateOutgoingStatus(

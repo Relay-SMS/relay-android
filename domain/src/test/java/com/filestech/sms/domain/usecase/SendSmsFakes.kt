@@ -2,6 +2,7 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.domain.mms.MediaAttachmentSpec
 import com.filestech.sms.domain.model.BlockedNumber
 import com.filestech.sms.domain.model.MessageStatus
@@ -81,7 +82,13 @@ internal class NoopMirror : OutgoingMessageMirror {
      * v1.28.3 (F21) — les lignes ecrites sont desormais RETENUES : c'est la trace qu'un
      * destinataire bloque ne laissait pas, et il faut donc pouvoir la mesurer.
      */
-    data class LigneEcrite(val adresse: String, val telephonyUri: String?, val statut: MessageStatus)
+    data class LigneEcrite(
+        val adresse: String,
+        val telephonyUri: String?,
+        val statut: MessageStatus,
+        // E2E — whether the mirrored row carries the encrypted flag.
+        val encrypted: Boolean = false,
+    )
 
     val lignes = mutableListOf<LigneEcrite>()
     val statuts = mutableListOf<Triple<Long, MessageStatus, Int?>>()
@@ -97,8 +104,9 @@ internal class NoopMirror : OutgoingMessageMirror {
         replyToMessageId: Long?,
         localMirrorBody: String?,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long {
-        lignes += LigneEcrite(address, telephonyUri, initialStatus)
+        lignes += LigneEcrite(address, telephonyUri, initialStatus, encrypted)
         cles += clientMessageId
         return prochainId++
     }
@@ -218,6 +226,7 @@ internal fun sendSmsUseCase(
     isDefaultSmsApp: Boolean = true,
     mirror: OutgoingMessageMirror = NoopMirror(),
     blocked: BlockedNumberRepository = NeverBlocked(),
+    e2eGate: E2eSendGate = E2eSendGate.NoOp,
 ) = SendSmsUseCase(
     defaultAppManager = object : DefaultSmsAppChecker {
         override fun isDefault() = isDefaultSmsApp
@@ -227,6 +236,7 @@ internal fun sendSmsUseCase(
     mirror = mirror,
     blockedRepo = blocked,
     settings = settings,
+    e2eGate = e2eGate,
 )
 
 /** v1.28.3 (F21) — bloque les numeros dont la forme brute figure dans [numeros]. */

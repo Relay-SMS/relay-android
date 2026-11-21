@@ -490,6 +490,88 @@ interface MessageDao {
     suspend fun setReaction(id: Long, emoji: String?)
 
     /**
+     * E2E (schema v22) — marks a row encrypted on the wire. The send/receive paths
+     * usually insert the row with the flag already set; this is for rows whose crypto
+     * outcome is known only after the insert (optimistic send, late decrypt).
+     */
+    @Query("UPDATE messages SET encrypted = 1 WHERE id = :id")
+    suspend fun markEncrypted(id: Long)
+
+    /**
+     * E2E (schema v22) — marks a row as an undecryptable placeholder and keeps the raw
+     * base64 ciphertext for a later retry, once a re-probe re-establishes the session.
+     */
+    @Query(
+        "UPDATE messages SET encrypted = 1, decrypt_failed = 1, ciphertext = :ciphertext " +
+            "WHERE id = :id",
+    )
+    suspend fun markDecryptFailed(id: Long, ciphertext: String)
+
+    /**
+     * E2E (schema v22) — a kept ciphertext decrypted on retry: the placeholder clears
+     * (the body is rewritten by the caller via [update]) and the ciphertext is dropped
+     * — it must not linger once it has served. `encrypted` stays 1: the message was
+     * encrypted on the wire.
+     */
+    @Query("UPDATE messages SET decrypt_failed = 0, ciphertext = NULL WHERE id = :id")
+    suspend fun markDecrypted(id: Long)
+
+    /**
+     * E2E (schema v22) — keeps the raw base64 ciphertext on an OUTGOING
+     * encrypted row, so a retry re-sends the EXACT bytes of the first
+     * attempt (same fragment set, same message id — the receiver dedupes
+     * by sender + id + index). Re-encrypting on retry would produce
+     * different bytes under the same id and mix two ciphertexts into one
+     * set at the receiver. Only the send path writes this; the column is
+     * never synced and never backed up.
+     */
+    @Query("UPDATE messages SET ciphertext = :ciphertext WHERE id = :id")
+    suspend fun setCiphertext(id: Long, ciphertext: String)
+
+    /**
+     * E2E (schema v22) — every undecryptable placeholder from one peer, oldest first:
+     * the retry input after a re-probe re-establishes the session (§4.4). The full
+     * rows come back because the retry needs the id and the ciphertext.
+     */
+    @Query(
+        "SELECT * FROM messages WHERE address = :address AND decrypt_failed = 1 ORDER BY date ASC",
+    )
+    suspend fun findDecryptFailed(address: String): List<MessageEntity>
+
+    /**
+     * E2E — the conversations whose LATEST visible message is an
+     * undecryptable placeholder. The list preview is derived from that
+     * message, and a placeholder's stored body is empty — so the row
+     * renders "This message couldn't be decrypted." instead of a blank
+     * preview (or the attachment fallback).
+     *
+     * "Latest" mirrors the mirror's own definition: the newest
+     * non-hidden message by (`date`, `id`) — hidden rows (reaction
+     * sentinels) never touch the conversation, so they can never be
+     * the preview's message. The outer filter runs on the rare
+     * `decrypt_failed = 1` rows, so the correlated subquery only
+     * executes for those; the `(conversation_id, date)` index covers
+     * the ordering. Ordered by conversation id so a
+     * `distinctUntilChanged` downstream is stable.
+     */
+    @Query(
+        """
+        SELECT m.conversation_id FROM messages m
+        WHERE m.hidden = 0
+          AND m.decrypt_failed = 1
+          AND m.id = (
+            SELECT m2.id FROM messages m2
+            WHERE m2.conversation_id = m.conversation_id
+              AND m2.hidden = 0
+            ORDER BY m2.date DESC, m2.id DESC
+            LIMIT 1
+          )
+        ORDER BY m.conversation_id ASC
+        """,
+    )
+    fun observeDecryptFailedLatestConversationIds(): Flow<List<Long>>
+
+    /**
      * v3 reaction reparse — every message carrying a stored reaction, for
      * normalizing legacy multi-emoji values ("👍😂😅") down to a single
      * emoji. Only reacted messages are read (a small set); the full rows

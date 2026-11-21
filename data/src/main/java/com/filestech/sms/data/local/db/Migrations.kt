@@ -712,6 +712,110 @@ object Migrations {
         }
     }
 
+    /**
+     * E2E encryption phase 1 — five new tables (`e2e_account`, `e2e_peers`,
+     * `e2e_sessions`, `e2e_fragments`, `e2e_notices`) + three columns on
+     * `messages` (`encrypted`, `decrypt_failed`, `ciphertext`).
+     *
+     * Strictly additive: the tables are born empty, and existing message rows
+     * project the defaults (not encrypted, decryption not failed, no
+     * ciphertext). The `CREATE TABLE` statements repeat the form Room
+     * generates for the entities (columns, `NOT NULL`, `DEFAULT`,
+     * `PRIMARY KEY`): `runMigrationsAndValidate` compares the real tables
+     * against the exported schema and would refuse the slightest gap.
+     *
+     * Two deliberate divergences from the design doc's DDL (§8.1), both
+     * forced by Room:
+     * - `e2e_account` has no `CHECK (id = 1)`: Room cannot express a CHECK
+     *   on an entity, so the single-row rule is enforced in code
+     *   ([com.filestech.sms.data.local.db.dao.E2eAccountDao] always
+     *   reads/writes id 1).
+     * - the `UNIQUE(address, session_id)` on `e2e_sessions` is a unique
+     *   INDEX (`index_e2e_sessions_address_session_id`), not a table
+     *   constraint — Room's form for a unique `@Index`, same enforcement
+     *   (the notes tables do the same for their UUID uniques).
+     *
+     * Plus one column the §8.1 DDL does not define: `last_bundle_reply_at`
+     * (nullable, null = never replied) on `e2e_peers` persists the §2.3
+     * bundle-reply rate limit (at most one bundle per sender per day),
+     * which the probe policy reads back before answering a probe.
+     */
+    val MIGRATION_21_22: Migration = object : Migration(21, 22) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_account` (
+                    `id` INTEGER NOT NULL,
+                    `pickle` TEXT NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_peers` (
+                    `address` TEXT NOT NULL,
+                    `state` TEXT NOT NULL,
+                    `their_curve_key` TEXT,
+                    `their_ed_key` TEXT,
+                    `verified` INTEGER NOT NULL DEFAULT 0,
+                    `last_probe_at` INTEGER,
+                    `probe_attempts` INTEGER NOT NULL DEFAULT 0,
+                    `window_started_at` INTEGER,
+                    `last_bundle_reply_at` INTEGER,
+                    `updated_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`address`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_sessions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `address` TEXT NOT NULL,
+                    `session_id` TEXT NOT NULL,
+                    `pickle` TEXT NOT NULL,
+                    `is_current` INTEGER NOT NULL DEFAULT 0,
+                    `created_at` INTEGER NOT NULL,
+                    `last_used_at` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_e2e_sessions_address_session_id` " +
+                    "ON `e2e_sessions` (`address`, `session_id`)",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_fragments` (
+                    `sender` TEXT NOT NULL,
+                    `msg_id` TEXT NOT NULL,
+                    `idx` INTEGER NOT NULL,
+                    `total` INTEGER NOT NULL,
+                    `chunk` TEXT NOT NULL,
+                    `received_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`sender`, `msg_id`, `idx`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_notices` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `conversation_id` INTEGER NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `date` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `encrypted` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL(
+                "ALTER TABLE `messages` ADD COLUMN `decrypt_failed` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `ciphertext` TEXT")
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -734,5 +838,6 @@ object Migrations {
         MIGRATION_18_19,
         MIGRATION_19_20,
         MIGRATION_20_21,
+        MIGRATION_21_22,
     )
 }

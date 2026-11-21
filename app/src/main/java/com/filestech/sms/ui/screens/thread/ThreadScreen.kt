@@ -139,10 +139,13 @@ import androidx.lifecycle.withResumed
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.core.result.AppError
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendErrorCode
+import com.filestech.sms.e2e.E2eNoticesForItem
+import com.filestech.sms.e2e.E2eThreadNotices
 import com.filestech.sms.sync.client.ClientCallState
 import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.components.AttachmentPickerSheet
@@ -151,6 +154,9 @@ import com.filestech.sms.ui.components.BubbleMenuToggles
 import com.filestech.sms.ui.components.BurstPosition
 import com.filestech.sms.ui.components.ComposerReplyChip
 import com.filestech.sms.ui.components.ContactIntents
+import com.filestech.sms.ui.components.E2eDecryptFailedRow
+import com.filestech.sms.ui.components.E2eNoticeRow
+import com.filestech.sms.ui.components.E2eVerificationSheet
 import com.filestech.sms.ui.components.EmojiPickerButton
 import com.filestech.sms.ui.components.EmojiPickerPanel
 import com.filestech.sms.ui.components.EmojiPickerTab
@@ -348,6 +354,17 @@ fun ThreadScreen(
     var forwardingMessage by remember { mutableStateOf<Message?>(null) }
 
     var detailsPanelOpen by remember { mutableStateOf(false) }
+    // E2E — the safety-number verification sheet, opened from the
+    // details-panel encryption row or a key-change notice. One sheet
+    // for the thread: the peer is this 1:1 conversation's single
+    // address. Groups never open it (no single peer, no encryption
+    // row) and a linked device never opens it either (no identity
+    // keys on a client — the panel hides the row there).
+    var e2eVerificationOpen by remember { mutableStateOf(false) }
+    val e2ePeerAddress = state.conversation?.takeIf { !it.isGroup }?.firstAddress?.normalized
+    // E2E — this thread encrypts: the composer placeholder, the send
+    // icon and the timestamp locks all key off this one flag.
+    val isThreadEncrypted = state.e2ePeerState == E2ePeerState.ENCRYPTED
     // v1.11.0 — Sujet 5 apparence : dialog ouvert depuis le panneau latéral de détails.
     var appearanceOpen by remember { mutableStateOf(false) }
     // v1.28.3 — nommer le groupe (panneau latéral de détails).
@@ -529,10 +546,25 @@ fun ThreadScreen(
     // has nothing to scroll to, so it shows immediately. The header and composer sit
     // outside the list, so they stay visible while the messages settle.
     val listSettled = initialScrollDone || state.messages.isEmpty()
+    // E2E — the in-thread notices, placed among the loaded messages
+    // by date (above the first message dated at or after each notice;
+    // newer than everything → after the last message). The merge is
+    // window-friendly: a notice older than the window renders above
+    // its first loaded message, never vanishing, so paging is
+    // undisturbed — and the LazyColumn still holds messages only
+    // (the notices ride inside the message items, plus one trailing
+    // item when a notice is newer than the last message).
+    val e2eNoticePlacement = remember(state.messages, state.e2eNotices) {
+        E2eThreadNotices.place(state.messages, state.e2eNotices)
+    }
     // The list holds messages only (the old "load older" row is gone since
     // round 5 auto-load), so `state.messages[i]` is at global LazyColumn
     // index `i` — no head offset to add when scrolling to a message.
-    val bottomItemIndex = state.messages.lastIndex
+    // E2E — plus one trailing item when a notice is newer than the last
+    // message: the bottom is the notice, not the message, so the tail
+    // pin and the scroll-to-bottom targets stay on the true bottom.
+    val bottomItemIndex = state.messages.lastIndex +
+        if (e2eNoticePlacement.trailing.isNotEmpty()) 1 else 0
     // Feedback round 5 — jump to the current search match. Plain scroll, not
     // animated: a jump can span hundreds of messages, and animateScrollToItem
     // over that distance is visibly choppy (same reason as the first-paint
@@ -1125,6 +1157,9 @@ fun ThreadScreen(
                         isSendingVoice = state.isSendingVoice,
                         isSending = state.isSending,
                         hasPendingAttachments = state.pendingAttachments.isNotEmpty(),
+                        // E2E — an encrypted 1:1 thread: "Relay message"
+                        // placeholder + the encrypted-send glyph.
+                        isEncrypted = isThreadEncrypted,
                         onDraftChanged = viewModel::updateDraft,
                         onSendText = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1346,6 +1381,9 @@ fun ThreadScreen(
                     }
                 },
                 onPhoneClick = onPhoneClick,
+                // E2E — a key-change notice tap opens the safety-number
+                // sheet for this thread's peer.
+                onE2eNoticeVerify = { e2eVerificationOpen = true },
             )
         }
         // v1.22.0 (double SIM) — résolveur SIM (subId → libellé) calculé une fois pour tout le
@@ -1447,6 +1485,14 @@ fun ThreadScreen(
                     isPinnedMessage = msg.id == state.conversation?.pinnedMessageId,
                     recentReactions = recentReactions,
                     actions = itemActions,
+                    // E2E — the notices dated at or before this
+                    // message, rendered above its bubble (the
+                    // contact name is the conversation title: the
+                    // name or formatted number the header shows).
+                    e2eNotices = E2eNoticesForItem(
+                        notices = e2eNoticePlacement.before.getOrNull(index) ?: emptyList(),
+                        contactName = title,
+                    ),
                     // Client mode C2 — the thread is read-only: the
                     // bubble menus hide their write actions.
                     isClientMode = state.isClientMode,
@@ -1455,6 +1501,24 @@ fun ThreadScreen(
                     downloadStates = state.attachmentDownloads,
                     onRequestDownload = { id -> viewModel.requestAttachmentDownload(id) },
                 )
+            }
+            // E2E — notices newer than the last message (usually the
+            // activation notice, recorded before the first encrypted
+            // reply). One item at the end, after every message: the
+            // message indices above are untouched, so every scroll
+            // anchor still holds, and `bottomItemIndex` counts it.
+            if (e2eNoticePlacement.trailing.isNotEmpty()) {
+                item(key = "e2e-trailing-notices", contentType = "e2e-notices") {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        for (notice in e2eNoticePlacement.trailing) {
+                            E2eNoticeRow(
+                                notice = notice,
+                                contactName = title,
+                                onVerify = { e2eVerificationOpen = true },
+                            )
+                        }
+                    }
+                }
             }
         }
         // Audit R4 (v1.14.8) — Chip flottant "↓ N nouveau(x) message(s)" affiché en
@@ -1883,12 +1947,23 @@ fun ThreadScreen(
                 title = title,
                 subtitleNumber = headerSubtitleNumber,
                 contactPhotoUri = state.contactPhotoUri,
+                // E2E — the encryption row: 1:1 hub threads only
+                // (groups have no single peer; a linked device holds
+                // no identity keys, so it never probes or shows its
+                // own encryption state). Null = no row.
+                e2ePeerState = state.e2ePeerState.takeIf {
+                    !state.isClientMode && !detailsConversation.isGroup
+                },
+                e2eVerified = state.e2eVerified,
+                onOpenE2eVerification = { e2eVerificationOpen = true },
                 isUnknownContact = !detailsConversation.isGroup &&
                     detailsConversation.displayName == null,
                 memberNames = state.memberNames,
                 memberPhotos = state.memberPhotos,
                 showAddToContacts = !detailsConversation.isGroup &&
                     !state.hasContact && !state.isClientMode,
+                showEditContact = !detailsConversation.isGroup &&
+                    state.hasContact && !state.isClientMode,
                 // Round 32 — Schedule is always available from the
                 // panel: with an empty draft the flow opens its
                 // message step first, so there is never "nothing to
@@ -1926,6 +2001,7 @@ fun ThreadScreen(
                     },
                     onCreateContact = { viewModel.requestCreateContact() },
                     onAddContact = { viewModel.requestAddContact() },
+                    onMemberClick = { addr -> viewModel.openMemberContact(addr) },
                     // v1.12.0 — vault row, hidden in PanicDecoy.
                     onMoveVault = if (state.isPanicDecoy) {
                         null
@@ -1946,6 +2022,19 @@ fun ThreadScreen(
                     },
                 ),
                 onDismiss = { detailsPanelOpen = false },
+            )
+        }
+    }
+    // E2E — the safety-number verification sheet: opened from the
+    // details-panel encryption row or a key-change notice. The peer
+    // is this 1:1 thread's single address; groups never open it.
+    if (e2eVerificationOpen) {
+        val e2eAddress = e2ePeerAddress
+        if (e2eAddress != null) {
+            E2eVerificationSheet(
+                address = e2eAddress,
+                contactName = title,
+                onDismissRequest = { e2eVerificationOpen = false },
             )
         }
     }
@@ -2604,6 +2693,9 @@ private fun ComposerBar(
     isSending: Boolean,
     /** v1.3.4 M1 audit fix — flag pour basculer mic → send button quand des PJ sont stagées. */
     hasPendingAttachments: Boolean,
+    /** E2E — this 1:1 thread encrypts: the placeholder reads "Relay
+     * message" and the send button shows the encrypted-send glyph. */
+    isEncrypted: Boolean = false,
     onDraftChanged: (String) -> Unit,
     onSendText: () -> Unit,
     /** Round 13 — long-press the send button to schedule (see [ComposingRow]). */
@@ -2656,6 +2748,7 @@ private fun ComposerBar(
                 permissionGranted = permissionGranted,
                 hasPendingAttachments = hasPendingAttachments,
                 isSending = isSending,
+                isEncrypted = isEncrypted,
                 onDraftChanged = onDraftChanged,
                 onSendText = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -2788,6 +2881,9 @@ private fun ComposingRow(
     hasPendingAttachments: Boolean,
     /** v1.26.1 (audit H7) — envoi en cours : le bouton Envoyer est désactivé le temps du vol. */
     isSending: Boolean,
+    /** E2E — this 1:1 thread encrypts: the placeholder reads "Relay
+     * message" and the send button shows the encrypted-send glyph. */
+    isEncrypted: Boolean = false,
     onDraftChanged: (String) -> Unit,
     onSendText: () -> Unit,
     /** Round 13 — long-press the send button to schedule (see below). */
@@ -2856,7 +2952,15 @@ private fun ComposingRow(
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
                                 .onFocusChanged { if (it.hasFocus) onTextFieldFocused() },
-                            placeholder = stringResource(R.string.thread_compose_placeholder),
+                            // E2E — an encrypted 1:1 thread reads "Relay
+                            // message"; every other thread reads "Message".
+                            placeholder = stringResource(
+                                if (isEncrypted) {
+                                    R.string.thread_compose_placeholder_encrypted
+                                } else {
+                                    R.string.thread_compose_placeholder
+                                },
+                            ),
                             maxLines = 5,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Sentences,
@@ -2971,6 +3075,7 @@ private fun ComposingRow(
                 Box {
                     SendCircleButton(
                         enabled = !isSending,
+                        isEncrypted = isEncrypted,
                         onClick = onSendText,
                         onLongClick = if (canSchedule) {
                             {
@@ -3050,6 +3155,12 @@ private fun SendCircleButton(
     enabled: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    /**
+     * E2E — the thread encrypts: the send glyph gains its lock
+     * (Kristin's send-encrypted vector, 21×24dp to keep its 20:23
+     * ratio against the plain 24dp paper plane).
+     */
+    isEncrypted: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -3095,12 +3206,22 @@ private fun SendCircleButton(
             .semantics { role = Role.Button },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.Send,
-            contentDescription = stringResource(R.string.action_send),
-            tint = onBrandBlue(),
-            modifier = Modifier.size(24.dp),
-        )
+        // E2E — an encrypted thread sends with the lock glyph.
+        if (isEncrypted) {
+            Icon(
+                painter = painterResource(R.drawable.ic_send_encrypted),
+                contentDescription = stringResource(R.string.action_send),
+                tint = onBrandBlue(),
+                modifier = Modifier.size(width = 21.dp, height = 24.dp),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.Send,
+                contentDescription = stringResource(R.string.action_send),
+                tint = onBrandBlue(),
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }
 
@@ -3749,6 +3870,11 @@ private class ThreadMessageItemActions(
     /** Feedback round 5 — bascule « épingler » (un seul message épinglé par fil). */
     val onTogglePin: (Message) -> Unit,
     val onPhoneClick: (String) -> Unit,
+    /**
+     * E2E — a key-change notice tap: opens the safety-number
+     * verification sheet for this thread's peer.
+     */
+    val onE2eNoticeVerify: () -> Unit,
 )
 
 /**
@@ -3821,12 +3947,31 @@ private fun ThreadMessageItem(
      * [isClientMode]: null in hub mode, so the bubbles never ask.
      */
     onRequestDownload: ((Long) -> Unit)? = null,
+    /**
+     * E2E — the notices dated at or before this message, rendered
+     * above its bubble like the day separator, with the contact
+     * name their wording needs. Null (or empty) for plain threads.
+     */
+    e2eNotices: E2eNoticesForItem? = null,
 ) {
     // Taille du texte des messages : tout l'élément (séparateur, bulle, citation, horodatage).
     MessageTextSize {
         // Date separator (calendar day boundary) — affiché au-dessus du 1er msg du jour.
         daySeparatorLabel?.let { label ->
             DateSeparator(label = label)
+        }
+
+        // E2E — the notices dated at or before this message
+        // (activation / key change), above the bubble like the day
+        // separator above them.
+        e2eNotices?.let { e2e ->
+            for (notice in e2e.notices) {
+                E2eNoticeRow(
+                    notice = notice,
+                    contactName = e2e.contactName,
+                    onVerify = actions.onE2eNoticeVerify,
+                )
+            }
         }
 
         // Feedback round 4 — one timestamp per same-sender run, on its LAST
@@ -3984,6 +4129,12 @@ private fun ThreadMessageItem(
         }
 
         when {
+            // E2E — the undecryptable-message placeholder: a
+            // notice-style row, not a bubble — no lock, no menu,
+            // and tapping it does nothing in v1.
+            msg.decryptFailed -> {
+                E2eDecryptFailedRow()
+            }
             audio != null -> {
                 AudioMessageBubble(
                     message = msg,

@@ -11,6 +11,8 @@ import com.filestech.sms.data.sms.TelephonyReader
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.reaction.IncomingReactionDecoder
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.e2e.E2eReceiveManager
+import com.filestech.sms.e2e.E2eWireFormat
 import com.filestech.sms.system.notifications.IncomingMessageNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -59,6 +61,12 @@ class SmsDeliverReceiver : BroadcastReceiver() {
      */
     @Inject lateinit var blockPolicyLazy: dagger.Lazy<IncomingBlockPolicy>
 
+    /**
+     * E2E — the ciphertext fragment path. Resolved lazily like the rest:
+     * it reaches the Room database through the fragment store.
+     */
+    @Inject lateinit var e2eReceiveManagerLazy: dagger.Lazy<E2eReceiveManager>
+
     @Inject @ApplicationScope lateinit var scope: CoroutineScope
 
     @Inject
@@ -92,8 +100,9 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                 // écrire le SMS dans la boîte système en dernier recours.
                 val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: emptyArray()
                 // One combined guard (was two early exits): keeps the launch
-                // block to four early exits after the reaction-removal exit
-                // was added.
+                // block to four early exits — the reaction-removal exit is
+                // folded into the applied branch, and the fragment exit
+                // takes its place.
                 val address = messages.firstOrNull()?.displayOriginatingAddress
                     ?.stripInvisibleChars()
                 if (messages.isEmpty() || address == null) return@launch
@@ -125,6 +134,7 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                         notifier = notifierLazy.get(),
                         conversationRepo = conversationRepoLazy.get(),
                         blockPolicy = blockPolicyLazy.get(),
+                        e2eReceiveManager = e2eReceiveManagerLazy.get(),
                     )
                 }
                 val telephonyReader = deps.telephonyReader
@@ -143,6 +153,17 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                 if (deps.blockPolicy.doitEcarter(address)) {
                     droppedByBlocklist = true
                     Timber.i("Dropping incoming SMS from blocked sender")
+                    return@launch
+                }
+                // E2E — a ciphertext fragment is never a visible message: it
+                // enters the fragment path (reassembly + decrypt), which
+                // inserts ONE message only once the set is complete and
+                // decrypted. The fragment SMS is still written to the system
+                // inbox (a real SMS on the air, and the default-SMS-app
+                // duty); the bulk import skips `RLY1:` bodies, so it never
+                // re-surfaces as a bubble.
+                if (handleE2eFragment(deps, address, body, ts, subId)) {
+                    persistedToSystem = true
                     return@launch
                 }
                 // v1.4.1 — if the body looks like a Tapback reaction back from another
@@ -195,48 +216,47 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                             telephonyUri = sysUri?.toString(),
                             date = ts,
                         )
-                        if (decoded.isRemoval) {
-                            // A removal only clears the badge — there is nothing to
-                            // notify about, and the carrier text must still not
-                            // surface as a bubble.
-                            return@launch
-                        }
-                        // v1.6.1 — fix : poste une notification système pour que
-                        // l'expéditeur du message d'origine sache qu'on a réagi à son
-                        // message (parité iMessage / Google Messages). Avant v1.6.1 le
-                        // badge se mettait à jour silencieusement, ce qui faisait
-                        // croire que la fonction "envoyer ma réaction" ne marchait pas.
-                        // Le body de la notif est localisé via [R.string
-                        // .reaction_notif_body_with_preview] / `_no_preview` selon que
-                        // le message ciblé avait un texte ou non (cas voice MMS / image
-                        // sans légende). `previewMode` côté [IncomingMessageNotifier]
-                        // s'occupe encore de masquer le contenu si l'utilisateur a
-                        // choisi de cacher les aperçus.
-                        // v1.6.1 (audit SEC-07) — strip Bidi/RLO/ZWSP du body OUTGOING
-                        // avant injection dans la string de notif. Le body d'un message
-                        // sortant n'est PAS passé par `stripInvisibleChars` à l'écriture
-                        // (contrairement au body entrant) car il vient de l'utilisateur ;
-                        // mais un copier-coller depuis le web peut contenir des contrôles
-                        // BiDi qui inverseraient visuellement la notif.
-                        val targetPreview = applied.targetBody.stripInvisibleChars().trim().take(80)
-                        val notifBody = if (targetPreview.isEmpty()) {
-                            context.getString(
-                                R.string.reaction_notif_body_no_preview,
-                                decoded.emoji,
+                        // A removal only clears the badge — there is nothing to
+                        // notify about, and the carrier text must still not
+                        // surface as a bubble.
+                        if (!decoded.isRemoval) {
+                            // v1.6.1 — fix : poste une notification système pour que
+                            // l'expéditeur du message d'origine sache qu'on a réagi à son
+                            // message (parité iMessage / Google Messages). Avant v1.6.1 le
+                            // badge se mettait à jour silencieusement, ce qui faisait
+                            // croire que la fonction "envoyer ma réaction" ne marchait pas.
+                            // Le body de la notif est localisé via [R.string
+                            // .reaction_notif_body_with_preview] / `_no_preview` selon que
+                            // le message ciblé avait un texte ou non (cas voice MMS / image
+                            // sans légende). `previewMode` côté [IncomingMessageNotifier]
+                            // s'occupe encore de masquer le contenu si l'utilisateur a
+                            // choisi de cacher les aperçus.
+                            // v1.6.1 (audit SEC-07) — strip Bidi/RLO/ZWSP du body OUTGOING
+                            // avant injection dans la string de notif. Le body d'un message
+                            // sortant n'est PAS passé par `stripInvisibleChars` à l'écriture
+                            // (contrairement au body entrant) car il vient de l'utilisateur ;
+                            // mais un copier-coller depuis le web peut contenir des contrôles
+                            // BiDi qui inverseraient visuellement la notif.
+                            val targetPreview = applied.targetBody.stripInvisibleChars().trim().take(80)
+                            val notifBody = if (targetPreview.isEmpty()) {
+                                context.getString(
+                                    R.string.reaction_notif_body_no_preview,
+                                    decoded.emoji,
+                                )
+                            } else {
+                                context.getString(
+                                    R.string.reaction_notif_body_with_preview,
+                                    decoded.emoji,
+                                    targetPreview,
+                                )
+                            }
+                            notifier.notifyIncoming(
+                                address = address,
+                                body = notifBody,
+                                messageId = applied.targetMessageId,
+                                conversationId = applied.conversationId,
                             )
-                        } else {
-                            context.getString(
-                                R.string.reaction_notif_body_with_preview,
-                                decoded.emoji,
-                                targetPreview,
-                            )
                         }
-                        notifier.notifyIncoming(
-                            address = address,
-                            body = notifBody,
-                            messageId = applied.targetMessageId,
-                            conversationId = applied.conversationId,
-                        )
                         return@launch
                     }
                     // Decoded but no matching outgoing message (the user removed it, or
@@ -317,9 +337,42 @@ class SmsDeliverReceiver : BroadcastReceiver() {
             }
         }
     }
+
+    /**
+     * The E2E fragment branch: `true` when the body parsed as a
+     * ciphertext fragment (handled — the caller returns). The fragment
+     * is written to the system inbox first, like every SMS; a failure
+     * inside the fragment path is logged, not rethrown (except
+     * `CancellationException`), so one bad fragment cannot kill the
+     * receiver — the sender's retry re-sends the set.
+     */
+    private suspend fun handleE2eFragment(
+        deps: Collaborators,
+        address: String,
+        body: String,
+        ts: Long,
+        subId: Int?,
+    ): Boolean {
+        val fragment = E2eWireFormat.parseFragment(body) ?: return false
+        val uri = deps.telephonyReader.insertInboxSms(address, body, ts, subId)
+        try {
+            deps.e2eReceiveManager.handleFragment(
+                address = address,
+                fragment = fragment,
+                telephonyUri = uri?.toString(),
+                dateMs = ts,
+                subId = subId,
+            )
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            Timber.w(t, "E2E: fragment handling failed")
+        }
+        return true
+    }
 }
 
-/** Carrier so the five collaborators are resolved in a single hop onto the IO dispatcher. */
+/** Carrier so the collaborators are resolved in a single hop onto the IO dispatcher. */
 private class Collaborators(
     val telephonyReader: TelephonyReader,
     val mirror: ConversationMirror,
@@ -327,4 +380,6 @@ private class Collaborators(
     val conversationRepo: ConversationRepository,
     // v1.28.3 (F26) — porte les DEUX regles d'ecartement, liste noire et « numero inconnu ».
     val blockPolicy: IncomingBlockPolicy,
+    // E2E — the ciphertext fragment path.
+    val e2eReceiveManager: E2eReceiveManager,
 )

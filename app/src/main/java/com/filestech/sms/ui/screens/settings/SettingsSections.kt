@@ -97,6 +97,10 @@ enum class SettingsItem(
     APPEARANCE_AMOLED_TRUE_BLACK("appearance.amoledTrueBlack", SettingsSection.APPEARANCE),
     APPEARANCE_TEXT_SCALE("appearance.textScale", SettingsSection.APPEARANCE),
     APPEARANCE_SHOW_AVATARS("conversations.showAvatars", SettingsSection.APPEARANCE),
+    APPEARANCE_SHOW_DUPLICATE_NUMBER(
+        "conversations.showDuplicateNameNumber",
+        SettingsSection.APPEARANCE,
+    ),
     APPEARANCE_SHOW_CATEGORIES("conversations.showCategories", SettingsSection.APPEARANCE),
     APPEARANCE_SIGNATURE("conversations.signature", SettingsSection.APPEARANCE),
 
@@ -162,6 +166,10 @@ enum class SettingsItem(
     ),
     SECURITY_BLOCK_UNKNOWN("blocking.blockUnknown", SettingsSection.SECURITY_PRIVACY),
     SECURITY_MANAGE_BLOCKED("action.openBlockedNumbers", SettingsSection.SECURITY_PRIVACY),
+
+    // E2E — the Encryption sub-screen row (its own group after the
+    // security card).
+    SECURITY_ENCRYPTION("action.openEncryption", SettingsSection.SECURITY_PRIVACY),
 
     // Backup — all three rows open screens that already exist.
     BACKUP_NOW("action.backupNow", SettingsSection.BACKUP),

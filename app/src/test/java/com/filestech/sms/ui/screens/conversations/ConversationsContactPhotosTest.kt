@@ -290,6 +290,9 @@ class ConversationsContactPhotosTest {
             // mode); a relaxed mock behind a Lazy is enough.
             syncEngine = dagger.Lazy { mockk<ClientSyncEngine>(relaxed = true) },
             noteRepo = noteRepo,
+            // E2E — the relaxed mock never emits an encrypted set, so no
+            // row shows a lock badge in these tests.
+            e2ePeers = mockk(relaxed = true),
         )
     }
 

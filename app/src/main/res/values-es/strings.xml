@@ -139,6 +139,7 @@
     <string name="details_panel_title">Detalles</string>
     <string name="details_schedule">Programar</string>
     <string name="details_add_to_contacts">Añadir a contactos</string>
+    <string name="details_edit_contact">Editar contacto</string>
     <string name="details_member_count">%1$d miembros</string>
     <string name="details_change_photo">Cambiar foto de contacto</string>
     <string name="details_tab_photos">Fotos</string>
@@ -181,7 +182,39 @@
     <string name="invite_friends_settings">Invita a tus amigos</string>
 
     <!-- Thread -->
-    <string name="thread_compose_placeholder">Relay message</string>
+    <string name="thread_compose_placeholder">Mensaje</string>
+    <string name="thread_compose_placeholder_encrypted">Relay message</string>
+
+    <!-- End-to-end encryption -->
+    <string name="e2e_too_long">Demasiado largo para enviarlo cifrado</string>
+    <string name="e2e_notice_activated">Los mensajes ahora están cifrados de extremo a extremo.</string>
+    <string name="e2e_notice_key_changed">El código de seguridad de %1$s cambió. Los mensajes siguen cifrados de extremo a extremo.</string>
+    <string name="e2e_notice_key_changed_verified">El código de seguridad de %1$s cambió. %1$s estaba verificado: vuelve a comparar el número de seguridad para confirmar que sigue siendo la misma persona.</string>
+    <string name="e2e_decrypt_failed">No se pudo descifrar este mensaje.</string>
+    <string name="e2e_decrypt_failed_notif">No se pudo descifrar este mensaje.</string>
+    <string name="e2e_encryption">Cifrado</string>
+    <string name="e2e_details_encrypted">Cifrado de extremo a extremo</string>
+    <string name="e2e_details_verify_tap">Toca para verificar el número de seguridad de %1$s</string>
+    <string name="e2e_details_verified">Verificado ✓</string>
+    <string name="e2e_details_setting_up">Configurando el cifrado…</string>
+    <string name="e2e_details_not_encrypted">Sin cifrar</string>
+    <string name="e2e_details_not_relay">%1$s aún no usa Relay</string>
+    <string name="e2e_details_auto_start">El cifrado empezará automáticamente cuando %1$s use Relay</string>
+    <string name="e2e_verify_title">Número de seguridad</string>
+    <string name="e2e_verify_explainer">Compara este número con %1$s en persona o por otro canal: una llamada u otra app. Si los números coinciden, habláis entre vosotros sin nadie en medio.</string>
+    <string name="e2e_verify_mark">Marcar como verificado</string>
+    <string name="e2e_verify_remove">Quitar la verificación</string>
+    <string name="e2e_verify_verified">Verificado</string>
+    <string name="e2e_verify_copy">Copiar</string>
+    <string name="e2e_verify_load_failed">No se pudo cargar el número de seguridad.</string>
+    <string name="e2e_settings_explainer">De Relay a Relay, el cifrado es automático. Cuando ambas personas usan Relay, vuestros mensajes 1:1 se cifran de extremo a extremo automáticamente, sin configurar nada. Los mensajes a personas sin Relay, los chats de grupo, las fotos y los archivos se envían como SMS/MMS normales. Los mensajes cifrados usan algunos segmentos de texto más que los normales.</string>
+    <string name="e2e_settings_status_subtitle">Automático cuando ambas personas usan Relay</string>
+    <string name="e2e_settings_fingerprint">Tu huella</string>
+    <string name="e2e_settings_fingerprint_hint">Comparte esto con un contacto para que pueda comprobar que realmente eres tú.</string>
+    <string name="e2e_settings_verified_contacts">Contactos verificados</string>
+    <string name="e2e_settings_verified_count">%1$d contactos</string>
+    <string name="e2e_settings_no_verified">Aún no hay contactos verificados</string>
+    <string name="e2e_settings_attribution">El cifrado de extremo a extremo de Relay usa vodozemac, la biblioteca de cifrado de código abierto de Matrix, auditada de forma independiente por Least Authority en 2022.</string>
     <string name="thread_compose_emoji">Emoji</string>
     <string name="thread_status_pending">Enviando…</string>
     <string name="thread_status_sent">Enviado</string>
@@ -446,6 +479,8 @@
 
     <string name="settings_section_conversations">Conversaciones</string>
     <string name="settings_show_avatars">Mostrar los avatares</string>
+    <string name="settings_show_duplicate_number">Mostrar el número bajo nombres duplicados</string>
+    <string name="settings_show_duplicate_number_subtitle">Cuando dos conversaciones comparten un nombre, muestra el número debajo.</string>
     <string name="settings_show_categories">Mostrar categorías</string>
     <string name="settings_show_categories_subtitle">Si está desactivado, el filtrado también se desactiva y todas las conversaciones se muestran en una lista.</string>
     <string name="settings_signature">Firma automática</string>
@@ -1366,7 +1401,7 @@
     <string name="note_save_failed">No se pudo guardar esta entrada</string>
     <string name="note_attachment_failed">No se pudo añadir este adjunto</string>
     <string name="note_open_failed">No se pudo abrir este archivo</string>
-    <string name="note_compose_placeholder">Escribe una nota…</string>
+    <string name="note_compose_placeholder">Escribe una nota</string>
     <string name="note_attach_sheet_subtitle">Las fotos, los vídeos y los archivos se guardan cifrados en esta nota.</string>
     <string name="note_pdf_header_subtitle">Exportado %1$s</string>
     <string name="note_empty_photos">Las fotos guardadas en esta nota se mostrarán aquí.</string>
