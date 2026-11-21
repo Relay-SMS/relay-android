@@ -358,6 +358,7 @@ class VaultPurgeRetryTest {
             ),
             barriere,
             annulateur,
+            db.e2eNoticeDao(),
         )
 
     // ───── v1.28.5 (sixième note d'Andrew, point 1) — `force` ne lève QUE la condition « copie système » ─────

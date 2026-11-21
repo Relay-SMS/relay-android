@@ -311,6 +311,7 @@ class PurgeHistoryPropagationTest {
             // v1.28.6 — l'effaceur annule les notifications de ce qu'il supprime ;
             // v1.28.7 — la purge de retention aussi, et ce fichier le tient.
             annulateur,
+            db.e2eNoticeDao(),
         )
 
     private suspend fun insere(

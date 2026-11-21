@@ -307,6 +307,7 @@ class PdusGardesTest {
         FichiersDePiecesJointes(db.attachmentDao(), db.scheduledMessageDao(), context),
         com.filestech.sms.security.VaultPurgeBarrier(),
         AnnulateurDeNotificationsEspion(),
+        db.e2eNoticeDao(),
     )
 
     private suspend fun conversation(id: Long, inVault: Boolean) {

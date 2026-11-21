@@ -418,6 +418,7 @@ class FichiersPartagesTest {
         fichiersAvec(attachmentDao),
         com.filestech.sms.security.VaultPurgeBarrier(),
         AnnulateurDeNotificationsEspion(),
+        db.e2eNoticeDao(),
     )
 
     private fun fichier(nom: String): File = File(dossier, nom).apply { writeBytes(ByteArray(16)) }
