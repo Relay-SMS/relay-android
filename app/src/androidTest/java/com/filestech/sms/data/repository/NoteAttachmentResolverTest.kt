@@ -58,7 +58,7 @@ class NoteAttachmentResolverTest {
             db.noteMessageDao(),
             db.noteAttachmentDao(),
             crypto,
-            Dispatchers.Unconfined,
+            io = Dispatchers.Unconfined,
         )
         resolver = NoteAttachmentResolverImpl(context, crypto, Dispatchers.Unconfined)
     }
