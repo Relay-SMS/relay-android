@@ -4,6 +4,7 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerState
+import com.filestech.sms.data.local.db.entity.E2eSessionEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.domain.e2e.E2ePayloadType
 import com.filestech.sms.domain.e2e.E2eSendGate
@@ -58,9 +59,14 @@ class E2eSendManagerTest {
         }
     }
 
-    private class Harness {
+    private class Harness(unavailableCrypto: Boolean = false) {
         val aliceCrypto = FakeE2eCrypto("alice")
         val bobCrypto = FakeE2eCrypto("bob")
+
+        // The backend under test: the fake normally, the unavailable
+        // backend for the degraded-crypto test (round 38).
+        private val sendCrypto: E2eCrypto =
+            if (unavailableCrypto) UnavailableE2eCrypto() else aliceCrypto
 
         val peerDao = FakeE2ePeerDao()
         val sessionDao = FakeE2eSessionDao()
@@ -72,14 +78,14 @@ class E2eSendManagerTest {
         val probeManager = mockk<E2eProbeManager>()
 
         val peers = E2ePeerRepository(peerDao)
-        val sessions = E2eSessionStore(sessionDao, aliceCrypto, fakeKeyManager())
-        val accountManager = E2eAccountManager(accountDao, aliceCrypto, fakeKeyManager())
+        val sessions = E2eSessionStore(sessionDao, sendCrypto, fakeKeyManager())
+        val accountManager = E2eAccountManager(accountDao, sendCrypto, fakeKeyManager())
 
         val manager = E2eSendManager(
             peers = peers,
             sessions = lazyOf(sessions),
             accountManager = lazyOf(accountManager),
-            crypto = lazyOf(aliceCrypto as E2eCrypto),
+            crypto = lazyOf(sendCrypto),
             sender = sender,
             recorder = recorder,
             messageDao = messageDao,
@@ -244,6 +250,41 @@ class E2eSendManagerTest {
         val harness = Harness()
         harness.seedPeer(E2ePeerState.ENCRYPTED)
         // No session established.
+
+        val outcome = harness.manager.sendEncrypted(
+            LOCAL_ID,
+            BOB,
+            "hello bob",
+            NOW,
+            null,
+            false,
+            0,
+            E2ePayloadType.TEXT,
+        )
+
+        assertThat(outcome).isInstanceOf(Outcome.Failure::class.java)
+        verify(exactly = 0) { harness.sender.sendFragment(any(), any(), any(), any(), any(), any(), any(), any()) }
+        assertThat(harness.recorder.rows).isEmpty()
+        coVerify(exactly = 0) { harness.messageDao.setCiphertext(any(), any()) }
+    }
+
+    @Test
+    fun `an unavailable crypto backend fails the encrypted send instead of throwing`() = runTest {
+        val harness = Harness(unavailableCrypto = true)
+        harness.seedPeer(E2ePeerState.ENCRYPTED)
+        // A session row exists, so the send reaches the Account load —
+        // which throws E2eCryptoException under the unavailable backend.
+        // Seed the row directly: saveNewSession would pickle through
+        // crypto, which is exactly what is unavailable here.
+        harness.sessionDao.sessions += E2eSessionEntity(
+            id = 0,
+            address = BOB,
+            sessionId = "session-1",
+            pickle = "stored-pickle",
+            isCurrent = true,
+            createdAt = NOW,
+            lastUsedAt = NOW,
+        )
 
         val outcome = harness.manager.sendEncrypted(
             LOCAL_ID,

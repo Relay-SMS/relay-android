@@ -130,17 +130,34 @@
 # E2E round — NEITHER AAR ships consumer ProGuard rules (verified
 # 2026-11-20: no proguard.txt in trixnity-vodozemac-android-5.11.0.aar
 # or trixnity-vodozemac-binaries-android-5.11.0.aar). The JNI entry
-# points are private `external` functions on the `*BindingsKt` classes
-# (e.g. `AccountBindingsKt.vodozemac_olm_account_new`, verified by
-# javap on the 5.11.0 classes.jar), resolved from libvodozemac.so by
-# their JNI-mangled names — R8 must not rename the classes or the
-# methods, or every native call fails at runtime. The public API
-# classes (Account, Session, OlmMessage, keys) need no keep: they are
-# reached by direct references from VodozemacCrypto. Release R8
-# verification is CI-only (the local harness never runs R8).
--keepclasseswithmembernames class de.connect2x.trixnity.vodozemac.bindings.** {
-    native <methods>;
-}
+# points are `external` functions on the `*BindingsKt` classes (e.g.
+# `olm/AccountBindingsKt.vodozemac_olm_account_new`, verified by javap
+# on the 5.11.0 classes.jar). libvodozemac.so's JNI_OnLoad registers
+# the natives for ALL 19 bindings classes (olm, megolm, sas,
+# pkencryption, keys, slice — verified from the .so's strings) and
+# returns JNI_ERR if ANY registration fails, so the whole library
+# refuses to load.
+#
+# Round 38 fix (2026-11-21) — the original rule here was
+# `-keepclasseswithmembernames ... { native <methods>; }`, which keeps
+# NAMES only: R8 still strips native-method declarations (and whole
+# classes) with no Kotlin caller. Relay calls only the Olm + keys
+# subset, so the release build lost the Megolm/SAS/PkEncryption
+# bindings — and on device the first `System.loadLibrary("vodozemac")`
+# died with `UnsatisfiedLinkError: JNI_ERR returned from JNI_OnLoad`
+# (Pixel 8, round-37 release APK): the Settings Encryption screen
+# crashed on open, and every probe failed silently, so no thread ever
+# flipped to encrypted. Debug builds never showed it (minify off),
+# JVM unit tests never load the .so, and the instrumented-tests job
+# fails every run — nothing checked the release native load until a
+# device did. Proven with standalone R8 9.5.33 (2026-11-21): under the
+# names-only rule an uncalled native method and a whole uncalled
+# bindings class are both stripped; under the full `-keep` below both
+# survive. The public API classes (Account, Session, OlmMessage, keys)
+# need no keep: they are reached by direct references from
+# VodozemacCrypto. Release R8 verification is CI-only (the local
+# harness never runs R8).
+-keep class de.connect2x.trixnity.vodozemac.bindings.** { *; }
 
 # ----- DataStore (protobuf-free path) ----------------------------------------------------------
 -keep class androidx.datastore.preferences.protobuf.** { *; }

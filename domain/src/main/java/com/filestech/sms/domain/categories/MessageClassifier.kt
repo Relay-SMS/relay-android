@@ -326,6 +326,55 @@ object MessageClassifier {
     )
 
     /**
+     * Spam follow-up — the street-address detector for the
+     * real-estate address pairs (see [isRealEstatePitch]): a house
+     * number, one to three street-name words, and a street suffix,
+     * on the folded body ("3220 upper valley rd"). It never fires
+     * alone — only paired with "getting rid of" or "your place" —
+     * so a loose match ("5 guys in st louis" reads as an address)
+     * cannot misfile a message on its own.
+     */
+    private val STREET_ADDRESS_REGEX = Regex(
+        """ \d{1,6}( [a-z]+){1,3} (rd|road|st|street|ave|avenue|dr|drive|ln|lane|""" +
+            """blvd|boulevard|ct|court|way|ter|terrace|pl|place|hwy|highway|cir|circle) """,
+    )
+
+    /**
+     * Spam follow-up — opt-out footer variants the first spam round
+     * did not cover: "Stop to stop" and "Text STOP to quit". Unlike
+     * "stop to end" (ungated), these are stranger-gated — "I had to
+     * stop to stop the bleeding" is a real sentence, so a contact
+     * saying it stays Personal.
+     */
+    private val OPT_OUT_FOOTER_PHRASES = listOf(
+        "stop to stop",
+        "stop to quit",
+    )
+
+    /**
+     * Spam follow-up — the subscription-expiry scam family ("Dear
+     * Customer, Your Roku TV subscription will expire… call us").
+     * Stranger-gated: "my subscription will expire next week" is
+     * ordinary personal language from a friend, so a contact saying
+     * it stays Personal; from a stranger's number it is the scam
+     * template. "dear customer" is the generic-greeting marker — a
+     * real person never opens a personal text with it.
+     */
+    private val SCAM_PHRASES = listOf(
+        "dear customer",
+        "subscription will expire",
+    )
+
+    /**
+     * Spam follow-up — the "stop=end" opt-out footer ("Stop=End",
+     * "stop = end"), matched on the RAW body: folding turns "=" into
+     * a space, so the folded "stop end" would also match "Stop. End
+     * of story." The equals sign is what makes this a footer, not a
+     * sentence.
+     */
+    private val STOP_END_FOOTER_REGEX = Regex("stop\\s*=\\s*end", RegexOption.IGNORE_CASE)
+
+    /**
      * Round 17 — a business self-introduction in the folded body: "it's
      * Maria with Roofing Pros", "this is Tom with Bright Solar". The word
      * after "with" must not be a determiner or pronoun, so "it's Sarah
@@ -363,7 +412,7 @@ object MessageClassifier {
             isOtp -> MessageCategory.OTP
             containsAny(paddedBody, TRANSACTION_KEYWORDS) -> MessageCategory.TRANSACTIONS
             containsAny(paddedBody, PROMOTIONAL_KEYWORDS) ||
-                isStrangerOnlyPromo(paddedBody, isContact, isGroup) ||
+                isStrangerOnlyPromo(paddedBody, body, isContact, isGroup) ||
                 isShortCode(digits) || isAlphanumericSender(sender) -> MessageCategory.PROMOTIONAL
             isContact || isGroup || isRegularNumber(digits) -> MessageCategory.PERSONAL
             else -> MessageCategory.OTHER
@@ -381,16 +430,27 @@ object MessageClassifier {
      * round 35 — the real-estate pitch ([isRealEstatePitch]), the survey
      * pair ([isSurveySpam]) and the pitch follow-up ([isPitchFollowUp]);
      * without the guard any of them caught a contact's chat.
+     * Spam follow-up — the opt-out footer variants
+     * ([OPT_OUT_FOOTER_PHRASES]), the subscription-scam phrases
+     * ([SCAM_PHRASES]) and the "stop=end" footer
+     * ([STOP_END_FOOTER_REGEX], matched on the raw body) join the
+     * same guard. The three checks are inlined below rather than
+     * split into one-line helpers: the object sits at Detekt's
+     * TooManyFunctions threshold (20).
      */
     private fun isStrangerOnlyPromo(
         paddedBody: String,
+        rawBody: String?,
         isContact: Boolean,
         isGroup: Boolean,
     ): Boolean {
         if (isContact || isGroup) return false
         return containsAny(paddedBody, POLITICAL_KEYWORDS) || isPoliticalVote(paddedBody) ||
             isColdSalesPitch(paddedBody) || isRealEstatePitch(paddedBody) ||
-            isSurveySpam(paddedBody) || isPitchFollowUp(paddedBody)
+            isSurveySpam(paddedBody) || isPitchFollowUp(paddedBody) ||
+            containsAny(paddedBody, OPT_OUT_FOOTER_PHRASES) ||
+            containsAny(paddedBody, SCAM_PHRASES) ||
+            (rawBody != null && STOP_END_FOOTER_REGEX.containsMatchIn(rawBody))
     }
 
     /**
@@ -407,6 +467,13 @@ object MessageClassifier {
      * both as a phrase and as a sell-word variant. General homoglyph
      * normalization is out of scope: only this observed spelling is
      * handled.
+     *
+     * Spam follow-up — the address pairs: the pitch names the property
+     * by its street address instead of a noun ("getting rid of 3220
+     * Upper Valley Rd", "curious about your place at 3220 Upper Valley
+     * Rd"). Either phrase alone is ordinary language ("getting rid of
+     * my old couch", "come to your place"), so only the pair with a
+     * street address counts.
      */
     private fun isRealEstatePitch(paddedBody: String): Boolean {
         val hasConsideredSelling = paddedBody.contains(" considered selling ") ||
@@ -423,8 +490,11 @@ object MessageClassifier {
                 "interested in buying your property",
             ),
         )
+        val hasAddressPitch = STREET_ADDRESS_REGEX.containsMatchIn(paddedBody) &&
+            (paddedBody.contains(" getting rid of ") || paddedBody.contains(" your place "))
         return hasConsideredSelling || hasAvailableToOwn ||
-            (hasRealEstateNoun && (hasSellWord || hasCashOffer)) || hasInterestedInBuying
+            (hasRealEstateNoun && (hasSellWord || hasCashOffer)) || hasInterestedInBuying ||
+            hasAddressPitch
     }
 
     /**

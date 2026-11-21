@@ -183,7 +183,13 @@ class E2eSendManager @Inject constructor(
      */
     private suspend fun loadCurrentSession(address: String): String? {
         val sessionId = sessions.get().currentSessionId(address) ?: return null
-        accountManager.get().ensureAccount()
+        // The Account load throws when crypto is unavailable (the
+        // native library failed to load — see UnavailableE2eCrypto):
+        // no session can be used then, so the encrypt fails cleanly
+        // instead of throwing out of the send path.
+        runCatching { accountManager.get().ensureAccount() }
+            .onFailure { Timber.w(it, "E2E: cannot load account for encrypt") }
+            .getOrNull() ?: return null
         return if (sessions.get().loadSession(address, sessionId)) sessionId else null
     }
 

@@ -633,11 +633,29 @@ fun ThreadScreen(
     // overlaying the texts. If the user was at the tail when the keyboard
     // opened, scroll to the bottom once the resize has settled so the last
     // message sits above the composer. A user scrolled up reading older
-    // messages — or searching — is left alone. (The pinned-scroll effect
-    // below also covers this; this one guarantees the smooth animated
-    // landing even if a layout emission is missed mid-animation.)
+    // messages — or searching — is left alone. The pinned-scroll effect
+    // below is paused while the IME animates (round 38), so this smooth
+    // animated landing is the only re-pin during the transition — and
+    // nothing snaps the list frame by frame underneath it.
     val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
     val keyboardOpen = imeBottomPx > 0
+    // Round 38 — the IME is mid-animation while the keyboard slides in
+    // or out (or changes height, e.g. switching to the symbols layout):
+    // the inset changes every frame until the animation ends, so the
+    // flag below stays set until 350ms after the last change. (Compose
+    // has no usable "IME is animating" API in this version:
+    // `imeAnimationSource`/`imeAnimationTarget` are hidden-deprecated
+    // in foundation-layout 1.12.1 — unresolved even with the opt-in —
+    // so the settle timer stands in for them.) The pinned-scroll effect
+    // below pauses while this is true (see its comment). The first run
+    // also sets it for 350ms at thread open — harmless, the pin starts
+    // unset until the bottom is actually seen.
+    var imeAnimating by remember { mutableStateOf(false) }
+    LaunchedEffect(imeBottomPx) {
+        imeAnimating = true
+        delay(350)
+        imeAnimating = false
+    }
     LaunchedEffect(keyboardOpen) {
         if (!keyboardOpen) return@LaunchedEffect
         val wasAtBottom = isAtBottom
@@ -726,8 +744,18 @@ fun ThreadScreen(
     // so it still unpins. Widening the threshold instead would be
     // guesswork — a tall card over short messages can exceed any fixed
     // count, and several previews stack.
-    LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen) {
-        if (emojiPickerOpen) return@LaunchedEffect
+    // Round 38 (2026-11-21) — OFF while the IME animates: opening the
+    // keyboard shrinks the viewport frame by frame over ~300ms, and each
+    // of those layout emissions made this effect snap to the bottom —
+    // the same scroll-per-emission loop as the round-19 picker drag,
+    // time-bounded here so it showed as jitter (the list jumping during
+    // the keyboard slide) instead of an ANR. The pin pauses only until
+    // the insets settle (the 350ms timer above); while the keyboard
+    // sits open it stays engaged, so a late-loading preview still
+    // re-pins. The keyboard effect above owns the smooth landing after
+    // its 320ms delay, unopposed by snaps.
+    LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen, imeAnimating) {
+        if (emojiPickerOpen || imeAnimating) return@LaunchedEffect
         var pinnedToBottom = false
         var prevFirstIndex: Int? = null
         var prevFirstOffset: Int? = null

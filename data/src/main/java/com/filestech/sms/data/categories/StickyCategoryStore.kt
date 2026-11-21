@@ -98,16 +98,31 @@ class StickyCategoryStore @Inject constructor(
      * the latest incoming is OTP or Transactions, stores it; else if ANY
      * is Promotional, stores PROMOTIONAL. Returns how many conversations
      * were filed. Bounded (one capped query per conversation), idempotent
-     * (a conversation that already has a sticky value is skipped), and
-     * safe to re-run — the flag in `AdvancedSettings` is the once-guard.
+     * (a conversation already filed OTP, Transactions or Promotional is
+     * skipped), and safe to re-run — the flag in `AdvancedSettings` is
+     * the once-guard.
+     *
+     * Spam follow-up — a thread stored PERSONAL or OTHER is re-examined,
+     * not skipped: the classifier gains new signals after the first
+     * backfill pass, so a thread a plain follow-up filed as Personal may
+     * hold an older message that is Promotional under the new rules.
+     * Re-examining is safe — [backfillOne] only ever stores OTP,
+     * Transactions or Promotional, never overwrites a stored value with
+     * Personal, and leaves an all-plain thread untouched.
      */
     suspend fun backfill(): Int {
-        // Contacts never store, and a conversation that already has a
-        // sticky value was filed by the receive-time hook (or a previous
-        // backfill run) — filtering up front keeps the loop to one call
-        // per candidate and the backfill idempotent.
+        // Contacts never store, and a conversation already filed OTP,
+        // Transactions or Promotional was filed by the receive-time hook
+        // (or a previous backfill run) — filtering up front keeps the
+        // loop to one call per candidate and the backfill idempotent.
+        // PERSONAL / OTHER-stored threads are re-examined (see above).
         val conversations = conversationDao.snapshotOneToOneConversations()
-            .filter { it.displayName == null && it.stickyCategory == null }
+            .filter {
+                it.displayName == null &&
+                    it.stickyCategory != MessageCategory.OTP &&
+                    it.stickyCategory != MessageCategory.TRANSACTIONS &&
+                    it.stickyCategory != MessageCategory.PROMOTIONAL
+            }
         var stored = 0
         for (conversation in conversations) {
             if (backfillOne(conversation)) stored++

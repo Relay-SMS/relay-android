@@ -5,12 +5,14 @@ import com.filestech.sms.e2e.E2eCrypto
 import com.filestech.sms.e2e.E2eDataSmsSender
 import com.filestech.sms.e2e.E2eDataSmsSenderImpl
 import com.filestech.sms.e2e.E2eSendManager
+import com.filestech.sms.e2e.UnavailableE2eCrypto
 import com.filestech.sms.e2e.VodozemacCrypto
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import timber.log.Timber
 import javax.inject.Singleton
 
 /**
@@ -54,9 +56,29 @@ abstract class E2eModule {
          * the class KDoc for why it is never pre-unpickled here).
          * `@Singleton`: the wrapper owns the Account and the live
          * session cache, and must be shared by every E2E manager.
+         *
+         * A native-load failure must never escape provisioning: the
+         * first `Account()` loads `libvodozemac.so`, and a load
+         * failure is an [UnsatisfiedLinkError] — an `Error`, not an
+         * `Exception` — which sailed through every `runCatching` on
+         * the E2E paths and crashed the app when the Settings
+         * Encryption screen resolved this provider on the main thread
+         * (round 37: R8 had stripped the uncalled JNI bindings, so
+         * `JNI_OnLoad` returned `JNI_ERR`). Catch `Throwable` and
+         * degrade to [UnavailableE2eCrypto]: every crypto operation
+         * then throws `E2eCryptoException`, which every E2E entry
+         * point already handles, so encryption is simply unavailable
+         * instead of a crash.
          */
         @Provides
         @Singleton
-        fun provideE2eCrypto(): E2eCrypto = VodozemacCrypto.createNew()
+        fun provideE2eCrypto(): E2eCrypto {
+            return try {
+                VodozemacCrypto.createNew()
+            } catch (t: Throwable) {
+                Timber.w(t, "E2E: native crypto library failed to load; encryption unavailable")
+                UnavailableE2eCrypto(t)
+            }
+        }
     }
 }

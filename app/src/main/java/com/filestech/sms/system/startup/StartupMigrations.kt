@@ -121,7 +121,10 @@ class StartupMigrations @Inject constructor(
         // Borné (une requête plafonnée par conversation) et idempotent ;
         // un échec ne bloque pas le démarrage, la passe rejoue au
         // prochain cold start (le drapeau ne se pose qu'au succès).
-        runCatching { backfillStickyCategoriesV20(advanced) }
+        // Spam follow-up (schema v22) — une seconde passe rejoue le même
+        // backfill sous un second drapeau : le classifieur a gagné de
+        // nouveaux signaux depuis la première passe.
+        runCatching { backfillStickyCategories(advanced) }
             .onFailure { Timber.w(it, "sticky category backfill failed") }
 
         // Global short-circuit: an up-to-date install does no migration work and never opens the
@@ -219,14 +222,29 @@ class StartupMigrations @Inject constructor(
      * Round 35 (schema v20) — classe les conversations 1:1 d'étrangers
      * déjà en base à partir du corps COMPLET de leurs messages entrants
      * récents (voir [StickyCategoryStore.backfill]), pour qu'elles
-     * rejoignent leur onglet sans attendre un nouveau message. Le drapeau
-     * ne se pose qu'après une passe complète : en cas d'échec, la passe
-     * rejoue au prochain cold start.
+     * rejoignent leur onglet sans attendre un nouveau message. Les
+     * drapeaux ne se posent qu'après une passe complète : en cas
+     * d'échec, la passe rejoue au prochain cold start.
+     *
+     * Spam follow-up (schema v22) — une seconde passe sous un second
+     * drapeau : le classifieur a gagné de nouveaux signaux depuis la
+     * première passe, donc les conversations classées tout-plain à
+     * l'époque sont réexaminées. Une seule invocation du backfill,
+     * gardée par les deux drapeaux : une installation fraîche pose les
+     * deux d'un coup, une installation déjà passée en v20 ne rejoue
+     * que la seconde passe.
      */
-    private suspend fun backfillStickyCategoriesV20(advanced: AdvancedSettings) {
-        if (advanced.stickyCategoryBackfilledV20) return
+    private suspend fun backfillStickyCategories(advanced: AdvancedSettings) {
+        if (advanced.stickyCategoryBackfilledV20 && advanced.stickyCategoryBackfilledV22) return
         val stored = stickyCategories.get().backfill()
-        settings.update { s -> s.copy(advanced = s.advanced.copy(stickyCategoryBackfilledV20 = true)) }
+        settings.update { s ->
+            s.copy(
+                advanced = s.advanced.copy(
+                    stickyCategoryBackfilledV20 = true,
+                    stickyCategoryBackfilledV22 = true,
+                ),
+            )
+        }
         if (stored > 0) Timber.i("sticky category backfill: %d conversation(s) filed", stored)
     }
 

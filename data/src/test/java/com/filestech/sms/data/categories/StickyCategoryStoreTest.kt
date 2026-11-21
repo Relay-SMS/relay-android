@@ -233,7 +233,53 @@ class StickyCategoryStoreTest {
     }
 
     @Test
-    fun `backfill skips conversations that already have a sticky value`() = runTest {
+    fun `backfill re-examines a thread stored as personal when an older message is now promotional`() = runTest {
+        // Spam follow-up — the classifier gained new signals after the
+        // first backfill pass, so a thread a plain follow-up filed as
+        // Personal may hold an older message that is Promotional under
+        // the new rules. The Roku scam (Promotional under the new
+        // signals) plus a plain follow-up must re-file Promotional.
+        coEvery { conversationDao.snapshotOneToOneConversations() } returns listOf(
+            conv(stickyCategory = MessageCategory.PERSONAL),
+        )
+        coEvery { messageDao.findRecentIncomingSinceLastOutgoing(9L, 10) } returns listOf(
+            message(2L, "Hey, just checking in, let me know what you think", 2000L),
+            message(
+                1L,
+                "Dear Customer, Your Roku TV subscription will expire on May 5th. " +
+                    "Please call us at 818-937-3504 to continue your services. Thank you",
+                1000L,
+            ),
+        )
+        coEvery { conversationDao.setStickyCategory(9L, MessageCategory.PROMOTIONAL) } just Runs
+
+        val stored = store.backfill()
+
+        assertThat(stored).isEqualTo(1)
+        coVerify { conversationDao.setStickyCategory(9L, MessageCategory.PROMOTIONAL) }
+    }
+
+    @Test
+    fun `backfill leaves an all plain personal stored thread untouched`() = runTest {
+        // Re-examination never downgrades: an all-plain thread stored
+        // Personal stays Personal, with no write at all.
+        coEvery { conversationDao.snapshotOneToOneConversations() } returns listOf(
+            conv(stickyCategory = MessageCategory.PERSONAL),
+        )
+        coEvery { messageDao.findRecentIncomingSinceLastOutgoing(9L, 10) } returns listOf(
+            message(2L, "Hey, just checking in", 2000L),
+            message(1L, "See you Saturday!", 1000L),
+        )
+
+        val stored = store.backfill()
+
+        assertThat(stored).isEqualTo(0)
+        // No setStickyCategory stub: the strict mock would throw if
+        // the store wrote anyway.
+    }
+
+    @Test
+    fun `backfill skips conversations already filed promotional`() = runTest {
         coEvery { conversationDao.snapshotOneToOneConversations() } returns listOf(
             conv(stickyCategory = MessageCategory.PROMOTIONAL),
         )

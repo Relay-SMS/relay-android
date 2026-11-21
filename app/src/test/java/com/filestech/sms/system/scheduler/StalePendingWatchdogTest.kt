@@ -5,6 +5,9 @@ import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
@@ -50,5 +53,45 @@ class StalePendingWatchdogTest {
 
         assertThat(watchdog.runOnce()).isEqualTo(0)
         coVerify(exactly = 1) { dao.timeoutStalePending(any()) }
+    }
+
+    @Test fun `tickForever runs the check every five minutes, starting after the first interval`() =
+        runTest {
+            val dao = mockk<MessageDao>()
+            coEvery { dao.timeoutStalePending(any()) } returns 0
+            val watchdog = StalePendingWatchdog(dao)
+
+            backgroundScope.launch { watchdog.tickForever() }
+            runCurrent()
+            // The resume trigger covers the foreground moment
+            // itself, so the loop waits a full interval first.
+            coVerify(exactly = 0) { dao.timeoutStalePending(any()) }
+
+            advanceTimeBy(StalePendingWatchdog.TICK_INTERVAL_MS)
+            runCurrent()
+            coVerify(exactly = 1) { dao.timeoutStalePending(any()) }
+
+            advanceTimeBy(StalePendingWatchdog.TICK_INTERVAL_MS)
+            runCurrent()
+            coVerify(exactly = 2) { dao.timeoutStalePending(any()) }
+        }
+
+    @Test fun `tickForever keeps ticking after a failed check`() = runTest {
+        val dao = mockk<MessageDao>()
+        var calls = 0
+        coEvery { dao.timeoutStalePending(any()) } coAnswers {
+            calls++
+            if (calls == 1) error("transient database error") else 0
+        }
+        val watchdog = StalePendingWatchdog(dao)
+
+        backgroundScope.launch { watchdog.tickForever() }
+        advanceTimeBy(StalePendingWatchdog.TICK_INTERVAL_MS)
+        runCurrent()
+        coVerify(exactly = 1) { dao.timeoutStalePending(any()) }
+
+        advanceTimeBy(StalePendingWatchdog.TICK_INTERVAL_MS)
+        runCurrent()
+        coVerify(exactly = 2) { dao.timeoutStalePending(any()) }
     }
 }

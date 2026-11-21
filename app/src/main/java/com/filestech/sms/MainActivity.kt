@@ -105,7 +105,9 @@ class MainActivity : FragmentActivity() {
      * flips outgoing PENDING rows older than 15 min to FAILED on
      * every resume, so a lost send ack shows "failed" promptly
      * instead of "Sending…" for hours (the 12-hour worker is the
-     * backstop). `Lazy` for the same reason as
+     * backstop). Round 38 adds the foreground tick (every 5
+     * minutes while open — see the `repeatOnLifecycle(RESUMED)`
+     * launch in `onCreate`). `Lazy` for the same reason as
      * [telephonySyncManagerLazy]: resolving it builds
      * `AppDatabase`. No client-mode gate — a linked device has
      * optimistic PENDING rows too (see
@@ -338,6 +340,24 @@ class MainActivity : FragmentActivity() {
                     .map { it.security.flagSecure }
                     .distinctUntilChanged()
                     .collect { applyFlagSecure(it) }
+            }
+        }
+
+        // Round 38 — the stale-PENDING watchdog's foreground
+        // tick: onResume flips stale rows when the app comes
+        // forward, but a message can go stale while the app is
+        // already open — without a tick it would sit on
+        // "Sending…" until the next resume or the 12-hour
+        // worker. repeatOnLifecycle(RESUMED) restarts the loop
+        // on every foreground session and cancels it on
+        // background, so the tick only runs while the app is
+        // open; the first tick lands 5 minutes in (onResume
+        // already ran the check at resume). No client-mode gate,
+        // same as the onResume trigger. Armed once here, not in
+        // onResume: repeatOnLifecycle restarts it itself.
+        lifecycleScope.launch(ioDispatcher) {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                stalePendingWatchdogLazy.get().tickForever()
             }
         }
 

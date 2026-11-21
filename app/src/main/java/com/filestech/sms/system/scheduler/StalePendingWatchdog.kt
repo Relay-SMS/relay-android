@@ -1,6 +1,9 @@
 package com.filestech.sms.system.scheduler
 
 import com.filestech.sms.data.local.db.dao.MessageDao
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,6 +34,17 @@ import javax.inject.Singleton
  * the only watchdog those rows get. A retry reuses the same
  * client key, so the hub dedups it; flipping a lost-ack row to
  * FAILED is safe on both modes.
+ *
+ * Round 38 — the foreground tick ([tickForever]): a message can
+ * go stale while the app is already open (a send made minutes
+ * ago whose ack never came), and without a tick it would sit on
+ * "Sending…" until the next resume or the 12-hour worker. The
+ * tick runs the same timeout every 5 minutes while the app is
+ * in the foreground ([MainActivity] binds it to RESUMED), so a
+ * stale row flips within ~5 minutes of going stale. The first
+ * tick lands one interval after the loop starts — the resume
+ * trigger already ran the check at foreground time, so there is
+ * no double run.
  */
 @Singleton
 class StalePendingWatchdog @Inject constructor(
@@ -46,6 +60,32 @@ class StalePendingWatchdog @Inject constructor(
         return messageDao.timeoutStalePending(cutoff)
     }
 
+    /**
+     * Runs [runOnce] every [TICK_INTERVAL_MS] until cancelled.
+     * The first tick lands one interval after the loop starts
+     * (the resume trigger covers the foreground moment itself).
+     * A failed tick is logged and the loop carries on — a
+     * transient database error must not silence the watchdog
+     * for the rest of the session. Cancellation is honoured
+     * (the [delay] throws; a cancellation landing inside
+     * [runOnce] is rethrown, never logged as a failure).
+     */
+    suspend fun tickForever() {
+        while (true) {
+            delay(TICK_INTERVAL_MS)
+            try {
+                val flipped = runOnce()
+                if (flipped > 0) {
+                    Timber.i("Watchdog: %d stale PENDING -> FAILED (foreground tick)", flipped)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.w(e, "Foreground stale-PENDING tick failed")
+            }
+        }
+    }
+
     companion object {
         /**
          * A PENDING row older than this is stale — the same 15
@@ -54,5 +94,13 @@ class StalePendingWatchdog @Inject constructor(
          * the same watchdog on two cadences.
          */
         const val PENDING_TIMEOUT_MS = 15L * 60L * 1_000L
+
+        /**
+         * How often the foreground tick re-runs the timeout
+         * while the app is open. A row goes stale at most one
+         * interval late, and the query is a cheap indexed
+         * UPDATE, so 5 minutes costs nothing measurable.
+         */
+        const val TICK_INTERVAL_MS = 5L * 60L * 1_000L
     }
 }

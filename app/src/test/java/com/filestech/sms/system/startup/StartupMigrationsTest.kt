@@ -247,6 +247,7 @@ class StartupMigrationsTest {
 
         coVerify(exactly = 1) { stickyCategories.backfill() }
         assertThat(state.first().advanced.stickyCategoryBackfilledV20).isTrue()
+        assertThat(state.first().advanced.stickyCategoryBackfilledV22).isTrue()
     }
 
     @Test
@@ -254,13 +255,39 @@ class StartupMigrationsTest {
         coEvery { mirror.dedupeSameNumberConversations() } returns false
         val (settings, _) = fakeSettings(
             AppSettings().copy(
-                advanced = AppSettings().advanced.copy(stickyCategoryBackfilledV20 = true),
+                advanced = AppSettings().advanced.copy(
+                    stickyCategoryBackfilledV20 = true,
+                    stickyCategoryBackfilledV22 = true,
+                ),
             ),
         )
 
         migrations(settings).run()
 
         coVerify(exactly = 0) { stickyCategories.backfill() }
+    }
+
+    /**
+     * Spam follow-up — the second pass: an install that already ran
+     * the round-35 pass (V20 flag set) still runs the backfill once
+     * under the new flag, so conversations the first pass filed as
+     * all-plain are re-examined under the new classifier signals.
+     */
+    @Test
+    fun backfillSecondPassRunsWhenV20DoneAndV22NotDone() = runTest {
+        coEvery { mirror.dedupeSameNumberConversations() } returns false
+        coEvery { stickyCategories.backfill() } returns 2
+        val (settings, state) = fakeSettings(
+            AppSettings().copy(
+                advanced = AppSettings().advanced.copy(stickyCategoryBackfilledV20 = true),
+            ),
+        )
+
+        migrations(settings).run()
+
+        coVerify(exactly = 1) { stickyCategories.backfill() }
+        assertThat(state.first().advanced.stickyCategoryBackfilledV20).isTrue()
+        assertThat(state.first().advanced.stickyCategoryBackfilledV22).isTrue()
     }
 
     /**
@@ -289,5 +316,6 @@ class StartupMigrationsTest {
 
         coVerify(exactly = 1) { stickyCategories.backfill() }
         assertThat(state.first().advanced.stickyCategoryBackfilledV20).isTrue()
+        assertThat(state.first().advanced.stickyCategoryBackfilledV22).isTrue()
     }
 }
