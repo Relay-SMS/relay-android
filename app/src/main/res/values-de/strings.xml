@@ -211,6 +211,8 @@
     <string name="e2e_settings_unavailable">Verschlüsselung nicht verfügbar</string>
     <string name="e2e_settings_fingerprint_hint">Teile diesen Fingerabdruck mit einem Kontakt, damit er prüfen kann, dass du es wirklich bist.</string>
     <string name="e2e_settings_verified_contacts">Verifizierte Kontakte</string>
+    <string name="e2e_settings_auto_discover_title">Relay-Kontakte automatisch finden</string>
+    <string name="e2e_settings_auto_discover_subtitle">Sendet eine kurze unsichtbare Nachricht, wenn du eine Unterhaltung öffnest, um zu prüfen, ob die andere Person Relay nutzt — höchstens 3 pro Kontakt und Monat.</string>
     <string name="e2e_settings_verified_count">%1$d Kontakte</string>
     <string name="e2e_settings_no_verified">Noch keine verifizierten Kontakte</string>
     <string name="e2e_settings_attribution">Die Ende-zu-Ende-Verschlüsselung von Relay nutzt vodozemac, die Open-Source-Verschlüsselungsbibliothek von Matrix, die 2022 von Least Authority unabhängig geprüft wurde.</string>

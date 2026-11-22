@@ -41,6 +41,13 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * re-establishes the session (design §3.5, §4.4). It respects the same
  * budget — the state exclusion is the only thing lifted.
  *
+ * Round 40 — the discovery toggle (Encryption settings, default ON):
+ * when OFF, this phone stops SENDING probes ([isProbeable] refuses);
+ * inbound handshakes stay fully active (answering probes, receiving
+ * bundles, decrypting), so encryption still starts when the other
+ * side initiates. The gate lives in [isProbeable], so it covers all
+ * three triggers, including the decrypt-failure re-probe.
+ *
  * All entry points are fire-and-forget (non-suspend, own scope): a
  * probe must never delay opening a thread or sending a message. The
  * suspend cores ([probeConversation], [probeAddress]) are the testable
@@ -171,6 +178,12 @@ class E2eProbeManager @Inject constructor(
         if (!E2eProbePolicy.isProbeableAddress(address)) return false
         if (blockedRepo.isBlocked(address)) return false
         if (state == StoredPeerState.ENCRYPTED && !allowEncrypted) return false
-        return peers.canProbe(address, now)
+        // Round 40 — the discovery toggle (Encryption settings, default
+        // ON): OFF stops outbound probes. An unreadable store fails
+        // OPEN: the default is ON, and a cold process must not silently
+        // stop discovering.
+        val autoDiscover = settings.hydratedOrNull()
+            ?.encryption?.autoDiscoverRelayContacts ?: true
+        return autoDiscover && peers.canProbe(address, now)
     }
 }

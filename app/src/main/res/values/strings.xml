@@ -211,6 +211,8 @@
     <string name="e2e_settings_unavailable">Encryption unavailable</string>
     <string name="e2e_settings_fingerprint_hint">Share this with a contact so they can check it\'s really you.</string>
     <string name="e2e_settings_verified_contacts">Verified contacts</string>
+    <string name="e2e_settings_auto_discover_title">Find Relay contacts automatically</string>
+    <string name="e2e_settings_auto_discover_subtitle">Sends a short invisible message when you open a conversation to see if the other person uses Relay, at most 3 per contact per month.</string>
     <string name="e2e_settings_verified_count">%1$d contacts</string>
     <string name="e2e_settings_no_verified">No verified contacts yet</string>
     <string name="e2e_settings_attribution">Relay\'s end-to-end encryption uses vodozemac, the open-source encryption library from Matrix, independently audited by Least Authority in 2022.</string>

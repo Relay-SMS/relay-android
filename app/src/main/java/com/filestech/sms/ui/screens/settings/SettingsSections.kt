@@ -168,8 +168,12 @@ enum class SettingsItem(
     SECURITY_MANAGE_BLOCKED("action.openBlockedNumbers", SettingsSection.SECURITY_PRIVACY),
 
     // E2E — the Encryption sub-screen row (its own group after the
-    // security card).
+    // security card), and the discovery toggle on that screen.
     SECURITY_ENCRYPTION("action.openEncryption", SettingsSection.SECURITY_PRIVACY),
+    SECURITY_E2E_AUTO_DISCOVER(
+        "encryption.autoDiscoverRelayContacts",
+        SettingsSection.SECURITY_PRIVACY,
+    ),
 
     // Backup — all three rows open screens that already exist.
     BACKUP_NOW("action.backupNow", SettingsSection.BACKUP),

@@ -207,6 +207,8 @@
     <string name="e2e_settings_unavailable">Chiffrement indisponible</string>
     <string name="e2e_settings_fingerprint_hint">Partage-la avec un contact pour qu’il puisse vérifier que c’est bien toi.</string>
     <string name="e2e_settings_verified_contacts">Contacts vérifiés</string>
+    <string name="e2e_settings_auto_discover_title">Trouver automatiquement les contacts Relay</string>
+    <string name="e2e_settings_auto_discover_subtitle">Envoie un court message invisible quand tu ouvres une conversation pour voir si l’autre personne utilise Relay, 3 maximum par contact et par mois.</string>
     <string name="e2e_settings_verified_count">%1$d contacts</string>
     <string name="e2e_settings_no_verified">Aucun contact vérifié pour l’instant</string>
     <string name="e2e_settings_attribution">Le chiffrement de bout en bout de Relay utilise vodozemac, la bibliothèque de chiffrement open source de Matrix, auditée de manière indépendante par Least Authority en 2022.</string>

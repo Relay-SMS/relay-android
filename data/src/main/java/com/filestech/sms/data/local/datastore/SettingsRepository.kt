@@ -23,6 +23,7 @@ import com.filestech.sms.domain.settings.BlockingSettings
 import com.filestech.sms.domain.settings.ConversationSettings
 import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.domain.settings.EmergencyCallBehavior
+import com.filestech.sms.domain.settings.EncryptionSettings
 import com.filestech.sms.domain.settings.ListDensity
 import com.filestech.sms.domain.settings.LockMode
 import com.filestech.sms.domain.settings.MmsImageQuality
@@ -437,6 +438,9 @@ class SettingsRepository(
                 // v1.14.0 — SMS "Je vais bien" sur kill-switch. Default true.
                 sendIAmOkSmsOnReset = p[K.sendIAmOkSmsOnReset] ?: true,
             ),
+            encryption = EncryptionSettings(
+                autoDiscoverRelayContacts = p[K.autoDiscoverRelayContacts] ?: true,
+            ),
             blocking = BlockingSettings(
                 blockUnknown = p[K.blockUnknown] ?: false,
             ),
@@ -528,6 +532,8 @@ class SettingsRepository(
         s.security.autoDeleteOlderThanDays?.let { this[K.autoDeleteDays] = it } ?: remove(K.autoDeleteDays)
         s.security.lastAutoPurgeAt?.let { this[K.lastAutoPurgeAt] = it } ?: remove(K.lastAutoPurgeAt)
         this[K.vaultPurgeFailedOnce] = s.security.vaultPurgeFailedOnce
+        // Round 40 — automatic Relay discovery (outbound probing only).
+        this[K.autoDiscoverRelayContacts] = s.encryption.autoDiscoverRelayContacts
         // v1.9.0 — Safety call. La config est éclatée en 5 clés flat (cf.
         // doc [SecuritySettings.safetyCall]). Seuls [contacts] passent par un
         // codec pipe-separated, le reste est trivialement scalaire.
@@ -755,6 +761,11 @@ class SettingsRepository(
         val autoDeleteDays = intPreferencesKey("security.autoDeleteDays")
         val lastAutoPurgeAt = longPreferencesKey("security.lastAutoPurgeAt")
         val vaultPurgeFailedOnce = booleanPreferencesKey("security.vaultPurgeFailedOnce")
+
+        // Round 40 — automatic Relay discovery (outbound probing only),
+        // default ON. Absent reads as true, so existing installs keep
+        // probing until the user turns it off.
+        val autoDiscoverRelayContacts = booleanPreferencesKey("e2e.autoDiscoverRelayContacts")
         val blockUnknown = booleanPreferencesKey("block.unknown")
         val blockShort = booleanPreferencesKey("block.short")
 

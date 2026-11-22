@@ -32,6 +32,29 @@ val appVersionName: String = requireNotNull(versionProps.getProperty("versionNam
     "versionName absent ou vide dans version.properties."
 }
 
+// Build marker (round 40): the short commit SHA + the build date, shown on
+// the Encryption and About screens so a screenshot proves which build is
+// installed — `versionName` never changes per round, so nothing else on
+// screen distinguishes builds. Display-only, so unlike the version above
+// a missing git falls back to "unknown" instead of failing the build:
+// CI checks out shallow, but HEAD still resolves there.
+val gitCommit: String = runCatching {
+    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().readText().trim()
+    process.waitFor()
+    check(output.isNotEmpty()) { "empty git output" }
+    output
+}.getOrElse { "unknown" }
+val buildDate: String = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+    .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+
+/** Wraps a string as a valid Java string literal for `buildConfigField`. */
+fun String.asJavaStringLiteral(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -63,6 +86,13 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
+
+        // Build marker (round 40): the commit + date land in BuildConfig
+        // for every build type, so the Encryption and About screens can
+        // show which build is installed. The build type comes from the
+        // per-type LOG_ENABLED field below.
+        buildConfigField("String", "GIT_COMMIT", gitCommit.asJavaStringLiteral())
+        buildConfigField("String", "BUILD_DATE", buildDate.asJavaStringLiteral())
 
         testInstrumentationRunner = "com.filestech.sms.HiltTestRunner"
 

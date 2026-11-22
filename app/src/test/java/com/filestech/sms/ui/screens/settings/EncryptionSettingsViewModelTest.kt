@@ -3,6 +3,9 @@ package com.filestech.sms.ui.screens.settings
 import com.filestech.sms.crashlog.CrashLogSettings
 import com.filestech.sms.crashlog.CrashReportStore
 import com.filestech.sms.domain.repository.ContactRepository
+import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.settings.EncryptionSettings
 import com.filestech.sms.e2e.E2eAccountManager
 import com.filestech.sms.e2e.E2eCryptoException
 import com.filestech.sms.e2e.E2eFailureRecorder
@@ -13,7 +16,11 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -27,7 +34,9 @@ import java.nio.file.Files
  * The Encryption settings ViewModel: the fingerprint loads on
  * success, and a failed identity load surfaces the reason in
  * state (instead of a silently missing row, as in round 38)
- * and records it in the local error log.
+ * and records it in the local error log. Round 40: the
+ * discovery toggle (outbound probing, default ON) is read from
+ * settings and written back on flip.
  */
 class EncryptionSettingsViewModelTest {
 
@@ -40,6 +49,22 @@ class EncryptionSettingsViewModelTest {
     private lateinit var peers: E2ePeerRepository
     private lateinit var accountManager: E2eAccountManager
     private lateinit var contacts: ContactRepository
+    private lateinit var appSettings: FakeAppSettingsSource
+
+    /** A settings source holding one value, recording writes. */
+    private class FakeAppSettingsSource(initial: AppSettings) : AppSettingsSource {
+        var current: AppSettings = initial
+            private set
+
+        override val flow: Flow<AppSettings> = flowOf(initial)
+        override val state: StateFlow<AppSettings> = MutableStateFlow(initial)
+
+        override suspend fun hydratedOrNull(): AppSettings? = current
+
+        override suspend fun update(transform: (AppSettings) -> AppSettings) {
+            current = transform(current)
+        }
+    }
 
     @BeforeEach
     fun setUp() {
@@ -51,6 +76,7 @@ class EncryptionSettingsViewModelTest {
         peers = mockk { every { observeVerifiedPeers() } returns emptyFlow() }
         accountManager = mockk()
         contacts = mockk()
+        appSettings = FakeAppSettingsSource(AppSettings())
     }
 
     @AfterEach
@@ -60,7 +86,14 @@ class EncryptionSettingsViewModelTest {
     }
 
     private fun viewModel() =
-        EncryptionSettingsViewModel(peers, accountManager, contacts, recorder, dispatcher)
+        EncryptionSettingsViewModel(
+            peers,
+            accountManager,
+            contacts,
+            recorder,
+            appSettings,
+            dispatcher,
+        )
 
     @Test
     fun `successful identity load shows the fingerprint with no error`() {
@@ -124,5 +157,25 @@ class EncryptionSettingsViewModelTest {
         viewModel()
 
         assertThat(store.listReports()).hasSize(1)
+    }
+
+    @Test
+    fun `discovery off in settings shows the toggle off`() {
+        appSettings = FakeAppSettingsSource(
+            AppSettings(encryption = EncryptionSettings(autoDiscoverRelayContacts = false)),
+        )
+
+        val state = viewModel().state.value
+
+        assertThat(state.autoDiscoverRelayContacts).isFalse()
+    }
+
+    @Test
+    fun `flipping the toggle writes the setting`() {
+        val vm = viewModel()
+
+        vm.setAutoDiscoverRelayContacts(false)
+
+        assertThat(appSettings.current.encryption.autoDiscoverRelayContacts).isFalse()
     }
 }

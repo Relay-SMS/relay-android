@@ -134,11 +134,25 @@ class RelayGroupScope {
  * around an `item` call for a row that only shows sometimes — it is
  * left out of the count entirely, so the visible rows keep the right
  * shape.
+ *
+ * Round 40 — [content] is deliberately NOT @Composable. A @Composable
+ * content lambda is independently restartable, so a state read inside
+ * it (an `if` guard on a fingerprint, an expansion flag) invalidates
+ * only the lambda: it re-registers its rows into a scope list the
+ * [Column] below never re-reads, and the row never appears — while a
+ * state read inside an `item {}` lambda updates fine, which is exactly
+ * how the Encryption screen showed a live verified-contacts count next
+ * to a fingerprint row and an expansion that never rendered. With a
+ * plain lambda the guards read state during this function's own
+ * composition, so a change recomposes the group and the rows follow.
+ * @Composable calls (stringResource, remember, ...) belong inside the
+ * `item {}` lambdas, or hoisted above the group call — never at the
+ * top level of [content].
  */
 @Composable
 fun RelaySettingsGroup(
     modifier: Modifier = Modifier,
-    content: @Composable RelayGroupScope.() -> Unit,
+    content: RelayGroupScope.() -> Unit,
 ) {
     val scope = RelayGroupScope()
     scope.content()

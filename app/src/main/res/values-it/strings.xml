@@ -213,6 +213,8 @@
     <string name="e2e_settings_unavailable">Crittografia non disponibile</string>
     <string name="e2e_settings_fingerprint_hint">Condividila con un contatto così può verificare che sei davvero tu.</string>
     <string name="e2e_settings_verified_contacts">Contatti verificati</string>
+    <string name="e2e_settings_auto_discover_title">Trova automaticamente i contatti Relay</string>
+    <string name="e2e_settings_auto_discover_subtitle">Invia un breve messaggio invisibile quando apri una conversazione per vedere se l’altra persona usa Relay, al massimo 3 per contatto al mese.</string>
     <string name="e2e_settings_verified_count">%1$d contatti</string>
     <string name="e2e_settings_no_verified">Ancora nessun contatto verificato</string>
     <string name="e2e_settings_attribution">La crittografia end-to-end di Relay usa vodozemac, la libreria di crittografia open source di Matrix, verificata in modo indipendente da Least Authority nel 2022.</string>

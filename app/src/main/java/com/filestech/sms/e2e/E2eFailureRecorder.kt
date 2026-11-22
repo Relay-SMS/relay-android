@@ -12,10 +12,14 @@ import javax.inject.Singleton
  * Advanced), so a silent encryption failure leaves a readable
  * trace instead of just a missing fingerprint.
  *
- * Two writers use it: the [E2eCrypto] provider (a native-load
- * failure that degrades to [UnavailableE2eCrypto]) and the
+ * Three writers use it: the [E2eCrypto] provider (a native-load
+ * failure that degrades to [UnavailableE2eCrypto]), the
  * Encryption settings ViewModel (an identity load that fails
- * after the library loaded — Keystore, Room, or a native call).
+ * after the library loaded — Keystore, Room, or a native call),
+ * and the data-SMS sender (a handshake SMS the radio refuses —
+ * probe or bundle reply; recorded sanitized, the exception's
+ * class only, so no address can leak in — see
+ * [E2eDataSmsSenderImpl]).
  * Both write through the same [CrashReportStore] the crash
  * handler uses, so the entries appear in the same list, with
  * the exception's simple name as the title and the full chain
@@ -53,9 +57,9 @@ class E2eFailureRecorder @Inject constructor(
 
     /**
      * Records [throwable] under [tag] ("e2e-native-load",
-     * "e2e-fingerprint") in the local error log. Skips the write
-     * when the error log is off, and when this root cause was
-     * already recorded this process.
+     * "e2e-fingerprint", "e2e-probe-send") in the local error log.
+     * Skips the write when the error log is off, and when this
+     * root cause was already recorded this process.
      */
     fun record(tag: String, throwable: Throwable) {
         runCatching {

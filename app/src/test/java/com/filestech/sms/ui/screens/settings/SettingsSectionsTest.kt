@@ -41,8 +41,8 @@ class SettingsSectionsTest {
     }
 
     @Test
-    fun `total item count is 51 - a dropped row fails here, not on device`() {
-        assertThat(SettingsItem.entries).hasSize(51)
+    fun `total item count is 52 - a dropped row fails here, not on device`() {
+        assertThat(SettingsItem.entries).hasSize(52)
     }
 
     @Test
@@ -97,7 +97,7 @@ class SettingsSectionsTest {
     }
 
     @Test
-    fun `security and privacy holds exactly its twenty rows`() {
+    fun `security and privacy holds exactly its twenty-one rows`() {
         assertThat(SettingsSectionMapping.itemsFor(SettingsSection.SECURITY_PRIVACY))
             .containsExactly(
                 SettingsItem.SECURITY_APP_LOCK,
@@ -120,6 +120,7 @@ class SettingsSectionsTest {
                 SettingsItem.SECURITY_BLOCK_UNKNOWN,
                 SettingsItem.SECURITY_MANAGE_BLOCKED,
                 SettingsItem.SECURITY_ENCRYPTION,
+                SettingsItem.SECURITY_E2E_AUTO_DISCOVER,
             ).inOrder()
     }
 

@@ -7,6 +7,7 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.domain.purge.MS_PER_DAY
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.settings.EncryptionSettings
 import com.filestech.sms.domain.settings.SendingSettings
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
@@ -41,8 +42,14 @@ class E2eProbeManagerTest {
         const val CHOSEN_SUB_ID = 7
     }
 
-    private class SettingsWithSubId(private val subId: Int?) : AppSettingsSource {
-        private val value = AppSettings(sending = SendingSettings(defaultSubId = subId))
+    private class SettingsWithSubId(
+        private val subId: Int?,
+        private val autoDiscover: Boolean = true,
+    ) : AppSettingsSource {
+        private val value = AppSettings(
+            sending = SendingSettings(defaultSubId = subId),
+            encryption = EncryptionSettings(autoDiscoverRelayContacts = autoDiscover),
+        )
         override val flow: Flow<AppSettings> = flowOf(value)
         override val state: StateFlow<AppSettings> = MutableStateFlow(value)
         override suspend fun hydratedOrNull(): AppSettings = value
@@ -204,6 +211,54 @@ class E2eProbeManagerTest {
 
         assertThat(probed).isFalse()
         assertThat(harness.sender.sent).isEmpty()
+    }
+
+    // ──────────────────────────── Discovery toggle (round 40) ────────────────────────────
+
+    @Test
+    fun `discovery off sends nothing and records nothing`() = runTest {
+        val harness = Harness(
+            scope = this,
+            settings = SettingsWithSubId(CHOSEN_SUB_ID, autoDiscover = false),
+        )
+
+        val probed = harness.manager.probeAddress(ALICE, null, now = NOW)
+
+        assertThat(probed).isFalse()
+        assertThat(harness.sender.sent).isEmpty()
+        assertThat(harness.peerDao.peers).isEmpty()
+        // The gate is before account creation: a disabled feature
+        // creates no identity.
+        assertThat(harness.accountDao.stored).isNull()
+    }
+
+    @Test
+    fun `discovery off blocks the decrypt-failure re-probe too`() = runTest {
+        val harness = Harness(
+            scope = this,
+            settings = SettingsWithSubId(CHOSEN_SUB_ID, autoDiscover = false),
+        )
+        harness.seedPeer(state = E2ePeerState.ENCRYPTED)
+
+        val probed = harness.manager.probeAddress(ALICE, null, allowEncrypted = true, now = NOW)
+
+        assertThat(probed).isFalse()
+        assertThat(harness.sender.sent).isEmpty()
+        assertThat(harness.peerDao.peers[ALICE]?.probeAttempts).isEqualTo(0)
+    }
+
+    @Test
+    fun `discovery on probes as before`() = runTest {
+        val harness = Harness(
+            scope = this,
+            settings = SettingsWithSubId(CHOSEN_SUB_ID, autoDiscover = true),
+        )
+
+        val probed = harness.manager.probeAddress(ALICE, null, now = NOW)
+
+        assertThat(probed).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.PROBING)
     }
 
     // ──────────────────────────── Budget ────────────────────────────

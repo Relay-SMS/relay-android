@@ -31,6 +31,7 @@ data class AppSettings(
     val sending: SendingSettings = SendingSettings(),
     val notifications: NotificationSettings = NotificationSettings(),
     val security: SecuritySettings = SecuritySettings(),
+    val encryption: EncryptionSettings = EncryptionSettings(),
     val blocking: BlockingSettings = BlockingSettings(),
     val backup: BackupSettings = BackupSettings(),
     val advanced: AdvancedSettings = AdvancedSettings(),
@@ -418,6 +419,24 @@ data class SecuritySettings(
      * survit pas à ce qu'on lui demande de survivre.
      */
     val vaultPurgeFailedOnce: Boolean = false,
+)
+
+/**
+ * Round 40 — end-to-end encryption discovery (Relay-to-Relay).
+ */
+data class EncryptionSettings(
+    /**
+     * Automatic Relay discovery (outbound probing only), ON by
+     * default. When ON, opening a 1:1 thread or sending a 1:1
+     * message sends a probe — a short invisible data SMS carrying
+     * our identity keys — so the session is usually live before
+     * the user hits send. When OFF, this phone stops SENDING
+     * probes; inbound handshakes stay fully active (answering
+     * probes, receiving bundles, decrypting), so encryption still
+     * starts when the other side initiates. Toggled on the
+     * Encryption settings screen; read by [com.filestech.sms.e2e.E2eProbeManager].
+     */
+    val autoDiscoverRelayContacts: Boolean = true,
 )
 
 enum class LockMode { OFF, PIN, PATTERN, BIOMETRIC }

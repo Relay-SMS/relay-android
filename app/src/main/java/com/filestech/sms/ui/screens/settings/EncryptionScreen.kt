@@ -12,6 +12,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.filestech.sms.BuildMarker
 import com.filestech.sms.R
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.ui.components.E2eVerificationSheet
@@ -38,6 +40,7 @@ import com.filestech.sms.ui.components.RelayHint
 import com.filestech.sms.ui.components.RelaySectionLabel
 import com.filestech.sms.ui.components.RelaySettingRow
 import com.filestech.sms.ui.components.RelaySettingsGroup
+import com.filestech.sms.ui.components.RelaySwitchRow
 import com.filestech.sms.ui.security.copyToClipboardSensitive
 
 /**
@@ -46,7 +49,9 @@ import com.filestech.sms.ui.security.copyToClipboardSensitive
  * row (NO toggle — encryption is automatic), our fingerprint
  * (grouped hex, tap to copy), the verified contacts (count +
  * expandable list; tapping one opens its safety-number sheet,
- * where unverify lives), and the vodozemac attribution.
+ * where unverify lives), the discovery toggle (round 40 —
+ * automatic Relay discovery, outbound probing only, default ON),
+ * and the vodozemac attribution.
  *
  * When the identity fails to load, the fingerprint row is
  * replaced by an "Encryption unavailable" row carrying the
@@ -190,12 +195,36 @@ fun EncryptionScreen(
                     }
                 }
             }
+            // Round 40 — automatic Relay discovery (outbound probing
+            // only): OFF stops this phone sending probes; inbound
+            // handshakes stay active, so encryption still starts when
+            // the other side initiates.
+            RelaySettingsGroup {
+                item {
+                    RelaySwitchRow(
+                        icon = Icons.Outlined.Search,
+                        title = stringResource(R.string.e2e_settings_auto_discover_title),
+                        subtitle = stringResource(R.string.e2e_settings_auto_discover_subtitle),
+                        checked = state.autoDiscoverRelayContacts,
+                        onCheckedChange = { viewModel.setAutoDiscoverRelayContacts(it) },
+                    )
+                }
+            }
             // Attribution — the exact §7.1 wording, naming vodozemac.
             Text(
                 text = stringResource(R.string.e2e_settings_attribution),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp),
+            )
+            // Build marker — the short commit + build type + date, so
+            // a screenshot of this screen proves which build is
+            // installed. Same muted style as the attribution above.
+            Text(
+                text = BuildMarker.current(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp, end = 32.dp, bottom = 16.dp),
             )
         }
     }

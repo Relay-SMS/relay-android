@@ -41,6 +41,7 @@ interface E2eDataSmsSender {
 class E2eDataSmsSenderImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val wireFormatter: PhoneNumberWireFormatter,
+    private val recorder: E2eFailureRecorder,
 ) : E2eDataSmsSender {
 
     override fun sendDataMessage(address: String, subId: Int?, port: Int, data: ByteArray): Boolean {
@@ -70,6 +71,20 @@ class E2eDataSmsSenderImpl @Inject constructor(
             // No address in the log line (design §8.3): the port + the
             // error class are enough to diagnose a dead radio.
             Timber.w(t, "E2E: data SMS send failed (port=%d)", port)
+            // Round 40 — the same failure in the local error log, so a
+            // phone that cannot send handshake SMS leaves a trace: a
+            // failed probe otherwise looks exactly like a peer without
+            // Relay. Covers probe and bundle-reply sends alike — both
+            // go through here. Sanitized: the raw exception's message
+            // may carry the destination address on some builds, so
+            // only the exception's class travels — no message, no
+            // cause chain (the formatter would print both).
+            recorder.record(
+                "e2e-probe-send",
+                E2eCryptoException(
+                    "Data SMS send failed (port=$port): ${t.javaClass.simpleName}",
+                ),
+            )
             false
         }
     }

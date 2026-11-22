@@ -2985,6 +2985,9 @@ private fun NotificationsSection(
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
+    // Round 40 — hoisted above the group: the group content lambda is
+    // plain (not @Composable), so stringResource cannot be called inside it.
+    val muteSubtitle = stringResource(R.string.category_mute_subtitle)
     RelaySettingsGroup {
         item {
             RelaySwitchRow(
@@ -3025,7 +3028,6 @@ private fun NotificationsSection(
         // `conversations.mutedCategories` entry, and the tab row reads it.
         // Round 12 — the bell shows the state: crossed out when this
         // category's notifications are off (muted), plain when they're on.
-        val muteSubtitle = stringResource(R.string.category_mute_subtitle)
         for (category in MessageCategory.entries) {
             val isMuted = category in mutedCategories
             item {
@@ -3125,29 +3127,32 @@ private fun SecuritySection(
     positionAccordee: Boolean,
     onRequestLocationPermission: () -> Unit,
 ) {
+    // Round 40 — hoisted above the group: the group content lambda is
+    // plain (not @Composable), so @Composable calls cannot live inside it.
+    val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
+    // v1.25.3 — le `when` ne traitait que `PIN` et renvoyait tout le reste sur « Aucun » via
+    // un `else` : avec la biométrie armée, Réglages annonçait **« Aucun »** alors que le
+    // verrou fonctionnait. Le commentaire d'origine (« None / PIN ») date d'avant l'ajout du
+    // mode biométrique et n'avait jamais suivi. `when` désormais exhaustif et **sans `else`**,
+    // pour que le compilateur impose de traiter toute nouvelle valeur de [LockMode] au lieu
+    // de la faire silencieusement passer pour un verrou absent.
+    val currentLockLabel = when (security.lockMode) {
+        com.filestech.sms.domain.settings.LockMode.OFF ->
+            stringResource(R.string.lock_mode_off)
+        com.filestech.sms.domain.settings.LockMode.PIN ->
+            stringResource(R.string.lock_mode_pin)
+        com.filestech.sms.domain.settings.LockMode.BIOMETRIC ->
+            stringResource(R.string.lock_mode_biometric)
+        // `PATTERN` est une valeur historique de l'enum : aucun chemin d'UI ne l'arme
+        // (vérifié — aucune référence dans le code). Si un jour on l'implémente, il faudra
+        // sa propre ressource ici ; l'absence d'`else` forcera la question.
+        com.filestech.sms.domain.settings.LockMode.PATTERN ->
+            stringResource(R.string.lock_mode_off)
+    }
+    val currentRetentionLabel = retentionLabel(security.autoDeleteOlderThanDays)
     RelaySettingsGroup {
         // App lock entry — opens the lock-mode picker (None / PIN / Biometric). Subtitle
         // reflects the current state so the user sees at a glance whether the lock is armed.
-        //
-        // v1.25.3 — le `when` ne traitait que `PIN` et renvoyait tout le reste sur « Aucun » via
-        // un `else` : avec la biométrie armée, Réglages annonçait **« Aucun »** alors que le
-        // verrou fonctionnait. Le commentaire d'origine (« None / PIN ») date d'avant l'ajout du
-        // mode biométrique et n'avait jamais suivi. `when` désormais exhaustif et **sans `else`**,
-        // pour que le compilateur impose de traiter toute nouvelle valeur de [LockMode] au lieu
-        // de la faire silencieusement passer pour un verrou absent.
-        val currentLockLabel = when (security.lockMode) {
-            com.filestech.sms.domain.settings.LockMode.OFF ->
-                stringResource(R.string.lock_mode_off)
-            com.filestech.sms.domain.settings.LockMode.PIN ->
-                stringResource(R.string.lock_mode_pin)
-            com.filestech.sms.domain.settings.LockMode.BIOMETRIC ->
-                stringResource(R.string.lock_mode_biometric)
-            // `PATTERN` est une valeur historique de l'enum : aucun chemin d'UI ne l'arme
-            // (vérifié — aucune référence dans le code). Si un jour on l'implémente, il faudra
-            // sa propre ressource ici ; l'absence d'`else` forcera la question.
-            com.filestech.sms.domain.settings.LockMode.PATTERN ->
-                stringResource(R.string.lock_mode_off)
-        }
         // v1.26.1 (audit C1) — ⚠️ **JAMAIS en mode leurre**, et c'est la garde la plus
         // importante de cet écran. Sans elle, l'agresseur ouvrait ce sélecteur, choisissait
         // « Aucun » et une simple confirmation suffisait à appeler `clearPin()` — lequel pose
@@ -3309,7 +3314,6 @@ private fun SecuritySection(
         // v1.3.0 — auto-purge historique selon rétention choisie. Feedback
         // round 8 — the row shows only the current retention; the long
         // explainer lives in the picker dialog (it already shows it).
-        val currentRetentionLabel = retentionLabel(security.autoDeleteOlderThanDays)
         item(onClick = onOpenAutoDeletePicker) {
             RelaySettingRow(
                 icon = Icons.Outlined.History,
@@ -3504,7 +3508,6 @@ private fun SecuritySection(
         // contacts, `IncomingBlockPolicy` ne peut savoir qui est inconnu et laisse TOUT
         // passer, à dessein (bloquer sur une ignorance couperait toute réception). Mais
         // l'interrupteur restait sur « activé » sans rien dire : on le dit sous lui.
-        val contactsAccordes = rememberPermissionAccordee(android.Manifest.permission.READ_CONTACTS)
         if (!isClientMode) {
             item {
                 RelaySwitchRow(

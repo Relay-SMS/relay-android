@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.filestech.sms.BuildConfig
+import com.filestech.sms.BuildMarker
 import com.filestech.sms.R
 import com.filestech.sms.ui.components.RelaySectionLabel
 import com.filestech.sms.ui.components.RelaySettingRow
@@ -146,8 +147,11 @@ fun AboutScreen(
             // "Zero ads, zero trackers" feature below.
 
             RelaySectionLabel(text = stringResource(R.string.about_section_features))
+            // Round 40 — hoisted above the group: the group content lambda is
+            // plain (not @Composable), so features() cannot be called inside it.
+            val featureList = features(isPanicDecoy)
             RelaySettingsGroup {
-                features(isPanicDecoy).forEach { f ->
+                featureList.forEach { f ->
                     item {
                         RelaySettingRow(icon = f.icon, iconPainter = f.iconPainter, title = f.label, subtitle = f.desc)
                     }
@@ -186,8 +190,11 @@ fun AboutScreen(
             }
 
             RelaySectionLabel(text = stringResource(R.string.about_permissions_title))
+            // Round 40 — hoisted above the group: the group content lambda is
+            // plain (not @Composable), so permissions() cannot be called inside it.
+            val permissionList = permissions(isPanicDecoy)
             RelaySettingsGroup {
-                permissions(isPanicDecoy).forEach { p ->
+                permissionList.forEach { p ->
                     item {
                         RelaySettingRow(icon = null, title = p.name, subtitle = p.why)
                     }
@@ -366,6 +373,14 @@ private fun HeaderBlock(
                 style = RelayText.Timestamp.copy(fontWeight = FontWeight.SemiBold),
             )
         }
+        // Build marker — the same line as the Encryption screen, so
+        // the build is verifiable from About too.
+        Spacer(Modifier.size(6.dp))
+        Text(
+            text = BuildMarker.current(),
+            style = RelayText.Timestamp,
+            color = cs.onSurfaceVariant,
+        )
         if (tapCount >= 7) {
             Spacer(Modifier.size(6.dp))
             Text(

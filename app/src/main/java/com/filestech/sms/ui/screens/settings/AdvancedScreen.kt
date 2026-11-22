@@ -98,12 +98,12 @@ fun AdvancedScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     // The error-log switch, read HERE (not inside [ErrorLogRows]):
-    // the group's `item {}` lambdas capture the value at registration
-    // time, and a state read inside [ErrorLogRows] recomposes only
-    // that function — which re-registers the rows without re-rendering
-    // them, so the switch would never flip. Read at screen level, a
-    // flip recomposes the screen and the group re-registers with the
-    // new value, like every other toggle here.
+    // the value arrives there as a parameter, so a flip recomposes
+    // the screen and the group re-registers with the new value,
+    // like every other toggle here. (Round 40 fixed the group
+    // itself — a state read inside the group's content lambda now
+    // recomposes the group — but the parameter keeps the read at
+    // screen level, where it belongs.)
     val crashLogEnabled by crashLogViewModel.enabled.collectAsStateWithLifecycle()
     var showNuke by remember { mutableStateOf(false) }
     // v1.28.6 — le compte rendu de la purge, lu avant de redemarrer l'application. `null` = pas de
@@ -567,22 +567,23 @@ private fun rememberViewerChoicesState(snackbarHost: SnackbarHostState): ViewerC
  * under it. Split out of [AdvancedScreen] so that function stays
  * under the 300-line Detekt ceiling.
  *
+ * Round 40 — deliberately NOT @Composable: it runs inside the
+ * group's plain content lambda (see [RelaySettingsGroup]), so
+ * @Composable calls belong inside the `item {}` lambdas only.
+ *
  * The switch defaults on; when off, no crash report, session
  * marker, or startup death entry is written anywhere (see
  * `crashlog`). Saved reports stay viewable until cleared from
  * the Error log screen.
  */
-@Composable
 private fun RelayGroupScope.ErrorLogRows(
     onOpenErrorLog: () -> Unit,
     crashLogEnabled: Boolean,
     crashLogViewModel: CrashLogSettingsViewModel,
 ) {
     // The switch value arrives as a parameter, read at screen level
-    // (see [AdvancedScreen]) — never read the flow here: the group's
-    // `item {}` lambdas capture the value at registration, and a
-    // state read in this function recomposes only this function,
-    // which re-registers the rows without re-rendering them.
+    // (see [AdvancedScreen]) — the rows register with the value the
+    // screen holds, and a flip recomposes the screen and the group.
     // Local-only error log — the saved crash reports, for
     // sending us what went wrong. Nothing here uploads
     // anything; see `crashlog`.

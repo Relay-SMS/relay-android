@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.filestech.sms.core.ext.formatPhoneNumberForDisplay
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.repository.ContactRepository
+import com.filestech.sms.domain.settings.AppSettingsSource
 import com.filestech.sms.e2e.E2eAccountManager
 import com.filestech.sms.e2e.E2eDisplayFormat
 import com.filestech.sms.e2e.E2eFailureRecorder
@@ -36,6 +37,11 @@ import javax.inject.Inject
  * in the local error log ([E2eFailureRecorder]) — round 38 showed
  * a missing fingerprint with no trace of why, and the next device
  * test must be able to say which step failed.
+ *
+ * Round 40 — the screen also carries the discovery toggle
+ * ([UiState.autoDiscoverRelayContacts]): automatic Relay discovery
+ * (outbound probing), default ON. OFF stops this phone sending
+ * probes; inbound handshakes stay active.
  */
 @HiltViewModel
 class EncryptionSettingsViewModel @Inject constructor(
@@ -43,6 +49,7 @@ class EncryptionSettingsViewModel @Inject constructor(
     private val accountManager: E2eAccountManager,
     private val contactRepository: ContactRepository,
     private val recorder: E2eFailureRecorder,
+    private val settings: AppSettingsSource,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -69,6 +76,13 @@ class EncryptionSettingsViewModel @Inject constructor(
         val fingerprintError: String? = null,
         /** The verified contacts, most recently updated first. */
         val verifiedContacts: List<VerifiedContact> = emptyList(),
+        /**
+         * Automatic Relay discovery (outbound probing), default ON.
+         * OFF stops this phone sending probes; inbound handshakes
+         * stay active, so encryption still starts when the other
+         * side initiates.
+         */
+        val autoDiscoverRelayContacts: Boolean = true,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -107,6 +121,23 @@ class EncryptionSettingsViewModel @Inject constructor(
                     VerifiedContact(address = peer.address, displayName = name)
                 }
                 _state.update { it.copy(verifiedContacts = contacts) }
+            }
+        }
+        viewModelScope.launch(io) {
+            settings.flow.collect { appSettings ->
+                val autoDiscover = appSettings.encryption.autoDiscoverRelayContacts
+                _state.update { it.copy(autoDiscoverRelayContacts = autoDiscover) }
+            }
+        }
+    }
+
+    /** Flips automatic Relay discovery (outbound probing only). */
+    fun setAutoDiscoverRelayContacts(enabled: Boolean) {
+        viewModelScope.launch(io) {
+            settings.update {
+                it.copy(
+                    encryption = it.encryption.copy(autoDiscoverRelayContacts = enabled),
+                )
             }
         }
     }
