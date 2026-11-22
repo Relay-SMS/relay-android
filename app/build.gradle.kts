@@ -1,3 +1,7 @@
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -48,8 +52,11 @@ val gitCommit: String = runCatching {
     check(output.isNotEmpty()) { "empty git output" }
     output
 }.getOrElse { "unknown" }
-val buildDate: String = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
-    .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+// Imports, not fully-qualified names: in a .gradle.kts script `java`
+// resolves to the Java plugin extension, so `java.time.…` fails to
+// compile (round-40 CI failure). The classes below come from the imports.
+val buildDate: String = LocalDate.now(ZoneOffset.UTC)
+    .format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH))
 
 /** Wraps a string as a valid Java string literal for `buildConfigField`. */
 fun String.asJavaStringLiteral(): String =
