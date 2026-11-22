@@ -208,6 +208,7 @@
     <string name="e2e_settings_explainer">Relay to Relay auto-encrypts. When both people use Relay, your 1:1 texts are end-to-end encrypted automatically — no setup needed. Messages to anyone without Relay, group chats, and photos and files are sent as plain SMS/MMS. Encrypted messages use a few more text segments than plain messages.</string>
     <string name="e2e_settings_status_subtitle">Automatic when both people use Relay</string>
     <string name="e2e_settings_fingerprint">Your fingerprint</string>
+    <string name="e2e_settings_unavailable">Encryption unavailable</string>
     <string name="e2e_settings_fingerprint_hint">Share this with a contact so they can check it\'s really you.</string>
     <string name="e2e_settings_verified_contacts">Verified contacts</string>
     <string name="e2e_settings_verified_count">%1$d contacts</string>

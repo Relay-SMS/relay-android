@@ -208,6 +208,7 @@
     <string name="e2e_settings_explainer">Relay-zu-Relay verschlüsselt automatisch. Wenn beide Relay nutzen, sind eure 1:1-Nachrichten automatisch Ende-zu-Ende-verschlüsselt – ganz ohne Einrichtung. Nachrichten an Personen ohne Relay, Gruppenchats sowie Fotos und Dateien werden als normale SMS/MMS gesendet. Verschlüsselte Nachrichten verbrauchen ein paar mehr Textsegmente als unverschlüsselte.</string>
     <string name="e2e_settings_status_subtitle">Automatisch, wenn beide Relay nutzen</string>
     <string name="e2e_settings_fingerprint">Dein Fingerabdruck</string>
+    <string name="e2e_settings_unavailable">Verschlüsselung nicht verfügbar</string>
     <string name="e2e_settings_fingerprint_hint">Teile diesen Fingerabdruck mit einem Kontakt, damit er prüfen kann, dass du es wirklich bist.</string>
     <string name="e2e_settings_verified_contacts">Verifizierte Kontakte</string>
     <string name="e2e_settings_verified_count">%1$d Kontakte</string>

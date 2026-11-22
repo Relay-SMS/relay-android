@@ -33,6 +33,48 @@ object E2eDisplayFormat {
     }
 
     /**
+     * Why an identity load failed, for the Encryption settings
+     * screen: "SimpleName: message", with the root cause appended
+     * when it differs ("... (caused by RootSimpleName: root
+     * message)") so a screenshot of the screen carries the actual
+     * reason, not just the wrapper ("encryption is unavailable"
+     * alone says nothing about why). Never carries keys,
+     * addresses, or PII: the identity path throws our fixed
+     * messages, loader messages, or Keystore/Room errors — none
+     * of which quotes user data.
+     */
+    fun describeFailure(throwable: Throwable): String {
+        val top = shortDescription(throwable)
+        val root = rootCause(throwable)
+        return if (root === throwable) top else "$top (caused by ${shortDescription(root)})"
+    }
+
+    /** "SimpleName: message", or just the name when the message is blank. */
+    private fun shortDescription(throwable: Throwable): String {
+        val name = throwable.javaClass.simpleName.ifBlank { "Unknown" }
+        val message = throwable.message?.takeIf { it.isNotBlank() }
+        return if (message != null) "$name: $message" else name
+    }
+
+    /**
+     * The deepest cause in the chain (itself when there is none).
+     * Shared with [E2eFailureRecorder]: the recorder dedupes on
+     * the root cause, so a wrapper (the fallback's
+     * `E2eCryptoException`) and the failure it wraps (the native
+     * load error) count as one cause. Internal — failure
+     * plumbing, not display API.
+     */
+    internal fun rootCause(throwable: Throwable): Throwable {
+        var current = throwable
+        var cause = current.cause
+        while (cause != null && cause !== current) {
+            current = cause
+            cause = current.cause
+        }
+        return current
+    }
+
+    /**
      * A 60-digit safety number ([E2eSafetyNumber.derive] output: 12 groups
      * of 5 digits) laid out for the verification sheet: 3 lines of 4
      * groups, so it reads as a block instead of one long wrapped line.

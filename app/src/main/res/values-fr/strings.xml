@@ -204,6 +204,7 @@
     <string name="e2e_settings_explainer">De Relay à Relay, le chiffrement est automatique. Quand les deux personnes utilisent Relay, vos messages 1:1 sont chiffrés de bout en bout automatiquement — aucune configuration nécessaire. Les messages aux personnes sans Relay, les discussions de groupe, les photos et les fichiers sont envoyés en SMS/MMS ordinaires. Les messages chiffrés utilisent quelques segments de texte de plus que les messages ordinaires.</string>
     <string name="e2e_settings_status_subtitle">Automatique quand les deux personnes utilisent Relay</string>
     <string name="e2e_settings_fingerprint">Ton empreinte</string>
+    <string name="e2e_settings_unavailable">Chiffrement indisponible</string>
     <string name="e2e_settings_fingerprint_hint">Partage-la avec un contact pour qu’il puisse vérifier que c’est bien toi.</string>
     <string name="e2e_settings_verified_contacts">Contacts vérifiés</string>
     <string name="e2e_settings_verified_count">%1$d contacts</string>

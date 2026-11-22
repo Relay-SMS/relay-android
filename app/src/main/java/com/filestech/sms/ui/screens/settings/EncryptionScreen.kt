@@ -11,6 +11,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -46,6 +47,11 @@ import com.filestech.sms.ui.security.copyToClipboardSensitive
  * (grouped hex, tap to copy), the verified contacts (count +
  * expandable list; tapping one opens its safety-number sheet,
  * where unverify lives), and the vodozemac attribution.
+ *
+ * When the identity fails to load, the fingerprint row is
+ * replaced by an "Encryption unavailable" row carrying the
+ * reason, and the "Share this with a contact..." hint is hidden
+ * — the screen must never look fine while encryption is dead.
  *
  * Hub-only: the row that opens this screen is hidden on a linked
  * device (a client holds no identity keys).
@@ -105,7 +111,9 @@ fun EncryptionScreen(
                     )
                 }
                 // Our fingerprint — tap the row (or the copy icon)
-                // to copy it. Absent until the keys load.
+                // to copy it. Absent until the keys load; when the
+                // load fails, an unavailable row with the reason
+                // takes its place instead of a silent gap.
                 val fingerprint = state.fingerprint
                 if (fingerprint != null) {
                     item(onClick = {
@@ -130,9 +138,21 @@ fun EncryptionScreen(
                             },
                         )
                     }
+                } else if (state.fingerprintLoaded) {
+                    item {
+                        RelaySettingRow(
+                            icon = Icons.Outlined.LockOpen,
+                            title = stringResource(R.string.e2e_settings_unavailable),
+                            subtitle = state.fingerprintError,
+                        )
+                    }
                 }
             }
-            RelayHint(text = stringResource(R.string.e2e_settings_fingerprint_hint))
+            // Only with a fingerprint to share: with no identity
+            // loaded, the hint dangles with nothing above it.
+            if (state.fingerprint != null) {
+                RelayHint(text = stringResource(R.string.e2e_settings_fingerprint_hint))
+            }
             RelaySectionLabel(
                 text = stringResource(R.string.e2e_settings_verified_contacts),
             )

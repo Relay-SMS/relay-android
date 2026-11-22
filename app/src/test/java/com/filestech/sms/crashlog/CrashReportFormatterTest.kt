@@ -108,4 +108,25 @@ class CrashReportFormatterTest {
         assertThat(CrashReportFormatter.parseFileName(name)?.crashType)
             .isEqualTo(CrashReportFormatter.UNEXPECTED_STOP_TYPE)
     }
+
+    @Test
+    fun `formatDiagnostic heads the entry with the tag, not a crash`() {
+        val text = CrashReportFormatter.formatDiagnostic(
+            "e2e-fingerprint",
+            1_763_000_000_000L,
+            RuntimeException("boom"),
+        )
+        assertThat(text).contains("Relay diagnostic — e2e-fingerprint")
+        assertThat(text).contains("Exception: java.lang.RuntimeException")
+        assertThat(text).contains("RuntimeException: boom")
+        assertThat(text).doesNotContain("Relay crash report")
+    }
+
+    @Test
+    fun `formatDiagnostic includes the cause chain`() {
+        val error = RuntimeException("wrapper", IllegalStateException("root"))
+        val text = CrashReportFormatter.formatDiagnostic("e2e-fingerprint", 1_000L, error)
+        assertThat(text).contains("java.lang.RuntimeException: wrapper")
+        assertThat(text).contains("Caused by: java.lang.IllegalStateException: root")
+    }
 }

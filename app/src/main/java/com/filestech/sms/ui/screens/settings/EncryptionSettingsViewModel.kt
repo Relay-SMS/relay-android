@@ -8,6 +8,7 @@ import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.e2e.E2eAccountManager
 import com.filestech.sms.e2e.E2eDisplayFormat
+import com.filestech.sms.e2e.E2eFailureRecorder
 import com.filestech.sms.e2e.E2ePeerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -28,12 +29,20 @@ import javax.inject.Inject
  * that is expected. The screen is hub-only (the row is hidden on a
  * linked device), so a client never creates an identity here.
  * Nothing here logs keys or addresses (§8.3).
+ *
+ * When the identity fails to load, the failure is surfaced, not
+ * swallowed: [UiState.fingerprintError] carries the reason (see
+ * [E2eDisplayFormat.describeFailure]) and the failure is recorded
+ * in the local error log ([E2eFailureRecorder]) — round 38 showed
+ * a missing fingerprint with no trace of why, and the next device
+ * test must be able to say which step failed.
  */
 @HiltViewModel
 class EncryptionSettingsViewModel @Inject constructor(
     private val peerRepository: E2ePeerRepository,
     private val accountManager: E2eAccountManager,
     private val contactRepository: ContactRepository,
+    private val recorder: E2eFailureRecorder,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -50,6 +59,14 @@ class EncryptionSettingsViewModel @Inject constructor(
     data class UiState(
         /** Our fingerprint (grouped hex), null until loaded. */
         val fingerprint: String? = null,
+        /** True once the identity load has finished, success or failure. */
+        val fingerprintLoaded: Boolean = false,
+        /**
+         * Why the fingerprint failed to load, null on success or
+         * while loading (see [E2eDisplayFormat.describeFailure]).
+         * Never carries keys, addresses, or PII.
+         */
+        val fingerprintError: String? = null,
         /** The verified contacts, most recently updated first. */
         val verifiedContacts: List<VerifiedContact> = emptyList(),
     )
@@ -59,10 +76,25 @@ class EncryptionSettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(io) {
-            val keys = runCatching { accountManager.identityKeys() }.getOrNull()
+            val result = runCatching { accountManager.identityKeys() }
+            val keys = result.getOrNull()
             if (keys != null) {
                 _state.update {
-                    it.copy(fingerprint = E2eDisplayFormat.formatFingerprint(keys.curve25519))
+                    it.copy(
+                        fingerprint = E2eDisplayFormat.formatFingerprint(keys.curve25519),
+                        fingerprintLoaded = true,
+                    )
+                }
+            } else {
+                val error = result.exceptionOrNull()
+                if (error != null) {
+                    recorder.record("e2e-fingerprint", error)
+                }
+                _state.update {
+                    it.copy(
+                        fingerprintLoaded = true,
+                        fingerprintError = error?.let { E2eDisplayFormat.describeFailure(it) },
+                    )
                 }
             }
         }

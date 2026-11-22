@@ -81,4 +81,29 @@ class E2eDisplayFormatTest {
 
         assertThat(formatted).isEqualTo(malformed)
     }
+
+    @Test
+    fun `failure description is the simple name plus the message`() {
+        val described = E2eDisplayFormat.describeFailure(RuntimeException("boom"))
+
+        assertThat(described).isEqualTo("RuntimeException: boom")
+    }
+
+    @Test
+    fun `failure description appends the root cause when wrapped`() {
+        val error = RuntimeException("wrapper", IllegalStateException("root"))
+
+        val described = E2eDisplayFormat.describeFailure(error)
+
+        assertThat(described).isEqualTo(
+            "RuntimeException: wrapper (caused by IllegalStateException: root)",
+        )
+    }
+
+    @Test
+    fun `failure description drops a blank message`() {
+        val described = E2eDisplayFormat.describeFailure(RuntimeException("   "))
+
+        assertThat(described).isEqualTo("RuntimeException")
+    }
 }

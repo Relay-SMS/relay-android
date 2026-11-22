@@ -210,6 +210,7 @@
     <string name="e2e_settings_explainer">De Relay a Relay, el cifrado es automático. Cuando ambas personas usan Relay, vuestros mensajes 1:1 se cifran de extremo a extremo automáticamente, sin configurar nada. Los mensajes a personas sin Relay, los chats de grupo, las fotos y los archivos se envían como SMS/MMS normales. Los mensajes cifrados usan algunos segmentos de texto más que los normales.</string>
     <string name="e2e_settings_status_subtitle">Automático cuando ambas personas usan Relay</string>
     <string name="e2e_settings_fingerprint">Tu huella</string>
+    <string name="e2e_settings_unavailable">Cifrado no disponible</string>
     <string name="e2e_settings_fingerprint_hint">Comparte esto con un contacto para que pueda comprobar que realmente eres tú.</string>
     <string name="e2e_settings_verified_contacts">Contactos verificados</string>
     <string name="e2e_settings_verified_count">%1$d contactos</string>

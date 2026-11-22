@@ -210,6 +210,7 @@
     <string name="e2e_settings_explainer">Da Relay a Relay la crittografia è automatica. Quando entrambe le persone usano Relay, i messaggi 1:1 sono crittografati end-to-end automaticamente, senza configurare nulla. I messaggi a chi non ha Relay, le chat di gruppo, le foto e i file vengono inviati come normali SMS/MMS. I messaggi crittografati usano qualche segmento di testo in più rispetto ai messaggi normali.</string>
     <string name="e2e_settings_status_subtitle">Automatico quando entrambe le persone usano Relay</string>
     <string name="e2e_settings_fingerprint">La tua impronta</string>
+    <string name="e2e_settings_unavailable">Crittografia non disponibile</string>
     <string name="e2e_settings_fingerprint_hint">Condividila con un contatto così può verificare che sei davvero tu.</string>
     <string name="e2e_settings_verified_contacts">Contatti verificati</string>
     <string name="e2e_settings_verified_count">%1$d contatti</string>

@@ -4,6 +4,7 @@ import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.e2e.E2eCrypto
 import com.filestech.sms.e2e.E2eDataSmsSender
 import com.filestech.sms.e2e.E2eDataSmsSenderImpl
+import com.filestech.sms.e2e.E2eFailureRecorder
 import com.filestech.sms.e2e.E2eSendManager
 import com.filestech.sms.e2e.UnavailableE2eCrypto
 import com.filestech.sms.e2e.VodozemacCrypto
@@ -69,14 +70,22 @@ abstract class E2eModule {
          * then throws `E2eCryptoException`, which every E2E entry
          * point already handles, so encryption is simply unavailable
          * instead of a crash.
+         *
+         * The failure is also recorded in the local error log
+         * ([E2eFailureRecorder]): a silent degradation left the
+         * round-38 device test with a missing fingerprint and no
+         * trace of why, so the next failure must be visible in
+         * Settings → Advanced. The recorder dedupes against the
+         * settings screen's record of the same cause.
          */
         @Provides
         @Singleton
-        fun provideE2eCrypto(): E2eCrypto {
+        fun provideE2eCrypto(recorder: E2eFailureRecorder): E2eCrypto {
             return try {
                 VodozemacCrypto.createNew()
             } catch (t: Throwable) {
                 Timber.w(t, "E2E: native crypto library failed to load; encryption unavailable")
+                recorder.record("e2e-native-load", t)
                 UnavailableE2eCrypto(t)
             }
         }

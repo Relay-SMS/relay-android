@@ -28,6 +28,14 @@ import java.util.TimeZone
  * what the session marker knew (exit reason, session times, last
  * screen, sync state) instead of a stack trace.
  *
+ * A third body kind exists for non-fatal failures recorded
+ * deliberately ([formatDiagnostic]): a short header naming the
+ * caller-supplied tag, then the full stack trace. No build/device
+ * header — the entry carries the exception chain, which is the
+ * diagnostic payload — and the header says "diagnostic", not
+ * "crash report", so the detail screen never presents a
+ * survived failure as a crash.
+ *
  * Pure JVM — no Android calls — so everything here is unit-tested
  * on plain JVM.
  */
@@ -77,7 +85,6 @@ object CrashReportFormatter {
      * writes).
      */
     fun format(metadata: CrashMetadata, throwable: Throwable): String {
-        val trace = StringWriter().also { throwable.printStackTrace(PrintWriter(it)) }.toString()
         return buildString {
             appendLine("Relay crash report")
             appendLine("Date: ${formatDate(metadata.timestampMillis)}")
@@ -86,9 +93,31 @@ object CrashReportFormatter {
             appendLine("Device: ${metadata.deviceModel}")
             appendLine("Exception: ${throwable.javaClass.name}")
             appendLine()
-            append(trace)
+            append(stackTrace(throwable))
         }
     }
+
+    /**
+     * The body of a diagnostic entry: a non-fatal failure recorded
+     * deliberately in the error log (see
+     * [com.filestech.sms.e2e.E2eFailureRecorder]). The header names
+     * the caller's [tag] and the exception class, then the full
+     * stack trace with its causes — the chain is the diagnostic
+     * payload, so the wrapper and the failure it wraps both show.
+     */
+    fun formatDiagnostic(tag: String, timestampMillis: Long, throwable: Throwable): String {
+        return buildString {
+            appendLine("Relay diagnostic — $tag")
+            appendLine("Date: ${formatDate(timestampMillis)}")
+            appendLine("Exception: ${throwable.javaClass.name}")
+            appendLine()
+            append(stackTrace(throwable))
+        }
+    }
+
+    /** What `Throwable.printStackTrace` writes, causes included. */
+    private fun stackTrace(throwable: Throwable): String =
+        StringWriter().also { throwable.printStackTrace(PrintWriter(it)) }.toString()
 
     /**
      * The body of an "unexpected stop" entry: a session that died
