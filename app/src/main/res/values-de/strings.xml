@@ -195,11 +195,10 @@
     <string name="e2e_details_encrypted">Ende-zu-Ende-verschlüsselt</string>
     <string name="e2e_details_verify_tap">Tippe, um die Sicherheitsnummer von %1$s zu prüfen</string>
     <string name="e2e_details_verified">Verifiziert ✓</string>
-    <string name="e2e_details_setting_up">Verschlüsselung wird eingerichtet…</string>
+    <string name="e2e_details_setting_up">Prüfen, ob %1$s Relay nutzt…</string>
     <string name="e2e_details_not_encrypted">Nicht verschlüsselt</string>
-    <string name="e2e_details_not_relay">%1$s nutzt Relay noch nicht</string>
+    <string name="e2e_details_retry_setup">Tippe, um die Verschlüsselung erneut einzurichten</string>
     <string name="e2e_details_auto_start">Die Verschlüsselung startet automatisch, sobald %1$s Relay nutzt</string>
-    <string name="e2e_details_retry_encryption">Verschlüsselung erneut versuchen</string>
     <string name="e2e_verify_title">Sicherheitsnummer</string>
     <string name="e2e_verify_explainer">Vergleiche diese Nummer mit %1$s persönlich oder über einen anderen Kanal – einen Anruf oder eine andere App. Wenn die Nummern übereinstimmen, sprecht ihr miteinander und niemand sitzt dazwischen.</string>
     <string name="e2e_verify_mark">Als verifiziert markieren</string>

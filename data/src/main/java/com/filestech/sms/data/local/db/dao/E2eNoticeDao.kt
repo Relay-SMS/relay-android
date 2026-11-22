@@ -40,6 +40,24 @@ interface E2eNoticeDao {
     )
     suspend fun countByKind(conversationId: Long, kind: E2eNoticeKind): Int
 
+    /**
+     * E2E sync (round 42) — every notice, oldest first: the
+     * device-link snapshot source (the in-thread notice set). A
+     * stable order keeps the frame stable.
+     */
+    @Query("SELECT * FROM e2e_notices ORDER BY date ASC")
+    suspend fun allNotices(): List<E2eNoticeEntity>
+
+    /**
+     * E2E sync (round 42) — the live version of [allNotices]:
+     * re-emits whenever any `e2e_notices` row changes, so a
+     * notice recorded while a desktop is linked re-sends the full
+     * set. Room invalidates on any write to the table — the
+     * collector dedupes the no-change emissions.
+     */
+    @Query("SELECT * FROM e2e_notices ORDER BY date ASC")
+    fun observeAll(): Flow<List<E2eNoticeEntity>>
+
     /** Deletes a conversation's notices (conversation deleted). */
     @Query("DELETE FROM e2e_notices WHERE conversation_id = :conversationId")
     suspend fun deleteForConversation(conversationId: Long): Int

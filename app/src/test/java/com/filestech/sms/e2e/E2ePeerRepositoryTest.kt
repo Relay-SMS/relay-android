@@ -8,8 +8,12 @@ import com.google.common.truth.Truth.assertThat
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
@@ -194,5 +198,98 @@ class E2ePeerRepositoryTest {
         repository.recordBundleReply(address, now)
 
         coVerify(exactly = 1) { dao.recordBundleReply(address, now, now) }
+    }
+
+    // -- Round 42: the device-link snapshot source ----------------------
+
+    @Test
+    fun `allPeers returns every row in address order`() = runTest {
+        val dao = FakeE2ePeerDao()
+        dao.peers["+33687654321"] = peer().copy(address = "+33687654321")
+        dao.peers[address] = peer()
+        val repository = E2ePeerRepository(dao)
+
+        val all = repository.allPeers()
+
+        assertThat(all.map { it.address }).containsExactly("+33612345678", "+33687654321").inOrder()
+    }
+
+    @Test
+    fun `observeAllPeers emits every row`() = runTest {
+        val dao = FakeE2ePeerDao()
+        dao.peers[address] = peer()
+        val repository = E2ePeerRepository(dao)
+
+        var emitted = 0
+        repository.observeAllPeers().collect { all ->
+            emitted++
+            assertThat(all).hasSize(1)
+            assertThat(all[0].address).isEqualTo(address)
+        }
+        assertThat(emitted).isEqualTo(1)
+    }
+
+    // ─────────── Round 42: the address is canonicalized ───────────
+    // Every method normalizes its address before touching the DAO:
+    // the thread UI observes the normalized form while the probe
+    // path wrote the raw conversation form and the handshake
+    // handler wrote the carrier form, so a peer whose number was
+    // stored with formatting never showed its state change.
+
+    @Test
+    fun `state normalizes a formatted address before querying`() = runTest {
+        val dao = daoReturning(peer())
+        val repository = E2ePeerRepository(dao)
+
+        assertThat(repository.state("+33 6 12 34 56 78")).isEqualTo(E2ePeerState.UNKNOWN)
+        coVerify(exactly = 1) { dao.findByAddress("+33612345678") }
+    }
+
+    @Test
+    fun `setState writes under the normalized key`() = runTest {
+        val dao = daoReturning(peer())
+        val repository = E2ePeerRepository(dao)
+
+        repository.setState("+33 6 12 34 56 78", E2ePeerState.ENCRYPTED, now)
+
+        coVerify(exactly = 1) { dao.insert(match { it.address == "+33612345678" }) }
+        coVerify(exactly = 1) {
+            dao.updateState("+33612345678", E2ePeerState.ENCRYPTED, now)
+        }
+    }
+
+    @Test
+    fun `recordProbeSent writes under the normalized key`() = runTest {
+        val dao = daoReturning(peer())
+        val repository = E2ePeerRepository(dao)
+
+        repository.recordProbeSent("06 12 34 56 78", now)
+
+        coVerify(exactly = 1) { dao.recordProbe("0612345678", 1, now, now, now) }
+        coVerify(exactly = 1) {
+            dao.updateState("0612345678", E2ePeerState.PROBING, now)
+        }
+    }
+
+    @Test
+    fun `observePeer normalizes before subscribing`() = runTest {
+        val dao = mockk<E2ePeerDao>()
+        every { dao.observeByAddress(any()) } returns flowOf(peer())
+        val repository = E2ePeerRepository(dao)
+
+        val found = repository.observePeer("+33 6 12 34 56 78").first()
+
+        assertThat(found?.address).isEqualTo(address)
+        verify(exactly = 1) { dao.observeByAddress("+33612345678") }
+    }
+
+    @Test
+    fun `an alphanumeric sender keeps its trimmed raw form`() = runTest {
+        val dao = daoReturning(null)
+        val repository = E2ePeerRepository(dao)
+
+        repository.state("  Free  ")
+
+        coVerify(exactly = 1) { dao.findByAddress("Free") }
     }
 }

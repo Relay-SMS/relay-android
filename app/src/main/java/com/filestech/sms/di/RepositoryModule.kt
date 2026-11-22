@@ -51,6 +51,7 @@ import com.filestech.sms.domain.vault.VaultMover
 import com.filestech.sms.ownnumber.OwnNumberEnsurerImpl
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.VaultManager
+import com.filestech.sms.sync.E2eSyncSource
 import com.filestech.sms.sync.NoteSyncSource
 import com.filestech.sms.sync.SyncMessageSource
 import com.filestech.sms.system.clipboard.ClipboardCleanerImpl
@@ -60,6 +61,7 @@ import com.filestech.sms.system.notifications.IncomingMessageNotifier
 import com.filestech.sms.system.pdf.ConversationPdfExporter
 import com.filestech.sms.system.safety.AndroidSafetyMessageTexts
 import com.filestech.sms.system.scheduler.ScheduledMessageSchedulerImpl
+import com.filestech.sms.system.sync.RepositoryE2eSyncSource
 import com.filestech.sms.system.sync.RepositoryNoteSyncSource
 import com.filestech.sms.system.sync.RepositorySyncMessageSource
 import dagger.Binds
@@ -82,6 +84,10 @@ abstract class RepositoryModule {
     /** Round 36 phase 2 — the note engine's note store (SYNC_PROTOCOL.md, Notes sync). */
     @Binds @Singleton
     abstract fun bindNoteSyncSource(impl: RepositoryNoteSyncSource): NoteSyncSource
+
+    /** Round 42 — the engine's E2E store (SYNC_PROTOCOL.md, E2E safety numbers + notices). */
+    @Binds @Singleton
+    abstract fun bindE2eSyncSource(impl: RepositoryE2eSyncSource): E2eSyncSource
 
     /**
      * v1.28.1 — l'effacement de la copie systeme d'un message. Interface pour que le contrat

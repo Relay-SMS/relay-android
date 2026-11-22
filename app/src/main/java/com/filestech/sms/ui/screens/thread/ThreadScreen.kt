@@ -29,6 +29,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -649,8 +650,8 @@ fun ThreadScreen(
     // deltas. Only while at the bottom and not searching, not scrolling,
     // picker closed — a user scrolled up reading older messages is left
     // alone, and the picker has its own effect above. Any residual gap
-    // (a dropped frame, rounding) is picked up by the pinned-scroll
-    // effect once the insets settle.
+    // (a dropped frame, rounding) is picked up by the settle-to-bottom
+    // snap once the insets settle, and by the pinned-scroll effect.
     val density = LocalDensity.current
     // Captured once: the IME insets object is stable per window (only its
     // values change), and `WindowInsets.ime` itself is a @Composable
@@ -690,6 +691,64 @@ fun ThreadScreen(
                 !emojiPickerOpen && state.messages.isNotEmpty()
             if (shouldTrack) {
                 listState.scroll { scrollBy(delta) }
+            }
+        }
+    }
+    // Round 42 — settle-to-bottom: after the keyboard finishes sliding
+    // (the 350ms timer above flips `imeAnimating` false), snap the list
+    // to the true bottom when the user was at the bottom before the
+    // animation started. The frame-locked tracker above keeps the tail
+    // glued while the keyboard slides, but a frame it skips (its
+    // `isScrollInProgress` gate) loses that frame's delta for good, so
+    // the tail can end up covered by the keyboard (open) or sitting
+    // above the composer with the first message cut off (closed, short
+    // thread) — and the pinned-scroll effect below could not recover
+    // it: its pin started false on every restart and only engaged when
+    // the bottom was already fully visible. The snap is instant
+    // (`scrollToItem`, not animated) and fires once, after the
+    // animation has settled — no delayed animate, no jitter. A user
+    // scrolled up before the animation (`imeWasAtBottom` false) or who
+    // dragged during it (the latch below) is left alone; so is a user
+    // mid-search or with the picker open (the picker has its own
+    // effect above). The `isScrollInProgress` guard covers a drag
+    // still running at settle time.
+    var imeWasAtBottom by remember { mutableStateOf(false) }
+    var userMovedDuringIme by remember { mutableStateOf(false) }
+    LaunchedEffect(imeAnimating) {
+        if (imeAnimating) {
+            imeWasAtBottom = isAtBottom
+            userMovedDuringIme = false
+        } else {
+            // The snap only fires when the user was at the bottom
+            // before the animation and never moved away from it
+            // during the animation; a user scrolled up, mid-search,
+            // or with the picker open is left alone, and so is a
+            // drag still running at settle time.
+            val shouldSettle = imeWasAtBottom &&
+                !userMovedDuringIme &&
+                !emojiPickerOpen &&
+                !threadSearchOpen &&
+                !listState.isScrollInProgress &&
+                bottomItemIndex >= 0 &&
+                state.messages.isNotEmpty()
+            if (shouldSettle) {
+                listState.scrollToItem(bottomItemIndex)
+                imeWasAtBottom = false
+            }
+        }
+    }
+    // Round 42 — the drag latch for the settle snap above: a user drag
+    // (start, stop, or cancel) while the IME animates means the user
+    // moved during the animation, so the snap must not yank them back
+    // to the bottom. `interactionSource` only reports USER gestures —
+    // programmatic scrolls (`scrollToItem`, the tracker, the pin)
+    // never emit a `DragInteraction` — so the latch cannot fire on
+    // our own motion. The tracker and the pin keep working while the
+    // user drags; only the settle snap is suppressed.
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction && imeAnimating) {
+                userMovedDuringIme = true
             }
         }
     }
@@ -777,50 +836,58 @@ fun ThreadScreen(
     // of those layout emissions made this effect snap to the bottom —
     // the same scroll-per-emission loop as the round-19 picker drag,
     // time-bounded here so it showed as jitter (the list jumping during
-    // the keyboard slide) instead of an ANR. The pin pauses only until
-    // the insets settle (the 350ms timer above); while the keyboard
-    // sits open it stays engaged, so a late-loading preview still
-    // re-pins. The frame-locked tracker above owns the motion while the
-    // keyboard slides; the pin re-engages once the insets settle and
-    // picks up any residual gap the tracker left.
-    LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen, imeAnimating) {
-        if (emojiPickerOpen || imeAnimating) return@LaunchedEffect
-        var pinnedToBottom = false
-        var prevFirstIndex: Int? = null
-        var prevFirstOffset: Int? = null
+    // the keyboard slide) instead of an ANR. The frame-locked tracker
+    // above owns the motion while the keyboard slides.
+    // Round 42 (2026-11-22) — the pin state lives in
+    // [PinnedScrollTracker], remembered by the screen, instead of as
+    // locals inside this effect: the effect restarts whenever its keys
+    // change (a new message, the picker opening), and the locals reset
+    // the pin to false on every restart — after the keyboard closed,
+    // the bottom was NOT fully visible (the tracker had dropped a
+    // delta or two), so the pin could never re-engage from that state
+    // and no re-scroll ever happened. With the state hoisted, a pin
+    // earned before the animation survives it, and the first
+    // post-settle emission re-scrolls. The effect is also NO LONGER
+    // keyed on `imeAnimating`: the flag is checked inside the
+    // collector instead, so the flow is never torn down and recreated
+    // on animation. That teardown was the ANR: pulling the
+    // notification shade down with the keyboard open flapped the
+    // insets (focus loss → inset recompute), each flap flipped
+    // `imeAnimating`, each flip disposed and recreated the layoutInfo
+    // snapshotFlow collector — the ANR stack shows the main thread
+    // inside a snapshotFlow emit running into a dispose — and the
+    // recreated collector scrolled per layout emission while the
+    // viewport was in flux, saturating the main thread until input
+    // timed out (5s, FocusEvent hasFocus=false). Now the collector
+    // lives across animations and simply skips emissions while
+    // animating — pin and anchor frozen, so the post-settle emission
+    // still compares against the pre-animation anchor and user
+    // movement during the animation is still detected. The
+    // settle-to-bottom snap above owns the post-animation re-scroll;
+    // the pin covers late content growth while the keyboard sits open.
+    val pinTracker = remember { PinnedScrollTracker() }
+    LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen) {
+        if (emojiPickerOpen) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo }.collect { info ->
+            // Frozen while the IME animates (round 42 — see above):
+            // no pin update, no anchor update, no scroll. The
+            // frame-locked tracker owns the motion until the insets
+            // settle.
+            if (imeAnimating) return@collect
             val first = info.visibleItemsInfo.firstOrNull()
-            if (listState.isScrollInProgress) {
-                pinnedToBottom = false
-            } else {
-                val last = info.visibleItemsInfo.lastOrNull()
-                if (last != null) {
-                    val bottomFullyVisible = last.index == bottomItemIndex &&
-                        last.offset + last.size <= info.viewportEndOffset
-                    if (bottomFullyVisible) {
-                        pinnedToBottom = true
-                    } else {
-                        // Anchor moved (or no anchor yet) → the user
-                        // moved: unpin past one position, as before.
-                        // Anchor unchanged → content grew below it:
-                        // keep the pin and re-scroll, any jump size.
-                        val anchorMoved = first == null ||
-                            prevFirstIndex == null ||
-                            first.index != prevFirstIndex ||
-                            first.offset != prevFirstOffset
-                        if (anchorMoved && last.index < bottomItemIndex - 1) {
-                            pinnedToBottom = false
-                        }
-                        if (pinnedToBottom) listState.scrollToItem(bottomItemIndex)
-                    }
-                }
-            }
-            // The anchor is the previous emission's first visible item,
-            // whatever the branch above did — a re-scroll's own next
-            // emission compares against the layout it produced, and a
-            // scroll gesture leaves the anchor at the settled position.
-            prevFirstIndex = first?.index
-            prevFirstOffset = first?.offset
+            val last = info.visibleItemsInfo.lastOrNull()
+            val shouldScroll = pinTracker.onLayout(
+                layout = PinnedScrollLayout(
+                    firstIndex = first?.index,
+                    firstOffset = first?.offset,
+                    lastIndex = last?.index,
+                    lastBottom = last?.let { it.offset + it.size },
+                    viewportEndOffset = info.viewportEndOffset,
+                ),
+                bottomItemIndex = bottomItemIndex,
+                isScrollInProgress = listState.isScrollInProgress,
+            )
+            if (shouldScroll) listState.scrollToItem(bottomItemIndex)
         }
     }
 
@@ -955,6 +1022,12 @@ fun ThreadScreen(
                         putExtra(ContactsContract.Intents.Insert.PHONE, e.rawNumber)
                     }
                     runCatching { context.startActivity(intent) }
+                }
+                is ThreadViewModel.Event.OpenEditContact -> {
+                    // Round 42 — ACTION_EDIT + the contact URI: the
+                    // editor opens on THAT person's card, not the
+                    // contacts list (see ContactIntents.editContact).
+                    ContactIntents.editContact(context, e.contactId)
                 }
                 is ThreadViewModel.Event.OpenCreateContact -> {
                     // Fiche vierge pré-remplie (ACTION_INSERT) — évite le sélecteur système
@@ -2061,6 +2134,7 @@ fun ThreadScreen(
                     },
                     onCreateContact = { viewModel.requestCreateContact() },
                     onAddContact = { viewModel.requestAddContact() },
+                    onEditContact = { viewModel.requestEditContact() },
                     onMemberClick = { addr -> viewModel.openMemberContact(addr) },
                     // v1.12.0 — vault row, hidden in PanicDecoy.
                     onMoveVault = if (state.isPanicDecoy) {

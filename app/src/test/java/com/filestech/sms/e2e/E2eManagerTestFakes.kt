@@ -78,6 +78,12 @@ internal class FakeE2ePeerDao : E2ePeerDao {
     override fun observeEncryptedAddresses(): Flow<List<String>> =
         flowOf(peers.values.filter { it.state == E2ePeerState.ENCRYPTED }.map { it.address })
 
+    override suspend fun allPeers(): List<E2ePeerEntity> =
+        peers.values.sortedBy { it.address }
+
+    override fun observeAllPeers(): Flow<List<E2ePeerEntity>> =
+        flowOf(peers.values.sortedBy { it.address })
+
     override suspend fun insert(peer: E2ePeerEntity): Long {
         if (peers.containsKey(peer.address)) return -1L
         peers[peer.address] = peer
@@ -247,6 +253,12 @@ internal class FakeE2eNoticeDao : E2eNoticeDao {
     override suspend fun countByKind(conversationId: Long, kind: E2eNoticeKind): Int =
         notices.count { it.conversationId == conversationId && it.kind == kind }
 
+    override suspend fun allNotices(): List<E2eNoticeEntity> =
+        notices.sortedBy { it.date }
+
+    override fun observeAll(): Flow<List<E2eNoticeEntity>> =
+        flowOf(notices.sortedBy { it.date })
+
     override suspend fun deleteForConversation(conversationId: Long): Int {
         val before = notices.size
         notices.removeAll { it.conversationId == conversationId }
@@ -273,12 +285,24 @@ internal class FakeBlockedRepo(private val blocked: Set<String> = emptySet()) :
 
 /** Records every data SMS sent; [result] decides whether the radio accepts it. */
 internal class RecordingDataSmsSender(var result: Boolean = true) : E2eDataSmsSender {
-    data class Sent(val address: String, val subId: Int?, val port: Int, val data: ByteArray)
+    data class Sent(
+        val address: String,
+        val subId: Int?,
+        val port: Int,
+        val data: ByteArray,
+        val kind: DataSmsKind = DataSmsKind.PROBE,
+    )
 
     val sent = mutableListOf<Sent>()
 
-    override fun sendDataMessage(address: String, subId: Int?, port: Int, data: ByteArray): Boolean {
-        sent += Sent(address, subId, port, data.copyOf())
+    override fun sendDataMessage(
+        address: String,
+        subId: Int?,
+        port: Int,
+        data: ByteArray,
+        kind: DataSmsKind,
+    ): Boolean {
+        sent += Sent(address, subId, port, data.copyOf(), kind)
         return result
     }
 }

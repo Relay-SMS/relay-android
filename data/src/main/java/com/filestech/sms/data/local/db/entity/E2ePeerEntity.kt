@@ -33,7 +33,11 @@ data class E2ePeerEntity(
     @ColumnInfo(name = "their_curve_key") val theirCurveKey: String? = null,
     /** Their Ed25519 identity key, base64, 32 bytes. Null until a bundle arrives. */
     @ColumnInfo(name = "their_ed_key") val theirEdKey: String? = null,
-    /** True once the user compared safety numbers and marked this peer verified. Local only. */
+    /**
+     * True once the user compared safety numbers and marked this peer
+     * verified. Never sent to the peer; synced to the user's own
+     * linked devices over the encrypted device link (round 42).
+     */
     @ColumnInfo(name = "verified", defaultValue = "0") val verified: Boolean = false,
     /** Epoch ms of the last probe sent to this peer, null if never probed. */
     @ColumnInfo(name = "last_probe_at") val lastProbeAt: Long? = null,

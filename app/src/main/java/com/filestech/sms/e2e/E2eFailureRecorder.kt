@@ -12,18 +12,24 @@ import javax.inject.Singleton
  * Advanced), so a silent encryption failure leaves a readable
  * trace instead of just a missing fingerprint.
  *
- * Three writers use it: the [E2eCrypto] provider (a native-load
+ * Five writers use it: the [E2eCrypto] provider (a native-load
  * failure that degrades to [UnavailableE2eCrypto]), the
  * Encryption settings ViewModel (an identity load that fails
  * after the library loaded — Keystore, Room, or a native call),
- * and the data-SMS sender (a handshake SMS the radio refuses —
- * probe or bundle reply; recorded sanitized, the exception's
- * class only, so no address can leak in — see
- * [E2eDataSmsSenderImpl]).
- * Both write through the same [CrashReportStore] the crash
+ * the data-SMS sender (a handshake SMS the radio refuses —
+ * probe or bundle reply, tagged by kind; recorded sanitized,
+ * the exception's class only, so no address can leak in — see
+ * [E2eDataSmsSenderImpl]), the handshake handler (success
+ * events — probe received, bundle sent, bundle rate-limited —
+ * via [recordEvent], so the inbound path is visible in release
+ * builds, where Timber is a no-op), and the probe manager (a
+ * manual retry that did not send — gated or failed, with the
+ * reason, under `e2e-manual-retry`; automatic probes never
+ * record, they gate constantly).
+ * All write through the same [CrashReportStore] the crash
  * handler uses, so the entries appear in the same list, with
- * the exception's simple name as the title and the full chain
- * in the detail text.
+ * the exception's simple name as the title (failures) or the
+ * tag itself (events) and the full chain in the detail text.
  *
  * The error-log switch gates every write, the same way it gates
  * the crash handler ([CrashLogSettings.enabled] is read live on
@@ -32,7 +38,7 @@ import javax.inject.Singleton
  * recorded text is the exception chain (our fixed messages,
  * loader messages, Keystore/Room errors, and code locations
  * from the stack trace) — the same content the crash reports
- * already carry.
+ * already carry — or a fixed event message.
  *
  * Dedupe: one record per distinct root cause per process. The
  * provider's failure and the ViewModel's failure are often the
@@ -40,7 +46,10 @@ import javax.inject.Singleton
  * error in an `E2eCryptoException` — and the settings screen
  * can be opened many times, so without dedupe one outage would
  * fill the 10-report rotation. The key is the root cause's
- * class + message (see [E2eDisplayFormat.rootCause]).
+ * class + message (see [E2eDisplayFormat.rootCause]). Events
+ * dedupe the same way, on tag + message: the separating test
+ * only needs to know whether ANY probe arrived / ANY bundle
+ * went out, not how many.
  *
  * Never throws: a diagnostics failure must never break the
  * path it is diagnosing.
@@ -57,9 +66,10 @@ class E2eFailureRecorder @Inject constructor(
 
     /**
      * Records [throwable] under [tag] ("e2e-native-load",
-     * "e2e-fingerprint", "e2e-probe-send") in the local error log.
-     * Skips the write when the error log is off, and when this
-     * root cause was already recorded this process.
+     * "e2e-fingerprint", "e2e-probe-send", "e2e-bundle-send") in
+     * the local error log. Skips the write when the error log is
+     * off, and when this root cause was already recorded this
+     * process.
      */
     fun record(tag: String, throwable: Throwable) {
         runCatching {
@@ -73,4 +83,37 @@ class E2eFailureRecorder @Inject constructor(
             store.writeReport(text, now, crashType)
         }
     }
+
+    /**
+     * Records a SUCCESS event under [tag]
+     * ("e2e-probe-received", "e2e-bundle-sent",
+     * "e2e-bundle-rate-limited") in the local error log.
+     * Success events have no Throwable, so the entry is built
+     * from a synthetic marker carrying only the fixed [message]
+     * — no keys, no addresses, no PII — through the same
+     * [CrashReportFormatter.formatDiagnostic] path, with the tag
+     * as the list title (the detail text carries the tag line,
+     * the marker message, and the call path). Skips the write
+     * when the error log is off, and when this exact event was
+     * already recorded this process (one record per tag +
+     * message — the diagnosis only needs to know whether ANY
+     * probe arrived / ANY bundle went out, not how many).
+     */
+    fun recordEvent(tag: String, message: String) {
+        runCatching {
+            if (!settings.enabled) return@runCatching
+            if (!recordedRootCauses.add("event|$tag|$message")) return@runCatching
+            val now = System.currentTimeMillis()
+            val text = CrashReportFormatter.formatDiagnostic(tag, now, E2eDiagnosticEvent(message))
+            store.writeReport(text, now, tag)
+        }
+    }
 }
+
+/**
+ * Marker throwable for success-event diagnostics: carries only
+ * a fixed message — never keys, addresses, or PII. The
+ * formatter prints its class + message + the call path, which
+ * is the diagnostic payload for an event entry.
+ */
+class E2eDiagnosticEvent(message: String) : Exception(message)

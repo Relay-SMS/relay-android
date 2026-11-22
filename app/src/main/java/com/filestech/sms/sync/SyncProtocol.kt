@@ -70,6 +70,12 @@ import kotlinx.serialization.serializer
  * `set_category_muted`) in the same envelope, plus one optional
  * field on `action_result` (`category`, the echo for
  * `set_category_muted`). The protocol version stays 1.
+ *
+ * Round 42 adds the E2E safety-number + notice types
+ * (`e2e_safety_numbers`, `e2e_notices`, `set_e2e_verified`,
+ * `retry_e2e_probe`) in the same envelope; the answers reuse
+ * `action_result` (with the address echoed, like
+ * `set_contact_photo`). The protocol version stays 1.
  */
 object SyncProtocol {
 
@@ -583,7 +589,10 @@ object SyncProtocol {
      * (round 3): the reply echoes the number, so the desktop
      * attributes it to exactly one in-flight pick — and unlike a
      * write-back, a refusal does NOT revert the desktop's local
-     * photo choice. [category] is present for `set_category_muted`
+     * photo choice. [address] is also present for
+     * `set_e2e_verified` / `retry_e2e_probe` (round 42): the reply
+     * echoes the peer's number, so the desktop attributes it to
+     * the peer it acted on. [category] is present for `set_category_muted`
      * (category mutes): the reply echoes the category, so the
      * desktop attributes it to the category it changed. Codes reuse
      * the [MessageFailed] set where they apply, plus `send_failed`
@@ -1287,6 +1296,74 @@ object SyncProtocol {
         @SerialName("limit") val limit: Int? = null,
     )
 
+    // -- Round 42: E2E safety numbers + notices (SYNC_PROTOCOL.md, E2E safety numbers + notices) --
+
+    /**
+     * Server → client: the FULL set of E2E peers — every address
+     * with a peer row — as [SyncedE2ePeer] entries. Sent after
+     * every snapshot (right after `sync_complete`, next to
+     * `category_mutes`) and whenever any peer row changes on the
+     * phone — the phone is the source of truth, so the desktop
+     * replaces its own set with this one wholesale (an empty list
+     * means no peer has ever exchanged keys). The safety number
+     * rides as the FORMATTED string (12 groups of 5 digits), or
+     * null when the peer has no keys yet — the desktop stores and
+     * displays it verbatim, never re-deriving, so the number it
+     * shows is byte-identical to the phone's. Address order, so
+     * the frame is stable.
+     */
+    @Serializable
+    data class E2eSafetyNumbers(
+        @SerialName("peers") val peers: List<SyncedE2ePeer>,
+    )
+
+    /**
+     * Server → client: the FULL set of in-thread E2E notices, as
+     * [SyncedE2eNotice] entries. Sent after every snapshot (right
+     * after `sync_complete`, next to `category_mutes`) and
+     * whenever any notice row changes on the phone — the phone is
+     * the source of truth, so the desktop replaces its own set
+     * with this one wholesale. The desktop renders each notice as
+     * a centered system row in its thread, at [SyncedE2eNotice.date].
+     */
+    @Serializable
+    data class E2eNotices(
+        @SerialName("notices") val notices: List<SyncedE2eNotice>,
+    )
+
+    /**
+     * Client → server: mark (or unmark) one peer verified.
+     * [address] is the normalized number; [verified] is REQUIRED
+     * (like `set_muted`'s `value` — a missing flag is malformed,
+     * never a silent unverify). The phone updates its own store —
+     * creating the peer row when none exists yet, like its own
+     * verification sheet does — and answers `action_result` (the
+     * address echoed); the collector's re-send of the full set is
+     * the confirmation. Verification is optional (TOFU): the flag
+     * is just a marker, and messaging works encrypted whether or
+     * not a peer is verified.
+     */
+    @Serializable
+    data class SetE2eVerified(
+        @SerialName("address") val address: String,
+        @SerialName("verified") val verified: Boolean,
+    )
+
+    /**
+     * Client → server: retry the key exchange with one peer — the
+     * same manual probe as the phone's Details panel "Retry
+     * encryption" (one probe now, budget + discovery-toggle gates
+     * lifted, address / blocked / ENCRYPTED gates still apply).
+     * The phone answers `action_result` (the address echoed):
+     * `ok: false` `unknown_conversation` when no 1:1 conversation
+     * exists for the address, `send_failed` when the probe could
+     * not go out.
+     */
+    @Serializable
+    data class RetryE2eProbe(
+        @SerialName("address") val address: String,
+    )
+
     /**
      * What the server makes of one incoming text frame. [Unknown] keeps
      * the connection (a newer client may send types this build does not
@@ -1328,6 +1405,16 @@ object SyncProtocol {
         data class SetNotePin(val value: SyncProtocol.SetNotePin) : Parsed
         data class SetNoteArchived(val value: SyncProtocol.SetNoteArchived) : Parsed
         data class NoteMessagesRequest(val value: SyncProtocol.NoteMessagesRequest) : Parsed
+
+        /**
+         * E2E commands (round 42): grouped under one sealed
+         * sub-interface so the session handler dispatches them
+         * through a single arm (the main dispatch sits at the
+         * Detekt complexity cap).
+         */
+        sealed interface E2eCommand : Parsed
+        data class SetE2eVerified(val value: SyncProtocol.SetE2eVerified) : E2eCommand
+        data class RetryE2eProbe(val value: SyncProtocol.RetryE2eProbe) : E2eCommand
         data class Unknown(val type: String?) : Parsed
         data object Malformed : Parsed
     }
@@ -1405,6 +1492,13 @@ object SyncProtocol {
         "set_note_pin" -> decode<SetNotePin>(obj)?.let(Parsed::SetNotePin) ?: Parsed.Malformed
         "set_note_archived" -> decode<SetNoteArchived>(obj)?.let(Parsed::SetNoteArchived) ?: Parsed.Malformed
         "note_messages_request" -> decode<NoteMessagesRequest>(obj)?.let(Parsed::NoteMessagesRequest) ?: Parsed.Malformed
+        else -> parseE2eFrames(type, obj)
+    }
+
+    /** The fourth part of [parse]: the round-42 E2E frames. */
+    private fun parseE2eFrames(type: String, obj: JsonObject): Parsed = when (type) {
+        "set_e2e_verified" -> decode<SetE2eVerified>(obj)?.let(Parsed::SetE2eVerified) ?: Parsed.Malformed
+        "retry_e2e_probe" -> decode<RetryE2eProbe>(obj)?.let(Parsed::RetryE2eProbe) ?: Parsed.Malformed
         else -> Parsed.Unknown(type)
     }
 
@@ -1530,6 +1624,14 @@ object SyncProtocol {
 
     fun encodeNoteMessageFailed(value: NoteMessageFailed): String =
         withType(value, "note_message_failed").toString()
+
+    // -- Round 42: E2E safety numbers + notices encoders -------------
+
+    fun encodeE2eSafetyNumbers(value: E2eSafetyNumbers): String =
+        withType(value, "e2e_safety_numbers").toString()
+
+    fun encodeE2eNotices(value: E2eNotices): String =
+        withType(value, "e2e_notices").toString()
 
     /**
      * The `type` field is not part of the data classes (it is routing,

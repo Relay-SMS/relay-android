@@ -4,7 +4,6 @@ import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.filestech.sms.di.IoDispatcher
-import com.filestech.sms.e2e.E2E_KEY_LENGTH
 import com.filestech.sms.e2e.E2eAccountManager
 import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.e2e.E2eSafetyNumber
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.Base64
 import javax.inject.Inject
 
 /**
@@ -25,8 +23,11 @@ import javax.inject.Inject
  *
  * The number is re-derived on every [open]: a key change between
  * two openings must show the new number, never a cached one. The
- * verified flag is local only — it is never sent or synced (design
- * §5.2). Nothing here logs keys, numbers or addresses (§8.3).
+ * verified flag is never sent to the peer — it is a local trust
+ * marker, not part of the key exchange (design §5.2). It IS synced
+ * to the user's own linked devices over the encrypted device link
+ * (round 42), so the desktop shows the same verified state as the
+ * phone. Nothing here logs keys, numbers or addresses (§8.3).
  */
 @HiltViewModel
 class E2eVerificationViewModel @Inject constructor(
@@ -75,7 +76,7 @@ class E2eVerificationViewModel @Inject constructor(
         }
     }
 
-    /** Marks the current peer verified (local flag only, no confirm). */
+    /** Marks the current peer verified (no confirm — the flag is a local trust marker). */
     fun markVerified() {
         val address = currentAddress ?: return
         viewModelScope.launch(io) {
@@ -85,7 +86,7 @@ class E2eVerificationViewModel @Inject constructor(
         }
     }
 
-    /** Clears the current peer's verified flag (local only, no confirm). */
+    /** Clears the current peer's verified flag (no confirm). */
     fun removeVerification() {
         val address = currentAddress ?: return
         viewModelScope.launch(io) {
@@ -99,22 +100,16 @@ class E2eVerificationViewModel @Inject constructor(
      * Derives the safety number, or null when it cannot be derived:
      * no peer row, no stored keys, keys that do not decode, or keys
      * of the wrong length. The caller turns null into the
-     * load-failed state.
+     * load-failed state. The account is only touched once the peer
+     * is known to hold keys — opening the sheet for a keyless peer
+     * must not create an identity.
      */
     private suspend fun loadSafetyNumber(address: String): Pair<String, Boolean>? {
         val peer = peerRepository.getPeer(address)
-        val theirCurve = peer?.theirCurveKey?.let { decodeKey(it) }
-        val theirEd = peer?.theirEdKey?.let { decodeKey(it) }
-        if (peer == null || theirCurve == null || theirEd == null) return null
+        if (peer?.theirCurveKey == null || peer.theirEdKey == null) return null
         val ours = accountManager.identityKeys()
-        val number = runCatching {
-            E2eSafetyNumber.derive(ours.curve25519, theirCurve, ours.ed25519, theirEd)
-        }.getOrNull() ?: return null
+        val number = E2eSafetyNumber.deriveForPeer(ours, peer.theirCurveKey, peer.theirEdKey)
+            ?: return null
         return number to peer.verified
     }
-
-    /** Decodes one stored base64 identity key, or null when malformed. */
-    private fun decodeKey(base64: String): ByteArray? =
-        runCatching { Base64.getDecoder().decode(base64) }.getOrNull()
-            ?.takeIf { it.size == E2E_KEY_LENGTH }
 }

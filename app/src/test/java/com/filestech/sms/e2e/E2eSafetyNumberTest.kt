@@ -3,6 +3,7 @@ package com.filestech.sms.e2e
 import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import java.util.Base64
 
 /**
  * Safety-number tests (design §5.1 / §10.1). The expected values are
@@ -103,6 +104,49 @@ class E2eSafetyNumberTest {
         assertThrows(IllegalArgumentException::class.java) {
             E2eSafetyNumber.derive(good, good, good, ByteArray(33))
         }
+    }
+
+    // -- deriveForPeer (round 42): the stored-key derivation the
+    // verification sheet and the device-link sync share — one
+    // derivation, one string, so the desktop number is
+    // byte-identical to the phone's. -------------------------------
+
+    @Test
+    fun `deriveForPeer matches derive for the same keys`() {
+        val ours = IdentityKeys(
+            curve25519 = ByteArray(32) { it.toByte() },
+            ed25519 = ByteArray(32) { (it + 64).toByte() },
+        )
+        val theirCurve = Base64.getEncoder().encodeToString(ByteArray(32) { (it + 32).toByte() })
+        val theirEd = Base64.getEncoder().encodeToString(ByteArray(32) { (it + 96).toByte() })
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, theirCurve, theirEd))
+            .isEqualTo("91323 07146 46513 28759 94769 14425 21260 24914 10661 12576 45968 55338")
+    }
+
+    @Test
+    fun `deriveForPeer returns null when a peer key is missing`() {
+        val ours = IdentityKeys(ByteArray(32), ByteArray(32))
+        val key = Base64.getEncoder().encodeToString(ByteArray(32) { 0xFF.toByte() })
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, null, key)).isNull()
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, key, null)).isNull()
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, null, null)).isNull()
+    }
+
+    @Test
+    fun `deriveForPeer returns null when a peer key does not decode`() {
+        val ours = IdentityKeys(ByteArray(32), ByteArray(32))
+        val key = Base64.getEncoder().encodeToString(ByteArray(32) { 0xFF.toByte() })
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, "not base64!!!", key)).isNull()
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, key, "not base64!!!")).isNull()
+    }
+
+    @Test
+    fun `deriveForPeer returns null when a peer key has the wrong length`() {
+        val ours = IdentityKeys(ByteArray(32), ByteArray(32))
+        val key = Base64.getEncoder().encodeToString(ByteArray(32) { 0xFF.toByte() })
+        val short = Base64.getEncoder().encodeToString(ByteArray(31))
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, short, key)).isNull()
+        assertThat(E2eSafetyNumber.deriveForPeer(ours, key, short)).isNull()
     }
 
     private fun hex(hex: String): ByteArray {

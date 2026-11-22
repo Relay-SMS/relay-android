@@ -35,7 +35,11 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * our business. Blocked senders are dropped too, like on the SMS path.
  *
  * Error-log rules (§8.3): no keys, no addresses — state transitions
- * and conversation ids only.
+ * and conversation ids only. The handshake events (probe received,
+ * bundle sent, bundle rate-limited) are recorded in the error log
+ * via [E2eFailureRecorder] too — fixed messages only — so the
+ * inbound path stays visible in release builds, where Timber is a
+ * no-op (round 42 diagnostic).
  */
 @Singleton
 class E2eHandshakeHandler @Inject constructor(
@@ -50,6 +54,7 @@ class E2eHandshakeHandler @Inject constructor(
     private val messageDao: MessageDao,
     private val phoneIdentity: PhoneIdentity,
     private val blockedRepo: BlockedNumberRepository,
+    private val recorder: E2eFailureRecorder,
 ) {
 
     /**
@@ -99,6 +104,13 @@ class E2eHandshakeHandler @Inject constructor(
         subId: Int?,
         now: Long,
     ): Boolean {
+        // Round 42 diagnostic — the inbound path is Timber-only,
+        // and Timber is a no-op in release builds, so without this
+        // entry a received probe is invisible on device. Fires
+        // past the client-mode gate (E2eDataSmsGate) and the decode
+        // + blocked checks, so it means "a probe reached the
+        // handler". Fixed message only — no keys, no addresses.
+        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
         val peer = peers.getPeer(address)
         val curveB64 = Base64.getEncoder().encodeToString(probe.curveKey)
         val edB64 = Base64.getEncoder().encodeToString(probe.edKey)
@@ -116,6 +128,13 @@ class E2eHandshakeHandler @Inject constructor(
         // gated, so a re-probe tomorrow still finds fresh keys.
         if (!E2eProbePolicy.canReplyWithBundle(peer?.lastBundleReplyAt, now)) {
             Timber.i("E2E: bundle reply rate-limited (one per sender per day)")
+            // Without this entry, "probe received but no
+            // bundle-sent and no failure" is ambiguous — with it,
+            // every outcome is separable.
+            recorder.recordEvent(
+                "e2e-bundle-rate-limited",
+                "Bundle reply rate-limited (one per sender per day).",
+            )
             return true
         }
         val account = accountManager.get()
@@ -132,6 +151,7 @@ class E2eHandshakeHandler @Inject constructor(
             subId = subId,
             port = E2eHandshake.E2E_DATA_SMS_PORT,
             data = bundle,
+            kind = DataSmsKind.BUNDLE,
         )
         // Record the reply ONLY after the bundle SMS went out — a
         // failed send must not consume the day's reply.
@@ -141,6 +161,7 @@ class E2eHandshakeHandler @Inject constructor(
         // back up (and re-save the Account pickle).
         account.generateOneTimeKeys()
         Timber.i("E2E: bundle reply sent")
+        recorder.recordEvent("e2e-bundle-sent", "Bundle reply sent.")
         return true
     }
 

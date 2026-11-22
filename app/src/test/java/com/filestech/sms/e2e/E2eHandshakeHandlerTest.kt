@@ -18,6 +18,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import java.util.Base64
@@ -58,6 +59,7 @@ class E2eHandshakeHandlerTest {
         val conversationDao = mockk<ConversationDao>()
         val messageDao = mockk<MessageDao>()
         val phoneIdentity = mockk<PhoneIdentity>()
+        val recorder = mockk<E2eFailureRecorder>(relaxed = true)
 
         val peers = E2ePeerRepository(peerDao)
         val sessions = E2eSessionStore(sessionDao, aliceCrypto, fakeKeyManager())
@@ -80,6 +82,7 @@ class E2eHandshakeHandlerTest {
             messageDao = messageDao,
             phoneIdentity = phoneIdentity,
             blockedRepo = FakeBlockedRepo(),
+            recorder = recorder,
         )
 
         init {
@@ -181,6 +184,70 @@ class E2eHandshakeHandlerTest {
         harness.sender.result = true
         harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
         assertThat(harness.sender.sent).hasSize(2)
+    }
+
+    // ──────────────────── Round 42: inbound-path diagnostics ────────────────────
+    // The inbound path is Timber-only, and Timber is a no-op in
+    // release builds — so the handler records the handshake events
+    // in the error log (fixed messages, no keys, no addresses).
+    // The three tags make every outcome separable: no
+    // `e2e-probe-received` means the probe never arrived;
+    // `e2e-probe-received` + `e2e-bundle-sent` means inbound +
+    // reply work; `e2e-bundle-rate-limited` means the path worked
+    // recently (a reply already went out today).
+
+    @Test
+    fun `a probe records probe-received and bundle-sent`() = runTest {
+        val harness = Harness()
+
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        verify(exactly = 1) { harness.recorder.recordEvent("e2e-probe-received", any()) }
+        verify(exactly = 1) { harness.recorder.recordEvent("e2e-bundle-sent", any()) }
+        verify(exactly = 0) { harness.recorder.recordEvent("e2e-bundle-rate-limited", any()) }
+    }
+
+    @Test
+    fun `a rate-limited probe records rate-limited and no second bundle-sent`() = runTest {
+        val harness = Harness()
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        verify(exactly = 2) { harness.recorder.recordEvent("e2e-probe-received", any()) }
+        verify(exactly = 1) { harness.recorder.recordEvent("e2e-bundle-sent", any()) }
+        verify(exactly = 1) { harness.recorder.recordEvent("e2e-bundle-rate-limited", any()) }
+    }
+
+    @Test
+    fun `a failed bundle send records probe-received but no bundle-sent`() = runTest {
+        val harness = Harness()
+        harness.sender.result = false
+
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        verify(exactly = 1) { harness.recorder.recordEvent("e2e-probe-received", any()) }
+        verify(exactly = 0) { harness.recorder.recordEvent("e2e-bundle-sent", any()) }
+        verify(exactly = 0) { harness.recorder.recordEvent("e2e-bundle-rate-limited", any()) }
+    }
+
+    @Test
+    fun `a dropped packet records nothing`() = runTest {
+        val harness = Harness()
+
+        harness.handler.handleDataSms(BOB, "not a handshake".toByteArray(), null, NOW)
+
+        verify(exactly = 0) { harness.recorder.recordEvent(any(), any()) }
+    }
+
+    @Test
+    fun `the bundle reply send passes the BUNDLE kind`() = runTest {
+        val harness = Harness()
+
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        assertThat(harness.sender.sent).hasSize(1)
+        assertThat(harness.sender.sent.single().kind).isEqualTo(DataSmsKind.BUNDLE)
     }
 
     // ──────────────────────────── Bundle → ENCRYPTED ────────────────────────────

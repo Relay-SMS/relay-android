@@ -7,7 +7,10 @@ package com.filestech.sms.data.local.db.entity
  * reads as [ACTIVATED] instead of crashing the read (the safest fallback: the
  * notice still renders as an encryption event, not as a key-change warning).
  *
- * Notices are local-only: never sent, never synced, never backed up.
+ * Notices are never sent to the peer and never backed up — but they
+ * DO sync to the user's own linked devices over the encrypted device
+ * link (round 42), so a desktop thread shows the same system rows as
+ * the phone thread.
  */
 enum class E2eNoticeKind {
     /** "Messages are now end-to-end encrypted." — the state flipped to ENCRYPTED. */

@@ -13,6 +13,7 @@ import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,6 +65,7 @@ class E2eProbeManagerTest {
         val conversationDao: ConversationDao = mockk(),
         val settings: AppSettingsSource = SettingsWithSubId(CHOSEN_SUB_ID),
         val crypto: FakeE2eCrypto = FakeE2eCrypto("alice"),
+        val recorder: E2eFailureRecorder = mockk(relaxed = true),
         scope: CoroutineScope,
     ) {
         val peers = E2ePeerRepository(peerDao)
@@ -77,6 +79,7 @@ class E2eProbeManagerTest {
             dataSmsSender = sender,
             settings = settings,
             scope = scope,
+            recorder = recorder,
         )
 
         fun seedPeer(
@@ -542,5 +545,162 @@ class E2eProbeManagerTest {
         testScheduler.advanceUntilIdle()
 
         assertThat(harness.sender.sent).isEmpty()
+    }
+
+    // ─────── Round 42: canonical key + manual-retry recording ───────
+    // The probe used to write the peer row under the raw
+    // conversation form while the thread UI observed the normalized
+    // form — a peer whose number was stored with formatting never
+    // showed its state change in the panel. And a manual retry that
+    // did nothing left no trace anywhere.
+
+    @Test
+    fun `a formatted conversation number writes the peer row under the normalized key`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith("+33 6 12 34 56 78")
+
+        val probed = harness.manager.probeConversation(11L, NOW)
+
+        assertThat(probed).isTrue()
+        // The SMS still goes to the number as stored; the ROW is
+        // keyed by the normalized form, which is what the thread UI
+        // observes — so the panel sees the PROBING flip.
+        assertThat(harness.sender.sent.single().address).isEqualTo("+33 6 12 34 56 78")
+        assertThat(harness.peerDao.peers["+33612345678"]?.state)
+            .isEqualTo(E2ePeerState.PROBING)
+        assertThat(harness.peerDao.peers).doesNotContainKey("+33 6 12 34 56 78")
+        assertThat(harness.peers.state(ALICE)).isEqualTo(E2ePeerState.PROBING)
+    }
+
+    @Test
+    fun `probeConversationDetailed reports a missing conversation as gated`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns null
+
+        val result = harness.manager.probeConversationDetailed(11L, NOW)
+
+        assertThat(result).isEqualTo(ProbeResult.Gated(ProbeGate.NoConversation))
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `probeConversationDetailed reports a group as gated`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith("$ALICE;+33687654321")
+
+        val result = harness.manager.probeConversationDetailed(11L, NOW)
+
+        assertThat(result).isEqualTo(ProbeResult.Gated(ProbeGate.NotOneToOne))
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `probeAddressDetailed reports a short code as gated`() = runTest {
+        val harness = Harness(scope = this)
+
+        val result = harness.manager.probeAddressDetailed("3615", null, now = NOW)
+
+        assertThat(result).isEqualTo(ProbeResult.Gated(ProbeGate.InvalidAddress))
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `probeAddressDetailed reports a failed send`() = runTest {
+        val harness = Harness(scope = this)
+        harness.sender.result = false
+
+        val result = harness.manager.probeAddressDetailed(ALICE, null, now = NOW)
+
+        assertThat(result).isEqualTo(ProbeResult.SendFailed)
+        assertThat(harness.peers.getPeer(ALICE)).isNull()
+    }
+
+    @Test
+    fun `a gated manual retry records the reason`() = runTest {
+        val harness = Harness(scope = this, blocked = FakeBlockedRepo(setOf(ALICE)))
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+
+        harness.manager.retryProbe(11L)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sent).isEmpty()
+        verify(exactly = 1) {
+            harness.recorder.recordEvent(
+                "e2e-manual-retry",
+                "Manual retry refused: number is blocked.",
+            )
+        }
+        verify(exactly = 0) { harness.recorder.record(any(), any()) }
+    }
+
+    @Test
+    fun `a failed manual retry records the failure`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+        harness.sender.result = false
+
+        harness.manager.retryProbe(11L)
+        testScheduler.advanceUntilIdle()
+
+        verify(exactly = 1) {
+            harness.recorder.recordEvent(
+                "e2e-manual-retry",
+                "Manual retry failed: the probe could not be sent.",
+            )
+        }
+    }
+
+    @Test
+    fun `a manual retry to a missing conversation records the reason`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns null
+
+        harness.manager.retryProbe(11L)
+        testScheduler.advanceUntilIdle()
+
+        verify(exactly = 1) {
+            harness.recorder.recordEvent(
+                "e2e-manual-retry",
+                "Manual retry refused: no conversation.",
+            )
+        }
+    }
+
+    @Test
+    fun `a successful manual retry records nothing`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+
+        harness.manager.retryProbe(11L)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sent).hasSize(1)
+        verify(exactly = 0) { harness.recorder.recordEvent(any(), any()) }
+        verify(exactly = 0) { harness.recorder.record(any(), any()) }
+    }
+
+    @Test
+    fun `an automatic probe gate records nothing`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+        harness.seedPeer(
+            state = E2ePeerState.UNKNOWN,
+            attempts = 3,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 2 * MS_PER_DAY,
+        )
+
+        harness.manager.onThreadOpened(11L)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sent).isEmpty()
+        verify(exactly = 0) { harness.recorder.recordEvent(any(), any()) }
+        verify(exactly = 0) { harness.recorder.record(any(), any()) }
     }
 }

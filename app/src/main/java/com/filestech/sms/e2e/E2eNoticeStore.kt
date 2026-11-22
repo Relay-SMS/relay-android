@@ -13,8 +13,10 @@ import javax.inject.Singleton
  * Notices are centered system rows, not bubbles: "Messages are now end-to-end
  * encrypted.", "NAME's security code changed. …". The row stores the KIND, not its
  * wording — the wording lives in string resources, so a notice renders in the
- * user's current language. Notices are local-only: never sent, never synced, never
- * backed up.
+ * user's current language. Notices are never sent to the peer
+ * and never backed up — but they DO sync to the user's own
+ * linked devices over the encrypted device link (round 42), so a
+ * desktop thread shows the same system rows as the phone thread.
  *
  * The ACTIVATED notice shows once per conversation per identity — not on every
  * re-establishment with the same keys. [recordOnce] is the once-per-conversation
@@ -66,6 +68,21 @@ class E2eNoticeStore @Inject constructor(
      */
     fun observeNotices(conversationId: Long): Flow<List<E2eNoticeEntity>> =
         noticeDao.observeForConversation(conversationId)
+
+    /**
+     * E2E sync (round 42) — every notice, oldest first: the
+     * device-link snapshot source (the in-thread notice set).
+     * One-shot, for the snapshot paths.
+     */
+    suspend fun allNotices(): List<E2eNoticeEntity> = noticeDao.allNotices()
+
+    /**
+     * E2E sync (round 42) — the live version of [allNotices]:
+     * re-emits whenever any `e2e_notices` row changes, so a
+     * notice recorded while a desktop is linked re-sends the full
+     * set to every linked device.
+     */
+    fun observeAllNotices(): Flow<List<E2eNoticeEntity>> = noticeDao.observeAll()
 
     /** Deletes a conversation's notices (conversation deleted). */
     suspend fun deleteForConversation(conversationId: Long): Int =

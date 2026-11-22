@@ -195,11 +195,10 @@
     <string name="e2e_details_encrypted">End-to-end encrypted</string>
     <string name="e2e_details_verify_tap">Tap to verify %1$s\'s safety number</string>
     <string name="e2e_details_verified">Verified ✓</string>
-    <string name="e2e_details_setting_up">Setting up encryption…</string>
+    <string name="e2e_details_setting_up">Checking if %1$s uses Relay…</string>
     <string name="e2e_details_not_encrypted">Not encrypted</string>
-    <string name="e2e_details_not_relay">%1$s doesn\'t use Relay yet</string>
+    <string name="e2e_details_retry_setup">Tap to retry encryption setup</string>
     <string name="e2e_details_auto_start">Encryption starts automatically when %1$s uses Relay</string>
-    <string name="e2e_details_retry_encryption">Retry encryption</string>
     <string name="e2e_verify_title">Safety number</string>
     <string name="e2e_verify_explainer">Compare this number with %1$s in person or over another channel — a call, or another app. If the numbers match, you\'re talking to each other and no one in between.</string>
     <string name="e2e_verify_mark">Mark as verified</string>

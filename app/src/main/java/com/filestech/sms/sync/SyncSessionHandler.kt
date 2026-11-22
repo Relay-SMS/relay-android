@@ -36,7 +36,9 @@ import java.util.Base64
  * (`create_note`, `save_note_message`, `edit_note_message`,
  * `rename_note`, `delete_note`, `delete_note_message`,
  * `set_note_pin`, `set_note_archived`, `note_messages_request`),
- * dispatched through the session engine's note engine.
+ * dispatched through the session engine's note engine. Round 42
+ * adds the E2E frames (`set_e2e_verified`, `retry_e2e_probe`),
+ * dispatched the same way.
  *
  * @param send carries one outbound text frame to the client.
  * @param close closes the socket; [reason] is a short human-readable
@@ -108,8 +110,19 @@ class SyncSessionHandler(
             is SyncProtocol.Parsed.SetNotePin -> onSetNotePin(parsed.value)
             is SyncProtocol.Parsed.SetNoteArchived -> onSetNoteArchived(parsed.value)
             is SyncProtocol.Parsed.NoteMessagesRequest -> onNoteMessagesRequest(parsed.value)
+            // E2E commands (round 42) share one arm — the sub-interface
+            // keeps this dispatch under the Detekt complexity cap (40).
+            is SyncProtocol.Parsed.E2eCommand -> dispatchE2e(parsed)
             is SyncProtocol.Parsed.Unknown -> onUnknown(parsed.type)
             SyncProtocol.Parsed.Malformed -> onProtocolViolation()
+        }
+    }
+
+    /** E2E command dispatch (round 42): one arm in [onText], split out here. */
+    private suspend fun dispatchE2e(parsed: SyncProtocol.Parsed.E2eCommand) {
+        when (parsed) {
+            is SyncProtocol.Parsed.SetE2eVerified -> onSetE2eVerified(parsed.value)
+            is SyncProtocol.Parsed.RetryE2eProbe -> onRetryE2eProbe(parsed.value)
         }
     }
 
@@ -384,6 +397,20 @@ class SyncSessionHandler(
 
     private suspend fun onNoteMessagesRequest(request: SyncProtocol.NoteMessagesRequest) {
         withEngine { it.noteEngine?.onNoteMessagesRequest(request) }
+    }
+
+    /**
+     * Round 42 — the E2E frames need auth too: an unauthenticated
+     * verified-set or probe-retry frame is a protocol violation,
+     * like an unauthenticated send. The engine runs each in its
+     * own job, never on the frame loop.
+     */
+    private suspend fun onSetE2eVerified(request: SyncProtocol.SetE2eVerified) {
+        withEngine { it.onSetE2eVerified(request) }
+    }
+
+    private suspend fun onRetryE2eProbe(request: SyncProtocol.RetryE2eProbe) {
+        withEngine { it.onRetryE2eProbe(request) }
     }
 
     /**

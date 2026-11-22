@@ -83,6 +83,20 @@ import java.util.concurrent.ConcurrentHashMap
  * the stream proceeds. Debug logging here is counts only — contact
  * names and numbers never reach the log.
  *
+ * Round 42 adds the E2E safety-number + notice sync: the
+ * `set_e2e_verified` / `retry_e2e_probe` handlers
+ * ([onSetE2eVerified], [onRetryE2eProbe]) — through [runAction],
+ * like the other flag actions, with the address echoed on
+ * `action_result` — plus two live collectors
+ * ([collectE2eSafetyNumbers], [collectE2eNotices]) that push the
+ * full sets whenever they change on the phone, and the same full
+ * sets after every snapshot in [runStream]. The E2E sync is gated
+ * on the [e2eSource] being present (null in tests): without it,
+ * no E2E frame is sent and the commands answer `ok: false`.
+ * There is no E2E on/off setting to gate on — E2E itself is
+ * always on (lazy identity), and the only encryption setting
+ * (auto-discovery) governs outbound probes, not sync.
+ *
  * The engine holds no state beyond the session: cursors live on the
  * desktop. The per-conversation "max sent id" tracking exists only
  * to keep the live path from re-pushing whole threads.
@@ -108,6 +122,9 @@ import java.util.concurrent.ConcurrentHashMap
  * @param noteSource the note store seam, or null when the session
  * has none (tests): the notes phase is skipped and note frames are
  * ignored.
+ * @param e2eSource the E2E store seam, or null when the session
+ * has none (tests): no E2E frame is sent and the E2E commands
+ * answer `ok: false` instead of crashing.
  */
 class SyncEngine(
     private val source: SyncMessageSource,
@@ -116,6 +133,7 @@ class SyncEngine(
     private val wakelock: SyncWakelock,
     private val callDialer: CallDialer? = null,
     private val noteSource: NoteSyncSource? = null,
+    private val e2eSource: E2eSyncSource? = null,
 ) {
     private val engineJob = SupervisorJob(parentScope.coroutineContext[Job])
     private val scope = CoroutineScope(parentScope.coroutineContext + engineJob)
@@ -157,6 +175,8 @@ class SyncEngine(
         scope.launch { collectConversations() }
         scope.launch { collectMessageStates() }
         scope.launch { collectCategoryMutes() }
+        scope.launch { collectE2eSafetyNumbers() }
+        scope.launch { collectE2eNotices() }
         noteEngine?.start()
     }
 
@@ -540,6 +560,40 @@ class SyncEngine(
         }
     }
 
+    // -- Round 42: E2E safety numbers + notices ------------------------
+    // Same shape as the other handlers: starts a job and returns
+    // immediately, so a slow write never blocks the frame loop.
+    // Answered with `action_result` (the address echoed); the
+    // collector's re-send of the full set is the confirmation.
+
+    /** Handles a `set_e2e_verified`, answered with `action_result`. */
+    fun onSetE2eVerified(request: SyncProtocol.SetE2eVerified) {
+        scope.launch {
+            runAction("set_e2e_verified", null, null, address = request.address) {
+                e2eSource?.setVerified(request.address, request.verified)
+                    ?: ActionResult(
+                        ok = false,
+                        code = SyncProtocol.MessageFailed.INTERNAL,
+                        message = "Encryption sync isn't available on this phone.",
+                    )
+            }
+        }
+    }
+
+    /** Handles a `retry_e2e_probe`, answered with `action_result`. */
+    fun onRetryE2eProbe(request: SyncProtocol.RetryE2eProbe) {
+        scope.launch {
+            runAction("retry_e2e_probe", null, null, address = request.address) {
+                e2eSource?.retryProbe(request.address)
+                    ?: ActionResult(
+                        ok = false,
+                        code = SyncProtocol.MessageFailed.INTERNAL,
+                        message = "Encryption sync isn't available on this phone.",
+                    )
+            }
+        }
+    }
+
     /** Cancels the stream and both collectors. Called when the session ends. */
     fun stop() {
         streamJob?.cancel()
@@ -625,6 +679,40 @@ class SyncEngine(
         // and the collector sends the set on the next change.
         source.mutedCategories()?.let {
             send(SyncProtocol.encodeCategoryMutes(SyncProtocol.CategoryMutes(it.sorted())))
+        }
+        // Round 42 — the E2E sets ride right after the snapshot,
+        // next to the category mutes, so a fresh connection learns
+        // the safety numbers, verified flags and in-thread notices
+        // without waiting for a change.
+        sendE2eSnapshot()
+    }
+
+    /**
+     * Round 42 — sends the full E2E sets after the snapshot. A
+     * failed read skips that frame (an empty set would wrongly
+     * clear the desktop's state) — and the collectors send the
+     * sets on the next change. A failure here must never fail the
+     * message sync: the identity-key read can fail on a device
+     * whose Keystore is unhappy (round 39). A session without an
+     * E2E source sends nothing.
+     */
+    private suspend fun sendE2eSnapshot() {
+        val e2e = e2eSource ?: return
+        try {
+            val peers = e2e.safetyNumbers()
+            send(SyncProtocol.encodeE2eSafetyNumbers(SyncProtocol.E2eSafetyNumbers(peers)))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            Timber.w(t, "SyncEngine: e2e safety numbers unreadable, skipping")
+        }
+        try {
+            val notices = e2e.notices()
+            send(SyncProtocol.encodeE2eNotices(SyncProtocol.E2eNotices(notices)))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            Timber.w(t, "SyncEngine: e2e notices unreadable, skipping")
         }
     }
 
@@ -788,13 +876,16 @@ class SyncEngine(
      * thrown error answers `ok: false` with `internal` — the socket
      * stays up, and the desktop reverts its optimistic change.
      * [category] echoes back on `action_result` for category
-     * actions (only `set_category_muted` sets it).
+     * actions (only `set_category_muted` sets it). [address]
+     * echoes back on `action_result` for address actions (only
+     * `set_e2e_verified` / `retry_e2e_probe` set it).
      */
     private suspend fun runAction(
         action: String,
         conversationId: String?,
         messageId: String?,
         category: String? = null,
+        address: String? = null,
         call: suspend (conversationId: Long) -> ActionResult,
     ) {
         val result = try {
@@ -825,6 +916,7 @@ class SyncEngine(
                         action = action,
                         conversationId = conversationId,
                         messageId = messageId,
+                        address = address,
                         category = category,
                         ok = result.ok,
                         code = result.code,
@@ -980,6 +1072,39 @@ class SyncEngine(
     private suspend fun collectCategoryMutes() {
         source.observeMutedCategories().drop(1).distinctUntilChanged().collect { muted ->
             send(SyncProtocol.encodeCategoryMutes(SyncProtocol.CategoryMutes(muted.sorted())))
+        }
+    }
+
+    /**
+     * Round 42 — safety-number collector: the first emission is
+     * the baseline — silent (the snapshot sends the full set
+     * itself) — and every later change pushes an
+     * `e2e_safety_numbers` with the full set, so the desktop
+     * replaces its list wholesale. `distinctUntilChanged`
+     * swallows the re-emissions an unrelated peer-table write
+     * causes upstream (Room re-emits on every write). A session
+     * without an E2E source collects nothing.
+     */
+    private suspend fun collectE2eSafetyNumbers() {
+        val e2e = e2eSource ?: return
+        e2e.observeSafetyNumbers().drop(1).distinctUntilChanged().collect { peers ->
+            send(SyncProtocol.encodeE2eSafetyNumbers(SyncProtocol.E2eSafetyNumbers(peers)))
+        }
+    }
+
+    /**
+     * Round 42 — notice collector: the first emission is the
+     * baseline — silent (the snapshot sends the full set itself)
+     * — and every later change pushes an `e2e_notices` with the
+     * full set, so the desktop replaces its list wholesale.
+     * `distinctUntilChanged` swallows the re-emissions an
+     * unrelated notice-table write causes upstream. A session
+     * without an E2E source collects nothing.
+     */
+    private suspend fun collectE2eNotices() {
+        val e2e = e2eSource ?: return
+        e2e.observeNotices().drop(1).distinctUntilChanged().collect { notices ->
+            send(SyncProtocol.encodeE2eNotices(SyncProtocol.E2eNotices(notices)))
         }
     }
 

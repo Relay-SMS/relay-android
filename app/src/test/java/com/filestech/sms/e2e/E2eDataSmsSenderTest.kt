@@ -16,10 +16,11 @@ import org.junit.jupiter.api.Test
 
 /**
  * The handshake data-SMS sender: a send the radio refuses is
- * recorded in the local error log (tag `e2e-probe-send`) with
- * the exception's class only — never its message, so a
- * destination address can never leak into the log — and a
- * successful send records nothing.
+ * recorded in the local error log (tag `e2e-probe-send` for a
+ * probe, `e2e-bundle-send` for a bundle reply) with the
+ * exception's class only — never its message, so a destination
+ * address can never leak into the log — and a successful send
+ * records nothing.
  *
  * Plain-JVM note: `Build.VERSION.SDK_INT` is 0 under the unit
  * tests, so the sender takes the legacy branch
@@ -30,7 +31,7 @@ class E2eDataSmsSenderTest {
 
     private lateinit var recorder: E2eFailureRecorder
     private lateinit var manager: SmsManager
-    private lateinit var sender: E2eDataSmsSenderImpl
+    private lateinit var sender: E2eDataSmsSender
 
     @BeforeEach
     fun setUp() {
@@ -106,6 +107,48 @@ class E2eDataSmsSenderTest {
 
         assertThat(sent).isTrue()
         verify(exactly = 0) { recorder.record(any(), any()) }
+    }
+
+    @Test
+    fun `a bundle send failure records e2e-bundle-send, not e2e-probe-send`() {
+        every {
+            manager.sendDataMessage(any(), any(), any(), any(), any(), any())
+        } throws IllegalStateException("radio off")
+
+        val sent = sender.sendDataMessage(
+            ADDRESS,
+            null,
+            E2eHandshake.E2E_DATA_SMS_PORT,
+            byteArrayOf(1),
+            kind = DataSmsKind.BUNDLE,
+        )
+
+        assertThat(sent).isFalse()
+        val throwable = slot<Throwable>()
+        verify(exactly = 1) { recorder.record("e2e-bundle-send", capture(throwable)) }
+        verify(exactly = 0) { recorder.record("e2e-probe-send", any()) }
+        assertThat(throwable.captured).isInstanceOf(E2eCryptoException::class.java)
+        assertThat(throwable.captured.message).contains("IllegalStateException")
+        assertThat(throwable.captured.message).doesNotContain(ADDRESS)
+        assertThat(throwable.captured.cause).isNull()
+    }
+
+    @Test
+    fun `an explicit probe kind records e2e-probe-send`() {
+        every {
+            manager.sendDataMessage(any(), any(), any(), any(), any(), any())
+        } throws IllegalStateException("radio off")
+
+        val sent = sender.sendDataMessage(
+            ADDRESS,
+            null,
+            E2eHandshake.E2E_DATA_SMS_PORT,
+            byteArrayOf(1),
+            kind = DataSmsKind.PROBE,
+        )
+
+        assertThat(sent).isFalse()
+        verify(exactly = 1) { recorder.record("e2e-probe-send", any()) }
     }
 
     private companion object {

@@ -13,8 +13,10 @@ import androidx.room.PrimaryKey
  * Deliberately no foreign key to `conversations`: a notice is local derived state,
  * and the conversation eraser deletes notices explicitly
  * ([com.filestech.sms.data.local.db.dao.E2eNoticeDao.deleteForConversation]).
- * Notices are never synced and never backed up (a restore re-derives them from the
- * peer state, or they simply don't reappear — acceptable per the design).
+ * Notices are never sent to the peer and never backed up (a restore re-derives them
+ * from the peer state, or they simply don't reappear — acceptable per the design).
+ * They DO sync to the user's own linked devices over the encrypted device link
+ * (round 42), so a desktop thread shows the same system rows as the phone thread.
  */
 @Entity(tableName = "e2e_notices")
 data class E2eNoticeEntity(

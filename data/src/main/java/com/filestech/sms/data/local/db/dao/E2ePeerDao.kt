@@ -68,6 +68,25 @@ interface E2ePeerDao {
     fun observeEncryptedAddresses(): Flow<List<String>>
 
     /**
+     * E2E sync (round 42) — every peer row, address order: the
+     * device-link snapshot source (the safety-number + verified
+     * set). A stable order keeps the frame stable.
+     */
+    @Query("SELECT * FROM e2e_peers ORDER BY address ASC")
+    suspend fun allPeers(): List<E2ePeerEntity>
+
+    /**
+     * E2E sync (round 42) — the live version of [allPeers]:
+     * re-emits whenever any `e2e_peers` row changes, so a state
+     * flip, a key arrival, or a verified toggle re-sends the full
+     * set to every linked device. Room invalidates on any write
+     * to the table — the collector dedupes the no-change
+     * emissions.
+     */
+    @Query("SELECT * FROM e2e_peers ORDER BY address ASC")
+    fun observeAllPeers(): Flow<List<E2ePeerEntity>>
+
+    /**
      * Inserts a peer row, ignoring the insert if the address already has one —
      * the get-or-create path, safe under concurrent first contact.
      */

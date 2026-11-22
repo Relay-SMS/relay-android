@@ -98,4 +98,65 @@ class E2eFailureRecorderTest {
 
         assertThat(brokenStore.listReports()).isEmpty()
     }
+
+    // -- recordEvent (round 42): success-event diagnostics --------
+
+    @Test
+    fun `recordEvent writes an entry titled by the tag, with the tag and message in the body`() {
+        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+
+        val reports = store.listReports()
+        assertThat(reports).hasSize(1)
+        // The list title is the tag itself — the user sees which
+        // event fired without opening the entry.
+        assertThat(reports.single().crashType).isEqualTo("e2e-probe-received")
+        val text = store.readReport(reports.single().id)
+        assertThat(text).contains("Relay diagnostic — e2e-probe-received")
+        assertThat(text).contains("Probe received; replying with a bundle.")
+        assertThat(text).contains("E2eDiagnosticEvent")
+        assertThat(text).doesNotContain("Relay crash report")
+    }
+
+    @Test
+    fun `recordEvent writes nothing when the error log is off`() {
+        every { settings.enabled } returns false
+
+        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+
+        assertThat(store.listReports()).isEmpty()
+    }
+
+    @Test
+    fun `recordEvent dedupes the same event per process`() {
+        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+
+        assertThat(store.listReports()).hasSize(1)
+    }
+
+    @Test
+    fun `recordEvent keeps distinct events as separate entries`() {
+        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+        recorder.recordEvent("e2e-bundle-sent", "Bundle reply sent.")
+        recorder.recordEvent("e2e-bundle-rate-limited", "Bundle reply rate-limited (one per sender per day).")
+
+        val reports = store.listReports()
+        assertThat(reports).hasSize(3)
+        assertThat(reports.map { it.crashType }).containsExactly(
+            "e2e-probe-received",
+            "e2e-bundle-sent",
+            "e2e-bundle-rate-limited",
+        )
+    }
+
+    @Test
+    fun `recordEvent never throws when the store cannot write`() {
+        val blocker = File(tempDir, "blocker").apply { writeText("not a directory") }
+        val brokenStore = CrashReportStore(blocker)
+        val brokenRecorder = E2eFailureRecorder(brokenStore, settings)
+
+        brokenRecorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+
+        assertThat(brokenStore.listReports()).isEmpty()
+    }
 }

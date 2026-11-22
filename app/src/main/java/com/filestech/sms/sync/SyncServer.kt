@@ -118,6 +118,9 @@ import javax.inject.Singleton
  * @param noteSource the note store seam handed to each session's
  * engine, or null when the server has none (tests): the notes
  * phase is then skipped and note frames are ignored.
+ * @param e2eSource the E2E store seam handed to each session's
+ * engine, or null when the server has none (tests): no E2E frame
+ * is then sent and the E2E commands answer `ok: false`.
  */
 @Singleton
 class SyncServer @Inject constructor(
@@ -130,6 +133,7 @@ class SyncServer @Inject constructor(
     private val callStateObserver: CallStateObserver? = null,
     private val callDialer: CallDialer? = null,
     private val noteSource: NoteSyncSource? = null,
+    private val e2eSource: E2eSyncSource? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val startStopMutex = Mutex()
@@ -529,6 +533,7 @@ class SyncServer @Inject constructor(
             wakelock = syncWakelock,
             callDialer = callDialer,
             noteSource = noteSource,
+            e2eSource = e2eSource,
         )
         val handler = SyncSessionHandler(
             lookup = store,

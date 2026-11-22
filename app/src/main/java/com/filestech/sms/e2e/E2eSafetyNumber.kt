@@ -1,6 +1,7 @@
 package com.filestech.sms.e2e
 
 import java.security.MessageDigest
+import java.util.Base64
 
 /**
  * The safety number (design §5.1): both sides compute the same 60-digit
@@ -60,6 +61,38 @@ object E2eSafetyNumber {
             "%05d".format(groupValue(hash, groupIndex) % GROUP_MODULUS)
         }
     }
+
+    /**
+     * Derives the safety number from OUR identity keys and a peer's
+     * STORED bundle keys (base64 strings, as [E2ePeerEntity] holds
+     * them) — or null when it cannot be derived: no stored keys, keys
+     * that do not decode, or keys of the wrong length.
+     *
+     * The one derivation every surface uses: the verification sheet
+     * ([com.filestech.sms.ui.components.E2eVerificationViewModel])
+     * and the device-link sync ([com.filestech.sms.sync.E2eSyncSource])
+     * both call this, so the number the desktop shows is
+     * byte-identical to the number the phone shows — the desktop
+     * stores and displays the formatted string verbatim, never
+     * re-deriving. The caller decides when our keys may be loaded:
+     * this function never touches the account itself.
+     */
+    fun deriveForPeer(
+        ours: IdentityKeys,
+        theirCurveKey: String?,
+        theirEdKey: String?,
+    ): String? {
+        val theirCurve = theirCurveKey?.let { decodeKey(it) } ?: return null
+        val theirEd = theirEdKey?.let { decodeKey(it) } ?: return null
+        return runCatching {
+            derive(ours.curve25519, theirCurve, ours.ed25519, theirEd)
+        }.getOrNull()
+    }
+
+    /** Decodes one stored base64 identity key, or null when malformed. */
+    private fun decodeKey(base64: String): ByteArray? =
+        runCatching { Base64.getDecoder().decode(base64) }.getOrNull()
+            ?.takeIf { it.size == E2E_KEY_LENGTH }
 
     /**
      * The value of one 20-bit group: bits [20*i, 20*i+20) of the hash,

@@ -466,6 +466,76 @@ class SyncSessionHandlerTest {
         assertThat(harness.closes).hasSize(1)
     }
 
+    // -- Round 42: E2E frames -------------------------------------------
+
+    @Test fun `an authenticated set_e2e_verified reaches the engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+
+            harness.handler.onText("""{"type":"set_e2e_verified","address":"+33612345678","verified":true}""")
+            advanceUntilIdle()
+            val results = engineSent.filter { it.frameType() == "action_result" }
+            assertThat(results).hasSize(1)
+            val result = Json.parseToJsonElement(results.first()).jsonObject
+            assertThat(result["action"]?.jsonPrimitive?.content).isEqualTo("set_e2e_verified")
+            assertThat(result["address"]?.jsonPrimitive?.content).isEqualTo("+33612345678")
+            // No E2E source on this test engine: the refusal itself
+            // proves the frame reached the engine's handler.
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("false")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test fun `an unauthenticated set_e2e_verified fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText("""{"type":"set_e2e_verified","address":"+33612345678","verified":true}""")
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
+    @Test fun `an authenticated retry_e2e_probe reaches the engine`() = runTest {
+        val source = FakeSyncMessageSource()
+        val engineSent = mutableListOf<String>()
+        val engine = SyncEngine(source, this, send = { engineSent += it }, wakelock = NoOpSyncWakelock)
+        val harness = Harness(mapOf(DEVICE_ID to device), engine = engine)
+        try {
+            harness.handler.onText(helloJson())
+            harness.handler.onText(authJson(harness.challengeBytes()))
+
+            harness.handler.onText("""{"type":"retry_e2e_probe","address":"+33612345678"}""")
+            advanceUntilIdle()
+            val results = engineSent.filter { it.frameType() == "action_result" }
+            assertThat(results).hasSize(1)
+            val result = Json.parseToJsonElement(results.first()).jsonObject
+            assertThat(result["action"]?.jsonPrimitive?.content).isEqualTo("retry_e2e_probe")
+            assertThat(result["address"]?.jsonPrimitive?.content).isEqualTo("+33612345678")
+            // No E2E source on this test engine: the refusal itself
+            // proves the frame reached the engine's handler.
+            assertThat(result["ok"]?.jsonPrimitive?.content).isEqualTo("false")
+            assertThat(harness.closes).isEmpty()
+        } finally {
+            engine.stop()
+            advanceUntilIdle()
+        }
+    }
+
+    @Test fun `an unauthenticated retry_e2e_probe fails with protocol and closes`() = runTest {
+        val harness = Harness(mapOf(DEVICE_ID to device))
+        harness.handler.onText("""{"type":"retry_e2e_probe","address":"+33612345678"}""")
+        assertThat(harness.lastAuthFailedReason())
+            .isEqualTo(SyncProtocol.AuthFailed.PROTOCOL)
+        assertThat(harness.closes).hasSize(1)
+    }
+
     // -- Slice 5: contact frames ----------------------------------------
 
     @Test fun `an unauthenticated contacts_request fails with protocol and closes`() = runTest {

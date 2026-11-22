@@ -98,4 +98,48 @@ class E2eNoticeStoreTest {
 
         assertThat(store.deleteForConversation(conversationId)).isEqualTo(2)
     }
+
+    // -- Round 42: the device-link snapshot source ----------------------
+
+    @Test
+    fun `allNotices returns every notice oldest first`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        dao.notices += E2eNoticeEntity(
+            id = 2,
+            conversationId = conversationId,
+            kind = E2eNoticeKind.KEY_CHANGED,
+            date = now + 1000,
+        )
+        dao.notices += E2eNoticeEntity(
+            id = 1,
+            conversationId = conversationId,
+            kind = E2eNoticeKind.ACTIVATED,
+            date = now,
+        )
+        val store = E2eNoticeStore(dao)
+
+        val all = store.allNotices()
+
+        assertThat(all.map { it.id }).containsExactly(1L, 2L).inOrder()
+    }
+
+    @Test
+    fun `observeAllNotices emits every notice`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        dao.notices += E2eNoticeEntity(
+            id = 1,
+            conversationId = conversationId,
+            kind = E2eNoticeKind.ACTIVATED,
+            date = now,
+        )
+        val store = E2eNoticeStore(dao)
+
+        var emitted = 0
+        store.observeAllNotices().collect { all ->
+            emitted++
+            assertThat(all).hasSize(1)
+            assertThat(all[0].kind).isEqualTo(E2eNoticeKind.ACTIVATED)
+        }
+        assertThat(emitted).isEqualTo(1)
+    }
 }

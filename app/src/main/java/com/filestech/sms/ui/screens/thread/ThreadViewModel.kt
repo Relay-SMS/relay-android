@@ -578,6 +578,12 @@ class ThreadViewModel @Inject constructor(
         data class OpenAddContact(val rawNumber: String) : Event
 
         /**
+         * "Modifier le contact" (round 42) — ouvre l'éditeur système sur la fiche du
+         * contact existant (`ACTION_EDIT` + URI du contact), sans passer par le sélecteur.
+         */
+        data class OpenEditContact(val contactId: Long) : Event
+
+        /**
          * "Créer un contact" — ouvre l'éditeur système sur une fiche vierge pré-remplie
          * (`ACTION_INSERT`), sans passer par le sélecteur de contacts existants.
          */
@@ -2238,6 +2244,34 @@ class ThreadViewModel @Inject constructor(
     fun requestAddContact() {
         val addr = _state.value.conversation?.addresses?.firstOrNull()?.raw ?: return
         _events.tryEmit(Event.OpenAddContact(addr))
+    }
+
+    /**
+     * "Edit contact" in the details panel (round 42): the thread's
+     * number is already saved, so the system editor opens on THAT
+     * person's card — `ACTION_EDIT` with the contact URI, not the
+     * `ACTION_INSERT_OR_EDIT` selector [requestAddContact] uses
+     * (without a URI, the Contacts app opens the whole list).
+     * The contact is re-looked-up on tap (fresh, like
+     * [openMemberContact]): if it was deleted since the thread
+     * loaded, or the lookup fails (`READ_CONTACTS` denied throws
+     * `SecurityException`), fall back to the add flow — better
+     * than nothing, and never a crash.
+     */
+    fun requestEditContact() {
+        val addr = _state.value.conversation?.addresses?.firstOrNull()?.raw ?: return
+        viewModelScope.launch {
+            val contactId = com.filestech.sms.core.result
+                .runCatchingCancellable { contactRepo.lookupByPhone(addr) }
+                .getOrNull()?.id
+            _events.tryEmit(
+                if (contactId != null) {
+                    Event.OpenEditContact(contactId)
+                } else {
+                    Event.OpenAddContact(addr)
+                },
+            )
+        }
     }
 
     fun requestCreateContact() {

@@ -99,6 +99,7 @@ import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.GroupMemberAvatar
 import com.filestech.sms.ui.components.RelayAvatar
 import com.filestech.sms.ui.components.RelayGroupAvatar
+import com.filestech.sms.ui.components.RelayGroupItem
 import com.filestech.sms.ui.components.RelaySettingRow
 import com.filestech.sms.ui.components.rememberAttachmentOpener
 import com.filestech.sms.ui.screens.media.MediaGalleryViewModel
@@ -128,6 +129,13 @@ data class ConversationDetailsActions(
     val onRename: (() -> Unit)?,
     val onCreateContact: () -> Unit,
     val onAddContact: () -> Unit,
+    /**
+     * Round 42 — "Edit contact": opens the system editor on the
+     * thread's saved contact (`ACTION_EDIT` + contact URI). Null
+     * falls back to [onAddContact] (the old selector flow) — the
+     * row never goes dead.
+     */
+    val onEditContact: (() -> Unit)? = null,
     /**
      * Group member tap — the ViewModel looks the number up, then
      * opens the contact to edit it if saved, or a blank form
@@ -344,9 +352,14 @@ private fun DetailsPanelShell(
                 enter = fadeIn(tween(PANEL_ANIMATION_MS)),
                 exit = fadeOut(tween(PANEL_ANIMATION_MS)),
             ) {
+                // Round 42 — the scrim stops at the bar areas (the
+                // panel's surface covers them now); taps there belong
+                // to the system bars, not to the close handler.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
                         .background(Color.Black.copy(alpha = SCRIM_ALPHA))
                         .clickable(onClick = { requestClose() }),
                 )
@@ -432,15 +445,20 @@ private fun DetailsPanelContent(
         pendingSave = attachment
         saveLauncher.launch(saveFileNameFor(attachment))
     }
+    // Round 42 — the background sits OUTSIDE the bar paddings: the
+    // surface extends full-height behind the transparent system bars,
+    // while the paddings keep the header and rows clear of them. With
+    // the background after the paddings (as before), the surface
+    // stopped at the bars and the bar areas showed the black scrim.
     Column(
         modifier = Modifier
+            .background(cs.surface)
             .statusBarsPadding()
             .navigationBarsPadding()
             .then(
                 if (isWide) Modifier.width(PANEL_WIDTH_DP.dp) else Modifier.fillMaxWidth(),
             )
-            .fillMaxHeight()
-            .background(cs.surface),
+            .fillMaxHeight(),
     ) {
         // Header — back arrow + title, fixed while the rest scrolls.
         Row(
@@ -654,15 +672,20 @@ private fun NoteDetailsPanelContent(
         pendingSave = attachment
         saveLauncher.launch(saveFileNameFor(attachment))
     }
+    // Round 42 — the background sits OUTSIDE the bar paddings: the
+    // surface extends full-height behind the transparent system bars,
+    // while the paddings keep the header and rows clear of them. With
+    // the background after the paddings (as before), the surface
+    // stopped at the bars and the bar areas showed the black scrim.
     Column(
         modifier = Modifier
+            .background(cs.surface)
             .statusBarsPadding()
             .navigationBarsPadding()
             .then(
                 if (isWide) Modifier.width(PANEL_WIDTH_DP.dp) else Modifier.fillMaxWidth(),
             )
-            .fillMaxHeight()
-            .background(cs.surface),
+            .fillMaxHeight(),
     ) {
         // Header — back arrow + title, fixed while the rest scrolls.
         Row(
@@ -1121,10 +1144,15 @@ private fun groupMemberAvatars(
  *
  * ENCRYPTED shows the closed lock glyph and taps open the
  * safety-number sheet ("Tap to verify NAME's safety number", or
- * "Verified ✓" once marked); PROBING reads "Encryption / Setting
- * up encryption…"; UNKNOWN and NOT_RELAY read "Not encrypted"
- * with the open lock glyph and the matching subtitle. The
- * non-encrypted states are status, not tap targets.
+ * "Verified ✓" once marked); PROBING reads "Encryption /
+ * Checking if NAME uses Relay…"; UNKNOWN reads "Not encrypted /
+ * Encryption starts automatically when NAME uses Relay";
+ * NOT_RELAY reads "Not encrypted / Tap to retry encryption
+ * setup". Every state is a tap target: encrypted opens the
+ * safety-number sheet, the others send one manual probe now
+ * (bypassing the budget and the discovery toggle — NOT_RELAY
+ * included, it IS the budget-exhausted state, so a manual retry
+ * is the only way back in).
  *
  * Round 41 — the row mirrors the 'Encryption' row at the bottom of
  * Security & privacy (a [RelaySettingRow]: the lock in a tonal
@@ -1132,10 +1160,18 @@ private fun groupMemberAvatars(
  * row is tappable). The encrypted state keeps its own lock glyph
  * (the E2E mark, as on the avatar badge and in the bubbles).
  *
- * Round 41 — under the row, every non-ENCRYPTED state shows a
- * "Retry encryption" row: one manual probe now, bypassing the
- * budget (NOT_RELAY included — it IS the budget-exhausted state,
- * so a manual retry is the only way back in).
+ * Round 42 — the rounded box is real now: the row renders inside
+ * a [RelayGroupItem] (single segment, all four corners 24dp),
+ * the same source of truth as Settings — round 41 called
+ * [RelaySettingRow] directly, and the row carries no background
+ * of its own, so the box never showed. The group item owns the
+ * tap (the row's onClick stays null), so a tap cannot fire twice.
+ * The panel adds no horizontal padding above this row, so the
+ * group's own 16dp inset is the only one — the box lands exactly
+ * where the Settings row's does. The non-encrypted states show a
+ * refresh icon in the row's trailing slot instead of a chevron,
+ * and the separate "Retry encryption" button row is gone — the
+ * whole row IS the retry.
  */
 @Composable
 private fun E2eDetailsEncryptionRow(
@@ -1159,44 +1195,48 @@ private fun E2eDetailsEncryptionRow(
         } else {
             stringResource(R.string.e2e_details_verify_tap, contactName)
         }
-        E2ePeerState.PROBING -> stringResource(R.string.e2e_details_setting_up)
+        E2ePeerState.PROBING -> stringResource(R.string.e2e_details_setting_up, contactName)
         E2ePeerState.UNKNOWN -> stringResource(R.string.e2e_details_auto_start, contactName)
-        E2ePeerState.NOT_RELAY -> stringResource(R.string.e2e_details_not_relay, contactName)
+        E2ePeerState.NOT_RELAY -> stringResource(R.string.e2e_details_retry_setup)
     }
-    // Round 41 — the row mirrors the 'Encryption' row at the bottom
-    // of Security & privacy (a RelaySettingRow: the lock in a tonal
-    // badge, a 14sp title, the state as subtitle). The chevron marks
-    // the encrypted state as tappable (it opens the safety-number
-    // sheet); the other states are plain status, no tap.
-    RelaySettingRow(
-        icon = if (encrypted) null else Icons.Outlined.LockOpen,
-        iconPainter = if (encrypted) {
-            painterResource(R.drawable.ic_lock_encrypted)
-        } else {
-            null
-        },
-        title = title,
-        subtitle = subtitle,
-        chevron = encrypted && onOpenVerification != null,
-        onClick = if (encrypted) onOpenVerification else null,
-    )
-    // Round 41 — manual probe retry, under the status row: one probe
-    // now, bypassing the budget and the discovery toggle. Every
-    // non-ENCRYPTED state shows it (NOT_RELAY included — see the
-    // KDoc). Tapping fires the probe; the row's subtitle follows the
-    // state live ("Setting up encryption…" once it is sent).
-    if (!encrypted && onRetryProbe != null) {
-        DetailsActionRow(
-            label = stringResource(R.string.e2e_details_retry_encryption),
-            icon = {
+    // Round 42 — the row mirrors the 'Encryption' row at the bottom
+    // of Security & privacy, box included: a single-segment
+    // RelayGroupItem (all four corners 24dp, the group's tonal
+    // surface) owns the tap, and the RelaySettingRow inside is plain
+    // layout. The chevron marks the encrypted state as tappable (it
+    // opens the safety-number sheet); the other states show a refresh
+    // icon instead, and tapping the row retries the probe. No refresh
+    // icon without a retry handler — it would promise a tap that
+    // does nothing.
+    val retryTrailing: (@Composable () -> Unit)? =
+        if (!encrypted && onRetryProbe != null) {
+            {
                 Icon(
                     Icons.Outlined.Refresh,
                     contentDescription = null,
                     tint = cs.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
                 )
+            }
+        } else {
+            null
+        }
+    RelayGroupItem(
+        index = 0,
+        count = 1,
+        onClick = if (encrypted) onOpenVerification else onRetryProbe,
+    ) {
+        RelaySettingRow(
+            icon = if (encrypted) null else Icons.Outlined.LockOpen,
+            iconPainter = if (encrypted) {
+                painterResource(R.drawable.ic_lock_encrypted)
+            } else {
+                null
             },
-            onClick = { onRetryProbe?.invoke() },
+            title = title,
+            subtitle = subtitle,
+            chevron = encrypted && onOpenVerification != null,
+            trailing = retryTrailing,
         )
     }
 }
@@ -1334,11 +1374,12 @@ private fun DetailsActionRows(
             }
         }
         if (showEditContact) {
-            // The mirror of Add to contacts: the thread's number is
-            // already saved, so this opens the system editor on the
-            // existing contact (ACTION_INSERT_OR_EDIT with the
-            // number — the same intent the thread's own "update a
-            // contact" flow uses).
+            // Round 42 — the mirror of Add to contacts: the thread's
+            // number is already saved, so this opens the system
+            // editor on THAT person's card (ACTION_EDIT + the
+            // contact URI, via onEditContact). The old wiring called
+            // onAddContact (ACTION_INSERT_OR_EDIT with the number
+            // and no URI), which opened the whole contacts list.
             DetailsActionRow(
                 label = stringResource(R.string.details_edit_contact),
                 icon = {
@@ -1349,7 +1390,7 @@ private fun DetailsActionRows(
                         modifier = Modifier.size(24.dp),
                     )
                 },
-                onClick = actions.onAddContact,
+                onClick = actions.onEditContact ?: actions.onAddContact,
             )
         }
         val renameAction = actions.onRename

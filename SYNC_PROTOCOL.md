@@ -95,6 +95,10 @@ Slice 2 — no bytes cross the channel yet.
 | Server → client | `messages_batch` | `{"type":"messages_batch","conversation_id":"123","messages":[MESSAGE, "…"],"has_more":true,"next_before_id":"456"}` |
 | Server → client | `sync_complete` | `{"type":"sync_complete","cursor_message_id":"98765"}` |
 | Server → client | `category_mutes` | `{"type":"category_mutes","muted_categories":["otp","promotional"]}` |
+| Server → client | `e2e_safety_numbers` | `{"type":"e2e_safety_numbers","peers":[{"address":"+33612345678","state":"encrypted","safety_number":"12345 67890 …","verified":false}]}` |
+| Server → client | `e2e_notices` | `{"type":"e2e_notices","notices":[{"id":"12","conversation_id":"123","kind":"activated","date":1793000000000}]}` |
+| Client → server | `set_e2e_verified` | `{"type":"set_e2e_verified","address":"+33612345678","verified":true}` |
+| Client → server | `retry_e2e_probe` | `{"type":"retry_e2e_probe","address":"+33612345678"}` |
 | Server → client | `message_new` | `{"type":"message_new","message":MESSAGE}` |
 | Server → client | `message_updated` | `{"type":"message_updated","message_id":"789","conversation_id":"123","status":"delivered","reaction":"❤️"}` |
 | Server → client | `conversation_updated` | `{"type":"conversation_updated","conversation":CONVERSATION}` |
@@ -911,6 +915,92 @@ any other post-auth frame.
 Android clients ignore `category_mutes` for now (an unknown
 server frame is dropped, never an error) — applying the hub's
 set on a linked tablet is a later round.
+
+## E2E safety numbers + notices (round 42, protocol version 1)
+
+The phone syncs its end-to-end encryption state — the safety
+number and verified flag of every peer, plus the in-thread
+encryption notices — to every linked device, and a linked device
+can mark a peer verified or retry the key exchange on the phone.
+The phone is the source of truth: the desktop replaces its own
+sets with the phone's wholesale, and a verified toggle or probe
+retry on the desktop writes through to the phone. Same JSON
+envelope, same `type` field, same rules. No protocol bump: every
+addition is additive.
+
+| Direction | Message | Shape |
+|---|---|---|
+| Server → client | `e2e_safety_numbers` | `{"type":"e2e_safety_numbers","peers":[{"address":"+33612345678","state":"encrypted","safety_number":"12345 67890 …","verified":false}]}` |
+| Server → client | `e2e_notices` | `{"type":"e2e_notices","notices":[{"id":"12","conversation_id":"123","kind":"activated","date":1793000000000}]}` |
+| Client → server | `set_e2e_verified` | `{"type":"set_e2e_verified","address":"+33612345678","verified":true}` |
+| Client → server | `retry_e2e_probe` | `{"type":"retry_e2e_probe","address":"+33612345678"}` |
+
+`e2e_safety_numbers` carries the FULL set of E2E peers — every
+address with a peer row — as `peers` entries: `address` (the
+normalized number), `state` (the lowercase peer state:
+`"encrypted"`, `"probing"`, `"unknown"`, `"not_relay"`),
+`safety_number` (the formatted 60-digit number — 12 groups of 5
+digits — or null when the peer has no keys yet), and `verified`.
+The phone sends it after every snapshot — immediately after
+`sync_complete`, next to `category_mutes` — and whenever any
+peer row changes on the phone (a state flip, a key arrival, a
+verified toggle from any linked device). A linked device applies
+the frame whenever it arrives: it replaces its local set, never
+merges. The safety number is derived in exactly one place on the
+phone (the same derivation the verification sheet uses) and
+crosses the link as the formatted string — the desktop stores
+and displays it verbatim, never re-deriving, so the number it
+shows is byte-identical to the phone's. (If the phone cannot
+read its E2E store for one sync, the frame is skipped for that
+sync — an empty list would wrongly clear the desktop's state —
+and the next change sends the set.) Sync never creates an
+identity: our keys are only loaded when at least one peer holds
+keys and an account already exists, so a user who never uses E2E
+pays nothing.
+
+`e2e_notices` carries the FULL set of in-thread E2E notices as
+`notices` entries: `id` and `conversation_id` (decimal strings
+of the phone's Room ids, per the protocol v1 convention), `kind`
+(the lowercase notice kind: `"activated"`, `"key_changed"`,
+`"key_changed_verified"`, `"deactivated"`), and `date` (epoch
+millis — the notice's position in the thread). The phone sends
+it after every snapshot and whenever any notice row changes; the
+desktop replaces its local set wholesale and renders each
+notice as a centered system row in its thread. The notice kinds
+carry no wording — the wording lives in each device's own
+strings, so a notice renders in the user's current language.
+
+`set_e2e_verified` marks (or unmarks) one peer verified on the
+phone. `verified` is REQUIRED, like `set_muted`'s `value`: a
+missing flag is malformed, never a silent unverify. The phone
+updates its own store — creating the peer row when none exists
+yet, like its own verification sheet does — and answers with
+`action_result` (`action: "set_e2e_verified"`, the `address`
+echoed so the desktop attributes the reply to the peer it acted
+on); the updated set then broadcasts back to every session via
+`e2e_safety_numbers` — the desktop's confirmation is the
+broadcast, not the ack. Verification is optional (TOFU):
+messaging works encrypted whether or not a peer is verified —
+the flag is just a marker the user sets after comparing safety
+numbers out of band. The flag is never sent to the peer; it
+syncs only to the user's own linked devices over this encrypted
+device link.
+
+`retry_e2e_probe` runs the manual probe for one peer — the same
+one-probe-now path as the phone's Details panel "Retry
+encryption" (the budget and discovery-toggle gates are lifted;
+the address, blocked, and ENCRYPTED gates still apply). The
+phone answers with `action_result` (`action:
+"retry_e2e_probe"`, the `address` echoed): `ok: false`
+`unknown_conversation` when no 1:1 conversation exists for the
+address, `send_failed` when the probe could not go out. A
+`set_e2e_verified` / `retry_e2e_probe` before auth is a protocol
+violation, like any other post-auth frame.
+
+Android clients ignore `e2e_safety_numbers` and `e2e_notices`
+for now (an unknown server frame is dropped, never an error) —
+applying the hub's E2E state on a linked tablet is a later
+round.
 
 ## Notes sync (round 36 phase 2, protocol version 1)
 

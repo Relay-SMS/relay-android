@@ -31,9 +31,34 @@ interface E2eDataSmsSender {
     /**
      * Sends [data] as one data-SMS segment to [address] on [port],
      * from the subscription [subId] (`null` = the system default).
-     * Returns `true` when the radio accepted the send.
+     * [kind] tags a failed send in the error log (probe vs bundle
+     * reply — the two share this one send path, and a failed
+     * bundle used to read as a probe failure). Returns `true`
+     * when the radio accepted the send.
      */
-    fun sendDataMessage(address: String, subId: Int?, port: Int, data: ByteArray): Boolean
+    fun sendDataMessage(
+        address: String,
+        subId: Int?,
+        port: Int,
+        data: ByteArray,
+        kind: DataSmsKind = DataSmsKind.PROBE,
+    ): Boolean
+}
+
+/**
+ * Which handshake message a data SMS carries. The failure tag
+ * in the error log differs by kind: a failed bundle reply used
+ * to be recorded under `e2e-probe-send` (one shared send path,
+ * one unconditional tag), so it read as a probe failure — now
+ * each kind carries its own tag and the two failures are
+ * separable.
+ */
+enum class DataSmsKind(val failureTag: String) {
+    /** A probe (the outbound key-exchange opener). */
+    PROBE("e2e-probe-send"),
+
+    /** A bundle reply (the answer to a probe). */
+    BUNDLE("e2e-bundle-send"),
 }
 
 /** The real sender over `SmsManager.sendDataMessage`. */
@@ -44,7 +69,13 @@ class E2eDataSmsSenderImpl @Inject constructor(
     private val recorder: E2eFailureRecorder,
 ) : E2eDataSmsSender {
 
-    override fun sendDataMessage(address: String, subId: Int?, port: Int, data: ByteArray): Boolean {
+    override fun sendDataMessage(
+        address: String,
+        subId: Int?,
+        port: Int,
+        data: ByteArray,
+        kind: DataSmsKind,
+    ): Boolean {
         return try {
             val manager = subscriptionAwareManager(subId)
             // Same E.164 normalization as the text path: a foreign SIM
@@ -75,12 +106,14 @@ class E2eDataSmsSenderImpl @Inject constructor(
             // phone that cannot send handshake SMS leaves a trace: a
             // failed probe otherwise looks exactly like a peer without
             // Relay. Covers probe and bundle-reply sends alike — both
-            // go through here. Sanitized: the raw exception's message
-            // may carry the destination address on some builds, so
-            // only the exception's class travels — no message, no
-            // cause chain (the formatter would print both).
+            // go through here — tagged by [kind], so a failed bundle
+            // reads as a bundle failure, not a probe failure.
+            // Sanitized: the raw exception's message may carry the
+            // destination address on some builds, so only the
+            // exception's class travels — no message, no cause chain
+            // (the formatter would print both).
             recorder.record(
-                "e2e-probe-send",
+                kind.failureTag,
                 E2eCryptoException(
                     "Data SMS send failed (port=$port): ${t.javaClass.simpleName}",
                 ),

@@ -197,11 +197,10 @@
     <string name="e2e_details_encrypted">Crittografato end-to-end</string>
     <string name="e2e_details_verify_tap">Tocca per verificare il numero di sicurezza di %1$s</string>
     <string name="e2e_details_verified">Verificato ✓</string>
-    <string name="e2e_details_setting_up">Configurazione della crittografia…</string>
+    <string name="e2e_details_setting_up">Verifica se %1$s usa Relay…</string>
     <string name="e2e_details_not_encrypted">Non crittografato</string>
-    <string name="e2e_details_not_relay">%1$s non usa ancora Relay</string>
+    <string name="e2e_details_retry_setup">Tocca per riprovare la configurazione della crittografia</string>
     <string name="e2e_details_auto_start">La crittografia partirà automaticamente quando %1$s userà Relay</string>
-    <string name="e2e_details_retry_encryption">Riprova la crittografia</string>
     <string name="e2e_verify_title">Numero di sicurezza</string>
     <string name="e2e_verify_explainer">Confronta questo numero con %1$s di persona o tramite un altro canale: una chiamata o un’altra app. Se i numeri corrispondono, state parlando tra di voi senza nessuno in mezzo.</string>
     <string name="e2e_verify_mark">Segna come verificato</string>

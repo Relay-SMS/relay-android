@@ -3,6 +3,7 @@ package com.filestech.sms.e2e
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerState
+import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.purge.MS_PER_DAY
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -31,18 +32,45 @@ import javax.inject.Singleton
  * Every write is a targeted DAO update touching disjoint columns (never a whole-row
  * copy): a bundle arriving between a read and a write cannot be clobbered by a
  * stale probe bookkeeping write.
+ *
+ * Round 42 — the address is canonicalized at this boundary: every
+ * method normalizes its address to [PhoneAddress.normalized]
+ * (spaces, dashes and parentheses stripped) before touching the
+ * DAO. The readers and writers used to disagree — the thread UI
+ * observed the normalized form while the probe path wrote the raw
+ * conversation form and the handshake handler wrote the carrier
+ * form — and the DAO matches exactly, so a peer whose number was
+ * stored with formatting had its probe writes land under a key the
+ * UI never observed: the Details panel stayed on UNKNOWN no matter
+ * what happened, and the safety-number sheet found no keys. One
+ * canonical key per peer, whatever form each caller passes. Rows
+ * stored under a non-normalized form before this change become
+ * unreachable (their peer re-exchanges from UNKNOWN on the next
+ * probe); rows already in E.164 form are unaffected —
+ * normalization is idempotent.
  */
 @Singleton
 class E2ePeerRepository @Inject constructor(
     private val peerDao: E2ePeerDao,
 ) {
 
+    /**
+     * Canonical key for the peer table: the normalized form
+     * ([PhoneAddress.normalized]). Idempotent — safe to apply to an
+     * already-normalized address — and safe for an alphanumeric
+     * sender, whose normalized form falls back to the trimmed raw
+     * string.
+     */
+    private fun canonicalAddress(address: String): String =
+        PhoneAddress.of(address).normalized
+
     /** The peer's row, or null when no exchange has ever started with this address. */
-    suspend fun getPeer(address: String): E2ePeerEntity? = peerDao.findByAddress(address)
+    suspend fun getPeer(address: String): E2ePeerEntity? =
+        peerDao.findByAddress(canonicalAddress(address))
 
     /** The peer's state; UNKNOWN when no row exists (nothing has happened yet). */
     suspend fun state(address: String): E2ePeerState =
-        peerDao.findByAddress(address)?.state ?: E2ePeerState.UNKNOWN
+        peerDao.findByAddress(canonicalAddress(address))?.state ?: E2ePeerState.UNKNOWN
 
     /**
      * Live view of one peer's row (null = no exchange has ever started).
@@ -50,7 +78,7 @@ class E2ePeerRepository @Inject constructor(
      * and the details-panel row follow the key exchange live.
      */
     fun observePeer(address: String): Flow<E2ePeerEntity?> =
-        peerDao.observeByAddress(address)
+        peerDao.observeByAddress(canonicalAddress(address))
 
     /**
      * Live view of the verified contacts, most recently updated first
@@ -63,15 +91,31 @@ class E2ePeerRepository @Inject constructor(
     // lives below with the sync API (§9.2) — one definition, shared
     // by the list and the sync engine.
 
+    /**
+     * E2E sync (round 42) — every peer row, address order: the
+     * device-link snapshot source (the safety-number + verified
+     * set). One-shot, for the snapshot paths.
+     */
+    suspend fun allPeers(): List<E2ePeerEntity> = peerDao.allPeers()
+
+    /**
+     * E2E sync (round 42) — the live version of [allPeers]:
+     * re-emits whenever any `e2e_peers` row changes, so a state
+     * flip, a key arrival, or a verified toggle re-sends the full
+     * set to every linked device.
+     */
+    fun observeAllPeers(): Flow<List<E2ePeerEntity>> = peerDao.observeAllPeers()
+
     /** Returns the peer's row, creating it in state UNKNOWN when it does not exist yet. */
     suspend fun getOrCreateUnknown(
         address: String,
         now: Long = System.currentTimeMillis(),
     ): E2ePeerEntity {
-        peerDao.insert(E2ePeerEntity(address = address, updatedAt = now))
+        val key = canonicalAddress(address)
+        peerDao.insert(E2ePeerEntity(address = key, updatedAt = now))
         // The insert is IGNORE on conflict, so the row is either the one just
         // inserted or the pre-existing one — re-read to return the real row.
-        return checkNotNull(peerDao.findByAddress(address)) {
+        return checkNotNull(peerDao.findByAddress(key)) {
             "peer row missing right after insert"
         }
     }
@@ -82,8 +126,9 @@ class E2ePeerRepository @Inject constructor(
         state: E2ePeerState,
         now: Long = System.currentTimeMillis(),
     ) {
-        getOrCreateUnknown(address, now)
-        peerDao.updateState(address, state, now)
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.updateState(key, state, now)
     }
 
     /** Records the peer's identity keys from a received bundle (base64, 32 bytes each). */
@@ -93,18 +138,26 @@ class E2ePeerRepository @Inject constructor(
         theirEdKey: String,
         now: Long = System.currentTimeMillis(),
     ) {
-        getOrCreateUnknown(address, now)
-        peerDao.updateKeys(address, theirCurveKey, theirEdKey, now)
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.updateKeys(key, theirCurveKey, theirEdKey, now)
     }
 
-    /** Sets (or clears, on a key change) the local verified flag. Never synced. */
+    /**
+     * Sets (or clears, on a key change) the verified flag. Never
+     * sent to the peer — the flag is a local trust marker, not
+     * part of the key exchange. It IS synced to the user's own
+     * linked devices over the encrypted device link (round 42),
+     * so the desktop shows the same verified state as the phone.
+     */
     suspend fun setVerified(
         address: String,
         verified: Boolean,
         now: Long = System.currentTimeMillis(),
     ) {
-        getOrCreateUnknown(address, now)
-        peerDao.setVerified(address, verified, now)
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.setVerified(key, verified, now)
     }
 
     /**
@@ -114,7 +167,7 @@ class E2ePeerRepository @Inject constructor(
      * class KDoc).
      */
     suspend fun canProbe(address: String, now: Long = System.currentTimeMillis()): Boolean {
-        val peer = peerDao.findByAddress(address) ?: return true
+        val peer = peerDao.findByAddress(canonicalAddress(address)) ?: return true
         val windowStart = peer.windowStartedAt
         if (windowStart == null || now - windowStart >= PROBE_WINDOW_MS) return true
         if (peer.probeAttempts >= MAX_PROBE_ATTEMPTS) return false
@@ -128,7 +181,8 @@ class E2ePeerRepository @Inject constructor(
      * SMS is sent — a failed send must not consume budget.
      */
     suspend fun recordProbeSent(address: String, now: Long = System.currentTimeMillis()) {
-        val peer = getOrCreateUnknown(address, now)
+        val key = canonicalAddress(address)
+        val peer = getOrCreateUnknown(key, now)
         val windowStart = peer.windowStartedAt
         val (attempts, windowStartedAt) =
             if (windowStart == null || now - windowStart >= PROBE_WINDOW_MS) {
@@ -136,8 +190,8 @@ class E2ePeerRepository @Inject constructor(
             } else {
                 peer.probeAttempts + 1 to windowStart
             }
-        peerDao.recordProbe(address, attempts, windowStartedAt, now, now)
-        peerDao.updateState(address, E2ePeerState.PROBING, now)
+        peerDao.recordProbe(key, attempts, windowStartedAt, now, now)
+        peerDao.updateState(key, E2ePeerState.PROBING, now)
     }
 
     /**
@@ -148,8 +202,9 @@ class E2ePeerRepository @Inject constructor(
      * (null when no reply was ever sent).
      */
     suspend fun recordBundleReply(address: String, now: Long = System.currentTimeMillis()) {
-        getOrCreateUnknown(address, now)
-        peerDao.recordBundleReply(address, now, now)
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.recordBundleReply(key, now, now)
     }
 
     /** Verified contacts, most recently updated first (Settings → Verified contacts). */
@@ -176,7 +231,7 @@ class E2ePeerRepository @Inject constructor(
 
     /** Deletes a peer's row (panic wipe / reset — its sessions are deleted separately). */
     suspend fun deletePeer(address: String) {
-        peerDao.deleteByAddress(address)
+        peerDao.deleteByAddress(canonicalAddress(address))
     }
 
     companion object {
