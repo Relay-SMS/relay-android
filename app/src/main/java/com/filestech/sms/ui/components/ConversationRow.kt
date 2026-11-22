@@ -150,8 +150,8 @@ fun ConversationRow(
         ) {
             if (showAvatars) {
                 // E2E — the lock badge on an encrypted 1:1 row: a small
-                // brand-blue disc overlapping the avatar's bottom-left
-                // (per the encrypted-list reference), carrying the white
+                // brand-blue disc overlapping the avatar's bottom-right
+                // (round 41 — was bottom-left), carrying the white
                 // lock glyph. The surface-coloured ring separates the
                 // disc from a photo avatar; the glyph is decorative for
                 // screen readers (the row is announced by its title).
@@ -160,8 +160,8 @@ fun ConversationRow(
                     if (isEncrypted) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .offset(x = (-2).dp, y = 2.dp)
+                                .align(Alignment.BottomEnd)
+                                .offset(x = 2.dp, y = 2.dp)
                                 .size(18.dp)
                                 .clip(CircleShape)
                                 .background(brandBlue())

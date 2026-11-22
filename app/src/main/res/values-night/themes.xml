@@ -7,10 +7,10 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
-    <!-- v1.14.7 — icône transparente (cf. values/themes.xml). -->
+    <!-- Round 41 — splash logo (cf. values/themes.xml); the night drawable is white. -->
     <style name="Theme.SmsTech.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/md_theme_dark_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_transparent</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.SmsTech</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
     </style>

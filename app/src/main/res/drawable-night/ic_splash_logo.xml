@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!--
+        Relay splash logo (round 41) — the finalized mark, white (dark mode), on
+        transparent; the splash background is the theme background (white in
+        light mode, dark in dark mode), so the logo alone shows while the app
+        loads. The Android 12 splash icon is displayed at 288dp with artwork
+        masked to a 192dp circle (2/3 of the icon); the mark is scaled so its
+        farthest point (bottom-left corner) sits at radius 35.5 in the 108
+        viewport, just inside the 36-unit mask — it renders at ~146dp.
+        Its own drawable, NOT the launcher foreground (different scale).
+    -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="nonZero"
+        android:pathData="M54,26.64C69.11,26.64 81.36,38.89 81.36,54C81.36,68.831 69.559,80.904 54.835,81.345C54.686,81.354 54.536,81.36 54.385,81.36H34.347C30.091,81.36 26.64,77.909 26.64,73.653V53.615C26.64,53.464 26.645,53.314 26.654,53.165C27.096,38.441 39.169,26.64 54,26.64ZM53.615,31.265C41.114,31.265 30.934,41.183 30.509,53.582C30.504,53.668 30.5,53.756 30.498,53.844L30.494,54.114V68.225C30.494,73.351 34.649,77.506 39.775,77.506H53.886C54.073,77.506 54.243,77.499 54.388,77.491C66.8,77.082 76.735,66.896 76.735,54.385C76.735,41.616 66.384,31.265 53.615,31.265Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M53.615,35.118C64.256,35.118 72.882,43.744 72.882,54.385C72.882,64.831 64.57,73.334 54.199,73.643C54.095,73.649 53.991,73.653 53.886,73.653H39.775C36.777,73.653 34.347,71.223 34.347,68.225V54.114C34.347,54.009 34.35,53.904 34.356,53.801C34.666,43.43 43.169,35.118 53.615,35.118Z" />
+</vector>

@@ -99,6 +99,7 @@ import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.GroupMemberAvatar
 import com.filestech.sms.ui.components.RelayAvatar
 import com.filestech.sms.ui.components.RelayGroupAvatar
+import com.filestech.sms.ui.components.RelaySettingRow
 import com.filestech.sms.ui.components.rememberAttachmentOpener
 import com.filestech.sms.ui.screens.media.MediaGalleryViewModel
 import com.filestech.sms.ui.screens.media.MediaTile
@@ -209,6 +210,8 @@ fun ConversationDetailsPanel(
     e2eVerified: Boolean = false,
     /** E2E — opens the safety-number sheet for this thread's peer. */
     onOpenE2eVerification: (() -> Unit)? = null,
+    /** E2E — manual probe retry (round 41): sends one probe now. */
+    onRetryE2eProbe: (() -> Unit)? = null,
 ) {
     DetailsPanelShell(onDismiss = onDismiss) { onClose ->
         DetailsPanelContent(
@@ -230,6 +233,7 @@ fun ConversationDetailsPanel(
             e2ePeerState = e2ePeerState,
             e2eVerified = e2eVerified,
             onOpenE2eVerification = onOpenE2eVerification,
+            onRetryE2eProbe = onRetryE2eProbe,
         )
     }
 }
@@ -381,6 +385,8 @@ private fun DetailsPanelContent(
     e2eVerified: Boolean = false,
     /** E2E — opens the safety-number sheet for this thread's peer. */
     onOpenE2eVerification: (() -> Unit)? = null,
+    /** E2E — manual probe retry (round 41): sends one probe now. */
+    onRetryE2eProbe: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -494,6 +500,7 @@ private fun DetailsPanelContent(
                     e2ePeerState = e2ePeerState,
                     e2eVerified = e2eVerified,
                     onOpenE2eVerification = onOpenE2eVerification,
+                    onRetryE2eProbe = onRetryE2eProbe,
                 )
             }
             if (conversation.isGroup) {
@@ -1118,6 +1125,17 @@ private fun groupMemberAvatars(
  * up encryption…"; UNKNOWN and NOT_RELAY read "Not encrypted"
  * with the open lock glyph and the matching subtitle. The
  * non-encrypted states are status, not tap targets.
+ *
+ * Round 41 — the row mirrors the 'Encryption' row at the bottom of
+ * Security & privacy (a [RelaySettingRow]: the lock in a tonal
+ * badge, a 14sp title, the state as subtitle, a chevron when the
+ * row is tappable). The encrypted state keeps its own lock glyph
+ * (the E2E mark, as on the avatar badge and in the bubbles).
+ *
+ * Round 41 — under the row, every non-ENCRYPTED state shows a
+ * "Retry encryption" row: one manual probe now, bypassing the
+ * budget (NOT_RELAY included — it IS the budget-exhausted state,
+ * so a manual retry is the only way back in).
  */
 @Composable
 private fun E2eDetailsEncryptionRow(
@@ -1125,6 +1143,7 @@ private fun E2eDetailsEncryptionRow(
     verified: Boolean,
     contactName: String,
     onOpenVerification: (() -> Unit)?,
+    onRetryProbe: (() -> Unit)?,
 ) {
     val cs = MaterialTheme.colorScheme
     val encrypted = peerState == E2ePeerState.ENCRYPTED
@@ -1144,29 +1163,42 @@ private fun E2eDetailsEncryptionRow(
         E2ePeerState.UNKNOWN -> stringResource(R.string.e2e_details_auto_start, contactName)
         E2ePeerState.NOT_RELAY -> stringResource(R.string.e2e_details_not_relay, contactName)
     }
-    DetailsActionRow(
-        label = title,
+    // Round 41 — the row mirrors the 'Encryption' row at the bottom
+    // of Security & privacy (a RelaySettingRow: the lock in a tonal
+    // badge, a 14sp title, the state as subtitle). The chevron marks
+    // the encrypted state as tappable (it opens the safety-number
+    // sheet); the other states are plain status, no tap.
+    RelaySettingRow(
+        icon = if (encrypted) null else Icons.Outlined.LockOpen,
+        iconPainter = if (encrypted) {
+            painterResource(R.drawable.ic_lock_encrypted)
+        } else {
+            null
+        },
+        title = title,
         subtitle = subtitle,
-        icon = {
-            if (encrypted) {
+        chevron = encrypted && onOpenVerification != null,
+        onClick = if (encrypted) onOpenVerification else null,
+    )
+    // Round 41 — manual probe retry, under the status row: one probe
+    // now, bypassing the budget and the discovery toggle. Every
+    // non-ENCRYPTED state shows it (NOT_RELAY included — see the
+    // KDoc). Tapping fires the probe; the row's subtitle follows the
+    // state live ("Setting up encryption…" once it is sent).
+    if (!encrypted && onRetryProbe != null) {
+        DetailsActionRow(
+            label = stringResource(R.string.e2e_details_retry_encryption),
+            icon = {
                 Icon(
-                    painter = painterResource(R.drawable.ic_lock_encrypted),
-                    contentDescription = null,
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(width = 14.dp, height = 17.dp),
-                )
-            } else {
-                Icon(
-                    Icons.Outlined.LockOpen,
+                    Icons.Outlined.Refresh,
                     contentDescription = null,
                     tint = cs.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
                 )
-            }
-        },
-        onClick = { onOpenVerification?.invoke() },
-        isClickable = encrypted && onOpenVerification != null,
-    )
+            },
+            onClick = { onRetryProbe?.invoke() },
+        )
+    }
 }
 
 @Composable
@@ -1184,6 +1216,8 @@ private fun DetailsActionRows(
     e2eVerified: Boolean = false,
     /** E2E — opens the safety-number sheet for this thread's peer. */
     onOpenE2eVerification: (() -> Unit)? = null,
+    /** E2E — manual probe retry (round 41): sends one probe now. */
+    onRetryE2eProbe: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     var addContactMenuOpen by remember { mutableStateOf(false) }
@@ -1197,6 +1231,7 @@ private fun DetailsActionRows(
                 verified = e2eVerified,
                 contactName = conversation.title,
                 onOpenVerification = onOpenE2eVerification,
+                onRetryProbe = onRetryE2eProbe,
             )
         }
         DetailsActionRow(

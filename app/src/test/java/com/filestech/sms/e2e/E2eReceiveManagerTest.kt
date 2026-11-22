@@ -3,6 +3,7 @@ package com.filestech.sms.e2e
 import android.content.Context
 import com.filestech.sms.R
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
+import com.filestech.sms.data.local.db.entity.E2ePeerEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.data.repository.ConversationMirror
 import com.filestech.sms.domain.model.Message
@@ -113,6 +114,7 @@ class E2eReceiveManagerTest {
             coEvery { notifier.notifyIncoming(any(), any(), any(), any()) } just Runs
             coEvery { handshakeHandler.retryDecryptFailed(any()) } returns 0
             every { probeManager.reprobeAfterDecryptFailure(any(), any()) } just Runs
+            every { probeManager.reprobeAfterPeerLeft(any(), any()) } just Runs
             every { context.getString(R.string.e2e_decrypt_failed_notif) } returns
                 "This message couldn't be decrypted."
             every {
@@ -171,6 +173,16 @@ class E2eReceiveManagerTest {
                     ?: error("not a fragment: $text")
                 manager.handleFragment(BOB, fragment, "content://sms/1", NOW, subId, NOW)
             }
+        }
+
+        /** Seeds bob as an ENCRYPTED peer (verified when asked). */
+        fun seedEncryptedPeer(verified: Boolean = false) {
+            peerDao.peers[BOB] = E2ePeerEntity(
+                address = BOB,
+                state = E2ePeerState.ENCRYPTED,
+                verified = verified,
+                updatedAt = NOW,
+            )
         }
     }
 
@@ -451,5 +463,85 @@ class E2eReceiveManagerTest {
         assertThat(E2eWireFormat.parseFragment("RLY1:abcdef:03/02:AAAA")).isNull()
         assertThat(E2eWireFormat.parseFragment("rly1:abcdef:01/01:AAAA")).isNull()
         assertThat(E2eWireFormat.parseFragment("")).isNull()
+    }
+
+    // ──────────────────── Peer-deleted-Relay fallback (round 41) ────────────────────
+    // MMS has no test here: it never reaches onPlainSmsReceived — the MMS
+    // receivers (TraitementMmsRecu / MmsWapPushReceiver / MmsDownloadedReceiver)
+    // never reference E2eReceiveManager, so the exclusion is structural.
+
+    @Test
+    fun `a plain SMS from an encrypted peer downgrades to unknown and re-probes`() = runTest {
+        val harness = Harness()
+        harness.seedEncryptedPeer(verified = true)
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // UNKNOWN, not NOT_RELAY — the re-probe must still be able to go out.
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.UNKNOWN)
+        // The verified flag clears, as on a key change.
+        assertThat(harness.peerDao.peers[BOB]?.verified).isFalse()
+        assertThat(harness.noticeDao.notices).hasSize(1)
+        assertThat(harness.noticeDao.notices.single().kind).isEqualTo(E2eNoticeKind.DEACTIVATED)
+        assertThat(harness.noticeDao.notices.single().conversationId).isEqualTo(CONV_ID)
+        verify(exactly = 1) { harness.probeManager.reprobeAfterPeerLeft(BOB, 3) }
+    }
+
+    @Test
+    fun `a plain SMS from a peer with no row does nothing`() = runTest {
+        val harness = Harness()
+        // No peer row: UNKNOWN by default.
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // No row is created, no notice, no re-probe.
+        assertThat(harness.peerDao.peers).isEmpty()
+        assertThat(harness.noticeDao.notices).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+    }
+
+    @Test
+    fun `a plain SMS from a probing peer does nothing`() = runTest {
+        val harness = Harness()
+        harness.peerDao.peers[BOB] = E2ePeerEntity(
+            address = BOB,
+            state = E2ePeerState.PROBING,
+            updatedAt = NOW,
+        )
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.PROBING)
+        assertThat(harness.noticeDao.notices).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+    }
+
+    @Test
+    fun `an encrypted message from an encrypted peer does not downgrade`() = runTest {
+        val harness = Harness()
+        harness.feed(harness.bobFragments("first"))
+        // Established: ENCRYPTED + the one-time ACTIVATED notice.
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        harness.noticeDao.notices.clear()
+
+        harness.feed(harness.bobFragments("second", messageId = "d4e5f6"))
+
+        // Still encrypted, no DEACTIVATED notice, no peer-left re-probe.
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.noticeDao.notices).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+    }
+
+    @Test
+    fun `a second plain SMS after the fallback triggers nothing more`() = runTest {
+        val harness = Harness()
+        harness.seedEncryptedPeer()
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // One notice, one re-probe: the state gate dedupes.
+        assertThat(harness.noticeDao.notices).hasSize(1)
+        verify(exactly = 1) { harness.probeManager.reprobeAfterPeerLeft(BOB, 3) }
     }
 }

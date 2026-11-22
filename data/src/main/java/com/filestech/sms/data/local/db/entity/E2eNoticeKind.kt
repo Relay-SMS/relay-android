@@ -18,4 +18,11 @@ enum class E2eNoticeKind {
 
     /** The peer's identity key changed (peer WAS verified — re-compare the number). */
     KEY_CHANGED_VERIFIED,
+
+    /**
+     * Round 41 — a plain SMS text arrived from an ENCRYPTED peer, so
+     * the peer lost Relay: "Encryption ended — NAME no longer uses
+     * Relay." The peer drops to UNKNOWN and a re-probe goes out.
+     */
+    DEACTIVATED,
 }

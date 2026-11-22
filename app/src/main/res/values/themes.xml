@@ -10,15 +10,16 @@
 
     <!-- Splash screen (androidx.core.splashscreen compat for API 26-30) -->
     <!--
-        v1.14.7 — icône transparente : Android 12+ impose un masque circulaire
-        autour de l'icône splash. En fournissant un drawable transparent, le
-        cercle est invisible et seul le fond unie flashe brièvement avant que
-        la Compose SplashScreen (fade-in) ou l'Activity ne prenne la main.
-        Élimine le rond qui cachait le logo carré aux ouvertures suivantes.
+        Round 41 — the splash shows just the logo, centred, on the theme
+        background (no blue fill): the mark is brand blue in light mode
+        and white in dark mode (drawable-night). The Android 12 splash
+        masks the icon to a 192dp circle (2/3 of the 288dp icon), so the
+        mark in ic_splash_logo is sized to fit inside it. Replaces the
+        v1.14.7 transparent icon (splash_transparent.xml, now unused).
     -->
     <style name="Theme.SmsTech.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/md_theme_light_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_transparent</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.SmsTech</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
     </style>

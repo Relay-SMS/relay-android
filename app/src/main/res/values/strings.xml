@@ -189,6 +189,7 @@
     <string name="e2e_notice_activated">Messages are now end-to-end encrypted.</string>
     <string name="e2e_notice_key_changed">%1$s\'s security code changed. Messages are still end-to-end encrypted.</string>
     <string name="e2e_notice_key_changed_verified">%1$s\'s security code changed. %1$s was verified — compare the safety number again to confirm it\'s still them.</string>
+    <string name="e2e_notice_deactivated">Encryption ended — %1$s no longer uses Relay</string>
     <string name="e2e_decrypt_failed">This message couldn\'t be decrypted.</string>
     <string name="e2e_encryption">Encryption</string>
     <string name="e2e_details_encrypted">End-to-end encrypted</string>
@@ -198,6 +199,7 @@
     <string name="e2e_details_not_encrypted">Not encrypted</string>
     <string name="e2e_details_not_relay">%1$s doesn\'t use Relay yet</string>
     <string name="e2e_details_auto_start">Encryption starts automatically when %1$s uses Relay</string>
+    <string name="e2e_details_retry_encryption">Retry encryption</string>
     <string name="e2e_verify_title">Safety number</string>
     <string name="e2e_verify_explainer">Compare this number with %1$s in person or over another channel — a call, or another app. If the numbers match, you\'re talking to each other and no one in between.</string>
     <string name="e2e_verify_mark">Mark as verified</string>

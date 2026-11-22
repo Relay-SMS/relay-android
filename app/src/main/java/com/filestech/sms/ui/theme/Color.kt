@@ -413,6 +413,22 @@ internal fun bubbleIncomingColor(scheme: ColorScheme): Color {
 }
 
 /**
+ * Round 41 — the sent/delivered/read status text at the bottom of a
+ * message bubble: `#C9C9C9` on a dark surface, `#404040` on a light
+ * one. The pair is contrast-matched: `#C9C9C9` is ~10.4:1 against the
+ * dark surface (`#1B1B1B`), `#404040` is ~10.4:1 against white — no
+ * mid-grey can match that on white, so the light value is a dark
+ * grey rather than a mid-grey. Picked from the scheme's surface
+ * luminance (like [bubbleIncomingColor]) so it follows a forced
+ * light/dark theme, not just the system setting.
+ */
+internal fun bubbleStatusColor(scheme: ColorScheme): Color {
+    val s = scheme.surface
+    val luma = 0.2126f * s.red + 0.7152f * s.green + 0.0722f * s.blue
+    return if (luma < 0.5f) Color(0xFFC9C9C9) else Color(0xFF404040)
+}
+
+/**
  * Fond gris/bleu des cartes de l'écran Réglages, choisi selon la luminance de la surface du thème
  * (comme [bubbleIncomingColor]) pour couvrir correctement les thèmes clair et sombre.
  */

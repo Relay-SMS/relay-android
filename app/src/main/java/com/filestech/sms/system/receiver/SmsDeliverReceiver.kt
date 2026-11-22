@@ -296,6 +296,16 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                         messageId = msgId,
                         conversationId = convId,
                     )
+                    // Round 41 — peer-deleted-Relay fallback: a plain
+                    // SMS text from an ENCRYPTED peer means they lost
+                    // Relay (downgrade + re-probe + notice). Never
+                    // throws into the receiver — the message is
+                    // already stored, and a fallback failure must not
+                    // lose it. RLY1 fragments and reactions return
+                    // above, so only a real text message reaches here.
+                    runCatching {
+                        deps.e2eReceiveManager.onPlainSmsReceived(address, convId, subId)
+                    }.onFailure { Timber.w(it, "E2E: peer-left fallback failed") }
                 } else {
                     // Garde théorique : si la row vient d'être insérée elle DOIT exister.
                     // Si on tombe ici, c'est un bug de cohérence — on logue et on skip.

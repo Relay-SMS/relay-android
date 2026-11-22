@@ -399,4 +399,148 @@ class E2eProbeManagerTest {
         assertThat(probed).isFalse()
         assertThat(harness.sender.sent).isEmpty()
     }
+
+    // ──────────────────────────── Manual probe retry (round 41) ────────────────────────────
+
+    @Test
+    fun `manual probe sends when the budget is exhausted`() = runTest {
+        val harness = Harness(scope = this)
+        harness.seedPeer(
+            state = E2ePeerState.NOT_RELAY,
+            attempts = 3,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 2 * MS_PER_DAY,
+        )
+
+        val probed = harness.manager.probeAddress(ALICE, null, manual = true, now = NOW)
+
+        assertThat(probed).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        // The attempt is still recorded (the probe went out): 4
+        // attempts, and the 3-attempt flip puts the peer back to
+        // NOT_RELAY until the window elapses — a bundle answer still
+        // flips it to ENCRYPTED.
+        assertThat(harness.peerDao.peers[ALICE]?.probeAttempts).isEqualTo(4)
+        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.NOT_RELAY)
+    }
+
+    @Test
+    fun `manual probe sends inside the 24h spacing`() = runTest {
+        val harness = Harness(scope = this)
+        harness.seedPeer(
+            state = E2ePeerState.PROBING,
+            attempts = 1,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 60 * 60 * 1000L,
+        )
+
+        val probed = harness.manager.probeAddress(ALICE, null, manual = true, now = NOW)
+
+        assertThat(probed).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        assertThat(harness.peerDao.peers[ALICE]?.probeAttempts).isEqualTo(2)
+        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.PROBING)
+    }
+
+    @Test
+    fun `manual probe sends when discovery is off`() = runTest {
+        val harness = Harness(
+            scope = this,
+            settings = SettingsWithSubId(CHOSEN_SUB_ID, autoDiscover = false),
+        )
+
+        val probed = harness.manager.probeAddress(ALICE, null, manual = true, now = NOW)
+
+        assertThat(probed).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        // The tap is explicit consent: the identity is created for
+        // this one probe, unlike the automatic path with the toggle
+        // off (which creates nothing).
+        assertThat(harness.accountDao.stored).isNotNull()
+    }
+
+    @Test
+    fun `manual probe still refuses an encrypted peer`() = runTest {
+        val harness = Harness(scope = this)
+        harness.seedPeer(state = E2ePeerState.ENCRYPTED)
+
+        val probed = harness.manager.probeAddress(ALICE, null, manual = true, now = NOW)
+
+        assertThat(probed).isFalse()
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `manual probe still refuses a short code`() = runTest {
+        val harness = Harness(scope = this)
+
+        val probed = harness.manager.probeAddress("12345", null, manual = true, now = NOW)
+
+        assertThat(probed).isFalse()
+        assertThat(harness.sender.sent).isEmpty()
+        assertThat(harness.peerDao.peers).isEmpty()
+    }
+
+    @Test
+    fun `manual probe still refuses a blocked number`() = runTest {
+        val harness = Harness(scope = this, blocked = FakeBlockedRepo(setOf(ALICE)))
+
+        val probed = harness.manager.probeAddress(ALICE, null, manual = true, now = NOW)
+
+        assertThat(probed).isFalse()
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `retryProbe fires the probe in the background`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+        harness.seedPeer(
+            state = E2ePeerState.NOT_RELAY,
+            attempts = 3,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 2 * MS_PER_DAY,
+        )
+
+        harness.manager.retryProbe(11L)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sent).hasSize(1)
+        assertThat(harness.sender.sent.single().address).isEqualTo(ALICE)
+        assertThat(harness.sender.sent.single().subId).isEqualTo(CHOSEN_SUB_ID)
+    }
+
+    // ──────────────────── Peer-left re-probe (round 41) ────────────────────
+
+    @Test
+    fun `reprobeAfterPeerLeft sends one probe to an unknown peer`() = runTest {
+        val harness = Harness(scope = this)
+        harness.seedPeer(state = E2ePeerState.UNKNOWN)
+
+        harness.manager.reprobeAfterPeerLeft(ALICE, CHOSEN_SUB_ID)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sent).hasSize(1)
+        assertThat(harness.sender.sent.single().address).isEqualTo(ALICE)
+        assertThat(harness.sender.sent.single().subId).isEqualTo(CHOSEN_SUB_ID)
+    }
+
+    @Test
+    fun `reprobeAfterPeerLeft still respects the budget`() = runTest {
+        val harness = Harness(scope = this)
+        // UNKNOWN with an exhausted budget (reachable via the fallback:
+        // the downgrade keeps the probe history).
+        harness.seedPeer(
+            state = E2ePeerState.UNKNOWN,
+            attempts = 3,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 2 * MS_PER_DAY,
+        )
+
+        harness.manager.reprobeAfterPeerLeft(ALICE, CHOSEN_SUB_ID)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sent).isEmpty()
+    }
 }

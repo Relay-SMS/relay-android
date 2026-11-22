@@ -5,14 +5,21 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <!--
-        Relay interim logo — the old chat bubble, mirrored left-right so its
-        tail sits at the BOTTOM RIGHT (was bottom-left). The bubble is the
-        pre-tower monochrome glyph (2f85076^); a literal 180° rotation would
-        put the tail at the TOP right, so the path is mirrored on the
-        vertical axis instead: x -> 108 - x. White fill on the
-        #1E4FD8 adaptive-icon background (@color/ic_launcher_background).
+        Relay finalized logo (2026-11-22, relay-logo.svg) — the white
+        bubble mark on transparent: an outer bubble ring with a solid
+        inner bubble, on the #1E4FD8 adaptive-icon background
+        (@color/ic_launcher_background). The 71x71 artwork is scaled
+        0.6761x and centred (mark 48dp — the size of the icon already on
+        the homescreen), so the whole mark fits inside the 66dp safe
+        circle (max radius 31.1 from the viewport centre) and no device
+        mask clips it. The ring path has two subpaths winding opposite
+        ways, so the hole renders under the nonzero fill rule.
     -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M54,32C67.255,32 78,40.954 78,52C78,57.523 75.313,62.522 70.96,66.115L74,76L63.6,71.84C60.658,73.222 57.417,74 54,74C40.745,74 30,65.046 30,54C30,42.954 40.745,32 54,32Z" />
+        android:fillType="nonZero"
+        android:pathData="M54,30C67.255,30 78,40.745 78,54C78,67.01 67.648,77.6 54.732,77.987C54.602,77.995 54.47,78 54.338,78H36.761C33.027,78 30,74.973 30,71.239V53.662C30,53.529 30.004,53.398 30.012,53.267C30.399,40.351 40.99,30 54,30ZM53.662,34.056C42.697,34.056 33.766,42.757 33.393,53.633C33.389,53.709 33.386,53.786 33.384,53.863L33.38,54.1V66.479C33.38,70.975 37.025,74.62 41.521,74.62H53.9C54.064,74.62 54.213,74.613 54.341,74.607C65.229,74.247 73.944,65.312 73.944,54.338C73.944,43.137 64.863,34.056 53.662,34.056Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M53.662,37.437C62.996,37.437 70.563,45.004 70.563,54.338C70.563,63.501 63.272,70.96 54.174,71.231C54.084,71.236 53.992,71.239 53.9,71.239H41.521C38.892,71.239 36.761,69.108 36.761,66.479V54.1C36.761,54.008 36.763,53.916 36.768,53.825C37.04,44.728 44.499,37.437 53.662,37.437Z" />
 </vector>

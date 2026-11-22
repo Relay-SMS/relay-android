@@ -43,6 +43,7 @@ fun E2eNoticeRow(
         E2eNoticeKind.KEY_CHANGED -> stringResource(R.string.e2e_notice_key_changed, contactName)
         E2eNoticeKind.KEY_CHANGED_VERIFIED ->
             stringResource(R.string.e2e_notice_key_changed_verified, contactName)
+        E2eNoticeKind.DEACTIVATED -> stringResource(R.string.e2e_notice_deactivated, contactName)
     }
     E2eSystemRow(
         text = text,

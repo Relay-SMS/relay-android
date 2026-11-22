@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -14,11 +15,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.RelayText
+import com.filestech.sms.ui.theme.bubbleStatusColor
 import com.filestech.sms.ui.util.rememberChatFormatters
 import java.util.Date
 
@@ -67,6 +72,15 @@ import java.util.Date
  *    corps à pleine opacité ; le tap-pour-réessayer reste l'action. Un MMS en échec
  *    n'y promet plus « appuyer pour réessayer » : un MMS ne se relance pas (cf.
  *    [libelleDeStatut]).
+ *
+ * Round 41 — le libellé de statut (« Sent » / « Delivered » / « Read ») prend
+ * le gris de thème [bubbleStatusColor] (`#C9C9C9` en sombre, `#404040` en
+ * clair) au lieu de [metaColor] : l'heure garde la couleur du corps, le
+ * statut se détache en gris. Un libellé d'échec garde [metaColor] — ce
+ * n'est pas un statut de livraison, et le gris le rendrait illisible sur
+ * une bulle bleue en thème clair. Sur une bulle colorée (texte blanc), le
+ * statut garde [metaColor] lui aussi : `#404040` serait invisible sur le
+ * bleu en thème clair.
  */
 @Composable
 internal fun BubbleTimestamp(
@@ -91,6 +105,21 @@ internal fun BubbleTimestamp(
     // couleur de corps (noir/blanc sur bulle entrante, secondaire sur fond clair) est
     // déjà à pleine opacité AA — l'atténuer la ferait passer sous le seuil.
     val metaColor = if (textColor == Color.White) textColor.copy(alpha = 0.85f) else textColor
+    // Round 41 — le statut prend le gris de thème, l'heure garde metaColor.
+    // Un libellé d'échec et une bulle colorée gardent metaColor (voir le KDoc).
+    val statusColor = if (isFailed || textColor == Color.White) {
+        metaColor
+    } else {
+        bubbleStatusColor(MaterialTheme.colorScheme)
+    }
+    val labelText = if (showLabel) label else null
+    val text = buildAnnotatedString {
+        if (showTime) append(time)
+        if (showTime && labelText != null) append(" • ")
+        labelText?.let { status ->
+            withStyle(SpanStyle(color = statusColor)) { append(status) }
+        }
+    }
     FixedTypeSize {
         Row(
             modifier = Modifier.then(modifier),
@@ -98,10 +127,7 @@ internal fun BubbleTimestamp(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = listOfNotNull(
-                    if (showTime) time else null,
-                    if (showLabel) label else null,
-                ).joinToString(" • "),
+                text = text,
                 color = metaColor,
                 style = RelayText.BubbleMeta,
             )
@@ -111,11 +137,12 @@ internal fun BubbleTimestamp(
             // Text-only SMS only: MMS and attachments stay plain and
             // carry no lock. Decorative for screen readers — the
             // message is announced by its text, and a lock on every
-            // message would be noise.
+            // message would be noise. Round 41 — 6dp of air before
+            // the lock (was 4dp): a touch more left padding.
             if (message.encrypted &&
                 message.type == Message.Type.SMS && message.attachments.isEmpty()
             ) {
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(6.dp))
                 Icon(
                     painter = painterResource(R.drawable.ic_lock_encrypted),
                     contentDescription = null,

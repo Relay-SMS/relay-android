@@ -184,6 +184,7 @@
     <string name="e2e_notice_activated">Les messages sont désormais chiffrés de bout en bout.</string>
     <string name="e2e_notice_key_changed">Le code de sécurité de %1$s a changé. Les messages restent chiffrés de bout en bout.</string>
     <string name="e2e_notice_key_changed_verified">Le code de sécurité de %1$s a changé. %1$s était vérifié — compare à nouveau le numéro de sécurité pour confirmer que c’est bien la même personne.</string>
+    <string name="e2e_notice_deactivated">Chiffrement terminé — %1$s n’utilise plus Relay</string>
     <string name="e2e_decrypt_failed">Ce message n’a pas pu être déchiffré.</string>
     <string name="e2e_decrypt_failed_notif">Ce message n’a pas pu être déchiffré.</string>
     <string name="e2e_encryption">Chiffrement</string>
@@ -194,6 +195,7 @@
     <string name="e2e_details_not_encrypted">Non chiffré</string>
     <string name="e2e_details_not_relay">%1$s n’utilise pas encore Relay</string>
     <string name="e2e_details_auto_start">Le chiffrement démarrera automatiquement quand %1$s utilisera Relay</string>
+    <string name="e2e_details_retry_encryption">Réessayer le chiffrement</string>
     <string name="e2e_verify_title">Numéro de sécurité</string>
     <string name="e2e_verify_explainer">Compare ce numéro avec %1$s en personne ou par un autre canal — un appel, ou une autre application. Si les numéros correspondent, vous vous parlez directement, sans personne entre vous.</string>
     <string name="e2e_verify_mark">Marquer comme vérifié</string>

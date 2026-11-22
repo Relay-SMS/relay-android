@@ -46,6 +46,15 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * fragments — the placeholder keeps the ciphertext and the retry path
  * re-decrypts it once a new session exists.
  *
+ * Round 41 — the plain-text fallback ([onPlainSmsReceived]) lives
+ * here too, though it is not ciphertext: a plain SMS text from a
+ * peer marked ENCRYPTED means they lost Relay (an encrypted peer
+ * never sends plain via Relay), so the peer drops to UNKNOWN, the
+ * verified flag clears, a re-probe goes out, and the thread gets
+ * an "Encryption ended" notice. Only the plain-SMS path calls it —
+ * RLY1 fragments route to [handleFragment] and MMS never reaches
+ * this receiver — so neither can trigger it.
+ *
  * Error-log rules (§8.3): message ids (6 hex chars, meaningless alone)
  * and error classes only — never plaintext, ciphertext, or addresses.
  */
@@ -119,6 +128,37 @@ class E2eReceiveManager @Inject constructor(
                 probeManager.reprobeAfterDecryptFailure(address, subId)
             }
         }
+    }
+
+    /**
+     * Round 41 — peer-deleted-Relay fallback: called by the plain-SMS
+     * path for every inbound SMS text (after the message is stored).
+     * A plain text from a peer marked ENCRYPTED means they lost Relay,
+     * so the peer drops to UNKNOWN — NOT NotRelay, which would block
+     * the re-probe — the verified flag clears (as on a key change), a
+     * re-probe goes out (E2E resumes if they reinstall), and the
+     * thread gets a DEACTIVATED notice mirroring the ACTIVATED one.
+     *
+     * The state gate is the dedupe: the first plain text flips the
+     * peer to UNKNOWN, so later texts from the same peer return
+     * early — one notice, one re-probe per ENCRYPTED→UNKNOWN
+     * transition, which is why the notice uses [E2eNoticeStore.record]
+     * rather than `recordOnce` (a peer who cycles delete → reinstall
+     * → delete deserves a fresh notice each time). MMS and encrypted
+     * messages never reach this method (separate receivers / the
+     * fragment path), so they can never trigger it.
+     */
+    suspend fun onPlainSmsReceived(
+        address: String,
+        conversationId: Long,
+        subId: Int?,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        if (peers.state(address) != StoredPeerState.ENCRYPTED) return
+        peers.setState(address, StoredPeerState.UNKNOWN, now)
+        peers.setVerified(address, false, now)
+        notices.record(conversationId, E2eNoticeKind.DEACTIVATED, now)
+        probeManager.reprobeAfterPeerLeft(address, subId)
     }
 
     private fun decodePayload(base64: String): E2eWireFormat.DecodedPayload? {

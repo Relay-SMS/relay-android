@@ -1921,6 +1921,21 @@ class ThreadViewModel @Inject constructor(
             E2eThreadEntryPoint::class.java,
         )
 
+    /**
+     * E2E — manual probe retry from the Details panel (round 41): the
+     * user asked to retry the key exchange, so one probe goes out now
+     * (bypassing the budget and the discovery toggle — the tap is
+     * explicit consent for this one probe). Hub mode only, like the
+     * probe-on-open: the panel shows no encryption row in client
+     * mode, so this never fires there.
+     */
+    fun retryE2eProbe() {
+        runCatching { e2eEntryPoint().probeManager().retryProbe(conversationId) }
+            .onFailure {
+                timber.log.Timber.w(it, "ThreadViewModel: e2e manual probe retry failed")
+            }
+    }
+
     fun deleteMessage(messageId: Long) {
         viewModelScope.launch { repo.deleteMessage(messageId) }
     }

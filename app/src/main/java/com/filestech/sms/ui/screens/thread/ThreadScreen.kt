@@ -623,22 +623,41 @@ fun ThreadScreen(
         if (!emojiPickerOpen) return@LaunchedEffect
         val wasAtBottom = isAtBottom
         delay(320)
-        if (wasAtBottom && state.messages.isNotEmpty()) {
+        // Round 41 — crash guard: `bottomItemIndex` is the
+        // composition-time capture (-1 while messages are still
+        // loading) but the guard reads LIVE state, so after the
+        // delay the list may be non-empty while the captured index
+        // is still -1 — the round-18 keyboard effect crashed
+        // exactly this way on a slow phone. A stale -1 means skip
+        // the scroll; the pinned-scroll effect re-pins once loaded.
+        if (wasAtBottom && bottomItemIndex >= 0 && state.messages.isNotEmpty()) {
             listState.animateScrollToItem(bottomItemIndex)
         }
     }
-    // Round 18 — same as the picker above, for the keyboard: when the IME
-    // opens, the viewport shrinks from the bottom and the newest messages
-    // slide below it, behind the keyboard — it looked like the keyboard was
-    // overlaying the texts. If the user was at the tail when the keyboard
-    // opened, scroll to the bottom once the resize has settled so the last
-    // message sits above the composer. A user scrolled up reading older
-    // messages — or searching — is left alone. The pinned-scroll effect
-    // below is paused while the IME animates (round 38), so this smooth
-    // animated landing is the only re-pin during the transition — and
-    // nothing snaps the list frame by frame underneath it.
-    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
-    val keyboardOpen = imeBottomPx > 0
+    // Round 41 — the thread tracks the keyboard frame by frame: as the IME
+    // inset grows or shrinks, scroll the list by the same delta, so the
+    // content moves WITH the keyboard instead of after it. The round-18
+    // effect waited a fixed 320ms and then animated to the bottom — the
+    // keyboard slid up, there was a pause, and the thread snapped into
+    // place. Two decoupled motions read as jitter; one motion reads as
+    // the thread glued to the keyboard. (The same frame-locked behavior
+    // a bottom-anchored list gets for free from its layout — here
+    // reproduced by driving the scroll offset from the inset deltas,
+    // because this list is not reversed.) The tracker below is a
+    // long-lived collector, not an effect keyed on the inset: re-keying
+    // every frame would restart the coroutine mid-animation and drop
+    // deltas. Only while at the bottom and not searching, not scrolling,
+    // picker closed — a user scrolled up reading older messages is left
+    // alone, and the picker has its own effect above. Any residual gap
+    // (a dropped frame, rounding) is picked up by the pinned-scroll
+    // effect once the insets settle.
+    val density = LocalDensity.current
+    // Captured once: the IME insets object is stable per window (only its
+    // values change), and `WindowInsets.ime` itself is a @Composable
+    // accessor, so the flow below cannot call it — it reads the bottom
+    // from this captured object instead.
+    val imeInsets = WindowInsets.ime
+    val imeBottomPx = imeInsets.getBottom(density)
     // Round 38 — the IME is mid-animation while the keyboard slides in
     // or out (or changes height, e.g. switching to the symbols layout):
     // the inset changes every frame until the animation ends, so the
@@ -656,13 +675,22 @@ fun ThreadScreen(
         delay(350)
         imeAnimating = false
     }
-    LaunchedEffect(keyboardOpen) {
-        if (!keyboardOpen) return@LaunchedEffect
-        val wasAtBottom = isAtBottom
-        val searching = threadSearchOpen
-        delay(320)
-        if (wasAtBottom && !searching && state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(bottomItemIndex)
+    LaunchedEffect(listState) {
+        val tracker = ImeDeltaTracker()
+        // The inset is read inside the flow, not from the `imeBottomPx`
+        // val above: that val is a plain Int captured at composition, so
+        // a flow over it would never re-emit. The inset values are
+        // snapshot state (AndroidWindowInsets holds them in a
+        // MutableState), so reading them here subscribes the collector
+        // to every frame of the animation.
+        snapshotFlow { imeInsets.getBottom(density) }.collect { current ->
+            val delta = tracker.onInsetChanged(current)
+            val shouldTrack = delta != 0f && isAtBottom &&
+                !listState.isScrollInProgress && !threadSearchOpen &&
+                !emojiPickerOpen && state.messages.isNotEmpty()
+            if (shouldTrack) {
+                listState.scroll { scrollBy(delta) }
+            }
         }
     }
     // Audit R4 (v1.14.8) — Compteur de messages non-vus apparus pendant que l'user était
@@ -752,8 +780,9 @@ fun ThreadScreen(
     // the keyboard slide) instead of an ANR. The pin pauses only until
     // the insets settle (the 350ms timer above); while the keyboard
     // sits open it stays engaged, so a late-loading preview still
-    // re-pins. The keyboard effect above owns the smooth landing after
-    // its 320ms delay, unopposed by snaps.
+    // re-pins. The frame-locked tracker above owns the motion while the
+    // keyboard slides; the pin re-engages once the insets settle and
+    // picks up any residual gap the tracker left.
     LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen, imeAnimating) {
         if (emojiPickerOpen || imeAnimating) return@LaunchedEffect
         var pinnedToBottom = false
@@ -1984,6 +2013,9 @@ fun ThreadScreen(
                 },
                 e2eVerified = state.e2eVerified,
                 onOpenE2eVerification = { e2eVerificationOpen = true },
+                // Round 41 — manual probe retry from the Details
+                // panel: one probe now, bypassing the budget.
+                onRetryE2eProbe = { viewModel.retryE2eProbe() },
                 isUnknownContact = !detailsConversation.isGroup &&
                     detailsConversation.displayName == null,
                 memberNames = state.memberNames,
