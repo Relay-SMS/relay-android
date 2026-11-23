@@ -29,12 +29,20 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  *   bundle per sender per day. A probe from a known peer with
  *   DIFFERENT identity keys is a key-change event (design §4.4): the
  *   verified flag clears and a KEY_CHANGED notice is recorded.
+ *   Round 47 — a MANUAL probe (flag bit, [E2eHandshake]) bypasses
+ *   the rate limit: the sender's user tapped Retry, and the whole
+ *   point of the tap is to get a bundle back now. Automatic probes
+ *   are never marked manual, so the limit still guards against
+ *   probe spam — and a successful manual bundle send still
+ *   consumes the limit, so the next automatic probe is gated.
  * - **Bundle received** → create the outbound session, flip the peer
- *   to ENCRYPTED, record the one-time ACTIVATED notice. First reply
- *   wins (§2.4 dual-install): a bundle identical to one already used
- *   (same keys + a live current session) is ignored. A bundle with
- *   different keys from a known peer is a key change: the new session
- *   becomes current, the old one stays as a fallback, and kept
+ *   to ENCRYPTED, record the ACTIVATED notice when the thread's latest
+ *   status is not already "activated" ([E2eNoticeStore.recordActivated]
+ *   — a re-establishment after an "Encryption ended" notice earns a
+ *   fresh one). First reply wins (§2.4 dual-install): a bundle identical
+ *   to one already used (same keys + a live current session) is ignored.
+ *   A bundle with different keys from a known peer is a key change: the
+ *   new session becomes current, the old one stays as a fallback, and kept
  *   ciphertext is retried.
  *
  * Anything that is not one of our packets (bad magic, version, type,
@@ -169,7 +177,15 @@ class E2eHandshakeHandler @Inject constructor(
         // Rate limit: at most one bundle per sender per day (§2.3).
         // The keys above are recorded regardless — only the reply is
         // gated, so a re-probe tomorrow still finds fresh keys.
-        if (!E2eProbePolicy.canReplyWithBundle(peer?.lastBundleReplyAt, now)) {
+        // Round 47 — a MANUAL probe bypasses the limit: the
+        // sender's user tapped Retry, and the tap is pointless if
+        // the reply is still gated (the retry failed unless both
+        // phones reset timing first). Automatic probes are never
+        // marked manual, so the limit still guards against probe
+        // spam. The limit is still CONSUMED on a successful manual
+        // bundle send (recordBundleReply below), so the next
+        // automatic probe is still gated.
+        if (!probe.manual && !E2eProbePolicy.canReplyWithBundle(peer?.lastBundleReplyAt, now)) {
             Timber.i("E2E: bundle reply rate-limited (one per sender per day)")
             // Without this entry, "probe received but no
             // bundle-sent and no failure" is ambiguous — with it,
@@ -255,7 +271,7 @@ class E2eHandshakeHandler @Inject constructor(
         sessions.get().saveNewSession(address, sessionId, now)
         peers.setState(address, StoredPeerState.ENCRYPTED, now)
         conversationIdForAddress(address)?.let { conversationId ->
-            notices.recordOnce(conversationId, E2eNoticeKind.ACTIVATED, now)
+            notices.recordActivated(conversationId, now)
         }
         Timber.i("E2E: peer state -> ENCRYPTED (bundle received)")
         retryDecryptFailed(address)

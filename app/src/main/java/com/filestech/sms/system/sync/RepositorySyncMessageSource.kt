@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.core.content.ContextCompat
+import com.filestech.sms.core.ext.canonicalPhone
 import com.filestech.sms.core.mms.MmsConstants
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
@@ -1358,18 +1359,25 @@ private fun sha256Hex(file: File): String? = try {
  * E2E (§9.1): [encryptedAddresses] is the set of addresses whose
  * peer state is ENCRYPTED — a conversation is `encrypted` only when
  * it is 1:1 and its single address is in the set (groups are never
- * encrypted in v1). The peer rows are keyed by the normalized number
- * the app stores, and the raw form is checked too — the two agree
- * for a stored number, and the raw check covers a peer row keyed
- * before normalization.
+ * encrypted in v1).
+ *
+ * Round 47 — the set holds CANONICAL keys (round 46: the peer
+ * repository keys rows by [canonicalPhone], NANP country code
+ * stripped), while a conversation's stored number may still carry
+ * `+1` — so the address is canonicalized before comparing, or a
+ * `+1`-stored thread never matches its ENCRYPTED peer and the
+ * desktop shows no lock. The old normalized/raw checks are gone
+ * on purpose: the raw check matched legacy pre-round-46 rows
+ * (keyed by `normalizePhone` alone, `+1…`), whose sessions round
+ * 46 left unreachable — matching one would flag a thread
+ * encrypted whose messages go out plain.
  */
 private fun Conversation.toSynced(
     messageCount: Int,
     encryptedAddresses: Set<String> = emptySet(),
 ): SyncedConversation {
     val single = addresses.singleOrNull()
-    val encrypted = single != null &&
-        (single.normalized in encryptedAddresses || single.raw in encryptedAddresses)
+    val encrypted = single != null && single.normalized.canonicalPhone() in encryptedAddresses
     return SyncedConversation(
         id = id.toString(),
         threadId = threadId,

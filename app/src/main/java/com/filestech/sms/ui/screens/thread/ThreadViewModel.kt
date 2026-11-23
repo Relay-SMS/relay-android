@@ -2353,20 +2353,24 @@ class ThreadViewModel @Inject constructor(
 
     /**
      * A group member tap in the details panel: a saved contact
-     * opens in the system editor, an unknown number opens a blank
-     * contact form prefilled with the number. The lookup decides
-     * which — `memberNames` only covers members who sent a
-     * message, so it cannot answer "is this a contact" for the
-     * whole member list.
+     * opens in the system editor on THAT person's card
+     * (`ACTION_EDIT` + contact URI, like [requestEditContact]),
+     * an unknown number opens a blank contact form prefilled
+     * with the number. The lookup decides which — `memberNames`
+     * only covers members who sent a message, so it cannot
+     * answer "is this a contact" for the whole member list.
+     * A failed lookup (`READ_CONTACTS` denied throws
+     * `SecurityException`) falls back to the create flow —
+     * better than nothing, and never a crash.
      */
     fun openMemberContact(rawAddress: String) {
         viewModelScope.launch {
-            val isContact = runCatching {
-                contactRepo.lookupByPhone(rawAddress) != null
-            }.getOrDefault(false)
+            val contactId = com.filestech.sms.core.result
+                .runCatchingCancellable { contactRepo.lookupByPhone(rawAddress) }
+                .getOrNull()?.id
             _events.tryEmit(
-                if (isContact) {
-                    Event.OpenAddContact(rawAddress)
+                if (contactId != null) {
+                    Event.OpenEditContact(contactId)
                 } else {
                     Event.OpenCreateContact(rawAddress)
                 },

@@ -14,6 +14,15 @@ package com.filestech.sms.domain.model
  *
  * Shared by the note thread UI and the note PDF export, so the two
  * can never disagree about what an entry looks like.
+ *
+ * Round 47 — the mapped message carries `encrypted = true`: a note
+ * entry IS encrypted (whole-DB SQLCipher + the AES-256-GCM
+ * attachment envelope), just at rest rather than on the wire. The
+ * bubble colour rule keys on this flag, so a note entry keeps the
+ * blue default instead of turning green like a plain SMS — green
+ * means "sent in the clear over the carrier", and a note never
+ * leaves the device. Side effect, and intended: a text-only entry
+ * shows the lock on its timestamp line, like any encrypted message.
  */
 fun NoteMessage.toDisplayMessage(): Message = Message(
     id = id,
@@ -32,6 +41,7 @@ fun NoteMessage.toDisplayMessage(): Message = Message(
     subId = null,
     scheduledAt = null,
     attachments = attachments,
+    encrypted = true,
 )
 
 /**

@@ -28,8 +28,9 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  *
  * - **Success** → ONE message is inserted with the decrypted body and
  *   `encrypted = 1`, and the fragment rows are deleted. A pre-key
- *   message also flips the peer to ENCRYPTED, records the one-time
- *   ACTIVATED notice, and retries kept ciphertext. A REACTION payload
+ *   message also flips the peer to ENCRYPTED, records the ACTIVATED
+ *   notice when the thread's latest status is not already "activated",
+ *   and retries kept ciphertext. A REACTION payload
  *   folds onto its target like a plain tapback instead of becoming a
  *   bubble.
  * - **Failure** (no session, wrong session, corrupt payload) → a
@@ -148,20 +149,27 @@ class E2eReceiveManager @Inject constructor(
      * messages never reach this method (separate receivers / the
      * fragment path), so they can never trigger it.
      *
-     * Round 46 — grace guard: a plain text arriving within
-     * [DEACTIVATED_GRACE_MS] of the session being established does
-     * NOT fire the fallback. The peer may not have flipped to
-     * ENCRYPTED yet — it needs our first encrypted message to build
-     * its session — so its plain reply to our first encrypted
-     * message is expected, not proof it lost Relay (device-proven:
-     * the partner's plain reply tore down a fresh, working session).
-     * The guard reads [E2ePeerEntity.updatedAt][com.filestech.sms.data.local.db.entity.E2ePeerEntity.updatedAt],
-     * which the ENCRYPTED flip writes via
-     * [E2ePeerRepository.setState] — an approximation, since other
-     * writes (recordKeys, probe / bundle bookkeeping) bump it too,
-     * so the guard may occasionally delay a genuine DEACTIVATED by
-     * up to an hour; harmless, because the next plain message after
-     * the window fires it.
+     * Round 46 — grace guard, re-anchored in round 47: a plain text does
+     * NOT fire the fallback while the peer may not have flipped to
+     * encrypted sending yet. The peer flips only when OUR first
+     * encrypted (pre-key) message reaches them — and that send can land
+     * arbitrarily long after OUR flip (we may not text them for hours),
+     * so the round-46 window, measured from our establishment
+     * ([E2ePeerEntity.updatedAt][com.filestech.sms.data.local.db.entity.E2ePeerEntity.updatedAt]),
+     * fired on a plain reply sent minutes after our first encrypted
+     * message (seen on device 2026-11-23: a plain reply minutes after
+     * our first encrypted message tore down a session established
+     * about an hour earlier). The guard now
+     * measures from our first OUTGOING encrypted message on this
+     * session (read from the message table — no new column): a plain
+     * text within [DEACTIVATED_GRACE_MS] of that send is expected, not
+     * proof the peer lost Relay. When we never sent encrypted on this
+     * session, the peer cannot have flipped yet, so the fallback waits
+     * [DEACTIVATED_NEVER_SENT_MS] — past that the exchange is stale,
+     * and downgrading restarts it via the re-probe. The `updatedAt`
+     * filter is still an approximation (other writes bump it too), and
+     * it fails safe: a bumped `updatedAt` only ever DELAYS a genuine
+     * DEACTIVATED, never fires a false one.
      */
     suspend fun onPlainSmsReceived(
         address: String,
@@ -171,7 +179,20 @@ class E2eReceiveManager @Inject constructor(
     ) {
         val peer = peers.getPeer(address)
         if (peer?.state != StoredPeerState.ENCRYPTED) return
-        if (now - peer.updatedAt < DEACTIVATED_GRACE_MS) return
+        // Round 47 — the peer could only have flipped after our first
+        // encrypted (pre-key) message reached them, so the grace
+        // window runs from that send, not from our establishment.
+        val firstEncryptedSentAt =
+            messageDao.firstOutgoingEncryptedSince(conversationId, peer.updatedAt)
+        if (firstEncryptedSentAt != null) {
+            if (now - firstEncryptedSentAt < DEACTIVATED_GRACE_MS) return
+        } else if (now - peer.updatedAt < DEACTIVATED_NEVER_SENT_MS) {
+            // We never sent encrypted on this session: the peer cannot
+            // have flipped yet, so their plain messages are expected.
+            // The backstop bounds the wait — past it the exchange is
+            // stale and downgrading restarts it via the re-probe.
+            return
+        }
         peers.setState(address, StoredPeerState.UNKNOWN, now)
         peers.setVerified(address, false, now)
         notices.record(conversationId, E2eNoticeKind.DEACTIVATED, now)
@@ -204,7 +225,7 @@ class E2eReceiveManager @Inject constructor(
         val conversationId = conversationRepo.findMessageForResend(msgId)?.conversationId
             ?: return
         if (newSession) {
-            notices.recordOnce(conversationId, E2eNoticeKind.ACTIVATED, now)
+            notices.recordActivated(conversationId, now)
         }
         notifier.notifyIncoming(
             address = address,
@@ -251,7 +272,7 @@ class E2eReceiveManager @Inject constructor(
             return
         }
         if (newSession) {
-            notices.recordOnce(applied.conversationId, E2eNoticeKind.ACTIVATED, now)
+            notices.recordActivated(applied.conversationId, now)
         }
         if (decoded.isRemoval) return
         // A removal only clears the badge — nothing to notify about.
@@ -320,11 +341,24 @@ class E2eReceiveManager @Inject constructor(
         const val MAX_PROCESSED_SETS = 256
 
         /**
-         * Round 46 — DEACTIVATED grace window (1 hour): a plain SMS
-         * from a peer whose session was established less than this
-         * long ago does not fire the peer-left fallback — the peer
-         * may simply not have flipped to ENCRYPTED yet.
+         * Round 46 — DEACTIVATED grace window (1 hour), re-anchored in
+         * round 47: a plain SMS arriving within this window of OUR
+         * FIRST encrypted send to the peer does not fire the peer-left
+         * fallback — the peer may simply not have flipped to ENCRYPTED
+         * yet (it needs our pre-key message first).
          */
         const val DEACTIVATED_GRACE_MS = 60 * 60 * 1000L
+
+        /**
+         * Round 47 — DEACTIVATED backstop (24 hours): when no
+         * encrypted message ever went out on this session, the peer
+         * cannot have flipped to encrypted sending yet, so the
+         * peer-left fallback waits this long after the establishment
+         * before firing. Past it the exchange is stale — downgrading
+         * restarts it via the re-probe, and our next messages go out
+         * plain (readable) instead of as fragments the peer cannot
+         * read.
+         */
+        const val DEACTIVATED_NEVER_SENT_MS = 24 * DEACTIVATED_GRACE_MS
     }
 }

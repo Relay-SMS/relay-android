@@ -56,6 +56,7 @@ import com.filestech.sms.domain.otp.OtpCodeDetector
 import com.filestech.sms.ui.security.copyToClipboardSensitive
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.onBrandBlue
+import com.filestech.sms.ui.theme.resolveBubbleColors
 
 /**
  * Position of a message inside a burst (consecutive messages from the same sender, < 60 s apart).
@@ -145,9 +146,11 @@ fun MessageBubble(
     senderLabel: String? = null,
     /**
      * v1.11.0 — Sujet 5 apparence : couleur ARGB personnalisée pour la bulle
-     * SORTANTE de cette conversation. `null` = la couleur de marque par défaut
-     * ([com.filestech.sms.ui.theme.brandBlue] : bleu fixe hors couleurs
-     * dynamiques, `primary` du fond d'écran sinon — round 20). Sélectionnée par l'user dans `AppearanceDialog`
+     * SORTANTE de cette conversation. `null` = la couleur par défaut — le bleu
+     * de marque ([com.filestech.sms.ui.theme.brandBlue] : bleu fixe hors couleurs
+     * dynamiques, `primary` du fond d'écran sinon — round 20) pour un message
+     * chiffré, le vert `#3BA803` pour un message en clair (round 47 : la couleur
+     * signale le chiffrement, par message). Sélectionnée par l'user dans `AppearanceDialog`
      * parmi [com.filestech.sms.ui.theme.BubbleColorPalette.OPTIONS]
      * (palette WCAG-safe). Aucun effet sur les bulles entrantes.
      */
@@ -185,15 +188,27 @@ fun MessageBubble(
     // Outgoing bubbles use a subtle vertical gradient on top of the primary color — gives the
     // bubble depth without committing to a hard shadow or a custom drawable. Incoming bubbles
     // stay flat surfaceContainerHigh so reading them remains restful.
-    // v1.11.0 — Sujet 5 apparence : couleur de bulle sortante personnalisée par
-    // conversation. Round 20 — le défaut (`null`) rend [brandBlue] : le bleu de
-    // marque fixe quand les couleurs dynamiques sont éteintes, le `primary` du
-    // fond d'écran quand elles sont actives (demande de Kristin : « our blue
-    // etc can all be dynamic »). Cela remplace la règle v1.19.0 qui figeait le
-    // défaut sur [BrandBlue] parce que `cs.primary` « virait au bleu clair »
-    // sous Material You — c'est désormais le comportement voulu.
-    val outgoingBaseColor = customBubbleColorArgb?.let { androidx.compose.ui.graphics.Color(it) }
-        ?: brandBlue()
+    // Round 47 — the fill and its text resolve together ([resolveBubbleColors]):
+    // the default (no custom colour) is blue for an encrypted message and green
+    // #3BA803 for a plain one, per message — a thread that turns encrypted keeps
+    // its old plain messages green. The blue is still [brandBlue] (round 20:
+    // fixed brand blue, or the wallpaper `primary` when dynamic colours are on);
+    // the green is fixed in both themes. The text follows the fill: [onBrandBlue]
+    // on blue, white on a custom colour (every palette colour is calibrated WCAG
+    // AA against white), white on the green too (3.09:1, accepted by design —
+    // iMessage uses white on a lighter green; Kristin's call).
+    // No new parameter: the encryption state rides [message] (the same flag the
+    // lock icon reads), and the bubble is at the Detekt 20-parameter limit.
+    val bubbleColors = resolveBubbleColors(
+        isOutgoing = isOut,
+        encrypted = message.encrypted,
+        customBubbleColorArgb = customBubbleColorArgb,
+        defaultBlue = brandBlue(),
+        onDefaultBlue = onBrandBlue(),
+        incomingBackground = com.filestech.sms.ui.theme.bubbleIncomingColor(cs),
+        incomingText = cs.onSurface,
+    )
+    val outgoingBaseColor = bubbleColors.background
     // Feedback round 6 — remembered: building the gradient (and its colour
     // list) on every composition allocated per bubble, per recomposition,
     // for a value that only depends on the outgoing colour.
@@ -204,23 +219,9 @@ fun MessageBubble(
             end = Offset(0f, Float.POSITIVE_INFINITY),
         )
     }
-    // Texte sur bulle sortante : sur une couleur personnalisée, le blanc forcé
-    // (chaque couleur de [BubbleColorPalette] est calibrée WCAG AA ≥ 4.5:1
-    // contre le blanc). Sur la couleur par défaut, [onBrandBlue] — blanc sur
-    // le bleu fixe, `onPrimary` du scheme dynamique quand les couleurs
-    // dynamiques sont actives (round 20 : un primary clair de fond d'écran
-    // avec du texte blanc serait illisible).
     // Round 17 — sauf le gros emoji : sans fond de bulle, le blanc serait
     // invisible en thème clair, donc il lit la couleur de surface.
-    val textColor = if (isOut && !bigEmoji) {
-        if (customBubbleColorArgb == null) {
-            onBrandBlue()
-        } else {
-            androidx.compose.ui.graphics.Color.White
-        }
-    } else {
-        cs.onSurface
-    }
+    val textColor = if (bigEmoji) cs.onSurface else bubbleColors.text
     // Round 17 — le gros emoji : 64sp au lieu du corps de texte (16sp).
     val textStyle = if (bigEmoji) {
         MaterialTheme.typography.bodyLarge.copy(fontSize = BIG_EMOJI_FONT_SIZE_SP.sp)

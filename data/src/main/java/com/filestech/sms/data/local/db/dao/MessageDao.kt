@@ -539,6 +539,28 @@ interface MessageDao {
     suspend fun findDecryptFailed(address: String): List<MessageEntity>
 
     /**
+     * E2E (round 47) — the date of the earliest OUTGOING encrypted message in
+     * [conversationId] dated at or after [since] (the peer's establishment time,
+     * approximated by the peer row's `updated_at`), or null when no encrypted
+     * message went out on this session yet. The peer-left fallback's grace guard
+     * ([com.filestech.sms.e2e.E2eReceiveManager]) measures from it: the peer can
+     * only have flipped to encrypted sending after our first encrypted (pre-key)
+     * message reached them, so a plain message within the grace window of that
+     * send may predate their flip. Outgoing rows carry the phone-clock send time
+     * in `date`, the same clock domain as `updated_at`.
+     */
+    @Query(
+        """
+        SELECT MIN(date) FROM messages
+        WHERE conversation_id = :conversationId
+          AND direction = 1
+          AND encrypted = 1
+          AND date >= :since
+        """,
+    )
+    suspend fun firstOutgoingEncryptedSince(conversationId: Long, since: Long): Long?
+
+    /**
      * E2E — the conversations whose LATEST visible message is an
      * undecryptable placeholder. The list preview is derived from that
      * message, and a placeholder's stored body is empty — so the row

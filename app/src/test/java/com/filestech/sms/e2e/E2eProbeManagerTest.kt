@@ -432,6 +432,40 @@ class E2eProbeManagerTest {
         assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.PROBING)
     }
 
+    // ──────────────────── Round 47: the manual flag ────────────────────
+    // A manual probe carries the flag bit (bit 7 of the type byte),
+    // so the receiver bypasses its bundle rate limit for it. An
+    // automatic probe never carries it — the limit still guards
+    // against probe spam.
+
+    @Test
+    fun `a manual probe carries the manual flag`() = runTest {
+        val harness = Harness(scope = this)
+
+        val probed = harness.manager.probeAddress(ALICE, null, manual = true, now = NOW)
+
+        assertThat(probed).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        val packet = E2eHandshake.decode(harness.sender.sent.single().data)
+        assertThat(packet).isInstanceOf(E2eHandshake.HandshakePacket.Probe::class.java)
+        val probe = packet as E2eHandshake.HandshakePacket.Probe
+        assertThat(probe.manual).isTrue()
+    }
+
+    @Test
+    fun `an automatic probe carries no manual flag`() = runTest {
+        val harness = Harness(scope = this)
+
+        val probed = harness.manager.probeAddress(ALICE, null, now = NOW)
+
+        assertThat(probed).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        val packet = E2eHandshake.decode(harness.sender.sent.single().data)
+        assertThat(packet).isInstanceOf(E2eHandshake.HandshakePacket.Probe::class.java)
+        val probe = packet as E2eHandshake.HandshakePacket.Probe
+        assertThat(probe.manual).isFalse()
+    }
+
     @Test
     fun `a manual third attempt leaves the peer PROBING`() = runTest {
         val harness = Harness(scope = this)
@@ -537,6 +571,12 @@ class E2eProbeManagerTest {
         assertThat(harness.sender.sent).hasSize(1)
         assertThat(harness.sender.sent.single().address).isEqualTo(ALICE)
         assertThat(harness.sender.sent.single().subId).isEqualTo(CHOSEN_SUB_ID)
+        // Round 47 — the retry's probe is marked manual, so the
+        // receiver bypasses its bundle rate limit for it.
+        val packet = E2eHandshake.decode(harness.sender.sent.single().data)
+        assertThat(packet).isInstanceOf(E2eHandshake.HandshakePacket.Probe::class.java)
+        val probe = packet as E2eHandshake.HandshakePacket.Probe
+        assertThat(probe.manual).isTrue()
     }
 
     // ──────────────── Manual retry over regular SMS (round 45) ────────────────
@@ -570,6 +610,9 @@ class E2eProbeManagerTest {
         val probe = packet as E2eHandshake.HandshakePacket.Probe
         assertThat(probe.curveKey).isEqualTo(harness.crypto.identityKeys().curve25519)
         assertThat(probe.edKey).isEqualTo(harness.crypto.identityKeys().ed25519)
+        // Round 47 — the retry's probe is marked manual, so the
+        // receiver bypasses its bundle rate limit for it.
+        assertThat(probe.manual).isTrue()
     }
 
     @Test

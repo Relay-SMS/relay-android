@@ -39,7 +39,11 @@ data class Message(
      * E2E (schema v22) — this message was encrypted on the wire
      * (Relay-to-Relay 1:1 text). The UI shows a lock on its
      * timestamp line; plain messages (MMS, attachments, the first
-     * plain message to a new contact) carry no lock.
+     * plain message to a new contact) carry no lock. Round 47 —
+     * the outgoing bubble colour keys on this flag too (blue when
+     * encrypted, green `#3BA803` when plain). Note display
+     * projections set it as well: a note entry is encrypted at
+     * rest, so it keeps the blue default (see [NoteMessage.toDisplayMessage]).
      */
     val encrypted: Boolean = false,
     /**

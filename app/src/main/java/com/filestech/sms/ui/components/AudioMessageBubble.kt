@@ -52,6 +52,7 @@ import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.onBrandBlue
+import com.filestech.sms.ui.theme.resolveBubbleColors
 
 /**
  * Audio bubble for an MMS voice message. Renders a compact mini-player inside a chat bubble
@@ -150,32 +151,40 @@ fun AudioMessageBubble(
     val cs = MaterialTheme.colorScheme
     // Feedback round 5 — the voice bubble is a SOLID fill like the text bubbles
     // (the Figma thread shows a solid blue outgoing bubble, not the old
-    // border-only one). Incoming keeps the neutral grey. Round 20 — the
-    // outgoing fill is [brandBlue]: fixed brand blue, or the wallpaper
-    // `primary` when dynamic colours are on.
-    // Notes — a custom colour replaces the brand blue (outgoing only).
-    val bgColor = if (isOut) {
-        customBubbleColorArgb?.let { Color(it) } ?: brandBlue()
-    } else {
-        com.filestech.sms.ui.theme.bubbleIncomingColor(cs)
-    }
-    // Feedback round 5 — disc + waveform colour: [onBrandBlue] on the outgoing
-    // bubble (white on the fixed brand blue, `onPrimary` on the dynamic one);
+    // border-only one). Incoming keeps the neutral grey. Round 47 — the
+    // fill and its text resolve together ([resolveBubbleColors], like
+    // [MessageBubble]): the default (no custom colour) is blue for an
+    // encrypted message and green `#3BA803` for a plain one, per message —
+    // a sent voice clip is plain MMS today, so it is green. A custom
+    // colour still wins. Notes — the note message carries encrypted =
+    // true, so note voice keeps the blue default.
+    val bubbleColors = resolveBubbleColors(
+        isOutgoing = isOut,
+        encrypted = message.encrypted,
+        customBubbleColorArgb = customBubbleColorArgb,
+        defaultBlue = brandBlue(),
+        onDefaultBlue = onBrandBlue(),
+        incomingBackground = com.filestech.sms.ui.theme.bubbleIncomingColor(cs),
+        incomingText = cs.onSurface,
+    )
+    val bgColor = bubbleColors.background
+    // Feedback round 5 — disc + waveform colour: the bubble's text colour
+    // outgoing ([bubbleColors.text] — white on blue, green, and custom);
     // Kristin's dark `#353535` on the light incoming bubble, white in
     // dark mode where `#353535` would vanish on the dark grey bubble. Picked
     // from the surface luminance, like [com.filestech.sms.ui.theme.textFieldCursorColor].
-    // Notes — white on a custom colour (the palette is WCAG-safe for white).
     val surfaceLuma = 0.2126f * cs.surface.red + 0.7152f * cs.surface.green + 0.0722f * cs.surface.blue
     val controlColor = if (isOut) {
-        if (customBubbleColorArgb == null) onBrandBlue() else Color.White
+        bubbleColors.text
     } else if (surfaceLuma < 0.5f) {
         Color.White
     } else {
         voiceDark
     }
-    // Duration + timestamp sit ON the solid fill now: [onBrandBlue] outgoing, on-surface
-    // incoming (the old outgoing `onSurfaceVariant` assumed a transparent bubble).
-    val labelColor = if (isOut) onBrandBlue() else cs.onSurface
+    // Duration + timestamp sit ON the solid fill now: the bubble's text
+    // colour outgoing, on-surface incoming (the old outgoing
+    // `onSurfaceVariant` assumed a transparent bubble).
+    val labelColor = if (isOut) bubbleColors.text else cs.onSurface
 
     // `derivedStateOf` blocks recomposition unless the *projected* slice changes — so a tick
     // that only moves `positionMs` on a non-active bubble emits the same `LocalPlayback.None`
@@ -288,12 +297,12 @@ fun AudioMessageBubble(
                   androidx.compose.foundation.layout.Column {
                     if (!senderLabel.isNullOrBlank()) {
                         // The label sits on the bubble fill in both directions now
-                        // (the outgoing bubble is solid blue): white outgoing,
-                        // on-surface incoming.
+                        // (the outgoing bubble is solid): the bubble's text
+                        // colour outgoing, on-surface incoming.
                         Text(
                             text = senderLabel,
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (isOut) onBrandBlue() else cs.onSurface,
+                            color = if (isOut) bubbleColors.text else cs.onSurface,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                             modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 2.dp),
                         )

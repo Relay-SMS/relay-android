@@ -56,6 +56,56 @@ class E2eNoticeStoreTest {
         coVerify(exactly = 1) { dao.insert(any()) }
     }
 
+    // -- Round 47: ACTIVATED after a teardown ----------------------
+
+    @Test
+    fun `recordActivated records the first activation`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+
+        assertThat(store.recordActivated(conversationId, now)).isTrue()
+        assertThat(dao.notices).hasSize(1)
+        assertThat(dao.notices.single().kind).isEqualTo(E2eNoticeKind.ACTIVATED)
+    }
+
+    @Test
+    fun `recordActivated skips a re-establishment while activated is the latest word`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+
+        assertThat(store.recordActivated(conversationId, now + 1000)).isFalse()
+        assertThat(dao.notices).hasSize(1)
+    }
+
+    @Test
+    fun `recordActivated records again after a deactivation`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+
+        assertThat(store.recordActivated(conversationId, now + 2000)).isTrue()
+        assertThat(dao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED }).hasSize(2)
+        assertThat(dao.notices.map { it.kind }).containsExactly(
+            E2eNoticeKind.ACTIVATED,
+            E2eNoticeKind.DEACTIVATED,
+            E2eNoticeKind.ACTIVATED,
+        ).inOrder()
+    }
+
+    @Test
+    fun `recordActivated skips again once the second activation is the latest word`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now + 2000)
+
+        assertThat(store.recordActivated(conversationId, now + 3000)).isFalse()
+        assertThat(dao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED }).hasSize(2)
+    }
+
     @Test
     fun `hasNotice reflects the stored count`() = runTest {
         val dao = mockk<E2eNoticeDao>()

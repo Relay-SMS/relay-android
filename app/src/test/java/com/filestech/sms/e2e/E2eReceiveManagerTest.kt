@@ -108,6 +108,10 @@ class E2eReceiveManagerTest {
             }
             coEvery { mirror.applyIncomingReaction(any(), any(), any(), any(), any(), any(), any()) } returns null
             coEvery { messageDao.markDecryptFailed(any(), any()) } just Runs
+            // Default: no encrypted message ever went out on this session
+            // (the round-47 guard's never-sent path); tests that need a
+            // first send re-stub this per test.
+            coEvery { messageDao.firstOutgoingEncryptedSince(any(), any()) } returns null
             coEvery { conversationRepo.findMessageForResend(any()) } answers {
                 messageInConv(firstArg())
             }
@@ -473,9 +477,12 @@ class E2eReceiveManagerTest {
     @Test
     fun `a plain SMS from an encrypted peer downgrades to unknown and re-probes`() = runTest {
         val harness = Harness()
-        // Long-encrypted (2 h): past the round-46 grace window, so the
+        // Long-encrypted (2 h), and our first encrypted send was 90
+        // minutes ago — past the round-47 grace window, so the
         // fallback fires exactly as before.
         harness.seedEncryptedPeer(verified = true, updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS)
+        coEvery { harness.messageDao.firstOutgoingEncryptedSince(any(), any()) } returns
+            NOW - 90 * 60 * 1000L
 
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
 
@@ -540,6 +547,9 @@ class E2eReceiveManagerTest {
         // Round 46 — grace guard: encrypted 5 minutes ago, so the peer
         // may not have flipped yet (it needs our first encrypted
         // message to build its session); the plain reply is expected.
+        // Round 47: we never sent encrypted (the default stub returns
+        // null), so the 24-hour never-sent backstop applies — and 5
+        // minutes is far inside it.
         harness.seedEncryptedPeer(verified = true, updatedAt = NOW - 5 * 60 * 1000L)
 
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
@@ -554,13 +564,17 @@ class E2eReceiveManagerTest {
     @Test
     fun `a plain SMS at the exact grace edge fires the fallback`() = runTest {
         val harness = Harness()
-        // Boundary: `now - updatedAt` is exactly the grace window, and
-        // the guard is a strict `<` — so the window has expired and the
-        // fallback fires, as for a long-encrypted peer.
+        // Boundary: our first encrypted send was exactly the grace
+        // window ago, and the guard is a strict `<` — so the window
+        // has expired and the fallback fires, as for a long-encrypted
+        // peer. (Round 47: the edge moved from the establishment to
+        // the first encrypted send.)
         harness.seedEncryptedPeer(
             verified = true,
-            updatedAt = NOW - E2eReceiveManager.DEACTIVATED_GRACE_MS,
+            updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS,
         )
+        coEvery { harness.messageDao.firstOutgoingEncryptedSince(any(), any()) } returns
+            NOW - E2eReceiveManager.DEACTIVATED_GRACE_MS
 
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
 
@@ -574,9 +588,12 @@ class E2eReceiveManagerTest {
     @Test
     fun `a second plain SMS after the fallback triggers nothing more`() = runTest {
         val harness = Harness()
-        // Long-encrypted (2 h): past the round-46 grace window, so the
-        // first plain SMS fires the fallback.
+        // Long-encrypted (2 h), first encrypted send 90 minutes ago:
+        // past the round-47 grace window, so the first plain SMS fires
+        // the fallback.
         harness.seedEncryptedPeer(updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS)
+        coEvery { harness.messageDao.firstOutgoingEncryptedSince(any(), any()) } returns
+            NOW - 90 * 60 * 1000L
 
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
@@ -584,5 +601,86 @@ class E2eReceiveManagerTest {
         // One notice, one re-probe: the state gate dedupes.
         assertThat(harness.noticeDao.notices).hasSize(1)
         verify(exactly = 1) { harness.probeManager.reprobeAfterPeerLeft(BOB, 3) }
+    }
+
+    @Test
+    fun `a plain SMS minutes after our first encrypted send does not downgrade`() = runTest {
+        val harness = Harness()
+        // Round 47 — the 2026-11-23 case: established 62 minutes ago
+        // (past the OLD grace window), but our first encrypted send
+        // went out 1 minute ago — the peer may not have flipped yet,
+        // so the plain reply is expected, not proof the peer lost
+        // Relay.
+        harness.seedEncryptedPeer(
+            verified = true,
+            updatedAt = NOW - 62 * 60 * 1000L,
+        )
+        coEvery { harness.messageDao.firstOutgoingEncryptedSince(any(), any()) } returns
+            NOW - 60 * 1000L
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // Nothing changes: state, verified flag, notices, re-probe.
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.peerDao.peers[BOB]?.verified).isTrue()
+        assertThat(harness.noticeDao.notices).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+    }
+
+    @Test
+    fun `a plain SMS with no encrypted send ever does not downgrade within a day`() = runTest {
+        val harness = Harness()
+        // Round 47 — established 2 hours ago, but we never sent
+        // encrypted (the default stub returns null): the peer cannot
+        // have flipped yet, so the plain message is expected.
+        harness.seedEncryptedPeer(updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS)
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.noticeDao.notices).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+    }
+
+    @Test
+    fun `a plain SMS with no encrypted send ever downgrades after a day`() = runTest {
+        val harness = Harness()
+        // Round 47 — the backstop: established 25 hours ago and we
+        // never sent encrypted, so the exchange is stale — downgrading
+        // restarts it via the re-probe.
+        harness.seedEncryptedPeer(
+            updatedAt = NOW - E2eReceiveManager.DEACTIVATED_NEVER_SENT_MS - 60 * 60 * 1000L,
+        )
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.UNKNOWN)
+        assertThat(harness.noticeDao.notices).hasSize(1)
+        assertThat(harness.noticeDao.notices.single().kind).isEqualTo(E2eNoticeKind.DEACTIVATED)
+        verify(exactly = 1) { harness.probeManager.reprobeAfterPeerLeft(BOB, 3) }
+    }
+
+    @Test
+    fun `a pre-key message after a deactivation records a second ACTIVATED notice`() = runTest {
+        val harness = Harness()
+        // First establishment: one ACTIVATED notice.
+        harness.feed(harness.bobFragments("first"))
+        assertThat(harness.noticeDao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED })
+            .hasSize(1)
+        // The peer-left fallback tore the session down (state + notice).
+        harness.peers.setState(BOB, E2ePeerState.UNKNOWN, NOW)
+        E2eNoticeStore(harness.noticeDao).record(CONV_ID, E2eNoticeKind.DEACTIVATED, NOW)
+
+        // A pre-key message from a fresh identity re-establishes.
+        harness.feed(harness.bobFragments("second", bob = harness.bob2Crypto, messageId = "d4e5f6"))
+
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.noticeDao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED })
+            .hasSize(2)
+        assertThat(harness.noticeDao.notices.map { it.kind }).containsExactly(
+            E2eNoticeKind.ACTIVATED,
+            E2eNoticeKind.DEACTIVATED,
+            E2eNoticeKind.ACTIVATED,
+        ).inOrder()
     }
 }

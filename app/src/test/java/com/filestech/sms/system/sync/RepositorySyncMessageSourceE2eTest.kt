@@ -59,9 +59,13 @@ class RepositorySyncMessageSourceE2eTest {
             e2ePeerRepository = if (withPeers) peerRepository else null,
         )
 
-    /** The peer key for the default test conversation's address. */
+    /**
+     * The peer key for the default test conversation's address:
+     * the CANONICAL key (round 46), while the conversation itself
+     * stores `+1…` — the round-47 fix reunites the two.
+     */
     private val peerAddress: String
-        get() = PhoneAddress.of("+15551234567").normalized
+        get() = "5551234567"
 
     private fun stubConversations() {
         every { repository.observeAll(false) } returns flowOf(listOf(conversation()))
@@ -78,6 +82,38 @@ class RepositorySyncMessageSourceE2eTest {
         assertThat(result).hasSize(1)
         assertThat(result[0].encrypted).isTrue()
     }
+
+    @Test fun `conversations marks a 1-1 thread encrypted when the number is stored national`() =
+        runTest {
+            every { repository.observeAll(false) } returns flowOf(
+                listOf(conversation(addresses = listOf("5551234567"))),
+            )
+            every { repository.observeAll(true) } returns flowOf(emptyList())
+            coEvery { repository.messageCountsByConversation() } returns mapOf(123L to 3)
+            coEvery { peerRepository.encryptedAddresses() } returns setOf(peerAddress)
+
+            val result = source().conversations()
+
+            assertThat(result).hasSize(1)
+            assertThat(result[0].encrypted).isTrue()
+        }
+
+    @Test fun `conversations leaves a 1-1 thread plain for a legacy non-canonical peer row`() =
+        runTest {
+            // Round 46 left pre-round-46 peer rows (keyed by
+            // normalizePhone alone, `+1…`) unreachable by design —
+            // their sessions are unreachable too, so the thread
+            // reads UNKNOWN and messages go out plain. The sync
+            // flag must agree with the thread, not the stale row.
+            stubConversations()
+            coEvery { peerRepository.encryptedAddresses() } returns
+                setOf(PhoneAddress.of("+15551234567").normalized)
+
+            val result = source().conversations()
+
+            assertThat(result).hasSize(1)
+            assertThat(result[0].encrypted).isFalse()
+        }
 
     @Test fun `conversations leaves a 1-1 thread plain when its peer is not encrypted`() = runTest {
         stubConversations()

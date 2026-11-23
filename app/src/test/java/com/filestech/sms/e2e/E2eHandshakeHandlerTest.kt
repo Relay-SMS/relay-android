@@ -99,9 +99,9 @@ class E2eHandshakeHandlerTest {
         }
 
         /** A probe from [crypto]'s identity (as if it sent one). */
-        fun probeFrom(crypto: FakeE2eCrypto): ByteArray {
+        fun probeFrom(crypto: FakeE2eCrypto, manual: Boolean = false): ByteArray {
             val keys = crypto.identityKeys()
-            return E2eHandshake.encodeProbe(keys.curve25519, keys.ed25519)
+            return E2eHandshake.encodeProbe(keys.curve25519, keys.ed25519, manual = manual)
         }
 
         /** A bundle from [crypto]: its identity keys + one one-time key. */
@@ -112,8 +112,8 @@ class E2eHandshakeHandlerTest {
         }
 
         /** A probe from [crypto]'s identity, as a regular SMS (round 45). */
-        fun probeSmsFrom(crypto: FakeE2eCrypto): String =
-            E2eHandshakeSms.encode(probeFrom(crypto))
+        fun probeSmsFrom(crypto: FakeE2eCrypto, manual: Boolean = false): String =
+            E2eHandshakeSms.encode(probeFrom(crypto, manual))
 
         /** A bundle from [crypto], as a regular SMS (round 45). */
         fun bundleSmsFrom(crypto: FakeE2eCrypto): String =
@@ -194,6 +194,96 @@ class E2eHandshakeHandlerTest {
         harness.sender.result = true
         harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
         assertThat(harness.sender.sent).hasSize(2)
+    }
+
+    // ──────────────────── Round 47: manual-probe bypass ────────────────────
+    // A manual probe (flag bit, bit 7 of the type byte) bypasses the
+    // receiver's one-bundle-per-day rate limit: the sender's user
+    // tapped Retry, and the tap is pointless if the reply is still
+    // gated. Automatic probes are never marked manual, so the limit
+    // still applies to them — and a successful manual bundle send
+    // still consumes the limit, so the next automatic probe is
+    // gated. Both channels (data SMS + `RLYH:` text) honor it.
+
+    @Test
+    fun `a manual probe bypasses the bundle rate limit`() = runTest {
+        val harness = Harness()
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        val handled = harness.handler.handleDataSms(
+            BOB,
+            harness.probeFrom(harness.bobCrypto, manual = true),
+            null,
+            NOW,
+        )
+
+        assertThat(handled).isTrue()
+        // A second bundle went out the same day — the manual flag
+        // bypassed the limit.
+        assertThat(harness.sender.sent).hasSize(2)
+        verify(exactly = 2) { harness.recorder.recordEvent("e2e-bundle-sent", any()) }
+        verify(exactly = 0) { harness.recorder.recordEvent("e2e-bundle-rate-limited", any()) }
+    }
+
+    @Test
+    fun `an automatic probe after a manual bundle is still rate-limited`() = runTest {
+        val harness = Harness()
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+        harness.handler.handleDataSms(
+            BOB,
+            harness.probeFrom(harness.bobCrypto, manual = true),
+            null,
+            NOW,
+        )
+
+        val handled = harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        assertThat(handled).isTrue()
+        // The manual bundle consumed the day's reply: the automatic
+        // probe earns nothing.
+        assertThat(harness.sender.sent).hasSize(2)
+        assertThat(harness.peerDao.peers[BOB]?.lastBundleReplyAt).isEqualTo(NOW)
+        verify(exactly = 1) { harness.recorder.recordEvent("e2e-bundle-rate-limited", any()) }
+    }
+
+    @Test
+    fun `a manual SMS probe bypasses the bundle rate limit`() = runTest {
+        val harness = Harness()
+        harness.handler.handleSms(BOB, harness.probeSmsFrom(harness.bobCrypto), null, NOW)
+
+        val handled = harness.handler.handleSms(
+            BOB,
+            harness.probeSmsFrom(harness.bobCrypto, manual = true),
+            null,
+            NOW,
+        )
+
+        assertThat(handled).isTrue()
+        // The second bundle goes out by text, like the first — the
+        // reply follows the probe's arrival channel.
+        assertThat(harness.sender.sentTexts).hasSize(2)
+        assertThat(harness.sender.sent).isEmpty()
+        verify(exactly = 2) { harness.recorder.recordEvent("e2e-bundle-sent", any()) }
+        verify(exactly = 0) { harness.recorder.recordEvent("e2e-bundle-rate-limited", any()) }
+    }
+
+    @Test
+    fun `a manual probe from a peer with no prior bundle still works`() = runTest {
+        val harness = Harness()
+
+        val handled = harness.handler.handleDataSms(
+            BOB,
+            harness.probeFrom(harness.bobCrypto, manual = true),
+            null,
+            NOW,
+        )
+
+        assertThat(handled).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        val peer = harness.peerDao.peers[BOB]
+        assertThat(peer?.state).isEqualTo(E2ePeerState.PROBING)
+        assertThat(peer?.theirCurveKey).isNotNull()
+        assertThat(peer?.lastBundleReplyAt).isEqualTo(NOW)
     }
 
     // ──────────────────── Round 42: inbound-path diagnostics ────────────────────
@@ -399,6 +489,37 @@ class E2eHandshakeHandlerTest {
     }
 
     @Test
+    fun `a bundle after a deactivation records a second ACTIVATED notice`() = runTest {
+        val harness = Harness()
+        // First establishment: one ACTIVATED notice.
+        harness.handler.handleDataSms(BOB, harness.bundleFrom(harness.bobCrypto), null, NOW)
+        assertThat(harness.noticeDao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED })
+            .hasSize(1)
+        // The peer-left fallback tore the session down (state + notice).
+        harness.peers.setState(BOB, E2ePeerState.UNKNOWN, NOW + 1000)
+        E2eNoticeStore(harness.noticeDao)
+            .record(CONV_ID, E2eNoticeKind.DEACTIVATED, NOW + 1000)
+        // The old session is gone (round 46: sessions stored under the
+        // pre-canonical key are unreachable), so the re-probe's bundle
+        // is NOT a duplicate — it re-establishes. Handing a key out
+        // empties the pool (vodozemac marks the whole unpublished batch
+        // published), so top it up before taking a second key.
+        harness.sessionDao.deleteByAddress(BOB)
+        harness.bobCrypto.generateOneTimeKeys()
+
+        harness.handler.handleDataSms(BOB, harness.bundleFrom(harness.bobCrypto), null, NOW + 2000)
+
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.noticeDao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED })
+            .hasSize(2)
+        assertThat(harness.noticeDao.notices.map { it.kind }).containsExactly(
+            E2eNoticeKind.ACTIVATED,
+            E2eNoticeKind.DEACTIVATED,
+            E2eNoticeKind.ACTIVATED,
+        ).inOrder()
+    }
+
+    @Test
     fun `a bundle with no conversation still encrypts, without a notice`() = runTest {
         val harness = Harness()
         coEvery { harness.conversationDao.findByAddressesCsv(any()) } returns null
@@ -462,8 +583,9 @@ class E2eHandshakeHandlerTest {
             .contains(oldSessionId)
         assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
         // Unverified before, so the plain KEY_CHANGED notice — and no second
-        // ACTIVATED: the first bundle recorded it once per conversation.
-        // (The notice list is NOT cleared between bundles: recordOnce dedupes
+        // ACTIVATED: the thread already shows the encryption as active (no
+        // DEACTIVATED since the first ACTIVATED), so recordActivated skips.
+        // (The notice list is NOT cleared between bundles: the store dedupes
         // against the stored ACTIVATED record, and clearing it would fake a
         // duplicate.)
         assertThat(harness.noticeDao.notices.filter { it.kind == E2eNoticeKind.KEY_CHANGED })

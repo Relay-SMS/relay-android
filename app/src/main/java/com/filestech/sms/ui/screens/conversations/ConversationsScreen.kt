@@ -92,6 +92,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filestech.sms.R
+import com.filestech.sms.core.ext.canonicalPhone
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Note
@@ -156,12 +157,24 @@ private fun rowGating(
  * group never shows one (no single peer). A top-level function,
  * not an inline lambda: [ConversationsScreen] sits at the Detekt
  * complexity ceiling.
+ *
+ * Round 47 — the set holds CANONICAL keys (round 46: the peer
+ * repository keys rows by [canonicalPhone], NANP country code
+ * stripped), while a conversation's stored number may still carry
+ * `+1` — so the address is canonicalized before comparing, or a
+ * `+1`-stored thread never matches its ENCRYPTED peer and shows
+ * no badge. The set itself is NOT canonicalized here: a
+ * non-canonical member is a legacy row (rounds 42–45 keyed by
+ * `normalizePhone` alone), whose session round 46 left
+ * unreachable by design — matching it would show a lock for a
+ * peer whose thread reads UNKNOWN and whose messages go out
+ * plain. It simply never matches a canonicalized address.
  */
 internal fun isConversationEncrypted(
     conv: Conversation,
     encryptedAddresses: Set<String>,
 ): Boolean =
-    !conv.isGroup && conv.firstAddress?.normalized?.let { it in encryptedAddresses } == true
+    !conv.isGroup && conv.firstAddress?.normalized?.let { it.canonicalPhone() in encryptedAddresses } == true
 
 /**
  * v1.23.x — the number under a conversation's name, shown only

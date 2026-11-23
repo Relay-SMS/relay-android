@@ -41,6 +41,11 @@ import org.junit.jupiter.api.Test
  * (`ContentUris`, `ACTION_EDIT`) lives in `ContactIntents`, which
  * touches Android framework classes that throw Stub! on plain JVM.
  *
+ * Round 47 — the same routing covers a group member tap
+ * ([ThreadViewModel.openMemberContact]): a saved member opens
+ * that person's card, an unknown member (or a failed lookup)
+ * opens a blank form prefilled with the member's number.
+ *
  * Every test ends with a void assertion — JUnit silently skips a `@Test`
  * whose `runTest` body returns a value.
  */
@@ -138,6 +143,68 @@ class ThreadViewModelEditContactTest {
             .containsExactly(ThreadViewModel.Event.OpenAddContact("+33612345678"))
         assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenEditContact>()).isEmpty()
     }
+
+    // Round 47 — group member tap: the member's number is NOT the
+    // thread's number (+33612345678), so the events below prove the
+    // tap routes the tapped member, not the conversation.
+
+    @Test
+    fun `a saved member tap opens that person's card`() = runTest(dispatcher) {
+        val bob = Contact(77L, "Bob", listOf(PhoneAddress.of("+33698765432")), null)
+        val vm = threadViewModel(FakeContacts(bob))
+        val events = mutableListOf<ThreadViewModel.Event>()
+        backgroundScope.launch { vm.events.toList(events) }
+
+        vm.openMemberContact("+33698765432")
+        testScheduler.advanceUntilIdle()
+
+        assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenEditContact>())
+            .containsExactly(ThreadViewModel.Event.OpenEditContact(77L))
+    }
+
+    @Test
+    fun `an unsaved member tap opens a blank contact form`() = runTest(dispatcher) {
+        val vm = threadViewModel(FakeContacts(null))
+        val events = mutableListOf<ThreadViewModel.Event>()
+        backgroundScope.launch { vm.events.toList(events) }
+
+        vm.openMemberContact("+33698765432")
+        testScheduler.advanceUntilIdle()
+
+        assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenCreateContact>())
+            .containsExactly(ThreadViewModel.Event.OpenCreateContact("+33698765432"))
+        assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenEditContact>()).isEmpty()
+    }
+
+    @Test
+    fun `a member contact without an id falls back to the create flow`() = runTest(dispatcher) {
+        val noId = Contact(null, "Bob", listOf(PhoneAddress.of("+33698765432")), null)
+        val vm = threadViewModel(FakeContacts(noId))
+        val events = mutableListOf<ThreadViewModel.Event>()
+        backgroundScope.launch { vm.events.toList(events) }
+
+        vm.openMemberContact("+33698765432")
+        testScheduler.advanceUntilIdle()
+
+        assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenCreateContact>())
+            .containsExactly(ThreadViewModel.Event.OpenCreateContact("+33698765432"))
+        assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenEditContact>()).isEmpty()
+    }
+
+    @Test
+    fun `a denied permission on a member tap falls back to the create flow without crashing`() =
+        runTest(dispatcher) {
+            val vm = threadViewModel(FakeContacts(null, throwOnLookup = true))
+            val events = mutableListOf<ThreadViewModel.Event>()
+            backgroundScope.launch { vm.events.toList(events) }
+
+            vm.openMemberContact("+33698765432")
+            testScheduler.advanceUntilIdle()
+
+            assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenCreateContact>())
+                .containsExactly(ThreadViewModel.Event.OpenCreateContact("+33698765432"))
+            assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenEditContact>()).isEmpty()
+        }
 
     /**
      * Round 43 — the Details panel's 96dp header avatar reads the

@@ -18,11 +18,14 @@ import javax.inject.Singleton
  * linked devices over the encrypted device link (round 42), so a
  * desktop thread shows the same system rows as the phone thread.
  *
- * The ACTIVATED notice shows once per conversation per identity — not on every
- * re-establishment with the same keys. [recordOnce] is the once-per-conversation
- * guard; the per-identity part is the state machine's decision (it knows whether
- * the keys changed), which calls [record] directly when a new identity deserves a
- * fresh notice.
+ * The ACTIVATED notice shows whenever the thread's latest E2E status is
+ * not already "activated": on first establishment, and on
+ * re-establishment after an "Encryption ended" (DEACTIVATED) notice —
+ * but not on a re-establishment with the same keys while the thread
+ * already shows the encryption as active (a key change gets its own
+ * KEY_CHANGED notice instead). [recordActivated] owns that rule;
+ * [recordOnce] stays the generic once-per-conversation guard for kinds
+ * that never repeat.
  */
 @Singleton
 class E2eNoticeStore @Inject constructor(
@@ -38,6 +41,34 @@ class E2eNoticeStore @Inject constructor(
         noticeDao.insert(
             E2eNoticeEntity(conversationId = conversationId, kind = kind, date = now),
         )
+
+    /**
+     * Records the ACTIVATED notice when the thread's latest E2E status is
+     * not already "activated" (round 47): on first establishment, and on
+     * re-establishment after a DEACTIVATED notice — but not on a
+     * re-establishment while the thread already shows the encryption as
+     * active. Returns true when the notice was recorded.
+     *
+     * The old rule ([recordOnce]) suppressed every ACTIVATED after the
+     * first, so after a teardown + re-establishment the thread's latest
+     * pill still said "Encryption ended" while encryption was working
+     * (device-proven 2026-11-23). The duplicate-bundle guard
+     * ([E2eHandshakeHandler] first-reply-wins) already keeps a
+     * re-processed bundle from reaching this, so no second guard is
+     * needed here. Positions in the date-ordered list decide, not the
+     * dates themselves — the render order is the thread's story.
+     */
+    suspend fun recordActivated(
+        conversationId: Long,
+        now: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val notices = noticesForConversation(conversationId)
+        val lastActivated = notices.indexOfLast { it.kind == E2eNoticeKind.ACTIVATED }
+        val lastDeactivated = notices.indexOfLast { it.kind == E2eNoticeKind.DEACTIVATED }
+        if (lastActivated >= 0 && lastActivated > lastDeactivated) return false
+        record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        return true
+    }
 
     /**
      * Records a notice only when the conversation has none of this kind yet.

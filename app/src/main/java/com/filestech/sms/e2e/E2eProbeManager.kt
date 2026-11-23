@@ -86,6 +86,16 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * `e2e-manual-retry` recording). Automatic probing stays
  * data-SMS-only.
  *
+ * Round 47 — a manual probe carries the manual flag (bit 7 of the
+ * type byte, [E2eHandshake]): the RECEIVER bypasses its
+ * one-bundle-per-sender-per-day rate limit for it. The sender-side
+ * budget bypass alone did not help — the receiver's limit still
+ * blocked the bundle reply, so a retry failed unless both phones
+ * reset timing first. Both retry buttons mark their probes
+ * ([manual] flows through the shared detailed core, so the data
+ * and text retries and the desktop retry command all mark theirs);
+ * automatic probes are never marked manual.
+ *
  * All entry points are fire-and-forget (non-suspend, own scope): a
  * probe must never delay opening a thread or sending a message. The
  * suspend cores ([probeConversation], [probeAddress]) are the testable
@@ -361,7 +371,10 @@ class E2eProbeManager @Inject constructor(
         // the first E2E use, and the identity is created here — users
         // who never use E2E pay nothing (design §4.1).
         val keys = accountManager.get().ensureAccount()
-        val probe = E2eHandshake.encodeProbe(keys.curve25519, keys.ed25519)
+        // Round 47 — a manual probe carries the manual flag, so the
+        // receiver bypasses its bundle rate limit for it. Automatic
+        // probes are never marked manual (manual = false here).
+        val probe = E2eHandshake.encodeProbe(keys.curve25519, keys.ed25519, manual = manual)
         val sent = when (channel) {
             HandshakeChannel.DATA_SMS -> dataSmsSender.sendDataMessage(
                 address = address,

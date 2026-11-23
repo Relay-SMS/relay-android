@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -20,7 +19,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -128,21 +127,27 @@ fun E2eVerificationSheet(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(
-                                    imageVector = Icons.Outlined.CheckCircle,
+                                    painter = painterResource(R.drawable.ic_lock_encrypted),
                                     contentDescription = null,
-                                    tint = brandBlue(),
-                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(13.dp, 16.dp),
                                 )
                                 Text(
                                     text = stringResource(R.string.e2e_verify_verified),
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = brandBlue(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(start = 8.dp),
                                 )
                             }
-                            TextButton(
+                            Button(
                                 onClick = viewModel::removeVerification,
-                                modifier = Modifier.padding(top = 8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = brandBlue(),
+                                    contentColor = onBrandBlue(),
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 16.dp),
                             ) {
                                 Text(text = stringResource(R.string.e2e_verify_remove))
                             }

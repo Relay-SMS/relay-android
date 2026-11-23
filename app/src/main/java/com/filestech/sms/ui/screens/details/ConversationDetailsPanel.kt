@@ -1167,22 +1167,60 @@ internal enum class E2eDetailsExpandedAction {
  * action only appears when its handler exists, so a row never
  * promises a tap that does nothing. Pure, so the visibility table
  * is unit-testable without a Compose harness.
+ *
+ * Round 47 — a verified peer has NO expanded actions: the
+ * dropdown is redundant once the safety number is verified (the
+ * row opens the sheet directly instead — see
+ * [e2eDetailsRowTap]), so ENCRYPTED + verified shows nothing
+ * here and the box renders with no chevron and no expand.
  */
 internal fun e2eDetailsExpandedActions(
     peerState: E2ePeerState,
+    verified: Boolean = false,
     hasRetryProbe: Boolean,
     hasRetryViaSms: Boolean,
     hasOpenVerification: Boolean,
 ): List<E2eDetailsExpandedAction> = when (peerState) {
-    E2ePeerState.ENCRYPTED -> if (hasOpenVerification) {
-        listOf(E2eDetailsExpandedAction.ViewSafetyNumber)
-    } else {
+    E2ePeerState.ENCRYPTED -> if (verified || !hasOpenVerification) {
         emptyList()
+    } else {
+        listOf(E2eDetailsExpandedAction.ViewSafetyNumber)
     }
     E2ePeerState.PROBING, E2ePeerState.UNKNOWN, E2ePeerState.NOT_RELAY -> buildList {
         if (hasRetryProbe) add(E2eDetailsExpandedAction.RetryProbe)
         if (hasRetryViaSms) add(E2eDetailsExpandedAction.RetryViaSms)
     }
+}
+
+/**
+ * Round 47 — what a tap on the encryption box does. A verified
+ * peer opens the safety-number sheet directly: once the number is
+ * verified the dropdown is a redundant step, so the box has no
+ * chevron and no expand — tapping it is the "View safety number"
+ * action, without the dropdown in between. Any other state with
+ * expanded actions toggles the dropdown; with none, the box is
+ * plain status. Pure, so the tap table is unit-testable without a
+ * Compose harness.
+ */
+internal enum class E2eDetailsRowTap {
+    /** Tap opens the safety-number sheet directly. */
+    OpenVerification,
+    /** Tap expands / collapses the dropdown. */
+    Expand,
+    /** No tap — the box is plain status. */
+    None,
+}
+
+internal fun e2eDetailsRowTap(
+    peerState: E2ePeerState,
+    verified: Boolean,
+    hasOpenVerification: Boolean,
+    hasExpandedActions: Boolean,
+): E2eDetailsRowTap = when {
+    peerState == E2ePeerState.ENCRYPTED && verified && hasOpenVerification ->
+        E2eDetailsRowTap.OpenVerification
+    hasExpandedActions -> E2eDetailsRowTap.Expand
+    else -> E2eDetailsRowTap.None
 }
 
 /**
@@ -1231,7 +1269,8 @@ internal fun muteIconFor(muted: Boolean): ImageVector =
  * old refresh icon and the "Tap to retry encryption setup"
  * subtitle are gone — the retries live in the expanded area now.
  * No expanded actions (no handlers at all) means no chevron and no
- * tap: the box is plain status.
+ * tap: the box is plain status. (Round 47: a verified peer has no
+ * expanded actions either — the row opens the sheet directly.)
  *
  * Round 46 — tap feedback + anti-hammering: tapping a retry
  * flips that button to "Retrying…" and disables it (greyed, no
@@ -1240,6 +1279,15 @@ internal fun muteIconFor(muted: Boolean): ImageVector =
  * leaves the other tappable. The flags live in remembered state
  * here — the panel is at the 20-parameter ceiling, so no new
  * param — and reset if the panel closes and reopens.
+ *
+ * Round 47 — a verified peer has no dropdown: ENCRYPTED +
+ * verified renders "End-to-end encrypted / Verified ✓" as a
+ * static row (no chevron, no expand), and tapping it opens the
+ * safety-number sheet directly — the same onOpenVerification
+ * callback the dropdown's "View safety number" row used to call,
+ * so viewing the number and clearing verification stay one tap
+ * away. An unverified ENCRYPTED peer keeps the chevron +
+ * dropdown, and the non-encrypted states keep their two retries.
  */
 @Composable
 private fun E2eDetailsEncryptionRow(
@@ -1272,9 +1320,22 @@ private fun E2eDetailsEncryptionRow(
     }
     val expandedActions = e2eDetailsExpandedActions(
         peerState = peerState,
+        verified = verified,
         hasRetryProbe = onRetryProbe != null,
         hasRetryViaSms = onRetryProbeViaSms != null,
         hasOpenVerification = onOpenVerification != null,
+    )
+    // Round 47 — what a tap on the box does: a verified peer
+    // opens the safety-number sheet directly (the dropdown is
+    // gone, so the row IS the "View safety number" action);
+    // anything else with expanded actions toggles the dropdown.
+    // The chevron follows the dropdown, never the sheet — a
+    // verified row has none.
+    val rowTap = e2eDetailsRowTap(
+        peerState = peerState,
+        verified = verified,
+        hasOpenVerification = onOpenVerification != null,
+        hasExpandedActions = expandedActions.isNotEmpty(),
     )
     var expanded by remember { mutableStateOf(false) }
     // Round 46 — per-button retry-in-progress flags (two booleans,
@@ -1310,14 +1371,18 @@ private fun E2eDetailsEncryptionRow(
     val retryViaSmsLabel = stringResource(R.string.e2e_details_retry_via_sms)
     val retryingLabel = stringResource(R.string.e2e_details_retrying)
     val viewSafetyNumberLabel = stringResource(R.string.e2e_details_view_safety_number)
+    // Assigned via a when statement (not an expression): the branches
+    // (a nullable callback, a lambda, null) do not unify in a when
+    // expression — Kotlin infers Any? — but each assignment checks
+    // independently against the declared type.
+    var onClick: (() -> Unit)? = null
+    when (rowTap) {
+        E2eDetailsRowTap.OpenVerification -> onClick = onOpenVerification
+        E2eDetailsRowTap.Expand -> onClick = { expanded = !expanded }
+        E2eDetailsRowTap.None -> onClick = null
+    }
     RelaySettingsGroup {
-        item(
-            onClick = if (expandedActions.isNotEmpty()) {
-                { expanded = !expanded }
-            } else {
-                null
-            },
-        ) {
+        item(onClick = onClick) {
             RelaySettingRow(
                 icon = if (encrypted) null else Icons.Outlined.LockOpen,
                 iconPainter = if (encrypted) {
@@ -1327,7 +1392,7 @@ private fun E2eDetailsEncryptionRow(
                 },
                 title = title,
                 subtitle = subtitle,
-                chevron = expandedActions.isNotEmpty(),
+                chevron = rowTap == E2eDetailsRowTap.Expand,
             )
         }
         if (expanded) {
@@ -1392,7 +1457,18 @@ private fun DetailsActionRows(
     /** E2E — manual probe retry (round 41): sends one probe now. */
     onRetryE2eProbe: (() -> Unit)? = null,
 ) {
-    Column(modifier = Modifier.padding(top = 16.dp)) {
+    // Round 47 — the gap above the encryption box is the 24dp
+    // Settings section gap, measured in the Encryption screen:
+    // its auto-discover group carries a 24dp Spacer above it, and
+    // RelaySectionLabel puts 24dp above the groups it heads — the
+    // same 24dp the panel uses above the media tabs. The 16dp here
+    // read tighter than Settings. The menu group keeps its 16dp
+    // when there is no encryption box (groups, client mode).
+    Column(
+        modifier = Modifier.padding(
+            top = if (e2ePeerState != null) 24.dp else 16.dp,
+        ),
+    ) {
         // E2E — the encryption row, first in the list, under the
         // header: the thread's encryption state at a glance.
         // Round 45 — the box sits just above the grouped menu

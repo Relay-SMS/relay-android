@@ -56,6 +56,7 @@ import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.bubbleIncomingColor
 import com.filestech.sms.ui.theme.onBrandBlue
+import com.filestech.sms.ui.theme.resolveBubbleColors
 import timber.log.Timber
 import java.io.File
 
@@ -182,18 +183,26 @@ fun MediaAttachmentBubble(
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
-    // Outgoing : [brandBlue] (cohérent avec [MessageBubble] et
-    // [AudioMessageBubble]) — bleu de marque fixe hors couleurs dynamiques,
-    // `primary` du fond d'écran quand elles sont actives (round 20). Le
-    // texte sortant suit avec [onBrandBlue] (voir ci-dessous).
-    // Notes — a custom colour replaces the brand blue, with white text
-    // (the palette is WCAG-safe for white, like [MessageBubble]).
-    val bgColor = if (isOut) {
-        customBubbleColorArgb?.let { Color(it) } ?: brandBlue()
-    } else {
-        bubbleIncomingColor(cs)
-    }
-    val outgoingTextColor = if (customBubbleColorArgb == null) onBrandBlue() else Color.White
+    // Round 47 — the fill and its text resolve together
+    // ([resolveBubbleColors], like [MessageBubble]): the default (no
+    // custom colour) is blue for an encrypted message and green
+    // `#3BA803` for a plain one, per message — a sent photo in an
+    // encrypted thread is still plain MMS today (media encryption
+    // is a later round), so it is green: the colour signals whether
+    // THIS message went out encrypted. A custom colour still wins.
+    // Notes — the note message carries encrypted = true
+    // ([toDisplayMessage]), so note media keeps the blue default.
+    val bubbleColors = resolveBubbleColors(
+        isOutgoing = isOut,
+        encrypted = message.encrypted,
+        customBubbleColorArgb = customBubbleColorArgb,
+        defaultBlue = brandBlue(),
+        onDefaultBlue = onBrandBlue(),
+        incomingBackground = bubbleIncomingColor(cs),
+        incomingText = cs.onSurface,
+    )
+    val bgColor = bubbleColors.background
+    val outgoingTextColor = bubbleColors.text
     // Feedback round 9 — same rounder bubble language as the text bubbles
     // (24dp corners; was 18dp).
     val shape = RoundedCornerShape(24.dp)
@@ -349,10 +358,9 @@ fun MediaAttachmentBubble(
                         text = message.body,
                         messageId = message.id,
                         style = MaterialTheme.typography.bodyLarge,
-                        // Round 20 — [onBrandBlue] sur le fond sortant : blanc
-                        // sur le bleu fixe, `onPrimary` du scheme dynamique
-                        // quand les couleurs dynamiques sont actives.
-                        // Notes — white on a custom colour (see above).
+                        // Round 47 — the bubble's resolved text colour (see
+                        // [bgColor] above): [onBrandBlue] on the blue fill,
+                        // white on the green fill and on a custom colour.
                         color = if (isOut) outgoingTextColor else cs.onSurface,
                         onPhoneClick = onPhoneClick,
                         searchHighlight = searchHighlight,
@@ -405,8 +413,9 @@ private fun MediaPreview(
      */
     imageModel: ((Attachment) -> Any?)? = null,
     /**
-     * Notes — the text colour on an outgoing tile: [onBrandBlue] by
-     * default, white on a custom bubble colour.
+     * Notes — the text colour on an outgoing tile: the bubble's
+     * resolved text colour ([resolveBubbleColors] — [onBrandBlue]
+     * on blue, white on green and on a custom bubble colour).
      */
     outgoingTextColor: androidx.compose.ui.graphics.Color,
 ) {
@@ -959,16 +968,16 @@ private fun IconAttachment(
     outgoingTextColor: androidx.compose.ui.graphics.Color,
 ) {
     val cs = MaterialTheme.colorScheme
-    // Round 20 — [onBrandBlue] sur le fond sortant (voir [bgColor] plus haut) :
-    // blanc sur le bleu fixe, `onPrimary` du scheme dynamique quand les
-    // couleurs dynamiques sont actives. Notes — white on a custom colour.
+    // Round 47 — the bubble's resolved text colour (see [bgColor] above):
+    // [onBrandBlue] on the blue fill, white on the green fill and on a
+    // custom colour.
     val textColor = if (isOutgoing) outgoingTextColor else cs.onSurface
     // v1.3.10 — fill the bubble for BOTH directions. Before, outgoing got only a 1.5 dp
     // border around a transparent interior; that pattern relied on the body placeholder text
     // ("📎 filename.pdf") underneath to fill the visual space. With the v1.3.10 body /
     // previewLabel decoupling, outgoing files without a user caption have body = "" → the
-    // bordered shell looks like a hollow white blob. Filling with the brand blue
-    // (text in [onBrandBlue], see above) keeps all outgoing bubble types coherent.
+    // bordered shell looks like a hollow white blob. Filling with the bubble colour
+    // (text in the resolved colour, see above) keeps all outgoing bubble types coherent.
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier

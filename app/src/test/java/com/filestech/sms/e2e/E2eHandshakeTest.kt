@@ -33,6 +33,63 @@ class E2eHandshakeTest {
         assertThat(probe.edKey).isEqualTo(edKey)
     }
 
+    // ──────────────────── Round 47: the manual flag ────────────────────
+    // Bit 7 (0x80) of the type byte marks a probe the user sent by
+    // tapping Retry: the receiver bypasses its bundle rate limit for
+    // it. Same 70-byte packet, same format — one bit, both channels.
+
+    @Test
+    fun `a manual probe encodes to 70 bytes with the flag bit set and decodes back as manual`() {
+        val bytes = E2eHandshake.encodeProbe(curveKey, edKey, manual = true)
+
+        assertThat(bytes.size).isEqualTo(70)
+        // The flag is bit 7 of the type byte: 0x01 (probe) | 0x80.
+        // (Masked to unsigned: the byte itself reads as -127.)
+        assertThat(bytes[5].toInt() and 0xFF).isEqualTo(0x81)
+        val decoded = E2eHandshake.decode(bytes)
+        assertThat(decoded).isInstanceOf(HandshakePacket.Probe::class.java)
+        val probe = decoded as HandshakePacket.Probe
+        assertThat(probe.manual).isTrue()
+        assertThat(probe.curveKey).isEqualTo(curveKey)
+        assertThat(probe.edKey).isEqualTo(edKey)
+    }
+
+    @Test
+    fun `an automatic probe decodes as not manual`() {
+        val bytes = E2eHandshake.encodeProbe(curveKey, edKey)
+
+        assertThat(bytes[5]).isEqualTo(0x01)
+        val probe = E2eHandshake.decode(bytes) as HandshakePacket.Probe
+        assertThat(probe.manual).isFalse()
+    }
+
+    @Test
+    fun `a manual probe and an automatic probe with the same keys are not equal`() {
+        val manual = E2eHandshake.decode(E2eHandshake.encodeProbe(curveKey, edKey, manual = true))
+        val automatic = E2eHandshake.decode(E2eHandshake.encodeProbe(curveKey, edKey))
+
+        assertThat(manual).isNotEqualTo(automatic)
+    }
+
+    @Test
+    fun `decode rejects an unknown type even with the flag bit set`() {
+        val bytes = E2eHandshake.encodeProbe(curveKey, edKey)
+        bytes[5] = 0x83.toByte()
+
+        assertThat(E2eHandshake.decode(bytes)).isNull()
+    }
+
+    @Test
+    fun `decode ignores the flag bit on a bundle`() {
+        val bytes = E2eHandshake.encodeBundle(curveKey, edKey, oneTimeKey)
+        bytes[5] = 0x82.toByte()
+
+        val decoded = E2eHandshake.decode(bytes)
+        assertThat(decoded).isInstanceOf(HandshakePacket.Bundle::class.java)
+        val bundle = decoded as HandshakePacket.Bundle
+        assertThat(bundle.oneTimeKey).isEqualTo(oneTimeKey)
+    }
+
     @Test
     fun `a bundle encodes to 102 bytes and decodes back`() {
         val bytes = E2eHandshake.encodeBundle(curveKey, edKey, oneTimeKey)

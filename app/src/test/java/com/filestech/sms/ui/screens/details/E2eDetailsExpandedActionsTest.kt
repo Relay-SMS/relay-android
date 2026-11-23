@@ -10,6 +10,10 @@ import org.junit.jupiter.api.Test
  * (data SMS first, then the regular-SMS handshake); ENCRYPTED offers
  * the safety-number sheet instead — a retry is meaningless once a
  * session is live. An action only appears when its handler exists.
+ *
+ * Round 47 — a verified peer has no expanded actions at all: the
+ * dropdown is gone, so the box renders with no chevron and its tap
+ * opens the sheet directly (see [E2eDetailsRowTapTest]).
  */
 class E2eDetailsExpandedActionsTest {
 
@@ -35,6 +39,37 @@ class E2eDetailsExpandedActionsTest {
                 hasOpenVerification = false,
             ),
         ).isEmpty()
+    }
+
+    @Test
+    fun `encrypted and verified shows no expanded actions`() {
+        assertThat(
+            e2eDetailsExpandedActions(
+                peerState = E2ePeerState.ENCRYPTED,
+                verified = true,
+                hasRetryProbe = true,
+                hasRetryViaSms = true,
+                hasOpenVerification = true,
+            ),
+        ).isEmpty()
+    }
+
+    @Test
+    fun `verified does not hide retries for a non-encrypted peer`() {
+        assertThat(
+            e2eDetailsExpandedActions(
+                peerState = E2ePeerState.UNKNOWN,
+                verified = true,
+                hasRetryProbe = true,
+                hasRetryViaSms = true,
+                hasOpenVerification = true,
+            ),
+        ).isEqualTo(
+            listOf(
+                E2eDetailsExpandedAction.RetryProbe,
+                E2eDetailsExpandedAction.RetryViaSms,
+            ),
+        )
     }
 
     @Test

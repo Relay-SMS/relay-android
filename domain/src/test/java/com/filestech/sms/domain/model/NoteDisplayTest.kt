@@ -65,6 +65,15 @@ class NoteDisplayTest {
     }
 
     @Test
+    fun `note entries map to encrypted display messages`() {
+        // Round 47 — a note entry IS encrypted (at rest), so the
+        // display message carries the flag: the bubble keeps the
+        // blue default instead of turning green like a plain SMS.
+        assertThat(entry().toDisplayMessage().encrypted).isTrue()
+        assertThat(entry(attachments = listOf(attachment())).toDisplayMessage().encrypted).isTrue()
+    }
+
+    @Test
     fun `title cap is 40`() {
         assertThat(NOTE_TITLE_MAX_LENGTH).isEqualTo(40)
     }

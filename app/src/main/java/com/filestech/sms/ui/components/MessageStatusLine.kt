@@ -24,6 +24,7 @@ import com.filestech.sms.domain.model.Message
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.bubbleStatusColor
+import com.filestech.sms.ui.theme.isTextOnColoredBubble
 import com.filestech.sms.ui.util.rememberChatFormatters
 import java.util.Date
 
@@ -81,6 +82,13 @@ import java.util.Date
  * une bulle bleue en thème clair. Sur une bulle colorée (texte blanc), le
  * statut garde [metaColor] lui aussi : `#404040` serait invisible sur le
  * bleu en thème clair.
+ *
+ * Round 47 — « bulle colorée » couvre aussi le vert des messages en clair :
+ * leur texte est blanc (Kristin's call — white on `#3BA803` is 3.09:1,
+ * accepted by design, iMessage uses white on a lighter green), et le
+ * gris de thème y serait illisible (`#404040` 3.35:1, `#C9C9C9` 1.87:1) —
+ * le statut garde donc [metaColor] (blanc à 0.85, comme sur le bleu) là
+ * aussi, via [isTextOnColoredBubble].
  */
 @Composable
 internal fun BubbleTimestamp(
@@ -107,7 +115,9 @@ internal fun BubbleTimestamp(
     val metaColor = if (textColor == Color.White) textColor.copy(alpha = 0.85f) else textColor
     // Round 41 — le statut prend le gris de thème, l'heure garde metaColor.
     // Un libellé d'échec et une bulle colorée gardent metaColor (voir le KDoc).
-    val statusColor = if (isFailed || textColor == Color.White) {
+    // Round 47 — « colorée » inclut le vert des messages en clair (texte blanc) :
+    // le gris de thème y serait illisible (3.35:1 / 1.87:1).
+    val statusColor = if (isFailed || isTextOnColoredBubble(textColor)) {
         metaColor
     } else {
         bubbleStatusColor(MaterialTheme.colorScheme)

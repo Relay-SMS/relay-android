@@ -34,6 +34,23 @@ class E2eHandshakeSmsTest {
     }
 
     @Test
+    fun `a manual probe survives the text round-trip at the same length`() {
+        val text = E2eHandshakeSms.encode(
+            E2eHandshake.encodeProbe(curveKey, edKey, manual = true),
+        )
+
+        // The flag rides inside the same 70 bytes — the text is
+        // still 101 chars, still one segment.
+        assertThat(text.length).isEqualTo(E2eHandshakeSms.PROBE_TEXT_LENGTH)
+        val decoded = E2eHandshake.decode(E2eHandshakeSms.parse(text)!!)
+        assertThat(decoded).isInstanceOf(HandshakePacket.Probe::class.java)
+        val probe = decoded as HandshakePacket.Probe
+        assertThat(probe.manual).isTrue()
+        assertThat(probe.curveKey).isEqualTo(curveKey)
+        assertThat(probe.edKey).isEqualTo(edKey)
+    }
+
+    @Test
     fun `a bundle encodes to a 141-char text and round-trips`() {
         val text = E2eHandshakeSms.encode(
             E2eHandshake.encodeBundle(curveKey, edKey, oneTimeKey),
