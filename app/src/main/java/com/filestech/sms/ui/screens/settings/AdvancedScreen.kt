@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -84,6 +85,12 @@ import kotlinx.coroutines.launch
  * [RelaySettingsGroup], same five rows in the same order), with the normal
  * top bar keeping the title in it.
  *
+ * Round 43 — the encryption-timing reset row (after the error-log rows):
+ * a testing/diagnostic tool that clears the probe budget and the
+ * bundle-reply rate limit for all peers, so a blocked encryption
+ * test can run again right away. Keys, verified flags and
+ * ENCRYPTED states are untouched.
+ *
  * No panic-decoy gating: the section was deliberately visible in decoy
  * sessions as a section (see the reset-all comment below), and nothing here
  * names the vault or the emergency mode.
@@ -112,6 +119,7 @@ fun AdvancedScreen(
     var nukeResultat by remember { mutableStateOf<SettingsViewModel.Event.DataWiped?>(null) }
     var showResyncConfirm by remember { mutableStateOf(false) }
     var showResetAllConfirm by remember { mutableStateOf(false) }
+    var showResetTimingConfirm by remember { mutableStateOf(false) }
     val defaultLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) {
@@ -123,17 +131,22 @@ fun AdvancedScreen(
     // @Composable, so it cannot be called from the LaunchedEffect coroutine below).
     // Reading it here also keeps it configuration-aware: a locale change re-reads it.
     val resyncStarted = stringResource(R.string.settings_resync_started)
+    val resetTimingDone = stringResource(R.string.settings_reset_encryption_timing_done)
 
     val viewerState = rememberViewerChoicesState(snackbarHost)
 
-    // Only the two events this screen's actions can emit: the re-sync
-    // confirmation snackbar and the erase-data report dialog. The other
-    // Settings events belong to rows that stayed on the main screen.
+    // Only the three events this screen's actions can emit: the re-sync
+    // confirmation snackbar, the encryption-timing reset snackbar, and
+    // the erase-data report dialog. The other Settings events belong to
+    // rows that stayed on the main screen.
     LaunchedEffect(Unit) {
         viewModel.events.collect { e ->
             when (e) {
                 SettingsViewModel.Event.ResyncRequested -> {
                     snackbarHost.showSnackbar(resyncStarted)
+                }
+                SettingsViewModel.Event.EncryptionTimingReset -> {
+                    snackbarHost.showSnackbar(resetTimingDone)
                 }
                 // v1.28.6 — la purge totale a laisse des messages dans le telephone. Un DIALOGUE
                 // et non un message glissant : le processus redemarre juste apres, un snackbar
@@ -297,6 +310,11 @@ fun AdvancedScreen(
                     crashLogEnabled = crashLogEnabled,
                     crashLogViewModel = crashLogViewModel,
                 )
+                // Round 43 — testing/diagnostic reset (see
+                // [ResetEncryptionTimingRow]).
+                ResetEncryptionTimingRow(
+                    onClick = { showResetTimingConfirm = true },
+                )
                 // Round 33 — the viewers remembered with "Always" in
                 // Relay's own picker, per media type; tapping clears
                 // them all (see [rememberViewerChoicesState]).
@@ -339,33 +357,32 @@ fun AdvancedScreen(
     }
 
     // v1.8.0 — Dialog de confirmation : Resync depuis le téléphone.
-    // Pattern Relay : autofocus Cancel + bouton confirm primary action.
     // Action non destructive (re-importe depuis content://sms, pas de perte).
     if (showResyncConfirm) {
-        val cancelFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        RelayDialog(
-            onDismissRequest = { showResyncConfirm = false },
+        AdvancedConfirmDialog(
             title = stringResource(R.string.settings_resync_confirm_title),
-            content = { Text(stringResource(R.string.settings_resync_confirm_body)) },
-            confirmButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_confirm),
-                    onClick = {
-                        viewModel.forceResyncFromTelephony()
-                        showResyncConfirm = false
-                    },
-                    confirm = true,
-                )
+            body = stringResource(R.string.settings_resync_confirm_body),
+            confirmText = stringResource(R.string.action_confirm),
+            onDismiss = { showResyncConfirm = false },
+            onConfirm = {
+                viewModel.forceResyncFromTelephony()
+                showResyncConfirm = false
             },
-            dismissButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_cancel),
-                    onClick = { showResyncConfirm = false },
-                    modifier = Modifier
-                        .focusRequester(cancelFocus)
-                        .focusable(),
-                )
+        )
+    }
+
+    // Round 43 — confirmation dialog: reset the encryption timing.
+    // Non-destructive (keys, verified contacts and encrypted pairs are
+    // untouched) — the body says so explicitly.
+    if (showResetTimingConfirm) {
+        AdvancedConfirmDialog(
+            title = stringResource(R.string.settings_reset_encryption_timing_confirm_title),
+            body = stringResource(R.string.settings_reset_encryption_timing_confirm_body),
+            confirmText = stringResource(R.string.action_reset),
+            onDismiss = { showResetTimingConfirm = false },
+            onConfirm = {
+                viewModel.resetEncryptionTiming()
+                showResetTimingConfirm = false
             },
         )
     }
@@ -378,30 +395,14 @@ fun AdvancedScreen(
     // réglages de sécurité. Le corps du dialogue le dit maintenant explicitement : il
     // annonçait « toutes vos préférences » alors que la portée réelle s'arrête au confort.
     if (showResetAllConfirm) {
-        val cancelFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { cancelFocus.requestFocus() }
-        RelayDialog(
-            onDismissRequest = { showResetAllConfirm = false },
+        AdvancedConfirmDialog(
             title = stringResource(R.string.settings_reset_all_confirm_title),
-            content = { Text(stringResource(R.string.settings_reset_all_confirm_body)) },
-            confirmButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_confirm),
-                    onClick = {
-                        viewModel.resetAll()
-                        showResetAllConfirm = false
-                    },
-                    confirm = true,
-                )
-            },
-            dismissButton = {
-                RelayTextButton(
-                    text = stringResource(R.string.action_cancel),
-                    onClick = { showResetAllConfirm = false },
-                    modifier = Modifier
-                        .focusRequester(cancelFocus)
-                        .focusable(),
-                )
+            body = stringResource(R.string.settings_reset_all_confirm_body),
+            confirmText = stringResource(R.string.action_confirm),
+            onDismiss = { showResetAllConfirm = false },
+            onConfirm = {
+                viewModel.resetAll()
+                showResetAllConfirm = false
             },
         )
     }
@@ -504,6 +505,73 @@ fun AdvancedScreen(
                     },
                 )
             },
+        )
+    }
+}
+
+/**
+ * Round 43 — the shared confirmation dialog for the Advanced
+ * screen's non-destructive actions (re-sync, reset all, reset
+ * encryption timing): title + body + a primary confirm button +
+ * Cancel, with Cancel autofocused so a fast tap after a previous
+ * dialog cannot confirm by reflex. Split out so [AdvancedScreen]
+ * stays under the 300-line Detekt ceiling — it was already at
+ * 297 before the reset row arrived, and the three dialogs shared
+ * one shape. The erase-data dialog stays inline: its confirm is
+ * destructive and its body is conditional.
+ */
+@Composable
+private fun AdvancedConfirmDialog(
+    title: String,
+    body: String,
+    confirmText: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val cancelFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { cancelFocus.requestFocus() }
+    RelayDialog(
+        onDismissRequest = onDismiss,
+        title = title,
+        content = { Text(body) },
+        confirmButton = {
+            RelayTextButton(
+                text = confirmText,
+                onClick = onConfirm,
+                confirm = true,
+            )
+        },
+        dismissButton = {
+            RelayTextButton(
+                text = stringResource(R.string.action_cancel),
+                onClick = onDismiss,
+                modifier = Modifier
+                    .focusRequester(cancelFocus)
+                    .focusable(),
+            )
+        },
+    )
+}
+
+/**
+ * Round 43 — the encryption-timing reset row: clears the probe
+ * budget and the bundle-reply rate limit for all peers, so a
+ * blocked encryption test can run again right away. Keys,
+ * verified flags and ENCRYPTED states are untouched — the
+ * confirm dialog says so. Split out of [AdvancedScreen] like
+ * [ErrorLogRows], so that function stays under the 300-line
+ * Detekt ceiling.
+ *
+ * Round 40 — deliberately NOT @Composable: it runs inside the
+ * group's plain content lambda (see [RelaySettingsGroup]), so
+ * @Composable calls belong inside the `item {}` lambda only.
+ */
+private fun RelayGroupScope.ResetEncryptionTimingRow(onClick: () -> Unit) {
+    item(onClick = onClick) {
+        RelaySettingRow(
+            icon = Icons.Outlined.Timer,
+            title = stringResource(R.string.settings_reset_encryption_timing),
+            chevron = true,
         )
     }
 }

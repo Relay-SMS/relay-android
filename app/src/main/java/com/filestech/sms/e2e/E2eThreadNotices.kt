@@ -29,9 +29,10 @@ data class E2eNoticeUi(
  * day separator uses). [trailing] holds the notices newer than the last
  * message — they render after it, in a single item at the end of the
  * list. Notices are never LazyColumn items of their own: the thread's
- * scroll anchors, search jumps and sticky date all assume the global
- * LazyColumn index IS the message index, and interleaved items would
- * shift every index after the first notice.
+ * scroll anchors, search jumps and sticky date all work in
+ * chronological message indices ([ThreadListIndexing] converts them to
+ * LazyColumn indices for the reversed list), and interleaved items
+ * would shift every index after the first notice.
  */
 data class E2eNoticePlacement(
     /** Notices rendering above each message, parallel to the message list. */

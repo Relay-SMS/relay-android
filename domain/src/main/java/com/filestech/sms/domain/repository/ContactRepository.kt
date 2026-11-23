@@ -16,10 +16,13 @@ interface ContactRepository {
     suspend fun listAllDetailed(): List<Contact>
 
     /**
-     * Slice 5 — opens the thumbnail photo stream for the contact
-     * behind [address] (same `PhoneLookup` the UI uses). Null when
-     * there is no contact, no photo, or an unreadable stream. The
-     * caller closes the stream.
+     * Slice 5 — opens the photo stream for the contact behind
+     * [address] (same `PhoneLookup` the UI uses): the FULL-SIZE
+     * photo first, the thumbnail as the fallback when the full
+     * photo is missing or unreadable (round 43 — the desktop
+     * shows the avatar at 96dp+, where the thumbnail pixelates).
+     * Null when there is no contact, no photo, or an unreadable
+     * stream. The caller closes the stream.
      */
     suspend fun openPhotoStream(address: String): InputStream?
 

@@ -10,6 +10,7 @@ import com.filestech.sms.data.local.datastore.SettingsRepository
 import com.filestech.sms.data.sms.DefaultSmsAppManager
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.PanicService
 import com.filestech.sms.security.PinVerdict
@@ -41,6 +42,7 @@ class SettingsViewModel @Inject constructor(
     private val appLock: AppLockManager,
     private val blockedImporter: BlockedNumbersImporter,
     private val conversationRepo: ConversationRepository,
+    private val e2ePeerRepository: E2ePeerRepository,
     private val vaultPin: com.filestech.sms.security.VaultPinManager,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
@@ -55,6 +57,13 @@ class SettingsViewModel @Inject constructor(
         data class HistoryPurged(val count: Int) : Event
         /** v1.3.0 — re-sync from content://sms a été enquêtée. Le snack confirme à l'utilisateur. */
         data object ResyncRequested : Event
+
+        /**
+         * Round 43 — the encryption timing reset (Settings → Advanced)
+         * completed: probe counts and reply limits cleared, the
+         * non-encrypted peers back to UNKNOWN. The snack confirms it.
+         */
+        data object EncryptionTimingReset : Event
 
         /** v1.26.0 — code panique enregistré. */
         data object PanicCodeSet : Event
@@ -482,6 +491,21 @@ class SettingsViewModel @Inject constructor(
         telephonySyncManager.requestSync("resynchronisation manuelle")
         TelephonySyncWorker.enqueueOneShot(context)
         _events.send(Event.ResyncRequested)
+    }
+
+    /**
+     * Round 43 — clears the encryption timing for all peers
+     * (Settings → Advanced): the probe budget and the bundle-reply
+     * rate limit, so a blocked test can run again right away
+     * instead of waiting out the 24-hour reply limit or the
+     * 30-day probe window. Keys, sessions, verified flags and
+     * ENCRYPTED states are untouched — see
+     * [E2ePeerRepository.resetEncryptionTiming]. Emits
+     * [Event.EncryptionTimingReset] so the screen can confirm.
+     */
+    fun resetEncryptionTiming() = viewModelScope.launch {
+        e2ePeerRepository.resetEncryptionTiming()
+        _events.send(Event.EncryptionTimingReset)
     }
 
     /**

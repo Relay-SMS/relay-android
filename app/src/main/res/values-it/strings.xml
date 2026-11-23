@@ -20,6 +20,7 @@
     <string name="action_send">Invia</string>
     <string name="action_cancel">Annulla</string>
     <string name="action_confirm">Conferma</string>
+    <string name="action_reset">Reimposta</string>
     <string name="action_save">Salva</string>
     <string name="action_delete">Elimina</string>
     <string name="action_archive">Archivia</string>
@@ -530,6 +531,8 @@
     <string name="settings_resync_title">Risincronizza dal telefono</string>
     <string name="settings_resync_desc">Reimporta tutti gli SMS dal sistema Android. Utile quando dei messaggi presenti sul telefono mancano nell\'app. Non riporta indietro ciò che ha eliminato: eliminare rimuove anche la copia del telefono. Nessun duplicato.</string>
     <string name="settings_resync_started">Risincronizzazione avviata in secondo piano.</string>
+    <string name="settings_reset_encryption_timing">Reimposta i tempi di crittografia</string>
+    <string name="settings_reset_encryption_timing_done">Tempi di crittografia reimpostati</string>
     <string name="settings_send_reactions_title">Invia reazioni</string>
     <string name="settings_row_info">Maggiori informazioni</string>
     <string name="settings_send_reactions_desc">Quando pubblica una reazione emoji (cuore, pollice in su…), al destinatario viene inviato un SMS che contiene solo l\'emoji. Conta come un SMS normale, alla tariffa del suo piano. Cambiare una reazione invia un nuovo SMS con il nuovo emoji; toglierla invia un SMS che segnala la rimozione.</string>
@@ -731,6 +734,8 @@
     <string name="mark_all_read_confirm_body">Tutti gli indicatori di non letto attuali saranno azzerati. I nuovi messaggi in arrivo mostreranno di nuovo il loro indicatore.</string>
     <string name="settings_resync_confirm_title">Risincronizzare dal telefono?</string>
     <string name="settings_resync_confirm_body">Reimporta i messaggi dal fornitore SMS/MMS del sistema. I messaggi esistenti restano (deduplicati tramite identificativo unico); i messaggi eliminati in precedenza possono ricomparire se esistono ancora nel database di sistema. Continuare?</string>
+    <string name="settings_reset_encryption_timing_confirm_title">Reimpostare i tempi di crittografia?</string>
+    <string name="settings_reset_encryption_timing_confirm_body">Cancella i contatori delle sonde e i limiti di risposta per tutti i contatti, così puoi riprovare subito. Le tue chiavi di crittografia e i tuoi contatti verificati non sono interessati.</string>
     <string name="settings_reset_all_confirm_title">Ripristinare tutte le impostazioni?</string>
     <string name="settings_reset_all_confirm_body">Tutte le sue preferenze (tema, notifiche, invio, ecc.) torneranno ai valori predefiniti. Le sue conversazioni, i suoi messaggi e le sue impostazioni di sicurezza (blocco, PIN della cassaforte, PIN esca) NON sono toccati.</string>
     <string name="settings_purge_blocked_confirm_title">Eliminare le conversazioni bloccate?</string>

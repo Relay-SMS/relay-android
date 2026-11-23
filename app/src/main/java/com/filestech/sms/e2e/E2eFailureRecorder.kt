@@ -12,14 +12,17 @@ import javax.inject.Singleton
  * Advanced), so a silent encryption failure leaves a readable
  * trace instead of just a missing fingerprint.
  *
- * Five writers use it: the [E2eCrypto] provider (a native-load
+ * Six writers use it: the [E2eCrypto] provider (a native-load
  * failure that degrades to [UnavailableE2eCrypto]), the
  * Encryption settings ViewModel (an identity load that fails
  * after the library loaded — Keystore, Room, or a native call),
  * the data-SMS sender (a handshake SMS the radio refuses —
  * probe or bundle reply, tagged by kind; recorded sanitized,
  * the exception's class only, so no address can leak in — see
- * [E2eDataSmsSenderImpl]), the handshake handler (success
+ * [E2eDataSmsSenderImpl]), the sent-intent handler (a handshake
+ * SMS the radio accepted and then rejected — the async verdict,
+ * tagged by kind, with the result-code name — see
+ * [E2eDataSmsSentHandler]), the handshake handler (success
  * events — probe received, bundle sent, bundle rate-limited —
  * via [recordEvent], so the inbound path is visible in release
  * builds, where Timber is a no-op), and the probe manager (a

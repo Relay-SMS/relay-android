@@ -54,6 +54,7 @@ class E2ePeerRepositoryTest {
         coEvery { dao.updateKeys(any(), any(), any(), any()) } just Runs
         coEvery { dao.setVerified(any(), any(), any()) } just Runs
         coEvery { dao.recordBundleReply(any(), any(), any()) } just Runs
+        coEvery { dao.resetTiming(any()) } just Runs
         return dao
     }
 
@@ -291,5 +292,15 @@ class E2ePeerRepositoryTest {
         repository.state("  Free  ")
 
         coVerify(exactly = 1) { dao.findByAddress("Free") }
+    }
+
+    @Test
+    fun `resetEncryptionTiming delegates to the DAO with the timestamp`() = runTest {
+        val dao = daoReturning(peer())
+        val repository = E2ePeerRepository(dao)
+
+        repository.resetEncryptionTiming(now)
+
+        coVerify(exactly = 1) { dao.resetTiming(now) }
     }
 }

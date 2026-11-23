@@ -29,7 +29,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -93,7 +92,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -193,7 +191,6 @@ import com.filestech.sms.ui.util.rememberSimLabeler
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.io.File
@@ -535,18 +532,12 @@ fun ThreadScreen(
         }
     }
 
-    // v1.2.4 audit U12: scroll-to-bottom on new messages only when the user is already at
-    // the bottom — preserves their reading position higher up the thread. The first paint
-    // is a special case: opening a conversation must land on the most recent message, not
-    // the start. We track `initialScrollDone` to discriminate the two.
-    var initialScrollDone by remember { mutableStateOf(false) }
-    // Opening a conversation must land directly on the last message: the list starts at
-    // index 0 and only jumps to the bottom once the first page loads (see the
-    // LaunchedEffect below), which flashed the "load older" row and a fast scroll down.
-    // Keep the list invisible until that first scroll has landed; an empty conversation
-    // has nothing to scroll to, so it shows immediately. The header and composer sit
-    // outside the list, so they stay visible while the messages settle.
-    val listSettled = initialScrollDone || state.messages.isEmpty()
+    // Round 43 — the list is reversed (reverseLayout, see the
+    // LazyColumn below): it starts at the bottom by layout, so there
+    // is no first-paint jump to hide and no `initialScrollDone` /
+    // `listSettled` to track. A new message lands at index 0 and
+    // appears on its own when the user is at the bottom; when scrolled
+    // up, the list re-anchors by key and the reading position holds.
     // E2E — the in-thread notices, placed among the loaded messages
     // by date (above the first message dated at or after each notice;
     // newer than everything → after the last message). The merge is
@@ -558,14 +549,18 @@ fun ThreadScreen(
     val e2eNoticePlacement = remember(state.messages, state.e2eNotices) {
         E2eThreadNotices.place(state.messages, state.e2eNotices)
     }
-    // The list holds messages only (the old "load older" row is gone since
-    // round 5 auto-load), so `state.messages[i]` is at global LazyColumn
-    // index `i` — no head offset to add when scrolling to a message.
-    // E2E — plus one trailing item when a notice is newer than the last
-    // message: the bottom is the notice, not the message, so the tail
-    // pin and the scroll-to-bottom targets stay on the true bottom.
-    val bottomItemIndex = state.messages.lastIndex +
-        if (e2eNoticePlacement.trailing.isNotEmpty()) 1 else 0
+    // Round 43 — the trailing E2E notice item (notices newer than
+    // every message) renders BELOW the newest message, so it leads
+    // the reversed list at index 0 when present and the messages
+    // shift by one — `trailingNoticeCount` is that shift, and the
+    // newest message's LazyColumn index. [ThreadListIndexing] maps
+    // between chronological message indices and LazyColumn indices.
+    val trailingNoticeCount = if (e2eNoticePlacement.trailing.isNotEmpty()) 1 else 0
+    val messageCount = state.messages.size
+    // The LazyColumn feed, newest first: `asReversed` is a view, not
+    // a copy. `itemsIndexed` below maps each position back to its
+    // chronological index for separators, notices and neighbours.
+    val reversedMessages = remember(state.messages) { state.messages.asReversed() }
     // Feedback round 5 — jump to the current search match. Plain scroll, not
     // animated: a jump can span hundreds of messages, and animateScrollToItem
     // over that distance is visibly choppy (same reason as the first-paint
@@ -575,7 +570,15 @@ fun ThreadScreen(
     LaunchedEffect(threadSearchCurrentMatch) {
         val match = threadSearchCurrentMatch ?: return@LaunchedEffect
         if (match.messageIndex >= 0) {
-            listState.scrollToItem(match.messageIndex)
+            // Round 43 — `messageIndex` is chronological; the reversed
+            // list needs its LazyColumn index.
+            listState.scrollToItem(
+                ThreadListIndexing.lazyIndexForMessage(
+                    match.messageIndex,
+                    messageCount,
+                    trailingNoticeCount,
+                ),
+            )
         } else {
             searchJumpedOutOfWindow = true
             viewModel.jumpToSearchMatch(match.messageId)
@@ -591,7 +594,15 @@ fun ThreadScreen(
         val target = pinJumpTarget ?: return@LaunchedEffect
         val index = state.messages.indexOfFirst { it.id == target }
         if (index >= 0) {
-            listState.scrollToItem(index)
+            // Round 43 — `index` is chronological; the reversed list
+            // needs its LazyColumn index.
+            listState.scrollToItem(
+                ThreadListIndexing.lazyIndexForMessage(
+                    index,
+                    messageCount,
+                    trailingNoticeCount,
+                ),
+            )
             viewModel.clearPinJumpTarget()
         }
     }
@@ -601,157 +612,46 @@ fun ThreadScreen(
     val isWindowAnchored by viewModel.isWindowAnchored.collectAsStateWithLifecycle()
     LaunchedEffect(isWindowAnchored, state.messages, pendingJumpToBottom) {
         if (!pendingJumpToBottom || isWindowAnchored || state.messages.isEmpty()) return@LaunchedEffect
-        listState.scrollToItem(bottomItemIndex)
+        // Round 43 — the bottom of the reversed list is index 0.
+        listState.scrollToItem(0)
         pendingJumpToBottom = false
     }
-    val isAtBottom by remember {
+    // Round 43 — reversed: the bottom of the thread is LazyColumn
+    // index 0, and the newest message sits at `trailingNoticeCount`
+    // (0, or 1 when the trailing E2E notice item leads). At the bottom
+    // when the lowest visible index is at or below it — the notice
+    // item is small, so seeing it means the newest message is visible
+    // too. The remember key matters: without it the derived state
+    // would capture the first trailing count and go stale when a
+    // notice appears or disappears.
+    val isAtBottom by remember(trailingNoticeCount) {
         androidx.compose.runtime.derivedStateOf {
-            val li = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-            li == null || li.index >= bottomItemIndex - 1
+            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            first == null || first.index <= trailingNoticeCount
         }
     }
-    // Round 13 fix (2026-11-11) — when the emoji/GIF/sticker picker opens,
-    // the viewport shrinks from the bottom as the panel grows (300ms enter
-    // animation). The list keeps its scroll position, so the newest messages
-    // slide below the viewport, behind the panel — it looks like the panel
-    // covers the conversation. If the user was at the tail when the picker
-    // opened, scroll to the bottom once the panel has finished growing so
-    // the newest messages stay visible in the shrunken viewport. The
-    // at-bottom snapshot is taken when the picker opens (before the shrink
-    // pushes the tail out of view, which would flip `isAtBottom` false).
-    // A user scrolled up reading older messages is left alone.
-    LaunchedEffect(emojiPickerOpen) {
-        if (!emojiPickerOpen) return@LaunchedEffect
-        val wasAtBottom = isAtBottom
-        delay(320)
-        // Round 41 — crash guard: `bottomItemIndex` is the
-        // composition-time capture (-1 while messages are still
-        // loading) but the guard reads LIVE state, so after the
-        // delay the list may be non-empty while the captured index
-        // is still -1 — the round-18 keyboard effect crashed
-        // exactly this way on a slow phone. A stale -1 means skip
-        // the scroll; the pinned-scroll effect re-pins once loaded.
-        if (wasAtBottom && bottomItemIndex >= 0 && state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(bottomItemIndex)
-        }
-    }
-    // Round 41 — the thread tracks the keyboard frame by frame: as the IME
-    // inset grows or shrinks, scroll the list by the same delta, so the
-    // content moves WITH the keyboard instead of after it. The round-18
-    // effect waited a fixed 320ms and then animated to the bottom — the
-    // keyboard slid up, there was a pause, and the thread snapped into
-    // place. Two decoupled motions read as jitter; one motion reads as
-    // the thread glued to the keyboard. (The same frame-locked behavior
-    // a bottom-anchored list gets for free from its layout — here
-    // reproduced by driving the scroll offset from the inset deltas,
-    // because this list is not reversed.) The tracker below is a
-    // long-lived collector, not an effect keyed on the inset: re-keying
-    // every frame would restart the coroutine mid-animation and drop
-    // deltas. Only while at the bottom and not searching, not scrolling,
-    // picker closed — a user scrolled up reading older messages is left
-    // alone, and the picker has its own effect above. Any residual gap
-    // (a dropped frame, rounding) is picked up by the settle-to-bottom
-    // snap once the insets settle, and by the pinned-scroll effect.
+    // Round 43 — the picker-open re-scroll (round 13) is gone: the
+    // reversed list is bottom-anchored by layout, so the tail stays
+    // visible on its own as the panel grows and the viewport shrinks
+    // — the same mechanism that now handles the keyboard.
+    // Round 43 — the IME scroll compensation is gone: the frame-locked
+    // delta tracker (round 41), the 350ms settle snap and the drag
+    // latch (round 42) all existed because the list was top-anchored
+    // and every keyboard resize had to be compensated by scroll code.
+    // The reversed list is bottom-anchored by layout — the keyboard
+    // resize moves the content with it, frame by frame, with no scroll
+    // code to drop a delta or fire late. Removing the two snapshotFlow
+    // collectors (this one and the pin's) also removes the round-41
+    // ANR mechanism for good.
+    // The IME inset is still read, but ONLY for the emoji picker's
+    // bottom reserve below (`reservedBottomPx`): the panel must not
+    // overlap the keyboard. No collector, no timer, no scroll code
+    // reads it anymore. (The inset object is stable per window — only
+    // its values change — and `WindowInsets.ime` is a @Composable
+    // accessor, so it is captured here, once.)
     val density = LocalDensity.current
-    // Captured once: the IME insets object is stable per window (only its
-    // values change), and `WindowInsets.ime` itself is a @Composable
-    // accessor, so the flow below cannot call it — it reads the bottom
-    // from this captured object instead.
     val imeInsets = WindowInsets.ime
     val imeBottomPx = imeInsets.getBottom(density)
-    // Round 38 — the IME is mid-animation while the keyboard slides in
-    // or out (or changes height, e.g. switching to the symbols layout):
-    // the inset changes every frame until the animation ends, so the
-    // flag below stays set until 350ms after the last change. (Compose
-    // has no usable "IME is animating" API in this version:
-    // `imeAnimationSource`/`imeAnimationTarget` are hidden-deprecated
-    // in foundation-layout 1.12.1 — unresolved even with the opt-in —
-    // so the settle timer stands in for them.) The pinned-scroll effect
-    // below pauses while this is true (see its comment). The first run
-    // also sets it for 350ms at thread open — harmless, the pin starts
-    // unset until the bottom is actually seen.
-    var imeAnimating by remember { mutableStateOf(false) }
-    LaunchedEffect(imeBottomPx) {
-        imeAnimating = true
-        delay(350)
-        imeAnimating = false
-    }
-    LaunchedEffect(listState) {
-        val tracker = ImeDeltaTracker()
-        // The inset is read inside the flow, not from the `imeBottomPx`
-        // val above: that val is a plain Int captured at composition, so
-        // a flow over it would never re-emit. The inset values are
-        // snapshot state (AndroidWindowInsets holds them in a
-        // MutableState), so reading them here subscribes the collector
-        // to every frame of the animation.
-        snapshotFlow { imeInsets.getBottom(density) }.collect { current ->
-            val delta = tracker.onInsetChanged(current)
-            val shouldTrack = delta != 0f && isAtBottom &&
-                !listState.isScrollInProgress && !threadSearchOpen &&
-                !emojiPickerOpen && state.messages.isNotEmpty()
-            if (shouldTrack) {
-                listState.scroll { scrollBy(delta) }
-            }
-        }
-    }
-    // Round 42 — settle-to-bottom: after the keyboard finishes sliding
-    // (the 350ms timer above flips `imeAnimating` false), snap the list
-    // to the true bottom when the user was at the bottom before the
-    // animation started. The frame-locked tracker above keeps the tail
-    // glued while the keyboard slides, but a frame it skips (its
-    // `isScrollInProgress` gate) loses that frame's delta for good, so
-    // the tail can end up covered by the keyboard (open) or sitting
-    // above the composer with the first message cut off (closed, short
-    // thread) — and the pinned-scroll effect below could not recover
-    // it: its pin started false on every restart and only engaged when
-    // the bottom was already fully visible. The snap is instant
-    // (`scrollToItem`, not animated) and fires once, after the
-    // animation has settled — no delayed animate, no jitter. A user
-    // scrolled up before the animation (`imeWasAtBottom` false) or who
-    // dragged during it (the latch below) is left alone; so is a user
-    // mid-search or with the picker open (the picker has its own
-    // effect above). The `isScrollInProgress` guard covers a drag
-    // still running at settle time.
-    var imeWasAtBottom by remember { mutableStateOf(false) }
-    var userMovedDuringIme by remember { mutableStateOf(false) }
-    LaunchedEffect(imeAnimating) {
-        if (imeAnimating) {
-            imeWasAtBottom = isAtBottom
-            userMovedDuringIme = false
-        } else {
-            // The snap only fires when the user was at the bottom
-            // before the animation and never moved away from it
-            // during the animation; a user scrolled up, mid-search,
-            // or with the picker open is left alone, and so is a
-            // drag still running at settle time.
-            val shouldSettle = imeWasAtBottom &&
-                !userMovedDuringIme &&
-                !emojiPickerOpen &&
-                !threadSearchOpen &&
-                !listState.isScrollInProgress &&
-                bottomItemIndex >= 0 &&
-                state.messages.isNotEmpty()
-            if (shouldSettle) {
-                listState.scrollToItem(bottomItemIndex)
-                imeWasAtBottom = false
-            }
-        }
-    }
-    // Round 42 — the drag latch for the settle snap above: a user drag
-    // (start, stop, or cancel) while the IME animates means the user
-    // moved during the animation, so the snap must not yank them back
-    // to the bottom. `interactionSource` only reports USER gestures —
-    // programmatic scrolls (`scrollToItem`, the tracker, the pin)
-    // never emit a `DragInteraction` — so the latch cannot fire on
-    // our own motion. The tracker and the pin keep working while the
-    // user drags; only the settle snap is suppressed.
-    LaunchedEffect(listState) {
-        listState.interactionSource.interactions.collect { interaction ->
-            if (interaction is DragInteraction && imeAnimating) {
-                userMovedDuringIme = true
-            }
-        }
-    }
     // Audit R4 (v1.14.8) — Compteur de messages non-vus apparus pendant que l'user était
     // scrollé vers le haut. Affiche un chip "↓ N nouveau(x)" cliquable en bas-droite.
     // Sans ça, un message arrivait silencieusement et restait invisible.
@@ -778,170 +678,52 @@ fun ThreadScreen(
     LaunchedEffect(isAtBottom, newestMessageId) {
         if (isAtBottom && newestMessageId != null) lastSeenMessageId = newestMessageId
     }
-    // v1.24.0 (finding A) — déclenché par l'id du dernier message, PAS par `size`. Charger des
-    // messages plus anciens augmente `size` : avec l'ancienne clé, chaque « charger plus ancien »
-    // aurait rejeté l'utilisateur en bas du fil, exactement au moment où il remonte l'historique.
-    LaunchedEffect(newestMessageId) {
-        if (newestMessageId == null) return@LaunchedEffect
-        if (!initialScrollDone) {
-            // Non-animated for first paint — animateScrollToItem from index 0 with hundreds
-            // of items is visibly choppy.
-            listState.scrollToItem(bottomItemIndex)
-            initialScrollDone = true
-            lastSeenMessageId = newestMessageId
-        } else if (isAtBottom && !threadSearchOpen) {
-            // Feedback round 5 — no auto-scroll while searching: a new message
-            // arriving mid-search must not drag the user away from the match
-            // they are looking at.
-            listState.animateScrollToItem(bottomItemIndex)
-            lastSeenMessageId = newestMessageId
-        }
-    }
-    // Round 18 — keep the tail pinned when content grows after the first
-    // paint: link preview cards (and images) load asynchronously, so a
-    // bubble grows taller after the initial scroll-to-bottom has already
-    // landed — re-entering a thread showed the newest message cut off at
-    // the viewport's bottom edge. While pinned to the bottom and not
-    // scrolling, re-scroll whenever the bottom item is no longer fully
-    // visible. A scroll gesture unpins immediately, so reading older
-    // messages is never yanked back; reaching the bottom again re-pins.
-    // The pin starts false and is only set by actually seeing the bottom
-    // item fully visible — merely sitting one item up never pins.
-    // Round 19 (2026-11-12) — OFF while the picker panel is open: dragging
-    // the panel resizes the viewport on every pixel, and each of those
-    // layout emissions made this effect re-scroll to the bottom — a
-    // scroll + full re-layout per drag pixel, which saturated the main
-    // thread until input timed out (ANR, main thread stuck in the
-    // snapshot drain). The picker-open effect above already re-pins after
-    // the 300ms enter animation; the pin re-engages on the next layout
-    // emission once the panel closes.
-    // Phase 2 (2026-11-15) — the unpin rule is a first-visible-anchor
-    // discriminator, not a last-visible threshold. The round-18 rule
-    // unpinned whenever the last visible item sat more than one position
-    // above the bottom — but a ~300dp image preview card pops in whole
-    // and jumps it 4–6 messages in one layout pass, so the pin disengaged
-    // instead of re-pinning and the thread opened scrolled up onto the
-    // card. Now: if the first visible item (index + offset) moved since
-    // the previous emission, the user moved — keep the old behavior
-    // (pin only when the bottom is fully visible, unpin otherwise). If
-    // the anchor is unchanged but the last visible item moved back, that
-    // is content growth below the anchor, not user movement — keep the
-    // pin and re-scroll, whatever the jump size. The pin-jump guard
-    // survives: tapping the pinned banner jumps the first visible item,
-    // so it still unpins. Widening the threshold instead would be
-    // guesswork — a tall card over short messages can exceed any fixed
-    // count, and several previews stack.
-    // Round 38 (2026-11-21) — OFF while the IME animates: opening the
-    // keyboard shrinks the viewport frame by frame over ~300ms, and each
-    // of those layout emissions made this effect snap to the bottom —
-    // the same scroll-per-emission loop as the round-19 picker drag,
-    // time-bounded here so it showed as jitter (the list jumping during
-    // the keyboard slide) instead of an ANR. The frame-locked tracker
-    // above owns the motion while the keyboard slides.
-    // Round 42 (2026-11-22) — the pin state lives in
-    // [PinnedScrollTracker], remembered by the screen, instead of as
-    // locals inside this effect: the effect restarts whenever its keys
-    // change (a new message, the picker opening), and the locals reset
-    // the pin to false on every restart — after the keyboard closed,
-    // the bottom was NOT fully visible (the tracker had dropped a
-    // delta or two), so the pin could never re-engage from that state
-    // and no re-scroll ever happened. With the state hoisted, a pin
-    // earned before the animation survives it, and the first
-    // post-settle emission re-scrolls. The effect is also NO LONGER
-    // keyed on `imeAnimating`: the flag is checked inside the
-    // collector instead, so the flow is never torn down and recreated
-    // on animation. That teardown was the ANR: pulling the
-    // notification shade down with the keyboard open flapped the
-    // insets (focus loss → inset recompute), each flap flipped
-    // `imeAnimating`, each flip disposed and recreated the layoutInfo
-    // snapshotFlow collector — the ANR stack shows the main thread
-    // inside a snapshotFlow emit running into a dispose — and the
-    // recreated collector scrolled per layout emission while the
-    // viewport was in flux, saturating the main thread until input
-    // timed out (5s, FocusEvent hasFocus=false). Now the collector
-    // lives across animations and simply skips emissions while
-    // animating — pin and anchor frozen, so the post-settle emission
-    // still compares against the pre-animation anchor and user
-    // movement during the animation is still detected. The
-    // settle-to-bottom snap above owns the post-animation re-scroll;
-    // the pin covers late content growth while the keyboard sits open.
-    val pinTracker = remember { PinnedScrollTracker() }
-    LaunchedEffect(listState, bottomItemIndex, emojiPickerOpen) {
-        if (emojiPickerOpen) return@LaunchedEffect
-        snapshotFlow { listState.layoutInfo }.collect { info ->
-            // Frozen while the IME animates (round 42 — see above):
-            // no pin update, no anchor update, no scroll. The
-            // frame-locked tracker owns the motion until the insets
-            // settle.
-            if (imeAnimating) return@collect
-            val first = info.visibleItemsInfo.firstOrNull()
-            val last = info.visibleItemsInfo.lastOrNull()
-            val shouldScroll = pinTracker.onLayout(
-                layout = PinnedScrollLayout(
-                    firstIndex = first?.index,
-                    firstOffset = first?.offset,
-                    lastIndex = last?.index,
-                    lastBottom = last?.let { it.offset + it.size },
-                    viewportEndOffset = info.viewportEndOffset,
-                ),
-                bottomItemIndex = bottomItemIndex,
-                isScrollInProgress = listState.isScrollInProgress,
-            )
-            if (shouldScroll) listState.scrollToItem(bottomItemIndex)
-        }
-    }
+    // Round 43 — the new-message auto-scroll is gone: in the reversed
+    // list a new message lands at index 0, the bottom, and appears on
+    // its own when the user is at the bottom; when scrolled up, the
+    // list re-anchors by key and the reading position holds. Marking
+    // the newest message seen is covered by the effect above
+    // (`isAtBottom` + `newestMessageId`).
+    // Round 43 — the tail pin is gone: in the reversed list the tail
+    // is anchored to the bottom by layout, so a bubble growing (a link
+    // preview or image loading in) pushes OLDER content up, never the
+    // newest message down — the cut-off tail the pin recovered from
+    // cannot happen. Removing its snapshotFlow collector also removes
+    // the last half of the round-41 ANR mechanism.
 
-    // v1.24.0 — ré-ancrage explicite au « charger plus ancien ».
-    //
-    // Compose ne ré-ancre par clé que dans une fenêtre d'environ 130 items autour du premier
-    // visible (`NearestRangeKeyIndexMap`). Un prepend de PAGE_SIZE = 200 dépasse cette portée :
-    // `findIndexByKey` ne retrouve pas la clé, garde l'index inchangé, et l'utilisateur est
-    // téléporté 200 messages en arrière — exactement quand il remonte son historique. On mémorise
-    // donc le message en tête d'écran et son décalage, et on restaure la position nous-mêmes.
-    var pendingAnchor by remember { mutableStateOf<Pair<Long, Int>?>(null) }
-    val oldestMessageId = state.messages.firstOrNull()?.id
-    LaunchedEffect(oldestMessageId) {
-        val (anchorId, anchorOffset) = pendingAnchor ?: return@LaunchedEffect
-        val index = state.messages.indexOfFirst { it.id == anchorId }
-        if (index >= 0) {
-            listState.scrollToItem(index, -anchorOffset)
-            pendingAnchor = null
-        }
-    }
+    // Round 43 — the explicit re-anchor is gone: loading older
+    // messages APPENDS to the reversed feed (older = higher
+    // LazyColumn indices), so existing items never shift and the
+    // view stays put on its own — no anchor to capture or restore.
 
     // Feedback round 5 — auto-load older messages on scroll-up (replaces the
-    // "Load older messages" button). When the first visible message is within
-    // [AUTO_LOAD_TOP_THRESHOLD] items of the top of the loaded window and
-    // older history exists, the next page loads by itself. The anchor is
-    // captured here (the message the user is reading + its pixel offset) so
-    // the restore above keeps them looking at the same message when the
-    // older page lands above — prepending must not jump the view.
+    // "Load older messages" button). Round 43 — reversed: the topmost
+    // visible item has the HIGHEST LazyColumn index, so "near the top"
+    // is the last visible item within [AUTO_LOAD_TOP_THRESHOLD] of the
+    // last item (the oldest loaded message). Loading older APPENDS to
+    // the reversed feed, so no anchor is captured or restored — the
+    // view stays put on its own.
     //
     // Guards: [ThreadViewModel.loadOlder] is a no-op while a load is in flight
-    // or when fully loaded, so a fast fling cannot stack loads; and the
-    // trigger needs [listSettled], so the first paint (which briefly sits at
-    // index 0 before jumping to the bottom) never fires a spurious load that
-    // would defeat the 50-message first window. Once a load lands, the anchor
-    // restore leaves the user ~200 items from the top, so the trigger goes
-    // quiet until they scroll up again.
+    // or when fully loaded, so a fast fling cannot stack loads. The first
+    // paint sits at the bottom (index 0) by layout, so it never fires a
+    // spurious load that would defeat the 50-message first window. Once a
+    // load lands, the user sits ~200 items from the top, so the trigger
+    // goes quiet until they scroll up again.
     val nearTop by remember {
         androidx.compose.runtime.derivedStateOf {
-            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-            first != null && first.index <= AUTO_LOAD_TOP_THRESHOLD
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            last != null && last.index >= info.totalItemsCount - 1 - AUTO_LOAD_TOP_THRESHOLD
         }
     }
-    LaunchedEffect(nearTop, state.hasMoreMessages, state.isLoadingOlder, listSettled) {
-        // The four-way guard lives in a plain `val`, not in the `if` condition,
-        // so the condition itself stays simple.
-        val canLoad = nearTop && state.hasMoreMessages && listSettled
-        if (!canLoad || state.isLoadingOlder) {
+    LaunchedEffect(nearTop, state.hasMoreMessages, state.isLoadingOlder) {
+        // The guard lives in a plain `val`, not in the `if` condition,
+        // so the condition itself stays simple (Detekt ComplexCondition).
+        val canLoad = nearTop && state.hasMoreMessages && !state.isLoadingOlder
+        if (!canLoad) {
             return@LaunchedEffect
         }
-        val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-            ?: return@LaunchedEffect
-        val anchorMsg = state.messages.getOrNull(firstVisible.index)
-            ?: return@LaunchedEffect
-        pendingAnchor = anchorMsg.id to firstVisible.offset
         viewModel.loadOlder()
     }
 
@@ -1426,20 +1208,41 @@ fun ThreadScreen(
         // up for the whole stretch, so the user always knows what date they
         // are viewing. `derivedStateOf` only re-emits when the label changes,
         // so the overlay re-composes once per day boundary, not per frame.
-        // The inline separator lives at the top of the boundary item: the
-        // floating pill hides only while that item's top is still on screen
-        // (offset >= 0) — once it scrolls above the viewport the floating
-        // pill takes over, so the two never stack.
-        val stickyDateLabel by remember(daySeparatorLabels) {
+        // Round 43 — reversed: the topmost visible item has the HIGHEST
+        // LazyColumn index, and the day boundary for it is its own
+        // separator or the nearest OLDER message's (higher LazyColumn
+        // index = older). The inline separator lives at the top of the
+        // boundary item: the floating pill hides only while the whole
+        // boundary item is on screen (its top — the separator — visible).
+        // The fully-visible check is the same under either offset
+        // convention, so it does not depend on how LazyColumn measures
+        // offsets in a reversed list.
+        val stickyDateLabel by remember(daySeparatorLabels, trailingNoticeCount) {
             derivedStateOf {
-                val visible = listState.layoutInfo.visibleItemsInfo
-                val firstIndex = visible.firstOrNull()?.index ?: return@derivedStateOf null
-                val boundaryIndex = (firstIndex downTo 0)
-                    .firstOrNull { daySeparatorLabels.getOrNull(it) != null }
+                val info = listState.layoutInfo
+                val visible = info.visibleItemsInfo
+                val topIndex = visible.lastOrNull()?.index ?: return@derivedStateOf null
+                val lastIndex = info.totalItemsCount - 1
+                val boundaryChronoIndex = (topIndex..lastIndex).firstNotNullOfOrNull { lazy ->
+                    val chrono = ThreadListIndexing.chronoIndexForLazy(
+                        lazy,
+                        messageCount,
+                        trailingNoticeCount,
+                    )
+                    chrono?.takeIf { daySeparatorLabels.getOrNull(it) != null }
+                } ?: return@derivedStateOf null
+                val label = daySeparatorLabels[boundaryChronoIndex]
                     ?: return@derivedStateOf null
-                val label = daySeparatorLabels[boundaryIndex] ?: return@derivedStateOf null
-                val boundaryItem = visible.firstOrNull { it.index == boundaryIndex }
-                if (boundaryItem != null && boundaryItem.offset >= 0) null else label
+                val boundaryLazyIndex = ThreadListIndexing.lazyIndexForMessage(
+                    boundaryChronoIndex,
+                    messageCount,
+                    trailingNoticeCount,
+                )
+                val boundaryItem = visible.firstOrNull { it.index == boundaryLazyIndex }
+                val fullyVisible = boundaryItem != null &&
+                    boundaryItem.offset >= info.viewportStartOffset &&
+                    boundaryItem.offset + boundaryItem.size <= info.viewportEndOffset
+                if (fullyVisible) null else label
             }
         }
         // Feedback round 8 — the sticky date pill floats only TEMPORARILY:
@@ -1549,22 +1352,51 @@ fun ThreadScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().alpha(if (listSettled) 1f else 0f),
+            modifier = Modifier.fillMaxSize(),
             state = listState,
+            // Round 43 — REVERSED: the list is bottom-anchored by
+            // layout (index 0 = newest = bottom), so the keyboard
+            // resize, the picker, content growth and new messages all
+            // move the content with them — no scroll compensation.
+            // The feed is newest-first ([reversedMessages]); the
+            // chronological index for each item is recovered inside.
+            reverseLayout = true,
             // Feedback round 5 — room below the last message for a reaction
             // badge hanging off its bottom edge (see [BubbleReactionOverlay]):
             // without it the badge on the last message is clipped by the list
             // viewport, where the composer starts.
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
+            // E2E — notices newer than the last message (usually the
+            // activation notice, recorded before the first encrypted
+            // reply). They render BELOW the newest message, at the
+            // very bottom of the thread — so in the reversed list
+            // they are the FIRST item (index 0), before the newest
+            // message. [trailingNoticeCount] is the shift they add
+            // to every message's LazyColumn index.
+            if (e2eNoticePlacement.trailing.isNotEmpty()) {
+                item(key = "e2e-trailing-notices", contentType = "e2e-notices") {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        for (notice in e2eNoticePlacement.trailing) {
+                            E2eNoticeRow(
+                                notice = notice,
+                                contactName = title,
+                                onVerify = { e2eVerificationOpen = true },
+                            )
+                        }
+                    }
+                }
+            }
             // v1.24.0 (finding A) — `key` stable pour que l'insertion des
             // messages plus anciens ne détruise pas la position de scroll.
             // Feedback round 5 — the "Load older messages" button is gone:
             // older messages load automatically on scroll-up (see the
-            // auto-load effect below); the list holds messages only, so the
-            // global LazyColumn index IS the message index.
+            // auto-load effect above); they APPEND to this reversed feed,
+            // so existing items never shift. Round 43 — `index` here is
+            // the position in the reversed feed (0 = newest); the
+            // chronological index is `lastIndex - index` (see below).
             itemsIndexed(
-                state.messages,
+                reversedMessages,
                 key = { _, m -> m.id },
                 // Audit PERF-M1 (v1.14.8) — `contentType` indique au recycleur Compose que
                 // les bulles audio / media / texte sont 3 layouts distincts. Sans ce hint
@@ -1578,6 +1410,11 @@ fun ThreadScreen(
                     }
                 },
             ) { index, msg ->
+                // Round 43 — `index` is the position in the reversed
+                // feed (0 = newest); neighbours, separators and
+                // notices are all chronological, so they use the
+                // chronological index.
+                val chronoIndex = state.messages.lastIndex - index
                 // v1.18.0 — Dispatcher extrait vers [ThreadMessageItem]. Avant : ~140 lignes
                 // inline (audio / media / text bubble). Maintenant : 1 appel. Les valeurs
                 // dérivées (showTimestamp, burstPosition, senderLabel) sont calculées DANS
@@ -1588,9 +1425,9 @@ fun ThreadScreen(
                 val searchHighlight = threadSearchHighlightById[msg.id] ?: SearchHighlight()
                 ThreadMessageItem(
                     msg = msg,
-                    prev = state.messages.getOrNull(index - 1),
-                    next = state.messages.getOrNull(index + 1),
-                    daySeparatorLabel = daySeparatorLabels.getOrNull(index),
+                    prev = state.messages.getOrNull(chronoIndex - 1),
+                    next = state.messages.getOrNull(chronoIndex + 1),
+                    daySeparatorLabel = daySeparatorLabels.getOrNull(chronoIndex),
                     // v1.28.4 — dans un groupe, la bulle nomme son expéditeur, pas le groupe.
                     conversationDisplayName = if (state.conversation?.isGroup == true) {
                         state.memberNames[msg.address] ?: msg.address
@@ -1620,7 +1457,7 @@ fun ThreadScreen(
                     // contact name is the conversation title: the
                     // name or formatted number the header shows).
                     e2eNotices = E2eNoticesForItem(
-                        notices = e2eNoticePlacement.before.getOrNull(index) ?: emptyList(),
+                        notices = e2eNoticePlacement.before.getOrNull(chronoIndex) ?: emptyList(),
                         contactName = title,
                     ),
                     // Client mode C2 — the thread is read-only: the
@@ -1631,24 +1468,6 @@ fun ThreadScreen(
                     downloadStates = state.attachmentDownloads,
                     onRequestDownload = { id -> viewModel.requestAttachmentDownload(id) },
                 )
-            }
-            // E2E — notices newer than the last message (usually the
-            // activation notice, recorded before the first encrypted
-            // reply). One item at the end, after every message: the
-            // message indices above are untouched, so every scroll
-            // anchor still holds, and `bottomItemIndex` counts it.
-            if (e2eNoticePlacement.trailing.isNotEmpty()) {
-                item(key = "e2e-trailing-notices", contentType = "e2e-notices") {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        for (notice in e2eNoticePlacement.trailing) {
-                            E2eNoticeRow(
-                                notice = notice,
-                                contactName = title,
-                                onVerify = { e2eVerificationOpen = true },
-                            )
-                        }
-                    }
-                }
             }
         }
         // Audit R4 (v1.14.8) — Chip flottant "↓ N nouveau(x) message(s)" affiché en
@@ -1795,7 +1614,8 @@ fun ThreadScreen(
                 shape = RoundedCornerShape(50),
                 onClick = {
                     scope.launch {
-                        listState.animateScrollToItem(bottomItemIndex)
+                        // Round 43 — the bottom of the reversed list is index 0.
+                        listState.animateScrollToItem(0)
                     }
                 },
                 modifier = Modifier
@@ -2076,7 +1896,10 @@ fun ThreadScreen(
                 conversation = detailsConversation,
                 title = title,
                 subtitleNumber = headerSubtitleNumber,
-                contactPhotoUri = state.contactPhotoUri,
+                // Round 43 — the panel's 96dp header avatar gets the
+                // best available photo (full-size when the contact
+                // has one — the thumbnail pixelates at that size).
+                contactPhotoUri = state.contactPhotoLargeUri,
                 // E2E — the encryption row: 1:1 hub threads only
                 // (groups have no single peer; a linked device holds
                 // no identity keys, so it never probes or shows its

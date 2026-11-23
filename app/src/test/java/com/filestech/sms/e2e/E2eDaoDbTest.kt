@@ -102,6 +102,84 @@ class E2eDaoDbTest {
         assertThat(dao.verifiedPeers().map { it.address }).containsExactly(address)
     }
 
+    /**
+     * Round 43 — the Settings → Advanced timing reset, against real SQL: the
+     * timing columns clear for every peer, the non-ENCRYPTED states return
+     * to UNKNOWN, and the keys, the verified flags and the ENCRYPTED state
+     * survive. (The repository test only proves the delegation — the SQL
+     * semantics live here.)
+     */
+    @Test fun `resetTiming clears timing and un-encrypts states, keeping keys verified and encrypted peers`() =
+        runTest {
+            val dao = db.e2ePeerDao()
+            val probing = E2ePeerEntity(
+                address = "+33611111111",
+                state = E2ePeerState.PROBING,
+                theirCurveKey = "Y3VydmU=",
+                theirEdKey = "ZWQ=",
+                verified = true,
+                lastProbeAt = now - 1000,
+                probeAttempts = 3,
+                windowStartedAt = now - 2000,
+                lastBundleReplyAt = now - 3000,
+                updatedAt = now,
+            )
+            val notRelay = E2ePeerEntity(
+                address = "+33622222222",
+                state = E2ePeerState.NOT_RELAY,
+                lastProbeAt = now - 1000,
+                probeAttempts = 3,
+                windowStartedAt = now - 2000,
+                lastBundleReplyAt = now - 3000,
+                updatedAt = now,
+            )
+            val encrypted = E2ePeerEntity(
+                address = "+33633333333",
+                state = E2ePeerState.ENCRYPTED,
+                theirCurveKey = "Y3VydmU=",
+                theirEdKey = "ZWQ=",
+                verified = true,
+                lastProbeAt = now - 1000,
+                probeAttempts = 2,
+                windowStartedAt = now - 2000,
+                lastBundleReplyAt = now - 3000,
+                updatedAt = now,
+            )
+            dao.insert(probing)
+            dao.insert(notRelay)
+            dao.insert(encrypted)
+
+            dao.resetTiming(now + 10)
+
+            val resetProbing = dao.findByAddress(probing.address)
+            assertThat(resetProbing?.state).isEqualTo(E2ePeerState.UNKNOWN)
+            assertThat(resetProbing?.probeAttempts).isEqualTo(0)
+            assertThat(resetProbing?.windowStartedAt).isNull()
+            assertThat(resetProbing?.lastProbeAt).isNull()
+            assertThat(resetProbing?.lastBundleReplyAt).isNull()
+            assertThat(resetProbing?.theirCurveKey).isEqualTo("Y3VydmU=")
+            assertThat(resetProbing?.theirEdKey).isEqualTo("ZWQ=")
+            assertThat(resetProbing?.verified).isTrue()
+            assertThat(resetProbing?.updatedAt).isEqualTo(now + 10)
+
+            val resetNotRelay = dao.findByAddress(notRelay.address)
+            assertThat(resetNotRelay?.state).isEqualTo(E2ePeerState.UNKNOWN)
+            assertThat(resetNotRelay?.probeAttempts).isEqualTo(0)
+            assertThat(resetNotRelay?.windowStartedAt).isNull()
+            assertThat(resetNotRelay?.lastProbeAt).isNull()
+            assertThat(resetNotRelay?.lastBundleReplyAt).isNull()
+
+            val keptEncrypted = dao.findByAddress(encrypted.address)
+            assertThat(keptEncrypted?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+            assertThat(keptEncrypted?.theirCurveKey).isEqualTo("Y3VydmU=")
+            assertThat(keptEncrypted?.theirEdKey).isEqualTo("ZWQ=")
+            assertThat(keptEncrypted?.verified).isTrue()
+            assertThat(keptEncrypted?.probeAttempts).isEqualTo(0)
+            assertThat(keptEncrypted?.windowStartedAt).isNull()
+            assertThat(keptEncrypted?.lastProbeAt).isNull()
+            assertThat(keptEncrypted?.lastBundleReplyAt).isNull()
+        }
+
     @Test fun `sessions order current first then newest used, and prune drops old fallbacks`() = runTest {
         val dao = db.e2eSessionDao()
         dao.insert(session("old", lastUsedAt = now - 3000))

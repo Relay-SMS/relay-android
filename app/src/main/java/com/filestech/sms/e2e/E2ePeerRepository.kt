@@ -211,6 +211,23 @@ class E2ePeerRepository @Inject constructor(
     suspend fun verifiedPeers(): List<E2ePeerEntity> = peerDao.verifiedPeers()
 
     /**
+     * Round 43 — testing/diagnostic reset (Settings → Advanced):
+     * clears the probe-budget and bundle-reply timing for ALL
+     * peers (attempt counts, window starts, last-probe and
+     * last-bundle-reply times) and returns every non-ENCRYPTED
+     * peer to UNKNOWN, so encryption can be tested again right
+     * away instead of waiting out the 24-hour bundle rate limit
+     * or the 30-day probe window. Keys, sessions, verified flags
+     * and ENCRYPTED states are untouched — a working pair stays
+     * encrypted and verified. The reset runs on THIS phone only:
+     * the partner pair's blocker is the partner's bundle rate
+     * limit, so the reset must be run on that phone too.
+     */
+    suspend fun resetEncryptionTiming(now: Long = System.currentTimeMillis()) {
+        peerDao.resetTiming(now)
+    }
+
+    /**
      * E2E sync (design §9.2) — the addresses whose peer state is
      * ENCRYPTED, as a set: the hub maps them onto the 1:1
      * conversations it syncs (the `encrypted` flag on

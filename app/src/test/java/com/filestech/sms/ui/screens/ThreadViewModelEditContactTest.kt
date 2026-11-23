@@ -139,6 +139,47 @@ class ThreadViewModelEditContactTest {
         assertThat(events.filterIsInstance<ThreadViewModel.Event.OpenEditContact>()).isEmpty()
     }
 
+    /**
+     * Round 43 — the Details panel's 96dp header avatar reads the
+     * best available photo: the full-size one when the contact has
+     * it, the thumbnail otherwise (the fallback lives in the state,
+     * not the panel — the panel takes one photo URI). The thread
+     * header keeps the thumbnail.
+     */
+    @Test
+    fun `the state carries the full-size photo for the details panel`() = runTest(dispatcher) {
+        val alice = Contact(
+            id = 42L,
+            displayName = "Alice",
+            phones = listOf(PhoneAddress.of("+33612345678")),
+            photoUri = "content://thumb",
+            photoFullUri = "content://full",
+        )
+        val vm = threadViewModel(FakeContacts(alice))
+
+        testScheduler.advanceUntilIdle()
+
+        assertThat(vm.state.value.contactPhotoUri).isEqualTo("content://thumb")
+        assertThat(vm.state.value.contactPhotoLargeUri).isEqualTo("content://full")
+    }
+
+    @Test
+    fun `the details photo falls back to the thumbnail without a full photo`() =
+        runTest(dispatcher) {
+            val alice = Contact(
+                id = 42L,
+                displayName = "Alice",
+                phones = listOf(PhoneAddress.of("+33612345678")),
+                photoUri = "content://thumb",
+                photoFullUri = null,
+            )
+            val vm = threadViewModel(FakeContacts(alice))
+
+            testScheduler.advanceUntilIdle()
+
+            assertThat(vm.state.value.contactPhotoLargeUri).isEqualTo("content://thumb")
+        }
+
     private fun threadViewModel(
         contacts: ContactRepository,
         context: Context = mockk(relaxed = true),

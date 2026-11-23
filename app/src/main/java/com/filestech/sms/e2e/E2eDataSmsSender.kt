@@ -19,12 +19,16 @@ import javax.inject.Singleton
  * recipient sees nothing and pays nothing. No new permission:
  * SEND_SMS is already held.
  *
- * The send is fire-and-forget: no sent/delivery intents (the handshake
- * is idempotent — a lost probe is re-probed within the budget, a lost
- * bundle is re-requested by the next probe). Returns `false` when the
- * radio refuses the send (no SIM, airplane mode) so the caller does not
- * consume probe budget or the bundle-reply rate limit on a send that
- * never left the phone.
+ * The send returns as soon as the radio accepts the call (no
+ * delivery intent — the handshake is idempotent: a lost probe is
+ * re-probed within the budget, a lost bundle is re-requested by
+ * the next probe). Round 43 — a sent intent observes the radio's
+ * verdict ([E2eDataSmsSentReceiver]): a send the radio silently
+ * rejects after accepting the call now leaves a trace, instead of
+ * looking exactly like a peer without Relay. Returns `false` when
+ * the radio refuses the send (no SIM, airplane mode) so the caller
+ * does not consume probe budget or the bundle-reply rate limit on
+ * a send that never left the phone.
  */
 interface E2eDataSmsSender {
 
@@ -67,6 +71,7 @@ class E2eDataSmsSenderImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val wireFormatter: PhoneNumberWireFormatter,
     private val recorder: E2eFailureRecorder,
+    private val sentIntentFactory: E2eSentIntentFactory,
 ) : E2eDataSmsSender {
 
     override fun sendDataMessage(
@@ -92,9 +97,13 @@ class E2eDataSmsSenderImpl @Inject constructor(
                 // SMS ports above 32767.
                 port.toShort(),
                 data,
-                // No sent/delivery intents: a probe is fire-and-forget,
-                // and a lost probe is retried on the next thread open.
-                null,
+                // Round 43 — a sent intent, so a radio that silently
+                // rejects the send leaves a trace (the verdict lands
+                // in E2eDataSmsSentReceiver; RESULT_OK records
+                // nothing). The Boolean return is unchanged: true =
+                // no synchronous throw. A null factory result falls
+                // back to fire-and-forget.
+                sentIntentFactory.sentIntent(kind),
                 null,
             )
             true

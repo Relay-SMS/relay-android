@@ -148,6 +148,32 @@ interface E2ePeerDao {
     )
     suspend fun recordBundleReply(address: String, lastBundleReplyAt: Long, updatedAt: Long)
 
+    /**
+     * Round 43 — testing/diagnostic reset (Settings → Advanced):
+     * clears the probe-budget and bundle-reply timing for EVERY
+     * peer (attempt counts, window starts, last-probe and
+     * last-bundle-reply times) and returns every non-ENCRYPTED
+     * peer to UNKNOWN, so encryption can be tested again right
+     * away instead of waiting out the 24-hour bundle rate limit
+     * or the 30-day probe window. Keys, the verified flag and
+     * ENCRYPTED states are untouched — a working pair stays
+     * encrypted and verified. One statement, so the reset is
+     * atomic: no probe or bundle write can land half-way
+     * through. The state column stores the enum name (see
+     * [E2ePeerState]), so the CASE compares names, like
+     * [encryptedAddresses].
+     */
+    @Query(
+        """
+        UPDATE e2e_peers
+           SET probe_attempts = 0, window_started_at = NULL,
+               last_probe_at = NULL, last_bundle_reply_at = NULL,
+               state = CASE WHEN state = 'ENCRYPTED' THEN 'ENCRYPTED' ELSE 'UNKNOWN' END,
+               updated_at = :updatedAt
+        """,
+    )
+    suspend fun resetTiming(updatedAt: Long)
+
     /** Deletes a peer's row (panic wipe / reset — its sessions are deleted separately). */
     @Query("DELETE FROM e2e_peers WHERE address = :address")
     suspend fun deleteByAddress(address: String)

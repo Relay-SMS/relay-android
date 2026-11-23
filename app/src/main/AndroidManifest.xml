@@ -351,6 +351,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- 1c) E2E handshake sent-intent verdict (round 43, internal only):
+             the radio's accept/reject for a probe/bundle send, delivered
+             to E2eDataSmsSentReceiver. A rejection here means the send
+             never left the phone — the discriminator between a radio
+             that drops handshake SMS and a carrier loss downstream. -->
+        <receiver
+            android:name=".e2e.E2eDataSmsSentReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.filestech.sms.e2e.DATA_SMS_SENT" />
+            </intent-filter>
+        </receiver>
+
         <!-- 2) MMS WAP_PUSH receiver -->
         <receiver
             android:name=".system.receiver.MmsWapPushReceiver"

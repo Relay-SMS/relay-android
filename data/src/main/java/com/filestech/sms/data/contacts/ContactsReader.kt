@@ -68,6 +68,12 @@ class ContactsReader @Inject constructor(
             ContactsContract.PhoneLookup._ID,
             ContactsContract.PhoneLookup.DISPLAY_NAME,
             ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
+            // Round 43 — the full-size photo too: the 96dp Details
+            // header and the desktop's avatar request read it (the
+            // ~96px thumbnail pixelates at that size). The cursor
+            // columns follow the projection order, so the full URI
+            // is index 3 below.
+            ContactsContract.PhoneLookup.PHOTO_URI,
         )
         var contact: Contact? = null
         resolver.query(uri, proj, null, null, null)?.use { c ->
@@ -77,6 +83,7 @@ class ContactsReader @Inject constructor(
                     displayName = c.getString(1),
                     phones = listOf(PhoneAddress.of(rawPhone)),
                     photoUri = c.getString(2),
+                    photoFullUri = c.getString(3),
                 )
             }
         }
@@ -160,13 +167,20 @@ class ContactsReader @Inject constructor(
     }
 
     /**
-     * Slice 5 — opens the thumbnail photo stream for the contact
-     * behind [address], the way the phone's own UI reads it:
+     * Slice 5 — opens the photo stream for the contact behind
+     * [address], the way the phone's own UI reads it:
      * [lookupByPhone] (the same lookup, so the desktop's avatar for
      * a number is the contact the phone would show for it), then
-     * `ContentResolver.openInputStream` on the thumbnail URI. Null
-     * when there is no contact, no photo, or an unreadable stream.
-     * The caller closes the stream.
+     * `ContentResolver.openInputStream` on the photo URI.
+     *
+     * Round 43 — the FULL-SIZE photo (`PHOTO_URI`) first: the
+     * desktop shows the avatar at 96dp+ in the detail pane, where
+     * the ~96px thumbnail pixelates, and downscales fine for the
+     * list. A contact with a thumbnail but no full photo (or an
+     * unreadable full stream) falls back to the thumbnail — never
+     * Unknown when a photo exists. Null when there is no contact,
+     * no photo, or an unreadable stream. The caller closes the
+     * stream.
      */
     fun openPhotoStream(address: String): InputStream? {
         // Contacts-permission fix — the lookup throws
@@ -177,14 +191,24 @@ class ContactsReader @Inject constructor(
         // policy needs the exception to tell "couldn't look" from
         // "unknown sender") — only this call site swallows it, the
         // way `setPhoto` already does for its own lookup.
-        val photoUri = try {
-            lookupByPhone(address)?.photoUri
+        val contact = try {
+            lookupByPhone(address)
         } catch (e: SecurityException) {
             Timber.d("ContactsReader: photo lookup denied (%s)", e.javaClass.simpleName)
             return null
         } ?: return null
+        return openStream(contact.photoFullUri) ?: openStream(contact.photoUri)
+    }
+
+    /**
+     * Opens one photo URI, or null when it is missing or
+     * unreadable — never a throw. The full photo tries first and
+     * the thumbnail is the fallback (see [openPhotoStream]).
+     */
+    private fun openStream(uriString: String?): InputStream? {
+        if (uriString == null) return null
         return try {
-            resolver.openInputStream(Uri.parse(photoUri))
+            resolver.openInputStream(Uri.parse(uriString))
         } catch (e: Exception) {
             // File gone, URI won't open, permission revoked — the
             // photo is unreadable, not a crash. The log carries the

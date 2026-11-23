@@ -20,6 +20,7 @@
     <string name="action_send">Senden</string>
     <string name="action_cancel">Abbrechen</string>
     <string name="action_confirm">Bestätigen</string>
+    <string name="action_reset">Zurücksetzen</string>
     <string name="action_save">Speichern</string>
     <string name="action_delete">Löschen</string>
     <string name="action_archive">Archivieren</string>
@@ -529,6 +530,8 @@
     <string name="settings_resync_title">Vom Telefon neu einlesen</string>
     <string name="settings_resync_desc">Importiert alle SMS erneut aus dem Android-System. Nützlich, wenn Nachrichten auf dem Telefon vorhanden sind, in der App aber fehlen. Gelöschtes kommt dadurch nicht zurück: Löschen entfernt auch die Kopie des Telefons. Keine Duplikate.</string>
     <string name="settings_resync_started">Neues Einlesen im Hintergrund gestartet.</string>
+    <string name="settings_reset_encryption_timing">Verschlüsselungs-Timing zurücksetzen</string>
+    <string name="settings_reset_encryption_timing_done">Verschlüsselungs-Timing zurückgesetzt</string>
     <string name="settings_send_reactions_title">Reaktionen senden</string>
     <string name="settings_row_info">Mehr Infos</string>
     <string name="settings_send_reactions_desc">Wenn Sie eine Emoji-Reaktion setzen (Herz, Daumen hoch…), wird eine SMS gesendet, die nur das Emoji enthält. Sie zählt als normale SMS zum Tarif Ihres Vertrags. Eine Reaktion zu ändern sendet eine neue SMS mit dem neuen Emoji; sie zu entfernen sendet eine SMS, die das Entfernen meldet.</string>
@@ -728,6 +731,8 @@
     <string name="mark_all_read_confirm_body">Alle aktuellen Ungelesen-Markierungen werden entfernt. Neu eingehende Nachrichten werden danach wieder normal markiert.</string>
     <string name="settings_resync_confirm_title">Vom Telefon neu einlesen?</string>
     <string name="settings_resync_confirm_body">Importiert Nachrichten erneut aus dem SMS/MMS-Speicher des Systems. Vorhandene Nachrichten bleiben (Duplikate werden über die eindeutige ID vermieden); zuvor gelöschte Nachrichten können wieder auftauchen, wenn sie noch in der Systemdatenbank stehen. Fortfahren?</string>
+    <string name="settings_reset_encryption_timing_confirm_title">Verschlüsselungs-Timing zurücksetzen?</string>
+    <string name="settings_reset_encryption_timing_confirm_body">Löscht die Probe-Zähler und Antwortlimits für alle Kontakte, damit Sie sofort erneut testen können. Ihre Verschlüsselungsschlüssel und verifizierten Kontakte sind nicht betroffen.</string>
     <string name="settings_reset_all_confirm_title">Alle Einstellungen zurücksetzen?</string>
     <string name="settings_reset_all_confirm_body">Alle Ihre Einstellungen (Thema, Benachrichtigungen, Senden usw.) kehren auf die Standardwerte zurück. Ihre Unterhaltungen, Ihre Nachrichten und Ihre Sicherheitseinstellungen (Sperre, Tresor-PIN, Tarn-PIN) sind NICHT betroffen.</string>
     <string name="settings_purge_blocked_confirm_title">Blockierte Unterhaltungen bereinigen?</string>

@@ -21,6 +21,7 @@
     <string name="action_send">Enviar</string>
     <string name="action_cancel">Cancelar</string>
     <string name="action_confirm">Confirmar</string>
+    <string name="action_reset">Restablecer</string>
     <string name="action_save">Guardar</string>
     <string name="action_delete">Eliminar</string>
     <string name="action_archive">Archivar</string>
@@ -530,6 +531,8 @@
     <string name="settings_resync_title">Volver a sincronizar desde el teléfono</string>
     <string name="settings_resync_desc">Vuelve a importar todos los SMS del sistema Android. Útil cuando faltan en la app mensajes que sí están en el teléfono. No devuelve lo que usted eliminó: eliminar quita también la copia del teléfono. Sin duplicados.</string>
     <string name="settings_resync_started">Sincronización iniciada en segundo plano.</string>
+    <string name="settings_reset_encryption_timing">Restablecer los tiempos de cifrado</string>
+    <string name="settings_reset_encryption_timing_done">Tiempos de cifrado restablecidos</string>
     <string name="settings_send_reactions_title">Enviar reacciones</string>
     <string name="settings_row_info">Más información</string>
     <string name="settings_send_reactions_desc">Cuando publica una reacción con emoji (corazón, pulgar arriba…), se envía al destinatario un SMS que contiene solo el emoji. Cuenta como un SMS normal, a la tarifa de su plan. Cambiar una reacción envía un nuevo SMS con el nuevo emoji; quitarla envía un SMS que avisa de que se ha quitado.</string>
@@ -731,6 +734,8 @@
     <string name="mark_all_read_confirm_body">Se borrarán todos los indicadores de no leído actuales. Los mensajes nuevos volverán a mostrar su indicador con normalidad.</string>
     <string name="settings_resync_confirm_title">¿Volver a sincronizar desde el teléfono?</string>
     <string name="settings_resync_confirm_body">Vuelve a importar los mensajes del proveedor de SMS/MMS del sistema. Los mensajes existentes se quedan (sin duplicar, gracias al identificador único); los mensajes eliminados antes pueden reaparecer si todavía están en la base de datos del sistema. ¿Continuar?</string>
+    <string name="settings_reset_encryption_timing_confirm_title">¿Restablecer los tiempos de cifrado?</string>
+    <string name="settings_reset_encryption_timing_confirm_body">Borra los contadores de sondeo y los límites de respuesta de todos los contactos para que puedas probar de nuevo ahora mismo. Tus claves de cifrado y tus contactos verificados no se ven afectados.</string>
     <string name="settings_reset_all_confirm_title">¿Restablecer todos los ajustes?</string>
     <string name="settings_reset_all_confirm_body">Todas sus preferencias (tema, notificaciones, envío, etc.) volverán a sus valores predeterminados. Sus conversaciones, sus mensajes y sus ajustes de seguridad (bloqueo, PIN de la caja fuerte, PIN señuelo) NO se ven afectados.</string>
     <string name="settings_purge_blocked_confirm_title">¿Eliminar las conversaciones bloqueadas?</string>

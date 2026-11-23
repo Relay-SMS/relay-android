@@ -127,6 +127,26 @@ internal class FakeE2ePeerDao : E2ePeerDao {
         }
     }
 
+    override suspend fun resetTiming(updatedAt: Long) {
+        // Round 43 — mirrors the DAO's UPDATE: timing clears for every
+        // peer, non-ENCRYPTED states return to UNKNOWN, keys and the
+        // verified flag survive.
+        peers.replaceAll { _, peer ->
+            peer.copy(
+                probeAttempts = 0,
+                windowStartedAt = null,
+                lastProbeAt = null,
+                lastBundleReplyAt = null,
+                state = if (peer.state == E2ePeerState.ENCRYPTED) {
+                    E2ePeerState.ENCRYPTED
+                } else {
+                    E2ePeerState.UNKNOWN
+                },
+                updatedAt = updatedAt,
+            )
+        }
+    }
+
     override suspend fun deleteByAddress(address: String) {
         peers.remove(address)
     }

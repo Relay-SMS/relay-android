@@ -19,6 +19,7 @@
     <string name="action_send">Envoyer</string>
     <string name="action_cancel">Annuler</string>
     <string name="action_confirm">Confirmer</string>
+    <string name="action_reset">Réinitialiser</string>
     <string name="action_save">Enregistrer</string>
     <string name="action_delete">Supprimer</string>
     <string name="action_archive">Archiver</string>
@@ -519,6 +520,8 @@
     <string name="settings_resync_title">Resynchroniser depuis le téléphone</string>
     <string name="settings_resync_desc">Réimporte tous les SMS depuis le système Android. Utile si des messages présents sur le téléphone manquent dans l\'app. Ne récupère pas ce que vous avez effacé : la suppression retire aussi la copie du téléphone. Sans doublons.</string>
     <string name="settings_resync_started">Resynchronisation lancée en arrière-plan.</string>
+    <string name="settings_reset_encryption_timing">Réinitialiser les délais de chiffrement</string>
+    <string name="settings_reset_encryption_timing_done">Délais de chiffrement réinitialisés</string>
     <string name="settings_send_reactions_title">Envoyer des réactions</string>
     <string name="settings_row_info">Plus d\'infos</string>
     <string name="settings_send_reactions_desc">Quand vous posez une réaction emoji (cœur, pouce…), un SMS contenant uniquement l\'emoji est envoyé au correspondant. Cela compte comme un SMS normal au tarif de votre forfait. Changer de réaction envoie un nouveau SMS avec le nouvel emoji ; retirer une réaction envoie un SMS de retrait.</string>
@@ -721,6 +724,8 @@
     <string name="mark_all_read_confirm_body">Tous les badges non lus actuels seront effacés. Les nouveaux messages entrants afficheront leurs badges normalement ensuite.</string>
     <string name="settings_resync_confirm_title">Resynchroniser depuis le téléphone ?</string>
     <string name="settings_resync_confirm_body">Réimporte les messages depuis le fournisseur SMS/MMS système. Les messages existants restent (dédup via ID unique) ; des messages précédemment supprimés peuvent réapparaître s\'ils existent encore dans la base système. Continuer ?</string>
+    <string name="settings_reset_encryption_timing_confirm_title">Réinitialiser les délais de chiffrement ?</string>
+    <string name="settings_reset_encryption_timing_confirm_body">Efface les compteurs de sondes et les limites de réponse pour tous les contacts, pour pouvoir tester à nouveau immédiatement. Vos clés de chiffrement et vos contacts vérifiés ne sont pas affectés.</string>
     <string name="settings_reset_all_confirm_title">Réinitialiser tous les réglages ?</string>
     <string name="settings_reset_all_confirm_body">Toutes vos préférences (thème, notifications, envoi, etc.) reviendront aux valeurs par défaut. Vos conversations, vos messages et vos réglages de sécurité (verrouillage, PIN du coffre, PIN leurre) ne sont PAS affectés.</string>
     <string name="settings_purge_blocked_confirm_title">Purger les conversations bloquées ?</string>

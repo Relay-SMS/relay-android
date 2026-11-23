@@ -414,6 +414,19 @@ class ThreadViewModel @Inject constructor(
          * stay `null` (no single contact to show — the group glyph stays).
          */
         val contactPhotoUri: String? = null,
+        /**
+         * Round 43 — the best available contact photo for the
+         * Details panel's 96dp header avatar, resolved from the
+         * first address in the same lookup as [contactPhotoUri]:
+         * the FULL-SIZE photo (`PHOTO_URI`) when the contact has
+         * one, the thumbnail otherwise. The ~96px thumbnail
+         * pixelates at 96dp; the thread header keeps the thumbnail
+         * (small). Null for groups, like [contactPhotoUri]. The
+         * fallback lives HERE, not in the panel — the panel takes
+         * one photo URI (its parameter list is already at Detekt's
+         * 20-parameter ceiling).
+         */
+        val contactPhotoLargeUri: String? = null,
         val messageCount: Int = 0,
         /** Older messages exist beyond the loaded window. */
         val hasMoreMessages: Boolean = false,
@@ -838,6 +851,16 @@ class ThreadViewModel @Inject constructor(
                         // as the main list. Groups keep the group glyph, so
                         // the photo is only resolved for 1:1 threads.
                         contactPhotoUri = if (isGroup) null else firstContact?.photoUri,
+                        // Round 43 — the best available photo for the
+                        // Details panel's 96dp header avatar (same
+                        // lookup, same 1:1-only rule): the full-size
+                        // photo when the contact has one, the
+                        // thumbnail otherwise.
+                        contactPhotoLargeUri = if (isGroup) {
+                            null
+                        } else {
+                            firstContact?.photoFullUri ?: firstContact?.photoUri
+                        },
                         memberPhotos = if (!isGroup) {
                             emptyMap()
                         } else {
@@ -2637,10 +2660,11 @@ class ThreadViewModel @Inject constructor(
 
         /**
          * Messages loaded on first open. The first paint must compose and lay out the whole
-         * window, then jump to the bottom of it (`scrollToItem` from index 0), before the
-         * list is shown — so a 200-message first window is what makes opening a long
-         * conversation feel slow. 50 still fills several screens of history, and the
-         * "load older" row pages the rest in 200-message steps via [PAGE_SIZE].
+         * window before the list is shown — so a 200-message first window is what makes
+         * opening a long conversation feel slow. 50 still fills several screens of history,
+         * and the "load older" row pages the rest in 200-message steps via [PAGE_SIZE].
+         * (Round 43 — the reversed list starts at the bottom by layout, so there is no
+         * first-paint jump anymore; the window size is still about compose cost.)
          */
         const val INITIAL_WINDOW_SIZE: Int = 50
 

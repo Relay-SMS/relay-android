@@ -6,6 +6,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.ContactsContract
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -14,6 +15,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.annotation.Config
+import java.io.File
+import java.io.FileNotFoundException
 
 /**
  * Contacts-permission fix — `ContactsReader.openPhotoStream`
@@ -35,6 +38,15 @@ import org.robolectric.annotation.Config
  * class under test traverses a real `ContentResolver`; Robolectric's
  * own stub provider returns null rather than throwing, so the
  * denied shape needs the throwing fake below.
+ *
+ * Round 43 — the same file also covers the full-size photo: the
+ * lookup now reads `PHOTO_URI` too (the answering fake returns
+ * all four projected columns), and `openPhotoStream` opens the
+ * full photo first with the thumbnail as the fallback. The
+ * photo-bytes fakes serve their bytes through `openFile` (a
+ * temp file + `ParcelFileDescriptor.open`, which Robolectric's
+ * shadow implements for real), so the stream tests read real
+ * bytes, not a mocked resolver.
  *
  * NOTE for the harness: `test-fb5.sh app robo` has a pre-existing
  * compile failure (`TextScalePersistenceTest`), so compile this
@@ -69,7 +81,7 @@ class ContactsReaderDeniedPermissionTest {
         ): Int = 0
     }
 
-    /** A provider that answers one contact, Alice, with a photo URI but no photo bytes. */
+    /** A provider that answers one contact, Alice, with both photo URIs but no photo bytes. */
     class AnsweringContacts : ContentProvider() {
         override fun onCreate(): Boolean = true
 
@@ -84,9 +96,10 @@ class ContactsReaderDeniedPermissionTest {
                 ContactsContract.PhoneLookup._ID,
                 ContactsContract.PhoneLookup.DISPLAY_NAME,
                 ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
+                ContactsContract.PhoneLookup.PHOTO_URI,
             )
             val curseur = MatrixCursor(colonnes)
-            curseur.addRow(arrayOf<Any?>(1L, "Alice", PHOTO_URI))
+            curseur.addRow(arrayOf<Any?>(1L, "Alice", THUMB_PHOTO_URI, FULL_PHOTO_URI))
             return curseur
         }
 
@@ -99,6 +112,71 @@ class ContactsReaderDeniedPermissionTest {
             selection: String?,
             selectionArgs: Array<out String>?,
         ): Int = 0
+    }
+
+    /**
+     * Round 43 — the shared query half for the photo-bytes
+     * providers: one contact, Alice, with both photo URIs. The
+     * subclasses differ only in which URIs serve bytes through
+     * `openFile`.
+     */
+    abstract class PhotoContacts : ContentProvider() {
+        override fun onCreate(): Boolean = true
+
+        override fun query(
+            uri: Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?,
+        ): Cursor {
+            val colonnes = arrayOf(
+                ContactsContract.PhoneLookup._ID,
+                ContactsContract.PhoneLookup.DISPLAY_NAME,
+                ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
+                ContactsContract.PhoneLookup.PHOTO_URI,
+            )
+            val curseur = MatrixCursor(colonnes)
+            curseur.addRow(arrayOf<Any?>(1L, "Alice", THUMB_PHOTO_URI, FULL_PHOTO_URI))
+            return curseur
+        }
+
+        override fun getType(uri: Uri): String = ContactsContract.Contacts.CONTENT_ITEM_TYPE
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ): Int = 0
+
+        /** Serves [bytes] as a readable file descriptor (a temp file — the shadow opens real files). */
+        protected fun bytesAsDescriptor(bytes: ByteArray): ParcelFileDescriptor {
+            val file = File.createTempFile("relay-photo-test", ".bin")
+            file.writeBytes(bytes)
+            file.deleteOnExit()
+            return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        }
+    }
+
+    /** Serves bytes for BOTH photo URIs — the stream must be the full photo's. */
+    class FullAndThumbContacts : PhotoContacts() {
+        override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? =
+            when (uri.toString()) {
+                FULL_PHOTO_URI -> bytesAsDescriptor(FULL_BYTES)
+                THUMB_PHOTO_URI -> bytesAsDescriptor(THUMB_BYTES)
+                else -> throw FileNotFoundException("no photo at $uri")
+            }
+    }
+
+    /** Serves bytes for the thumbnail only — the full open fails, the stream must fall back. */
+    class ThumbOnlyContacts : PhotoContacts() {
+        override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? =
+            when (uri.toString()) {
+                THUMB_PHOTO_URI -> bytesAsDescriptor(THUMB_BYTES)
+                else -> throw FileNotFoundException("no photo at $uri")
+            }
     }
 
     @Test
@@ -115,11 +193,30 @@ class ContactsReaderDeniedPermissionTest {
         val contact = reader.lookupByPhone(PHONE)
 
         assertThat(contact?.displayName).isEqualTo("Alice")
-        assertThat(contact?.photoUri).isEqualTo(PHOTO_URI)
+        assertThat(contact?.photoUri).isEqualTo(THUMB_PHOTO_URI)
+        assertThat(contact?.photoFullUri).isEqualTo(FULL_PHOTO_URI)
         // The stream half: the fake provider serves no photo bytes,
         // so the stream is unreadable — still null, not a throw (the
         // pre-existing catch, untouched by the guard fix).
         assertThat(reader.openPhotoStream(PHONE)).isNull()
+    }
+
+    @Test
+    fun `openPhotoStream reads the full photo when both are served`() {
+        val reader = readerWith(FullAndThumbContacts::class.java)
+
+        val bytes = checkNotNull(reader.openPhotoStream(PHONE)).use { it.readBytes() }
+
+        assertThat(bytes).isEqualTo(FULL_BYTES)
+    }
+
+    @Test
+    fun `openPhotoStream falls back to the thumbnail when the full photo is unreadable`() {
+        val reader = readerWith(ThumbOnlyContacts::class.java)
+
+        val bytes = checkNotNull(reader.openPhotoStream(PHONE)).use { it.readBytes() }
+
+        assertThat(bytes).isEqualTo(THUMB_BYTES)
     }
 
     private fun <T : ContentProvider> readerWith(provider: Class<T>): ContactsReader {
@@ -130,6 +227,9 @@ class ContactsReaderDeniedPermissionTest {
 
     companion object {
         private const val PHONE = "+33612345678"
-        private const val PHOTO_URI = "content://com.android.contacts/contacts/1/photo"
+        private const val THUMB_PHOTO_URI = "content://com.android.contacts/contacts/1/photo"
+        private const val FULL_PHOTO_URI = "content://com.android.contacts/display_photo/1"
+        private val FULL_BYTES = "FULL".toByteArray()
+        private val THUMB_BYTES = "THUMB".toByteArray()
     }
 }

@@ -1,5 +1,6 @@
 package com.filestech.sms.e2e
 
+import android.app.PendingIntent
 import android.content.Context
 import android.telephony.SmsManager
 import com.filestech.sms.data.sms.PhoneNumberWireFormatter
@@ -22,6 +23,12 @@ import org.junit.jupiter.api.Test
  * address can never leak into the log — and a successful send
  * records nothing.
  *
+ * Round 43 — the send also carries a sent intent (built by
+ * [E2eSentIntentFactory], mocked here — `PendingIntent` is an
+ * Android-framework class): the radio's verdict lands in
+ * [E2eDataSmsSentReceiver], and a null factory result falls back
+ * to fire-and-forget.
+ *
  * Plain-JVM note: `Build.VERSION.SDK_INT` is 0 under the unit
  * tests, so the sender takes the legacy branch
  * ([SmsManager.getDefault]), statically mocked here.
@@ -31,6 +38,7 @@ class E2eDataSmsSenderTest {
 
     private lateinit var recorder: E2eFailureRecorder
     private lateinit var manager: SmsManager
+    private lateinit var sentIntentFactory: E2eSentIntentFactory
     private lateinit var sender: E2eDataSmsSender
 
     @BeforeEach
@@ -41,8 +49,11 @@ class E2eDataSmsSenderTest {
         }
         recorder = mockk(relaxed = true)
         manager = mockk(relaxed = true)
+        sentIntentFactory = mockk {
+            every { sentIntent(any()) } returns mockk<PendingIntent>()
+        }
         every { SmsManager.getDefault() } returns manager
-        sender = E2eDataSmsSenderImpl(mockk<Context>(), wireFormatter, recorder)
+        sender = E2eDataSmsSenderImpl(mockk<Context>(), wireFormatter, recorder, sentIntentFactory)
     }
 
     @AfterEach
@@ -149,6 +160,57 @@ class E2eDataSmsSenderTest {
 
         assertThat(sent).isFalse()
         verify(exactly = 1) { recorder.record("e2e-probe-send", any()) }
+    }
+
+    @Test
+    fun `the sent intent is passed to the radio`() {
+        val pendingIntent = mockk<PendingIntent>()
+        every { sentIntentFactory.sentIntent(any()) } returns pendingIntent
+
+        val sent = sender.sendDataMessage(
+            ADDRESS,
+            null,
+            E2eHandshake.E2E_DATA_SMS_PORT,
+            byteArrayOf(1),
+        )
+
+        assertThat(sent).isTrue()
+        val sentSlot = slot<PendingIntent>()
+        verify(exactly = 1) {
+            manager.sendDataMessage(any(), any(), any(), any(), capture(sentSlot), any())
+        }
+        assertThat(sentSlot.captured).isSameInstanceAs(pendingIntent)
+        verify(exactly = 0) { recorder.record(any(), any()) }
+    }
+
+    @Test
+    fun `a null sent intent still sends fire-and-forget`() {
+        every { sentIntentFactory.sentIntent(any()) } returns null
+
+        val sent = sender.sendDataMessage(
+            ADDRESS,
+            null,
+            E2eHandshake.E2E_DATA_SMS_PORT,
+            byteArrayOf(1),
+        )
+
+        assertThat(sent).isTrue()
+        verify(exactly = 1) {
+            manager.sendDataMessage(any(), any(), any(), any(), null, any())
+        }
+    }
+
+    @Test
+    fun `the sent intent carries the send kind`() {
+        sender.sendDataMessage(
+            ADDRESS,
+            null,
+            E2eHandshake.E2E_DATA_SMS_PORT,
+            byteArrayOf(1),
+            kind = DataSmsKind.BUNDLE,
+        )
+
+        verify(exactly = 1) { sentIntentFactory.sentIntent(DataSmsKind.BUNDLE) }
     }
 
     private companion object {

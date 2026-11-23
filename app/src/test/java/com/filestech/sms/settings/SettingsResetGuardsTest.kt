@@ -7,6 +7,7 @@ import com.filestech.sms.domain.repository.VaultPurgeResult
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.LockMode
 import com.filestech.sms.domain.settings.ThemeMode
+import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.security.AppLockManager
 import com.filestech.sms.security.VaultPinManager
 import com.filestech.sms.ui.screens.settings.SettingsViewModel
@@ -94,6 +95,7 @@ class SettingsResetGuardsTest {
     private val appLock: AppLockManager = mockk(relaxed = true) {
         every { state } returns MutableStateFlow(AppLockManager.LockState.Unlocked)
     }
+    private val peerRepository: E2ePeerRepository = mockk(relaxed = true)
 
     private fun viewModel() = SettingsViewModel(
         settings = settings,
@@ -103,6 +105,7 @@ class SettingsResetGuardsTest {
         appLock = appLock,
         blockedImporter = mockk(relaxed = true),
         conversationRepo = conversationRepo,
+        e2ePeerRepository = peerRepository,
         vaultPin = vaultPin,
         context = mockk<Context>(relaxed = true),
     )
@@ -356,4 +359,18 @@ class SettingsResetGuardsTest {
         coVerify(exactly = 0) { vaultPin.forgetVaultPin() }
         coVerify(exactly = 0) { conversationRepo.deleteAllInVault(true, any()) }
     }
+
+    // ─────────────────────────── Round 43 : réinitialiser les délais de chiffrement ───────────────────────────
+
+    @Test
+    fun `resetting the encryption timing calls the repository and emits the confirmation event`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+
+            vm.resetEncryptionTiming()
+
+            coVerify(exactly = 1) { peerRepository.resetEncryptionTiming(any()) }
+            assertThat(vm.events.first())
+                .isEqualTo(SettingsViewModel.Event.EncryptionTimingReset)
+        }
 }
