@@ -68,4 +68,48 @@ class ThreadListIndexingTest {
         assertThat(ThreadListIndexing.chronoIndexForLazy(0, 1, 0)).isEqualTo(0)
         assertThat(ThreadListIndexing.chronoIndexForLazy(1, 1, 1)).isEqualTo(0)
     }
+
+    /** Round 44 — at the bottom, an incoming message pulls the thread down to it. */
+    @Test
+    fun `at bottom incoming message auto-scrolls`() {
+        assertThat(
+            ThreadListIndexing.shouldAutoScrollToBottom(
+                wasAtBottom = true,
+                newestIsOutgoing = false,
+            ),
+        ).isTrue()
+    }
+
+    /** Round 44 — scrolled up, an incoming message does NOT yank the reading position. */
+    @Test
+    fun `scrolled up incoming message does not auto-scroll`() {
+        assertThat(
+            ThreadListIndexing.shouldAutoScrollToBottom(
+                wasAtBottom = false,
+                newestIsOutgoing = false,
+            ),
+        ).isFalse()
+    }
+
+    /** Round 44 — a sent message always pulls the thread down, even sent while scrolled up. */
+    @Test
+    fun `scrolled up outgoing message auto-scrolls`() {
+        assertThat(
+            ThreadListIndexing.shouldAutoScrollToBottom(
+                wasAtBottom = false,
+                newestIsOutgoing = true,
+            ),
+        ).isTrue()
+    }
+
+    /** Round 44 — at the bottom, a sent message auto-scrolls (both reasons hold). */
+    @Test
+    fun `at bottom outgoing message auto-scrolls`() {
+        assertThat(
+            ThreadListIndexing.shouldAutoScrollToBottom(
+                wasAtBottom = true,
+                newestIsOutgoing = true,
+            ),
+        ).isTrue()
+    }
 }

@@ -5,6 +5,19 @@ import java.io.InputStream
 
 interface ContactRepository {
     suspend fun lookupByPhone(rawPhone: String): Contact?
+
+    /**
+     * Round 44 — whether READ_CONTACTS is granted right now. The
+     * stale-display-name heal ([ConversationRepository
+     * .clearStaleDisplayName]) only clears when a lookup the
+     * provider could actually answer came back empty — a denied
+     * permission also reads as "no contact", and clearing on that
+     * would erase correct names. Default `false` (fail closed):
+     * fakes and paths that cannot verify never clear. Backed by
+     * the real provider, implementations override it.
+     */
+    suspend fun hasContactsPermission(): Boolean = false
+
     suspend fun listAll(): List<Contact>
 
     /**

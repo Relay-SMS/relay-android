@@ -3,9 +3,23 @@
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
-    android:viewportHeight="24"
-    android:tint="?attr/colorControlNormal">
+    android:viewportHeight="24">
+    <!--
+        Relay logo (round 44) — the finalized ring mark (white bubble
+        RING with a solid white bubble inside), adapted from the
+        monochrome launcher vector (ic_launcher_monochrome.xml): the
+        same paths, scaled to fill this 24dp viewport with 2dp
+        padding (ring 1.69dp, gap 1.41dp — legible in the status
+        bar). Every notifier uses this one drawable as its small
+        icon, so one file fixes every notification. No tint: a
+        notification small icon must be white, alpha-only — the
+        system colours it for the status bar.
+    -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M20,2H4C2.9,2 2,2.9 2,4v18l4,-4h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm0,14H6l-2,2V4h16v12z" />
+        android:fillType="nonZero"
+        android:pathData="M12,2C17.52,2 22,6.48 22,12C22,17.42 17.69,21.83 12.3,21.99C12.25,22 12.2,22 12.14,22H4.82C3.26,22 2,20.74 2,19.18V11.86C2,11.8 2,11.75 2.01,11.69C2.17,6.31 6.58,2 12,2ZM11.86,3.69C7.29,3.69 3.57,7.32 3.41,11.85C3.41,11.88 3.41,11.91 3.41,11.94L3.41,12.04V17.2C3.41,19.07 4.93,20.59 6.8,20.59H11.96C12.03,20.59 12.09,20.59 12.14,20.59C16.68,20.44 20.31,16.71 20.31,12.14C20.31,7.47 16.53,3.69 11.86,3.69Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.86,5.1C15.75,5.1 18.9,8.25 18.9,12.14C18.9,15.96 15.86,19.07 12.07,19.18C12.04,19.18 12,19.18 11.96,19.18H6.8C5.71,19.18 4.82,18.3 4.82,17.2V12.04C4.82,12 4.82,11.96 4.82,11.93C4.93,8.14 8.04,5.1 11.86,5.1Z" />
 </vector>

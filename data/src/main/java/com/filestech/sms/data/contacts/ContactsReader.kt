@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.ContactsContract
 import android.util.LruCache
 import com.filestech.sms.core.ext.normalizePhone
+import com.filestech.sms.core.ext.numbersMatchStrict
 import com.filestech.sms.domain.model.Contact
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.repository.ContactPhotoWriteResult
@@ -59,6 +60,24 @@ class ContactsReader @Inject constructor(
     private val cache = LruCache<String, Contact>(CONTACT_CACHE_MAX)
     private val negativeCache = LruCache<String, Boolean>(NEGATIVE_CACHE_MAX)
 
+    /**
+     * The contact behind [rawPhone], or null when no contact owns
+     * that number.
+     *
+     * Round 44 — the `PhoneLookup` hit is VERIFIED before it is
+     * believed: Android's provider matches on the last 7 digits
+     * only (its `min_match` column), so a lookup for
+     * `(610) 842-3232` returns the contact stored as
+     * `(215) 842-3232` — and the wrong name used to be cached on
+     * the conversation permanently. The result already carries the
+     * matched number ([ContactsContract.PhoneLookup.NUMBER], index
+     * 4), so the check costs no second query: every returned row
+     * is compared against the queried number with
+     * [numbersMatchStrict], and the first row that matches
+     * strictly wins. A row with no number is skipped, never
+     * trusted — fail closed, as everywhere a wrong attribution
+     * costs more than a missing name.
+     */
     fun lookupByPhone(rawPhone: String): Contact? {
         val key = rawPhone.normalizePhone()
         cache.get(key)?.let { return it }
@@ -74,17 +93,24 @@ class ContactsReader @Inject constructor(
             // columns follow the projection order, so the full URI
             // is index 3 below.
             ContactsContract.PhoneLookup.PHOTO_URI,
+            // Round 44 — the matched number itself ("the phone
+            // number as the user entered it"): the strict check
+            // reads it at index 4.
+            ContactsContract.PhoneLookup.NUMBER,
         )
         var contact: Contact? = null
         resolver.query(uri, proj, null, null, null)?.use { c ->
-            if (c.moveToFirst()) {
-                contact = Contact(
-                    id = c.getLong(0),
-                    displayName = c.getString(1),
-                    phones = listOf(PhoneAddress.of(rawPhone)),
-                    photoUri = c.getString(2),
-                    photoFullUri = c.getString(3),
-                )
+            while (contact == null && c.moveToNext()) {
+                val storedNumber = c.getString(4)
+                if (storedNumber != null && numbersMatchStrict(rawPhone, storedNumber)) {
+                    contact = Contact(
+                        id = c.getLong(0),
+                        displayName = c.getString(1),
+                        phones = listOf(PhoneAddress.of(rawPhone)),
+                        photoUri = c.getString(2),
+                        photoFullUri = c.getString(3),
+                    )
+                }
             }
         }
         // v1.6.1 (audit QUAL-05) — smart-cast post if(contact != null) suffit, pas
@@ -314,7 +340,13 @@ class ContactsReader @Inject constructor(
         negativeCache.evictAll()
     }
 
-    private fun hasContactsPermission(): Boolean =
+    /**
+     * Round 44 — whether READ_CONTACTS is granted right now.
+     * Internal: the repository exposes it so the stale-display-name
+     * heal can tell "the provider answered, no contact" from "the
+     * provider could not be asked".
+     */
+    internal fun hasContactsPermission(): Boolean =
         context.checkSelfPermission(Manifest.permission.READ_CONTACTS) ==
             PackageManager.PERMISSION_GRANTED
 

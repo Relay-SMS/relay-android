@@ -21,6 +21,10 @@ class ContactRepositoryImpl @Inject constructor(
         reader.lookupByPhone(rawPhone)
     }
 
+    override suspend fun hasContactsPermission(): Boolean = withContext(io) {
+        reader.hasContactsPermission()
+    }
+
     override suspend fun listAll(): List<Contact> = withContext(io) { reader.listAll() }
 
     override suspend fun listAllDetailed(): List<Contact> = withContext(io) {

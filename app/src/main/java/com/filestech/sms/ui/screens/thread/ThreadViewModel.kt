@@ -820,13 +820,25 @@ class ThreadViewModel @Inject constructor(
         }.launchIn(viewModelScope)
         combine(
             convFlow.map { conv ->
-                conv?.let { it.addresses.map { a -> a.raw } to it.isGroup }
+                conv?.let {
+                    Triple(
+                        it.addresses.map { a -> a.raw },
+                        it.isGroup,
+                        // Round 44 — the cached display name rides
+                        // along so the stale-name heal below can see
+                        // it without a second read (and a cleared
+                        // name re-emits, re-running the lookup once
+                        // with the guard already closed).
+                        it.displayName,
+                    )
+                }
             }.distinctUntilChanged(),
             contactPhotoTick,
         ) { address, _ -> address }
             .onEach { address ->
                 val numbers = address?.first.orEmpty()
                 val isGroup = address?.second == true
+                val displayName = address?.third
                 // v1.28.13 (MR F-Droid !38458) — sans `READ_CONTACTS`, la recherche lève
                 // `SecurityException` ; non rattrapée dans `viewModelScope`, ouvrir n'importe quelle
                 // conversation faisait planter l'app (jumeau de `ComposeViewModel.chargerContacts`).
@@ -870,6 +882,28 @@ class ThreadViewModel @Inject constructor(
                             }.toMap()
                         },
                     )
+                }
+                // Round 44 — self-heal a stale cached display name.
+                // Android's PhoneLookup used to match on the last 7
+                // digits, so a conversation could be cached under
+                // the wrong contact's name ("Maria" for a number
+                // that is not hers) and the name was never
+                // corrected. The live lookup above is now strict:
+                // when it says "no contact" for a 1:1 thread that
+                // still carries a cached name, the name is stale
+                // and the repository clears it (permission-gated
+                // there — a denied lookup never clears). Groups
+                // are excluded: their display name is the joined
+                // member names, never one lookup.
+                if (!isGroup && firstContact == null && !displayName.isNullOrBlank()) {
+                    val firstNumber = numbers.firstOrNull()
+                    if (firstNumber != null) {
+                        com.filestech.sms.core.result.runCatchingCancellable {
+                            repo.clearStaleDisplayName(conversationId, firstNumber)
+                        }.onFailure {
+                            timber.log.Timber.w(it, "ThreadViewModel: stale display-name clear failed")
+                        }
+                    }
                 }
             }
             .launchIn(viewModelScope)

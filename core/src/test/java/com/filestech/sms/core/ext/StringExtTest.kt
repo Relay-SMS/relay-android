@@ -144,4 +144,46 @@ class StringExtTest {
         assertThat("Œuf".foldForSearch()).isEqualTo("œuf")
         assertThat("CŒUR".foldForSearch()).isEqualTo("cœur")
     }
+
+    // ──────────── Round 44 : numbersMatchStrict ────────────
+
+    @Test fun `numbersMatchStrict matches the same number across formats`() {
+        assertThat(numbersMatchStrict("+1 (610) 842-3232", "(610) 842-3232")).isTrue()
+        assertThat(numbersMatchStrict("6108423232", "+16108423232")).isTrue()
+        assertThat(numbersMatchStrict("16108423232", "610-842-3232")).isTrue()
+        assertThat(numbersMatchStrict("+33612345678", "+33 6 12 34 56 78")).isTrue()
+    }
+
+    @Test fun `numbersMatchStrict rejects a number sharing only the last 7 digits`() {
+        // The round-44 bug: Android's PhoneLookup matches on the last
+        // 7 digits, so (610) 842-3232 returned the contact stored as
+        // (215) 842-3232. The area code is part of the number.
+        assertThat(numbersMatchStrict("(610) 842-3232", "(215) 842-3232")).isFalse()
+        assertThat(numbersMatchStrict("+16108423232", "2158423232")).isFalse()
+    }
+
+    @Test fun `numbersMatchStrict never matches an alphanumeric sender`() {
+        assertThat(numbersMatchStrict("Free", "123")).isFalse()
+        assertThat(numbersMatchStrict("SFR 123", "123")).isFalse()
+        assertThat(numbersMatchStrict("", "6108423232")).isFalse()
+        assertThat(numbersMatchStrict("", "")).isFalse()
+    }
+
+    @Test fun `numbersMatchStrict matches equal short codes only`() {
+        assertThat(numbersMatchStrict("12345", "12345")).isTrue()
+        assertThat(numbersMatchStrict("12345", "54321")).isFalse()
+        assertThat(numbersMatchStrict("123", "12345")).isFalse()
+    }
+
+    @Test fun `numbersMatchStrict rejects different numbers`() {
+        assertThat(numbersMatchStrict("6108423232", "6108423233")).isFalse()
+        assertThat(numbersMatchStrict("+33612345678", "+33612345679")).isFalse()
+    }
+
+    @Test fun `numbersMatchStrict does not reunite national and E164 forms internationally`() {
+        // Documented limitation: without a region there is no way to
+        // know "06 12 34 56 78" is "+33612345678". The failure mode
+        // is a missing name, never a wrong one.
+        assertThat(numbersMatchStrict("06 12 34 56 78", "+33612345678")).isFalse()
+    }
 }

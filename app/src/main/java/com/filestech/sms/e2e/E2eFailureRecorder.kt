@@ -50,9 +50,15 @@ import javax.inject.Singleton
  * can be opened many times, so without dedupe one outage would
  * fill the 10-report rotation. The key is the root cause's
  * class + message (see [E2eDisplayFormat.rootCause]). Events
- * dedupe the same way, on tag + message: the separating test
- * only needs to know whether ANY probe arrived / ANY bundle
- * went out, not how many.
+ * are NEVER deduped: every occurrence is a diagnostic signal —
+ * a probe arriving twice means two probes went out, and the
+ * tester tapping Retry repeatedly needs to see EACH event with
+ * its timestamp (round 44: the old per-process dedupe hid every
+ * probe and bundle after the first, so the log looked dead
+ * while the handshake was flowing). The 10-report rotation caps
+ * the total, and events are infrequent — probes at most 3 per
+ * 30 days plus manual retries, bundles at most one per sender
+ * per day — so spam is not a risk.
  *
  * Never throws: a diagnostics failure must never break the
  * path it is diagnosing.
@@ -97,15 +103,14 @@ class E2eFailureRecorder @Inject constructor(
      * [CrashReportFormatter.formatDiagnostic] path, with the tag
      * as the list title (the detail text carries the tag line,
      * the marker message, and the call path). Skips the write
-     * when the error log is off, and when this exact event was
-     * already recorded this process (one record per tag +
-     * message — the diagnosis only needs to know whether ANY
-     * probe arrived / ANY bundle went out, not how many).
+     * when the error log is off. NEVER deduped: every occurrence
+     * writes an entry with its timestamp (see the class KDoc) —
+     * the tester tapping Retry repeatedly must see each probe
+     * and bundle, not just the first.
      */
     fun recordEvent(tag: String, message: String) {
         runCatching {
             if (!settings.enabled) return@runCatching
-            if (!recordedRootCauses.add("event|$tag|$message")) return@runCatching
             val now = System.currentTimeMillis()
             val text = CrashReportFormatter.formatDiagnostic(tag, now, E2eDiagnosticEvent(message))
             store.writeReport(text, now, tag)

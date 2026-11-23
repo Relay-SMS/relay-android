@@ -80,6 +80,14 @@ class ModeAwareContactRepository @Inject constructor(
         }
     }
 
+    override suspend fun hasContactsPermission(): Boolean = withContext(io) {
+        // The permission gates the LOCAL provider lookup; client
+        // mode never consults it (the stale-name heal no-ops in
+        // client mode first), so delegating unconditionally is the
+        // honest answer in both modes.
+        local.hasContactsPermission()
+    }
+
     override suspend fun listAll(): List<Contact> = withContext(io) {
         if (!isClientMode()) local.listAll() else listCached()
     }

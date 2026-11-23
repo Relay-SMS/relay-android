@@ -5,6 +5,7 @@ import com.filestech.sms.crashlog.CrashReportStore
 import com.google.common.truth.Truth.assertThat
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -127,11 +128,21 @@ class E2eFailureRecorderTest {
     }
 
     @Test
-    fun `recordEvent dedupes the same event per process`() {
-        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
-        recorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+    fun `recordEvent writes every occurrence, even identical ones`() {
+        // Round 44 — events are NEVER deduped: the tester tapping
+        // Retry repeatedly must see each probe and bundle with its
+        // timestamp. A mocked store counts the writes directly — the
+        // real store names files by millisecond timestamp, so two
+        // back-to-back writes would collide on the file name.
+        val countingStore = mockk<CrashReportStore>(relaxed = true)
+        val countingRecorder = E2eFailureRecorder(countingStore, settings)
 
-        assertThat(store.listReports()).hasSize(1)
+        countingRecorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+        countingRecorder.recordEvent("e2e-probe-received", "Probe received; replying with a bundle.")
+
+        verify(exactly = 2) {
+            countingStore.writeReport(any(), any(), "e2e-probe-received")
+        }
     }
 
     @Test

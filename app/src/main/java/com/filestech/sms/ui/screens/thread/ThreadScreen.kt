@@ -630,6 +630,17 @@ fun ThreadScreen(
             first == null || first.index <= trailingNoticeCount
         }
     }
+    // Round 44 — pre-insertion snapshot of `isAtBottom` for the
+    // new-message auto-scroll below: after a new message lands at
+    // index 0 the anchor shifts (old index 0 → index 1) and the live
+    // derived state already reads false, so the effect must read the
+    // value from BEFORE the insertion. Updated whenever the user
+    // scrolls (the derived state flips); starts true — the first
+    // paint sits at the bottom by layout.
+    var wasAtBottom by remember { mutableStateOf(true) }
+    LaunchedEffect(isAtBottom) {
+        wasAtBottom = isAtBottom
+    }
     // Round 43 — the picker-open re-scroll (round 13) is gone: the
     // reversed list is bottom-anchored by layout, so the tail stays
     // visible on its own as the panel grows and the viewport shrinks
@@ -678,12 +689,36 @@ fun ThreadScreen(
     LaunchedEffect(isAtBottom, newestMessageId) {
         if (isAtBottom && newestMessageId != null) lastSeenMessageId = newestMessageId
     }
-    // Round 43 — the new-message auto-scroll is gone: in the reversed
-    // list a new message lands at index 0, the bottom, and appears on
-    // its own when the user is at the bottom; when scrolled up, the
-    // list re-anchors by key and the reading position holds. Marking
-    // the newest message seen is covered by the effect above
-    // (`isAtBottom` + `newestMessageId`).
+    // Round 44 — the new-message auto-scroll is BACK. Round 43 deleted
+    // it, assuming a new message at index 0 would appear on its own —
+    // it does not: LazyColumn preserves the scroll position by ITEM KEY
+    // across insertions, so when a new message lands at index 0 the
+    // previously-visible bottom item shifts to index 1 and stays put on
+    // screen, pushing the new message BELOW the viewport, cut off
+    // (device-tested round 43: a just-sent message showed only its top
+    // until the user scrolled down). Plain scroll, not animated — same
+    // reason as the search/pin jumps. The at-bottom check reads the
+    // `wasAtBottom` SNAPSHOT (never the live derived state — see
+    // above), and the arrival guard skips deletions: when the newest
+    // message is deleted the id changes too, but there is nothing new
+    // to reveal, and scrolling then would yank a scrolled-up reader to
+    // the bottom. No IME effect here: once the list is at index 0 the
+    // reversed list's bottom anchor handles the keyboard-close resize
+    // on its own (the IME scroll code round 43 deleted stays deleted).
+    var previousNewestId by remember { androidx.compose.runtime.mutableLongStateOf(-1L) }
+    LaunchedEffect(newestMessageId) {
+        val newest = state.messages.lastOrNull()
+        // Arrived (vs the newest being deleted): the previous newest
+        // is still in the list, or there was none yet (first load).
+        val arrived = previousNewestId < 0L ||
+            state.messages.any { it.id == previousNewestId }
+        previousNewestId = newest?.id ?: -1L
+        if (!arrived) return@LaunchedEffect
+        if (newest == null) return@LaunchedEffect
+        if (ThreadListIndexing.shouldAutoScrollToBottom(wasAtBottom, newest.isOutgoing)) {
+            listState.scrollToItem(0)
+        }
+    }
     // Round 43 — the tail pin is gone: in the reversed list the tail
     // is anchored to the bottom by layout, so a bubble growing (a link
     // preview or image loading in) pushes OLDER content up, never the

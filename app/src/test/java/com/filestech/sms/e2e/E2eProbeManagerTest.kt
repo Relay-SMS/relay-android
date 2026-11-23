@@ -420,11 +420,34 @@ class E2eProbeManagerTest {
         assertThat(probed).isTrue()
         assertThat(harness.sender.sent).hasSize(1)
         // The attempt is still recorded (the probe went out): 4
-        // attempts, and the 3-attempt flip puts the peer back to
-        // NOT_RELAY until the window elapses — a bundle answer still
-        // flips it to ENCRYPTED.
+        // attempts. Round 44 — the peer stays PROBING: a manual
+        // retry is an explicit tap, and the probe is in flight, so
+        // "Checking if…" is the honest state (the old NOT_RELAY
+        // flip made the Retry tap feel broken — the panel flashed
+        // PROBING then flopped back). A bundle answer still flips
+        // it to ENCRYPTED.
         assertThat(harness.peerDao.peers[ALICE]?.probeAttempts).isEqualTo(4)
-        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.NOT_RELAY)
+        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.PROBING)
+    }
+
+    @Test
+    fun `a manual third attempt leaves the peer PROBING`() = runTest {
+        val harness = Harness(scope = this)
+        harness.seedPeer(
+            state = E2ePeerState.PROBING,
+            attempts = 2,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 2 * MS_PER_DAY,
+        )
+
+        val probed = harness.manager.probeAddress(ALICE, null, manual = true, now = NOW)
+
+        assertThat(probed).isTrue()
+        assertThat(harness.peerDao.peers[ALICE]?.probeAttempts).isEqualTo(3)
+        // The 3rd attempt exhausts the budget, but the manual
+        // retry leaves the peer PROBING (round 44) — the
+        // NOT_RELAY flip is automatic probes only.
+        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.PROBING)
     }
 
     @Test

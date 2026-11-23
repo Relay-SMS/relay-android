@@ -232,6 +232,9 @@ internal class FakeConversationRepository(
         TODO("not needed by this test")
 
     override suspend fun setCustomName(id: Long, name: String?) = TODO("not needed by this test")
+    override suspend fun clearStaleDisplayName(conversationId: Long, address: String) =
+        TODO("not needed by this test")
+
     override suspend fun markRead(id: Long) {
         markReadIds += id
     }

@@ -108,6 +108,21 @@ interface ConversationRepository {
 
     /** v1.28.3 — nom choisi d'un groupe, déjà normalisé par [com.filestech.sms.domain.model.GroupName]. */
     suspend fun setCustomName(id: Long, name: String?)
+
+    /**
+     * Round 44 — self-heal for a stale cached display name on a
+     * 1:1 thread: clears the conversation's `displayName` (so the
+     * title falls back to the formatted number) when a live lookup
+     * definitively says [address] is not a contact. Clears ONLY
+     * when the lookup could actually answer (READ_CONTACTS
+     * granted) and came back empty; a denied permission, a contact
+     * found, and client mode (where the name came from the hub and
+     * the local cache is not authoritative) all leave the name
+     * untouched. 1:1 only — the caller guarantees it: a group's
+     * display name is its joined member names, never one lookup.
+     */
+    suspend fun clearStaleDisplayName(conversationId: Long, address: String)
+
     suspend fun markRead(id: Long)
 
     /**

@@ -64,6 +64,62 @@ fun String.normalizePhone(): String {
     return sb.toString()
 }
 
+/**
+ * Round 44 — do two spellings denote the **same phone number**, compared
+ * on the FULL number, never on a suffix?
+ *
+ * Android's `PhoneLookup` provider matches on the last 7 digits only
+ * (its `min_match` column), so a lookup for `(610) 842-3232` happily
+ * returns the contact whose number is `(215) 842-3232` — and Relay
+ * cached that wrong name on the conversation permanently. Every
+ * `PhoneLookup` hit must therefore be verified against the queried
+ * number with this strict comparison before the contact is accepted.
+ *
+ * The rule, on the digit strings (everything else stripped):
+ * - equal digits → the same number, whatever the formatting
+ *   (`"+1 (610) 842-3232"` == `"(610) 842-3232"` == `"6108423232"`);
+ * - an 11-digit string starting with `1` == its 10-digit form (the
+ *   NANP country code is the only prefix dropped — country code 1
+ *   is exclusively NANP, the same trade-off the client-mode
+ *   NANP-equivalent-forms fallback makes);
+ * - anything else → different numbers. In particular a shared
+ *   7-digit suffix with a different area code is NOT a match.
+ *
+ * An empty digit string on either side never matches, and
+ * neither does any string containing a letter: an alphanumeric
+ * sender (`"Free"`, `"SFR 123"`) is a label, not a number, and
+ * must never match a number even when its digits coincide with a
+ * short code (the same letter-based switch [blockKey] makes —
+ * `"SFR 123"` strips to `"123"`, which must not match the short
+ * code `123`). Two empty strings are not a number at all.
+ *
+ * Known limitation: an international number stored in national
+ * format (trunk `0`, no country code — `"06 12 34 56 78"`) does
+ * NOT match its E.164 form (`"+33612345678"`): the digits differ
+ * and only a region-aware canonicalisation could reunite them.
+ * Accepted deliberately — the failure mode is a missing name,
+ * never a wrong name.
+ */
+fun numbersMatchStrict(a: String, b: String): Boolean {
+    val digitsA = a.filter { it.isDigit() }
+    val digitsB = b.filter { it.isDigit() }
+    // A string with a letter is a label ("Free", "SFR 123"), not a
+    // number — and an empty digit string is not a number at all.
+    // Either side uncomparable means no match.
+    val comparable = !a.any { it.isLetter() } && !b.any { it.isLetter() } &&
+        digitsA.isNotEmpty() && digitsB.isNotEmpty()
+    if (!comparable) {
+        return false
+    }
+    if (digitsA == digitsB) {
+        return true
+    }
+    // NANP: an 11-digit number starting with 1 is the 10-digit
+    // national form with its country code — the same number.
+    return (digitsA.length == 11 && digitsA.startsWith("1") && digitsA.substring(1) == digitsB) ||
+        (digitsB.length == 11 && digitsB.startsWith("1") && digitsB.substring(1) == digitsA)
+}
+
 /** Pré-compilé une fois : marques diacritiques combinantes (catégorie Unicode Mn). */
 private val COMBINING_MARKS_REGEX = Regex("\\p{Mn}+")
 

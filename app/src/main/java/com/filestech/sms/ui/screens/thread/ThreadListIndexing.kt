@@ -49,4 +49,22 @@ object ThreadListIndexing {
         if (messagePosition < 0 || messagePosition >= messageCount) return null
         return messageCount - 1 - messagePosition
     }
+
+    /**
+     * Round 44 — whether a newly arrived message should pull the
+     * thread to the bottom (LazyColumn index 0). Scroll when the user
+     * was at the bottom before the insertion, or always for an
+     * outgoing message: you always want to see your own sent message,
+     * even one sent while scrolled up. An incoming message while
+     * scrolled up does NOT scroll — the unseen-count chip covers
+     * that case, and yanking the reading position would be worse.
+     *
+     * [wasAtBottom] must be the PRE-insertion value: after the new
+     * message lands at index 0 the anchor shifts (old index 0 → 1)
+     * and the live at-bottom state already reads false.
+     */
+    fun shouldAutoScrollToBottom(
+        wasAtBottom: Boolean,
+        newestIsOutgoing: Boolean,
+    ): Boolean = wasAtBottom || newestIsOutgoing
 }

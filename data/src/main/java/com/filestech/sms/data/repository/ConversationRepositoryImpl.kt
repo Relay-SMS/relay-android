@@ -824,6 +824,45 @@ class ConversationRepositoryImpl @Inject constructor(
         conversationDao.setCustomName(id, name)
     }
 
+    /**
+     * Round 44 — self-heal for a stale cached display name (see
+     * [ConversationRepository.clearStaleDisplayName]). The gates,
+     * in order: client mode never clears (the name came from the
+     * hub; the local synced-contacts cache is not authoritative
+     * for "no contact"); then the lookup must definitively miss —
+     * permission granted, provider answered, no contact. A denied
+     * permission also reads as "no contact", so it must never
+     * clear: [lookupDefinitivelyMisses] owns that distinction.
+     */
+    override suspend fun clearStaleDisplayName(conversationId: Long, address: String): Unit =
+        withContext(io) {
+            if (clientActions.isClientMode()) return@withContext
+            if (lookupDefinitivelyMisses(address)) {
+                conversationDao.setDisplayName(conversationId, null)
+            }
+        }
+
+    /**
+     * Round 44 — true only when a lookup the provider could
+     * actually answer came back empty. A denied permission
+     * returns false (a miss the provider never got to answer is
+     * not evidence), and a `SecurityException` between the check
+     * and the lookup — revoked mid-flight — is the same "cannot
+     * verify", never a clear.
+     */
+    private suspend fun lookupDefinitivelyMisses(address: String): Boolean {
+        if (!contactRepo.hasContactsPermission()) return false
+        return try {
+            contactRepo.lookupByPhone(address) == null
+        } catch (e: SecurityException) {
+            // The log carries the exception TYPE only, never its
+            // message: a provider error message can embed contact
+            // data, and contact data never reaches the log.
+            Timber.d("ConversationRepositoryImpl: stale-name lookup denied (%s)", e.javaClass.simpleName)
+            false
+        }
+    }
+
     override suspend fun setAppearance(id: Long, bubbleColorArgb: Int?, avatarUri: String?) =
         withContext(io) {
             // v1.11.0 audit S5 — whitelist `content://` pour avatar_uri.

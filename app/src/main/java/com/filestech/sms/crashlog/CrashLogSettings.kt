@@ -32,6 +32,18 @@ import kotlinx.coroutines.flow.asStateFlow
  * process: this class is a Hilt singleton, and the two
  * instances built at startup (handler, tracker) are held by
  * their install lambdas for the process lifetime anyway.
+ *
+ * Round 44 — [setEnabled] updates [_enabledFlow] directly, in
+ * addition to writing the pref: on device the switch did not
+ * redraw when tapped (the setting changed — a restart showed
+ * the true state — but the UI never updated), which means the
+ * listener alone did not deliver the change to the Flow. The
+ * direct update makes the Flow independent of listener
+ * delivery, so the switch flips immediately on tap. The
+ * listener stays: it covers writes from outside this class
+ * (there are none today, but a restore or a future writer
+ * would reach the Flow through it) and setting the same value
+ * twice is a no-op for a StateFlow.
  */
 class CrashLogSettings(context: Context) {
 
@@ -68,8 +80,14 @@ class CrashLogSettings(context: Context) {
     /** The flag as a flow, for the Settings toggle. */
     val enabledFlow: StateFlow<Boolean> = _enabledFlow.asStateFlow()
 
-    /** Turns the error log on or off. */
+    /**
+     * Turns the error log on or off. The Flow is updated
+     * directly, synchronously — the listener alone did not
+     * deliver the change to the UI on device (round 44), so
+     * the switch must not depend on it.
+     */
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, value).apply()
+        _enabledFlow.value = value
     }
 }

@@ -48,6 +48,14 @@ import java.io.FileNotFoundException
  * shadow implements for real), so the stream tests read real
  * bytes, not a mocked resolver.
  *
+ * Round 44 — the lookup also reads `PhoneLookup.NUMBER` (the
+ * fifth projected column) and verifies the returned number
+ * against the queried one before believing the hit: Android's
+ * provider matches on the last 7 digits, so a row whose number
+ * only shares the suffix must be rejected. The answering fakes
+ * return the queried number as NUMBER; two new providers cover
+ * the rejection and the "first strict match wins" iteration.
+ *
  * NOTE for the harness: `test-fb5.sh app robo` has a pre-existing
  * compile failure (`TextScalePersistenceTest`), so compile this
  * file directly with kotlinc.
@@ -97,9 +105,12 @@ class ContactsReaderDeniedPermissionTest {
                 ContactsContract.PhoneLookup.DISPLAY_NAME,
                 ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
                 ContactsContract.PhoneLookup.PHOTO_URI,
+                // Round 44 — the matched number: the queried number
+                // itself, so the strict check accepts the row.
+                ContactsContract.PhoneLookup.NUMBER,
             )
             val curseur = MatrixCursor(colonnes)
-            curseur.addRow(arrayOf<Any?>(1L, "Alice", THUMB_PHOTO_URI, FULL_PHOTO_URI))
+            curseur.addRow(arrayOf<Any?>(1L, "Alice", THUMB_PHOTO_URI, FULL_PHOTO_URI, PHONE))
             return curseur
         }
 
@@ -135,9 +146,12 @@ class ContactsReaderDeniedPermissionTest {
                 ContactsContract.PhoneLookup.DISPLAY_NAME,
                 ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
                 ContactsContract.PhoneLookup.PHOTO_URI,
+                // Round 44 — the matched number: the queried number
+                // itself, so the strict check accepts the row.
+                ContactsContract.PhoneLookup.NUMBER,
             )
             val curseur = MatrixCursor(colonnes)
-            curseur.addRow(arrayOf<Any?>(1L, "Alice", THUMB_PHOTO_URI, FULL_PHOTO_URI))
+            curseur.addRow(arrayOf<Any?>(1L, "Alice", THUMB_PHOTO_URI, FULL_PHOTO_URI, PHONE))
             return curseur
         }
 
@@ -177,6 +191,70 @@ class ContactsReaderDeniedPermissionTest {
                 THUMB_PHOTO_URI -> bytesAsDescriptor(THUMB_BYTES)
                 else -> throw FileNotFoundException("no photo at $uri")
             }
+    }
+
+    /**
+     * Round 44 — the 7-digit false positive, as Android's provider
+     * serves it: one row, Alice, whose number shares the last 7
+     * digits with the queried number but is a different number.
+     * The lookup must reject the row, not return Alice.
+     */
+    class SevenDigitFalsePositiveContacts : ContentProvider() {
+        override fun onCreate(): Boolean = true
+
+        override fun query(
+            uri: Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?,
+        ): Cursor {
+            val curseur = MatrixCursor(LOOKUP_COLUMNS)
+            curseur.addRow(arrayOf<Any?>(1L, "Alice", null, null, "(215) 842-3232"))
+            return curseur
+        }
+
+        override fun getType(uri: Uri): String = ContactsContract.Contacts.CONTENT_ITEM_TYPE
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ): Int = 0
+    }
+
+    /**
+     * Round 44 — two rows: Alice first (7-digit match only), then
+     * Bob (the strictly matching number, in another format). The
+     * lookup must skip Alice and return Bob.
+     */
+    class SecondRowMatchesContacts : ContentProvider() {
+        override fun onCreate(): Boolean = true
+
+        override fun query(
+            uri: Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?,
+        ): Cursor {
+            val curseur = MatrixCursor(LOOKUP_COLUMNS)
+            curseur.addRow(arrayOf<Any?>(1L, "Alice", null, null, "(215) 842-3232"))
+            curseur.addRow(arrayOf<Any?>(2L, "Bob", null, null, "(610) 842-3232"))
+            return curseur
+        }
+
+        override fun getType(uri: Uri): String = ContactsContract.Contacts.CONTENT_ITEM_TYPE
+        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ): Int = 0
     }
 
     @Test
@@ -219,6 +297,23 @@ class ContactsReaderDeniedPermissionTest {
         assertThat(bytes).isEqualTo(THUMB_BYTES)
     }
 
+    @Test
+    fun `lookupByPhone rejects a hit whose number only shares the last 7 digits`() {
+        val reader = readerWith(SevenDigitFalsePositiveContacts::class.java)
+
+        assertThat(reader.lookupByPhone("+16108423232")).isNull()
+    }
+
+    @Test
+    fun `lookupByPhone returns the first row whose number matches strictly`() {
+        val reader = readerWith(SecondRowMatchesContacts::class.java)
+
+        val contact = reader.lookupByPhone("+16108423232")
+
+        assertThat(contact?.displayName).isEqualTo("Bob")
+        assertThat(contact?.id).isEqualTo(2L)
+    }
+
     private fun <T : ContentProvider> readerWith(provider: Class<T>): ContactsReader {
         Robolectric.buildContentProvider(provider).create(ContactsContract.AUTHORITY)
         val ctx = ApplicationProvider.getApplicationContext<Context>()
@@ -231,5 +326,14 @@ class ContactsReaderDeniedPermissionTest {
         private const val FULL_PHOTO_URI = "content://com.android.contacts/display_photo/1"
         private val FULL_BYTES = "FULL".toByteArray()
         private val THUMB_BYTES = "THUMB".toByteArray()
+
+        /** Round 44 — the five columns `lookupByPhone` projects, in order. */
+        private val LOOKUP_COLUMNS = arrayOf(
+            ContactsContract.PhoneLookup._ID,
+            ContactsContract.PhoneLookup.DISPLAY_NAME,
+            ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
+            ContactsContract.PhoneLookup.PHOTO_URI,
+            ContactsContract.PhoneLookup.NUMBER,
+        )
     }
 }

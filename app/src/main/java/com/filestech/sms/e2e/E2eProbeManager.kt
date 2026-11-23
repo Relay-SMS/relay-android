@@ -33,7 +33,11 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * unreachable and the 3-attempt budget dead code). The state machine
  * ([E2ePeerStateMachine.canProbe]) is the authority here: every
  * non-ENCRYPTED state is probeable within the budget, and the 3rd
- * attempt flips the peer to NOT_RELAY until the window elapses.
+ * attempt flips the peer to NOT_RELAY until the window elapses —
+ * for automatic probes. A manual retry (round 44) leaves the
+ * peer PROBING even at 3 attempts: the probe is in flight, so
+ * "Checking if…" is the honest state, and the panel must not
+ * flop back to "Tap to retry" the moment the user taps Retry.
  *
  * The decrypt-failure re-probe ([reprobeAfterDecryptFailure]) is the
  * one path that probes an ENCRYPTED peer: an undecryptable message from
@@ -329,8 +333,16 @@ class E2eProbeManager @Inject constructor(
         // The 3rd unanswered attempt exhausts the budget: the peer
         // becomes NOT_RELAY until the window elapses (state machine
         // `onProbeSent`). Re-read: the repository owns the counting.
+        // Round 44 — automatic probes only: a manual retry leaves
+        // the peer PROBING, so the panel shows "Checking if…" while
+        // the probe the user just asked for is in flight (flipping
+        // to NOT_RELAY here made the Retry tap feel broken — the box
+        // flashed PROBING then flopped back). The manual retry still
+        // consumes budget (recordProbeSent bumped the attempts
+        // above); only the immediate state flip is skipped, and the
+        // NOT_RELAY conclusion still applies to automatic probes.
         val attempts = peers.getPeer(address)?.probeAttempts ?: 0
-        if (attempts >= E2ePeerRepository.MAX_PROBE_ATTEMPTS) {
+        if (!manual && attempts >= E2ePeerRepository.MAX_PROBE_ATTEMPTS) {
             peers.setState(address, StoredPeerState.NOT_RELAY, now)
         }
         Timber.i("E2E: probe sent (state=%s, attempts=%d)", state, attempts)
