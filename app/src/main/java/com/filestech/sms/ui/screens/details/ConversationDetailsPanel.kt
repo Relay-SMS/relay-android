@@ -1205,8 +1205,10 @@ internal fun e2eDetailsExpandedActions(
 internal enum class E2eDetailsRowTap {
     /** Tap opens the safety-number sheet directly. */
     OpenVerification,
+
     /** Tap expands / collapses the dropdown. */
     Expand,
+
     /** No tap — the box is plain status. */
     None,
 }
