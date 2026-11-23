@@ -147,6 +147,21 @@ class E2eReceiveManager @Inject constructor(
      * → delete deserves a fresh notice each time). MMS and encrypted
      * messages never reach this method (separate receivers / the
      * fragment path), so they can never trigger it.
+     *
+     * Round 46 — grace guard: a plain text arriving within
+     * [DEACTIVATED_GRACE_MS] of the session being established does
+     * NOT fire the fallback. The peer may not have flipped to
+     * ENCRYPTED yet — it needs our first encrypted message to build
+     * its session — so its plain reply to our first encrypted
+     * message is expected, not proof it lost Relay (device-proven:
+     * the partner's plain reply tore down a fresh, working session).
+     * The guard reads [E2ePeerEntity.updatedAt][com.filestech.sms.data.local.db.entity.E2ePeerEntity.updatedAt],
+     * which the ENCRYPTED flip writes via
+     * [E2ePeerRepository.setState] — an approximation, since other
+     * writes (recordKeys, probe / bundle bookkeeping) bump it too,
+     * so the guard may occasionally delay a genuine DEACTIVATED by
+     * up to an hour; harmless, because the next plain message after
+     * the window fires it.
      */
     suspend fun onPlainSmsReceived(
         address: String,
@@ -154,7 +169,9 @@ class E2eReceiveManager @Inject constructor(
         subId: Int?,
         now: Long = System.currentTimeMillis(),
     ) {
-        if (peers.state(address) != StoredPeerState.ENCRYPTED) return
+        val peer = peers.getPeer(address)
+        if (peer?.state != StoredPeerState.ENCRYPTED) return
+        if (now - peer.updatedAt < DEACTIVATED_GRACE_MS) return
         peers.setState(address, StoredPeerState.UNKNOWN, now)
         peers.setVerified(address, false, now)
         notices.record(conversationId, E2eNoticeKind.DEACTIVATED, now)
@@ -301,5 +318,13 @@ class E2eReceiveManager @Inject constructor(
     companion object {
         /** Completed sets remembered as handled (duplicate suppression for sender retries). */
         const val MAX_PROCESSED_SETS = 256
+
+        /**
+         * Round 46 — DEACTIVATED grace window (1 hour): a plain SMS
+         * from a peer whose session was established less than this
+         * long ago does not fire the peer-left fallback — the peer
+         * may simply not have flipped to ENCRYPTED yet.
+         */
+        const val DEACTIVATED_GRACE_MS = 60 * 60 * 1000L
     }
 }

@@ -200,7 +200,8 @@
     <string name="e2e_details_not_encrypted">Nicht verschlüsselt</string>
     <string name="e2e_details_auto_start">Die Verschlüsselung startet automatisch, sobald %1$s Relay nutzt</string>
     <string name="e2e_details_retry_encryption">Verschlüsselung erneut versuchen</string>
-    <string name="e2e_details_retry_via_sms">Per SMS erneut versuchen</string>
+    <string name="e2e_details_retry_via_sms">Anders erneut versuchen</string>
+    <string name="e2e_details_retrying">Wird erneut versucht…</string>
     <string name="e2e_details_view_safety_number">Sicherheitsnummer ansehen</string>
     <string name="e2e_verify_title">Sicherheitsnummer</string>
     <string name="e2e_verify_explainer">Vergleiche diese Nummer mit %1$s persönlich oder über einen anderen Kanal – einen Anruf oder eine andere App. Wenn die Nummern übereinstimmen, sprecht ihr miteinander und niemand sitzt dazwischen.</string>

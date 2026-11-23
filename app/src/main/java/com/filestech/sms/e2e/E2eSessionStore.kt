@@ -1,6 +1,7 @@
 package com.filestech.sms.e2e
 
 import com.filestech.sms.core.crypto.wipe
+import com.filestech.sms.core.ext.canonicalPhone
 import com.filestech.sms.data.local.db.dao.E2eSessionDao
 import com.filestech.sms.data.local.db.entity.E2eSessionEntity
 import timber.log.Timber
@@ -22,6 +23,17 @@ import javax.inject.Singleton
  * ([E2eKeyManager]). A pickle that fails to unpickle (corrupt row) is logged and
  * reported as "not loaded" — never thrown: a corrupt fallback must not break the
  * thread, and the current session can still be re-established by re-probing.
+ *
+ * Round 46 — every address is canonicalized with [canonicalPhone]
+ * before touching the DAO (formatting stripped, NANP country code
+ * unified to the 10-digit form), the same key [E2ePeerRepository]
+ * uses. The store used to key on the raw address, so a session
+ * written under the carrier E.164 form (`"+1…"`) was invisible to
+ * the send path reading the conversation's national form
+ * (`"610…"`) — the message went out plain (device-proven
+ * 2026-11-23). Sessions stored under a non-canonical form before
+ * this change become unreachable; the peer re-establishes from
+ * UNKNOWN on the next probe (no migration).
  */
 @Singleton
 class E2eSessionStore @Inject constructor(
@@ -29,6 +41,14 @@ class E2eSessionStore @Inject constructor(
     private val crypto: E2eCrypto,
     private val keyManager: E2eKeyManager,
 ) {
+
+    /**
+     * Canonical key for the session table: [canonicalPhone]
+     * (formatting stripped, NANP country code unified to the
+     * 10-digit form). Idempotent — safe to apply to an
+     * already-canonical address.
+     */
+    private fun canonicalAddress(address: String): String = address.canonicalPhone()
 
     /**
      * Persists a NEW session as the peer's current session (previous current becomes
@@ -43,8 +63,9 @@ class E2eSessionStore @Inject constructor(
         val key = keyManager.getOrCreatePickleKey()
         try {
             val pickle = crypto.pickleSession(sessionId, key)
-            sessionDao.clearCurrent(address)
-            val existing = sessionDao.findByAddressAndSessionId(address, sessionId)
+            val canonical = canonicalAddress(address)
+            sessionDao.clearCurrent(canonical)
+            val existing = sessionDao.findByAddressAndSessionId(canonical, sessionId)
             if (existing != null) {
                 sessionDao.update(
                     existing.copy(pickle = pickle, isCurrent = true, lastUsedAt = now),
@@ -52,7 +73,7 @@ class E2eSessionStore @Inject constructor(
             } else {
                 sessionDao.insert(
                     E2eSessionEntity(
-                        address = address,
+                        address = canonical,
                         sessionId = sessionId,
                         pickle = pickle,
                         isCurrent = true,
@@ -61,7 +82,7 @@ class E2eSessionStore @Inject constructor(
                     ),
                 )
             }
-            prune(address)
+            prune(canonical)
         } finally {
             key.wipe()
         }
@@ -81,14 +102,15 @@ class E2eSessionStore @Inject constructor(
         val key = keyManager.getOrCreatePickleKey()
         try {
             val pickle = crypto.pickleSession(sessionId, key)
-            val existing = sessionDao.findByAddressAndSessionId(address, sessionId)
+            val canonical = canonicalAddress(address)
+            val existing = sessionDao.findByAddressAndSessionId(canonical, sessionId)
             if (existing != null) {
-                sessionDao.updatePickle(address, sessionId, pickle, now)
+                sessionDao.updatePickle(canonical, sessionId, pickle, now)
             } else {
                 Timber.w("E2E: refreshing an unstored session; inserting as fallback")
                 sessionDao.insert(
                     E2eSessionEntity(
-                        address = address,
+                        address = canonical,
                         sessionId = sessionId,
                         pickle = pickle,
                         isCurrent = false,
@@ -109,7 +131,8 @@ class E2eSessionStore @Inject constructor(
      */
     suspend fun loadSession(address: String, sessionId: String): Boolean {
         if (crypto.hasSession(sessionId)) return true
-        val stored = sessionDao.findByAddressAndSessionId(address, sessionId) ?: return false
+        val stored = sessionDao.findByAddressAndSessionId(canonicalAddress(address), sessionId)
+            ?: return false
         val key = keyManager.getOrCreatePickleKey()
         try {
             crypto.unpickleSession(stored.pickle, key)
@@ -124,28 +147,34 @@ class E2eSessionStore @Inject constructor(
 
     /** The peer's current session id, or null when no session exists yet. */
     suspend fun currentSessionId(address: String): String? =
-        sessionDao.currentSession(address)?.sessionId
+        sessionDao.currentSession(canonicalAddress(address))?.sessionId
 
     /**
      * The peer's session ids, current first, then newest-used first — the order
      * decryption tries them in.
      */
     suspend fun sessionIdsNewestFirst(address: String): List<String> =
-        sessionDao.sessionsForPeer(address).map { it.sessionId }
+        sessionDao.sessionsForPeer(canonicalAddress(address)).map { it.sessionId }
 
     /** Makes an existing session the current one (previous current becomes a fallback). */
     suspend fun markCurrent(address: String, sessionId: String) {
-        sessionDao.clearCurrent(address)
-        sessionDao.markCurrent(address, sessionId)
+        val canonical = canonicalAddress(address)
+        sessionDao.clearCurrent(canonical)
+        sessionDao.markCurrent(canonical, sessionId)
     }
 
     /** How many sessions are stored for a peer (diagnostics / tests). */
-    suspend fun sessionsCount(address: String): Int = sessionDao.countForPeer(address)
+    suspend fun sessionsCount(address: String): Int =
+        sessionDao.countForPeer(canonicalAddress(address))
 
     /** Deletes all of a peer's sessions (panic wipe / reset). */
-    suspend fun deleteAllForPeer(address: String): Int = sessionDao.deleteByAddress(address)
+    suspend fun deleteAllForPeer(address: String): Int =
+        sessionDao.deleteByAddress(canonicalAddress(address))
 
-    /** Drops the peer's oldest fallbacks beyond the cap; the current session is never pruned. */
+    /**
+     * Drops the peer's oldest fallbacks beyond the cap; the current session is never pruned.
+     * Takes the already-canonical key — callers canonicalize before calling.
+     */
     private suspend fun prune(address: String) {
         sessionDao.pruneFallbacks(address, MAX_SESSIONS_PER_PEER - 1)
     }

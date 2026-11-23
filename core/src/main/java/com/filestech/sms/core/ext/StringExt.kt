@@ -65,6 +65,59 @@ fun String.normalizePhone(): String {
 }
 
 /**
+ * Round 46 — the canonical key for one peer, shared by every store
+ * that keys rows by address: start from [normalizePhone], then
+ * reunite the two NANP spellings of the same number.
+ *
+ * `normalizePhone` strips formatting but does NOT reconcile the
+ * E.164 form (`"+16108423232"`) with the national form
+ * (`"6108423232"`) — different keys for the same peer. Round 42
+ * canonicalized the peer repository on `normalizePhone` alone,
+ * and the session store did no normalization at all, so the
+ * carrier-delivered E.164 form and the conversation's national
+ * form landed under different keys: the bundle arrived under
+ * `"+1…"`, the UI and the send path read `"610…"`, the thread
+ * stayed PROBING, the message went out plain, and the peer
+ * never flipped (device-proven 2026-11-23).
+ *
+ * The rule, on the normalized form:
+ * - an 11-digit string starting with `1` → its 10-digit form
+ *   (`"16108423232"` → `"6108423232"`, `"+16108423232"` →
+ *   `"6108423232"`); country code 1 is exclusively NANP, the
+ *   same rule [numbersMatchStrict] applies;
+ * - anything else keeps its normalized form: non-NANP numbers
+ *   stay E.164 (`"+33612345678"`), short codes stay as-is.
+ *
+ * An alphanumeric sender (`normalizePhone()` → empty) keeps the
+ * existing fallback: the trimmed raw string, the same fallback
+ * `PhoneAddress.of` makes. A number carrying `*`/`#` is never
+ * NANP-stripped — the strip applies to plain digits only.
+ *
+ * Known limitation, shared with [numbersMatchStrict]: an
+ * international number stored in national format (trunk `0`,
+ * no country code — `"06 12 34 56 78"`) does NOT reunite with
+ * its E.164 form (`"+33612345678"`): only a region-aware
+ * canonicalisation could reunite them. Accepted deliberately —
+ * the failure mode is a missing match, never a wrong match.
+ */
+fun String.canonicalPhone(): String {
+    val normalized = normalizePhone()
+    if (normalized.isEmpty()) {
+        return trim()
+    }
+    val digits = normalized.filter { it.isDigit() }
+    val isPlainDigits = normalized == digits || normalized == "+$digits"
+    if (!isPlainDigits) {
+        return normalized
+    }
+    return if (digits.length == 11 && digits.startsWith("1")) {
+        digits.substring(1)
+    } else {
+        normalized
+    }
+}
+
+/**
  * Round 44 — do two spellings denote the **same phone number**, compared
  * on the FULL number, never on a suffix?
  *

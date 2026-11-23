@@ -303,4 +303,50 @@ class E2ePeerRepositoryTest {
 
         coVerify(exactly = 1) { dao.resetTiming(now) }
     }
+
+    // ─────────── Round 46: E.164 and national NANP forms are one peer ───────────
+    // The fake DAO matches addresses exactly, like Room: writing
+    // under "+1…" and reading under "610…" only works when the
+    // repository canonicalizes both to the same 10-digit key.
+
+    @Test
+    fun `setState under the E164 form is visible under the national form`() = runTest {
+        val repository = E2ePeerRepository(FakeE2ePeerDao())
+
+        repository.setState("+16108423232", E2ePeerState.ENCRYPTED, now)
+
+        assertThat(repository.state("6108423232")).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(repository.state("(610) 842-3232")).isEqualTo(E2ePeerState.ENCRYPTED)
+    }
+
+    @Test
+    fun `setState under the national form is visible under the E164 form`() = runTest {
+        val repository = E2ePeerRepository(FakeE2ePeerDao())
+
+        repository.setState("6108423232", E2ePeerState.ENCRYPTED, now)
+
+        assertThat(repository.state("+16108423232")).isEqualTo(E2ePeerState.ENCRYPTED)
+    }
+
+    @Test
+    fun `observePeer unifies the E164 and national forms`() = runTest {
+        val repository = E2ePeerRepository(FakeE2ePeerDao())
+
+        repository.setState("+16108423232", E2ePeerState.ENCRYPTED, now)
+
+        val found = repository.observePeer("6108423232").first()
+        assertThat(found?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(found?.address).isEqualTo("6108423232")
+    }
+
+    @Test
+    fun `recordKeys under one form is visible under the other`() = runTest {
+        val repository = E2ePeerRepository(FakeE2ePeerDao())
+
+        repository.recordKeys("+16108423232", "Y3VydmU=", "ZWQ=", now)
+
+        val peer = repository.getPeer("6108423232")
+        assertThat(peer?.theirCurveKey).isEqualTo("Y3VydmU=")
+        assertThat(peer?.theirEdKey).isEqualTo("ZWQ=")
+    }
 }

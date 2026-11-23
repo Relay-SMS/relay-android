@@ -197,4 +197,58 @@ class E2eSessionStoreTest {
         coVerify(exactly = 1) { dao.clearCurrent(address) }
         coVerify(exactly = 1) { dao.markCurrent(address, "s-new") }
     }
+
+    // ─────────── Round 46: E.164 and national NANP forms are one peer ───────────
+    // The fake DAO matches addresses exactly, like Room: saving
+    // under "+1…" and reading under "610…" only works when the
+    // store canonicalizes both to the same 10-digit key.
+
+    @Test
+    fun `a session saved under the E164 form is retrievable under the national form`() = runTest {
+        val dao = FakeE2eSessionDao()
+        val crypto = FakeE2eCrypto()
+        val sessionId = crypto.createOutboundSession(ByteArray(32), ByteArray(32))
+        val store = store(dao, crypto)
+
+        store.saveNewSession("+16108423232", sessionId)
+
+        assertThat(store.currentSessionId("6108423232")).isEqualTo(sessionId)
+        assertThat(store.sessionIdsNewestFirst("6108423232")).containsExactly(sessionId)
+        assertThat(store.sessionsCount("6108423232")).isEqualTo(1)
+        assertThat(dao.sessions).hasSize(1)
+        assertThat(dao.sessions[0].address).isEqualTo("6108423232")
+    }
+
+    @Test
+    fun `loadSession under the national form loads a session saved under the E164 form`() = runTest {
+        val dao = FakeE2eSessionDao()
+        val seeder = FakeE2eCrypto()
+        val sessionId = seeder.createOutboundSession(ByteArray(32), ByteArray(32))
+        store(dao, seeder).saveNewSession("+16108423232", sessionId)
+
+        // A fresh wrapper holds no live session, so the load must
+        // come from the DAO — under the other address form.
+        val crypto = FakeE2eCrypto()
+        val loaded = store(dao, crypto).loadSession("6108423232", sessionId)
+
+        assertThat(loaded).isTrue()
+        assertThat(crypto.hasSession(sessionId)).isTrue()
+    }
+
+    @Test
+    fun `markCurrent under the national form promotes a session saved under the E164 form`() = runTest {
+        val dao = FakeE2eSessionDao()
+        val crypto = FakeE2eCrypto()
+        val first = crypto.createOutboundSession(ByteArray(32), ByteArray(32))
+        val second = crypto.createOutboundSession(ByteArray(32), ByteArray(32))
+        val store = store(dao, crypto)
+        store.saveNewSession("+16108423232", first)
+        store.saveNewSession("+16108423232", second)
+        assertThat(store.currentSessionId("6108423232")).isEqualTo(second)
+
+        store.markCurrent("6108423232", first)
+
+        assertThat(store.currentSessionId("6108423232")).isEqualTo(first)
+        assertThat(store.currentSessionId("+16108423232")).isEqualTo(first)
+    }
 }

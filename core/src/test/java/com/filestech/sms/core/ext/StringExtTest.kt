@@ -186,4 +186,46 @@ class StringExtTest {
         // is a missing name, never a wrong one.
         assertThat(numbersMatchStrict("06 12 34 56 78", "+33612345678")).isFalse()
     }
+
+    // ──────────── Round 46 : canonicalPhone ────────────
+
+    @Test fun `canonicalPhone unifies E164 and national NANP forms to one key`() {
+        // The round-46 failure: the carrier delivered "+1…" while
+        // the conversation stored "610…", and the two forms keyed
+        // different rows. All four spellings are the same peer.
+        assertThat("+1 (610) 842-3232".canonicalPhone()).isEqualTo("6108423232")
+        assertThat("(610) 842-3232".canonicalPhone()).isEqualTo("6108423232")
+        assertThat("6108423232".canonicalPhone()).isEqualTo("6108423232")
+        assertThat("16108423232".canonicalPhone()).isEqualTo("6108423232")
+        assertThat("+16108423232".canonicalPhone()).isEqualTo("6108423232")
+    }
+
+    @Test fun `canonicalPhone strips formatting from non-NANP numbers`() {
+        assertThat("+33 6 12 34 56 78".canonicalPhone()).isEqualTo("+33612345678")
+        assertThat("(0)6 12-34 56 78".canonicalPhone()).isEqualTo("0612345678")
+    }
+
+    @Test fun `canonicalPhone leaves non-NANP numbers untouched`() {
+        assertThat("+33612345678".canonicalPhone()).isEqualTo("+33612345678")
+        assertThat("+442071234567".canonicalPhone()).isEqualTo("+442071234567")
+        // Documented limitation, shared with numbersMatchStrict:
+        // a national-form international number does NOT reunite
+        // with its E.164 form — the failure mode is a missing
+        // match, never a wrong one.
+        assertThat("0612345678".canonicalPhone()).isEqualTo("0612345678")
+    }
+
+    @Test fun `canonicalPhone leaves alphanumeric senders untouched`() {
+        // normalizePhone() collapses "Free" to empty, so the
+        // trimmed raw string is kept — the PhoneAddress.of fallback.
+        assertThat("Free".canonicalPhone()).isEqualTo("Free")
+        assertThat("  Free  ".canonicalPhone()).isEqualTo("Free")
+    }
+
+    @Test fun `canonicalPhone leaves short codes and 11-digit numbers not starting with 1 untouched`() {
+        assertThat("123".canonicalPhone()).isEqualTo("123")
+        assertThat("12345".canonicalPhone()).isEqualTo("12345")
+        assertThat("26108423232".canonicalPhone()).isEqualTo("26108423232")
+        assertThat("+26108423232".canonicalPhone()).isEqualTo("+26108423232")
+    }
 }

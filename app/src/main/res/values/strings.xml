@@ -200,7 +200,8 @@
     <string name="e2e_details_not_encrypted">Not encrypted</string>
     <string name="e2e_details_auto_start">Encryption starts automatically when %1$s uses Relay</string>
     <string name="e2e_details_retry_encryption">Retry encryption</string>
-    <string name="e2e_details_retry_via_sms">Retry via SMS</string>
+    <string name="e2e_details_retry_via_sms">Retry another way</string>
+    <string name="e2e_details_retrying">Retrying…</string>
     <string name="e2e_details_view_safety_number">View safety number</string>
     <string name="e2e_verify_title">Safety number</string>
     <string name="e2e_verify_explainer">Compare this number with %1$s in person or over another channel — a call, or another app. If the numbers match, you\'re talking to each other and no one in between.</string>

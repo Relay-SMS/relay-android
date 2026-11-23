@@ -1232,6 +1232,14 @@ internal fun muteIconFor(muted: Boolean): ImageVector =
  * subtitle are gone — the retries live in the expanded area now.
  * No expanded actions (no handlers at all) means no chevron and no
  * tap: the box is plain status.
+ *
+ * Round 46 — tap feedback + anti-hammering: tapping a retry
+ * flips that button to "Retrying…" and disables it (greyed, no
+ * click) until the peer state moves or 30 seconds pass, whichever
+ * comes first. Each button has its own flag, so one retrying
+ * leaves the other tappable. The flags live in remembered state
+ * here — the panel is at the 20-parameter ceiling, so no new
+ * param — and reset if the panel closes and reopens.
  */
 @Composable
 private fun E2eDetailsEncryptionRow(
@@ -1269,11 +1277,38 @@ private fun E2eDetailsEncryptionRow(
         hasOpenVerification = onOpenVerification != null,
     )
     var expanded by remember { mutableStateOf(false) }
+    // Round 46 — per-button retry-in-progress flags (two booleans,
+    // not one shared state: tapping one retry must leave the other
+    // tappable, and each has its own 30-second timer).
+    var retryingProbe by remember { mutableStateOf(false) }
+    var retryingViaSms by remember { mutableStateOf(false) }
+    // Each flag clears on its own after 30 seconds.
+    LaunchedEffect(retryingProbe) {
+        if (retryingProbe) {
+            delay(E2E_RETRYING_TIMEOUT_MS)
+            retryingProbe = false
+        }
+    }
+    LaunchedEffect(retryingViaSms) {
+        if (retryingViaSms) {
+            delay(E2E_RETRYING_TIMEOUT_MS)
+            retryingViaSms = false
+        }
+    }
+    // ...or the moment the peer state moves (PROBING once the
+    // retry lands, ENCRYPTED once the session is up): the button
+    // is live again either way. Clearing on first composition is
+    // harmless — both flags start false.
+    LaunchedEffect(peerState) {
+        retryingProbe = false
+        retryingViaSms = false
+    }
     // Hoisted above the group: the group content lambda is plain
     // (not @Composable), so stringResource calls cannot live inside
     // it — same rule as the Encryption screen's verified list.
     val retryLabel = stringResource(R.string.e2e_details_retry_encryption)
     val retryViaSmsLabel = stringResource(R.string.e2e_details_retry_via_sms)
+    val retryingLabel = stringResource(R.string.e2e_details_retrying)
     val viewSafetyNumberLabel = stringResource(R.string.e2e_details_view_safety_number)
     RelaySettingsGroup {
         item(
@@ -1298,11 +1333,35 @@ private fun E2eDetailsEncryptionRow(
         if (expanded) {
             for (action in expandedActions) {
                 when (action) {
-                    E2eDetailsExpandedAction.RetryProbe -> item(onClick = onRetryProbe) {
-                        RelaySettingRow(title = retryLabel)
+                    E2eDetailsExpandedAction.RetryProbe -> item(
+                        onClick = if (retryingProbe) {
+                            null
+                        } else {
+                            {
+                                retryingProbe = true
+                                onRetryProbe?.invoke()
+                            }
+                        },
+                    ) {
+                        RelaySettingRow(
+                            title = if (retryingProbe) retryingLabel else retryLabel,
+                            modifier = Modifier.alpha(if (retryingProbe) DISABLED_ALPHA else 1f),
+                        )
                     }
-                    E2eDetailsExpandedAction.RetryViaSms -> item(onClick = onRetryProbeViaSms) {
-                        RelaySettingRow(title = retryViaSmsLabel)
+                    E2eDetailsExpandedAction.RetryViaSms -> item(
+                        onClick = if (retryingViaSms) {
+                            null
+                        } else {
+                            {
+                                retryingViaSms = true
+                                onRetryProbeViaSms?.invoke()
+                            }
+                        },
+                    ) {
+                        RelaySettingRow(
+                            title = if (retryingViaSms) retryingLabel else retryViaSmsLabel,
+                            modifier = Modifier.alpha(if (retryingViaSms) DISABLED_ALPHA else 1f),
+                        )
                     }
                     // The sheet is navigation, like a verified
                     // contact's row — it keeps its chevron.
@@ -2077,3 +2136,6 @@ private val FILE_CARD_MARGIN = 16.dp
 
 /** Disabled-row opacity (Material disabled content). */
 private const val DISABLED_ALPHA = 0.38f
+
+/** Round 46 — how long a retry button stays "Retrying…" before it re-enables on its own. */
+private const val E2E_RETRYING_TIMEOUT_MS = 30_000L

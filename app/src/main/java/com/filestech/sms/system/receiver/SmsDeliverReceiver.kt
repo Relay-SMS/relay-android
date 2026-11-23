@@ -11,11 +11,9 @@ import com.filestech.sms.data.sms.TelephonyReader
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.reaction.IncomingReactionDecoder
 import com.filestech.sms.domain.repository.ConversationRepository
-import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
-import com.filestech.sms.domain.settings.DeviceMode
 import com.filestech.sms.e2e.E2eHandshakeHandler
-import com.filestech.sms.e2e.E2eHandshakeSms
+import com.filestech.sms.e2e.E2eHandshakeSmsGate
 import com.filestech.sms.e2e.E2eReceiveManager
 import com.filestech.sms.e2e.E2eWireFormat
 import com.filestech.sms.system.notifications.IncomingMessageNotifier
@@ -418,21 +416,11 @@ class SmsDeliverReceiver : BroadcastReceiver() {
 
     /**
      * The E2E handshake-SMS branch (round 45): `true` when the body
-     * parsed as a handshake SMS (handled — the caller returns). The
-     * SMS is written to the system inbox first, like every SMS; a
-     * failure inside the handshake path is logged, not rethrown
-     * (except `CancellationException`), so one bad handshake SMS
-     * cannot kill the receiver — the sender's retry re-sends the
-     * probe.
-     *
-     * Client mode — a linked device must never hold an E2E identity,
-     * and the default-SMS role can linger after a switch to client
-     * mode (nothing relinquishes it), so SMS_DELIVER still fires and
-     * this branch still runs: the mode check, not the role, is the
-     * gate — same shape as the data-SMS gate (`hydratedOrNull`,
-     * never `state.value`). The SMS is still swallowed in client
-     * mode (never a bubble): it is written to the system inbox
-     * above and dropped here.
+     * parsed as a handshake SMS (handled — the caller returns).
+     * Thin glue: the decision lives in [E2eHandshakeSmsGate], which
+     * is testable on plain JVM (see [com.filestech.sms.e2e
+     * .E2eDataSmsGate], the same extraction for the data-SMS
+     * receiver).
      */
     private suspend fun handleE2eHandshakeSms(
         deps: Collaborators,
@@ -440,19 +428,9 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         body: String,
         ts: Long,
         subId: Int?,
-    ): Boolean {
-        if (!E2eHandshakeSms.isHandshakeSms(body)) return false
-        deps.telephonyReader.insertInboxSms(address, body, ts, subId)
-        if ((deps.settings.hydratedOrNull() ?: AppSettings()).mode == DeviceMode.CLIENT) return true
-        try {
-            deps.handshakeHandler.handleSms(address, body, subId, ts)
-        } catch (ce: kotlinx.coroutines.CancellationException) {
-            throw ce
-        } catch (t: Throwable) {
-            Timber.w(t, "E2E: handshake SMS handling failed")
-        }
-        return true
-    }
+    ): Boolean =
+        E2eHandshakeSmsGate(deps.telephonyReader, deps.settings, deps.handshakeHandler)
+            .handle(address, body, ts, subId)
 }
 
 /** Carrier so the collaborators are resolved in a single hop onto the IO dispatcher. */

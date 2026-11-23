@@ -1,9 +1,9 @@
 package com.filestech.sms.e2e
 
+import com.filestech.sms.core.ext.canonicalPhone
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerState
-import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.purge.MS_PER_DAY
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -34,20 +34,33 @@ import javax.inject.Singleton
  * stale probe bookkeeping write.
  *
  * Round 42 — the address is canonicalized at this boundary: every
- * method normalizes its address to [PhoneAddress.normalized]
- * (spaces, dashes and parentheses stripped) before touching the
- * DAO. The readers and writers used to disagree — the thread UI
- * observed the normalized form while the probe path wrote the raw
- * conversation form and the handshake handler wrote the carrier
- * form — and the DAO matches exactly, so a peer whose number was
- * stored with formatting had its probe writes land under a key the
- * UI never observed: the Details panel stayed on UNKNOWN no matter
- * what happened, and the safety-number sheet found no keys. One
- * canonical key per peer, whatever form each caller passes. Rows
- * stored under a non-normalized form before this change become
- * unreachable (their peer re-exchanges from UNKNOWN on the next
- * probe); rows already in E.164 form are unaffected —
- * normalization is idempotent.
+ * method normalizes its address to [canonicalPhone] (formatting
+ * stripped, NANP country code unified — see the round-46 note
+ * below) before touching the DAO. The readers and writers used to
+ * disagree — the thread UI observed the normalized form while the
+ * probe path wrote the raw conversation form and the handshake
+ * handler wrote the carrier form — and the DAO matches exactly,
+ * so a peer whose number was stored with formatting had its probe
+ * writes land under a key the UI never observed: the Details
+ * panel stayed on UNKNOWN no matter what happened, and the
+ * safety-number sheet found no keys. One canonical key per peer,
+ * whatever form each caller passes. Rows stored under a
+ * non-normalized form before this change become unreachable
+ * (their peer re-exchanges from UNKNOWN on the next probe); rows
+ * already in E.164 form are unaffected — normalization is
+ * idempotent.
+ *
+ * Round 46 — the round-42 key was `normalizePhone` alone, which
+ * strips formatting but does NOT reunite the E.164 form
+ * (`"+16108423232"`) with the national form (`"6108423232"`):
+ * the bundle arrived under `"+1…"`, the UI and the send path
+ * read `"610…"`, the thread stayed PROBING and the message went
+ * out plain (device-proven 2026-11-23). The canonical key is now
+ * [canonicalPhone], which strips the NANP country code to the
+ * 10-digit form. Rows stored under E.164 forms before this
+ * change become unreachable and re-establish from UNKNOWN on the
+ * next probe (no migration); rows already in 10-digit national
+ * form are unaffected.
  */
 @Singleton
 class E2ePeerRepository @Inject constructor(
@@ -55,14 +68,14 @@ class E2ePeerRepository @Inject constructor(
 ) {
 
     /**
-     * Canonical key for the peer table: the normalized form
-     * ([PhoneAddress.normalized]). Idempotent — safe to apply to an
-     * already-normalized address — and safe for an alphanumeric
-     * sender, whose normalized form falls back to the trimmed raw
+     * Canonical key for the peer table: [canonicalPhone]
+     * (formatting stripped, NANP country code unified to the
+     * 10-digit form). Idempotent — safe to apply to an
+     * already-canonical address — and safe for an alphanumeric
+     * sender, whose canonical form falls back to the trimmed raw
      * string.
      */
-    private fun canonicalAddress(address: String): String =
-        PhoneAddress.of(address).normalized
+    private fun canonicalAddress(address: String): String = address.canonicalPhone()
 
     /** The peer's row, or null when no exchange has ever started with this address. */
     suspend fun getPeer(address: String): E2ePeerEntity? =

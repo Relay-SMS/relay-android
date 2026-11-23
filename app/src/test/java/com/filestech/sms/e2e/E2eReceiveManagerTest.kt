@@ -176,12 +176,12 @@ class E2eReceiveManagerTest {
         }
 
         /** Seeds bob as an ENCRYPTED peer (verified when asked). */
-        fun seedEncryptedPeer(verified: Boolean = false) {
+        fun seedEncryptedPeer(verified: Boolean = false, updatedAt: Long = NOW) {
             peerDao.peers[BOB] = E2ePeerEntity(
                 address = BOB,
                 state = E2ePeerState.ENCRYPTED,
                 verified = verified,
-                updatedAt = NOW,
+                updatedAt = updatedAt,
             )
         }
     }
@@ -473,7 +473,9 @@ class E2eReceiveManagerTest {
     @Test
     fun `a plain SMS from an encrypted peer downgrades to unknown and re-probes`() = runTest {
         val harness = Harness()
-        harness.seedEncryptedPeer(verified = true)
+        // Long-encrypted (2 h): past the round-46 grace window, so the
+        // fallback fires exactly as before.
+        harness.seedEncryptedPeer(verified = true, updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS)
 
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
 
@@ -533,9 +535,48 @@ class E2eReceiveManagerTest {
     }
 
     @Test
+    fun `a plain SMS from a freshly encrypted peer does not downgrade`() = runTest {
+        val harness = Harness()
+        // Round 46 — grace guard: encrypted 5 minutes ago, so the peer
+        // may not have flipped yet (it needs our first encrypted
+        // message to build its session); the plain reply is expected.
+        harness.seedEncryptedPeer(verified = true, updatedAt = NOW - 5 * 60 * 1000L)
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // Nothing changes: state, verified flag, notices, re-probe.
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.peerDao.peers[BOB]?.verified).isTrue()
+        assertThat(harness.noticeDao.notices).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+    }
+
+    @Test
+    fun `a plain SMS at the exact grace edge fires the fallback`() = runTest {
+        val harness = Harness()
+        // Boundary: `now - updatedAt` is exactly the grace window, and
+        // the guard is a strict `<` — so the window has expired and the
+        // fallback fires, as for a long-encrypted peer.
+        harness.seedEncryptedPeer(
+            verified = true,
+            updatedAt = NOW - E2eReceiveManager.DEACTIVATED_GRACE_MS,
+        )
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.UNKNOWN)
+        assertThat(harness.peerDao.peers[BOB]?.verified).isFalse()
+        assertThat(harness.noticeDao.notices).hasSize(1)
+        assertThat(harness.noticeDao.notices.single().kind).isEqualTo(E2eNoticeKind.DEACTIVATED)
+        verify(exactly = 1) { harness.probeManager.reprobeAfterPeerLeft(BOB, 3) }
+    }
+
+    @Test
     fun `a second plain SMS after the fallback triggers nothing more`() = runTest {
         val harness = Harness()
-        harness.seedEncryptedPeer()
+        // Long-encrypted (2 h): past the round-46 grace window, so the
+        // first plain SMS fires the fallback.
+        harness.seedEncryptedPeer(updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS)
 
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
         harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
