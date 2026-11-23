@@ -1,7 +1,7 @@
 # Relay
 
 A modern, private SMS & MMS app for Android — built with Kotlin, Jetpack Compose and Material 3.
-No ads, no trackers, no analytics, **no Internet permission**. Apache-2.0 licensed.
+No ads, no trackers, no analytics, no Internet required. Apache-2.0 licensed.
 
 > **Fork note:** Relay is based on [SMS Tech](https://github.com/gitubpatrice/SMS-TECH) by Patrice Haltaya (Files Tech). It keeps the SMS Tech engine; Relay's UI and new features are © 2026 Relay Messaging.
 
