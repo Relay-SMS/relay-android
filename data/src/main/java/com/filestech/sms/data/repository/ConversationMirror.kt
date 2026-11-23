@@ -1424,14 +1424,21 @@ class ConversationMirror @Inject constructor(
         suspend fun importSmsThreadGroup(systemThreadId: Long, group: List<MessageEntity>) {
             // E2E (design §3.5) — ciphertext fragments in the system store
             // are NOT messages: they are the wire form of an encrypted
-            // message, reassembled live by the receive path. Skipping them
-            // here keeps a re-import (fresh install, resync) from
-            // surfacing `RLY1:` gibberish as text bubbles — and from
-            // letting a fragment become the conversation preview via
-            // `last` below. An all-fragment group creates no conversation
-            // at all. The literal mirrors `E2eWireFormat.MAGIC`, which
-            // lives in `:app` and is unreachable from `:data`.
-            val rows = group.filterNot { it.body.startsWith(E2E_FRAGMENT_PREFIX) }
+            // message, reassembled live by the receive path. The same
+            // holds for handshake SMS (round 45): a `RLYH:` text is
+            // the wire form of a probe or bundle, handled live by the
+            // handshake path. Skipping both here keeps a re-import
+            // (fresh install, resync) from surfacing `RLY1:` gibberish
+            // or `RLYH:` handshake text as text bubbles — and from
+            // letting a fragment or handshake SMS become the
+            // conversation preview via `last` below. An all-fragment
+            // (or all-handshake) group creates no conversation at
+            // all. The literals mirror `E2eWireFormat.MAGIC` /
+            // `E2eHandshakeSms.MAGIC`, which live in `:app` and are
+            // unreachable from `:data`.
+            val rows = group.filterNot {
+                it.body.startsWith(E2E_FRAGMENT_PREFIX) || it.body.startsWith(E2E_HANDSHAKE_PREFIX)
+            }
             if (rows.isEmpty()) return
             // Local: only this importer folds rows. Decodes the body, and on a
             // Tapback match applies it to its target and writes the sentinel —
@@ -2468,6 +2475,17 @@ class ConversationMirror @Inject constructor(
          * this literal must change with it.
          */
         const val E2E_FRAGMENT_PREFIX = "RLY1:"
+
+        /**
+         * E2E (round 45) — magic prefix of a handshake SMS (a probe or
+         * bundle carried over regular SMS). Mirrors
+         * `E2eHandshakeSms.MAGIC`, which lives in `:app` and is
+         * unreachable from `:data`; `bulkImportFromTelephony` skips
+         * rows starting with it, so a handshake SMS never resurfaces
+         * as a bubble. If the wire format ever changes its magic,
+         * this literal must change with it.
+         */
+        const val E2E_HANDSHAKE_PREFIX = "RLYH:"
     }
 }
 

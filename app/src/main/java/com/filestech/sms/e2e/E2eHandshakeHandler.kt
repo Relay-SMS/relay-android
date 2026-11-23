@@ -17,6 +17,13 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * Handles the handshake data SMS (design §2.3): probes and bundle
  * replies on port [E2eHandshake.E2E_DATA_SMS_PORT].
  *
+ * Round 45 — the same packets can also arrive as regular SMS
+ * ([E2eHandshakeSms], one `RLYH:` text each), handled by
+ * [handleSms]. A bundle reply follows the probe's arrival channel
+ * ([HandshakeChannel]) — a probe that arrived by text is answered
+ * by text, a probe by data SMS by data SMS. Symmetric, no extra
+ * signalling.
+ *
  * - **Probe received** → record the peer's identity keys, reply with a
  *   bundle (our identity keys + one one-time key), rate-limited to one
  *   bundle per sender per day. A probe from a known peer with
@@ -70,9 +77,44 @@ class E2eHandshakeHandler @Inject constructor(
         now: Long = System.currentTimeMillis(),
     ): Boolean {
         val packet = E2eHandshake.decode(data) ?: return false
+        return handlePacket(address, packet, subId, now, HandshakeChannel.DATA_SMS)
+    }
+
+    /**
+     * Handles one received handshake SMS (round 45): the `RLYH:`
+     * text form of a probe or bundle. Same contract as
+     * [handleDataSms], and the same handling — the only difference
+     * is the channel: a probe that arrived by text earns its bundle
+     * reply by text. Returns `false` for anything that is not a
+     * well-formed handshake SMS. Never throws.
+     */
+    suspend fun handleSms(
+        address: String,
+        text: String,
+        subId: Int?,
+        now: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val bytes = E2eHandshakeSms.parse(text) ?: return false
+        val packet = E2eHandshake.decode(bytes) ?: return false
+        return handlePacket(address, packet, subId, now, HandshakeChannel.TEXT_SMS)
+    }
+
+    /**
+     * Shared core of [handleDataSms] and [handleSms]: the blocked
+     * check, then the probe / bundle handling. The channel only
+     * decides how the bundle reply travels (see [handleProbe]) —
+     * a bundle is a bundle once decoded, whatever carried it.
+     */
+    private suspend fun handlePacket(
+        address: String,
+        packet: E2eHandshake.HandshakePacket,
+        subId: Int?,
+        now: Long,
+        channel: HandshakeChannel,
+    ): Boolean {
         if (runCatching { blockedRepo.isBlocked(address) }.getOrDefault(false)) return false
         return when (packet) {
-            is E2eHandshake.HandshakePacket.Probe -> handleProbe(address, packet, subId, now)
+            is E2eHandshake.HandshakePacket.Probe -> handleProbe(address, packet, subId, now, channel)
             is E2eHandshake.HandshakePacket.Bundle -> handleBundle(address, packet, now)
         }
     }
@@ -103,6 +145,7 @@ class E2eHandshakeHandler @Inject constructor(
         probe: E2eHandshake.HandshakePacket.Probe,
         subId: Int?,
         now: Long,
+        channel: HandshakeChannel,
     ): Boolean {
         // Round 42 diagnostic — the inbound path is Timber-only,
         // and Timber is a no-op in release builds, so without this
@@ -146,13 +189,25 @@ class E2eHandshakeHandler @Inject constructor(
         } ?: return false
         val keys = account.identityKeys()
         val bundle = E2eHandshake.encodeBundle(keys.curve25519, keys.ed25519, oneTimeKey)
-        val sent = dataSmsSender.sendDataMessage(
-            address = address,
-            subId = subId,
-            port = E2eHandshake.E2E_DATA_SMS_PORT,
-            data = bundle,
-            kind = DataSmsKind.BUNDLE,
-        )
+        // Round 45 — the bundle reply follows the probe's arrival
+        // channel: a probe that arrived by text is answered by text
+        // (that channel is proven to reach the prober), a probe by
+        // data SMS by data SMS. Same kind tag either way.
+        val sent = when (channel) {
+            HandshakeChannel.DATA_SMS -> dataSmsSender.sendDataMessage(
+                address = address,
+                subId = subId,
+                port = E2eHandshake.E2E_DATA_SMS_PORT,
+                data = bundle,
+                kind = DataSmsKind.BUNDLE,
+            )
+            HandshakeChannel.TEXT_SMS -> dataSmsSender.sendTextMessage(
+                address = address,
+                subId = subId,
+                text = E2eHandshakeSms.encode(bundle),
+                kind = DataSmsKind.BUNDLE,
+            )
+        }
         // Record the reply ONLY after the bundle SMS went out — a
         // failed send must not consume the day's reply.
         if (!sent) return false

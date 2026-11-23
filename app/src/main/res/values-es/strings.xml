@@ -200,8 +200,10 @@
     <string name="e2e_details_verified">Verificado ✓</string>
     <string name="e2e_details_setting_up">Comprobando si %1$s usa Relay…</string>
     <string name="e2e_details_not_encrypted">Sin cifrar</string>
-    <string name="e2e_details_retry_setup">Toca para reintentar la configuración del cifrado</string>
     <string name="e2e_details_auto_start">El cifrado empezará automáticamente cuando %1$s use Relay</string>
+    <string name="e2e_details_retry_encryption">Reintentar el cifrado</string>
+    <string name="e2e_details_retry_via_sms">Reintentar por SMS</string>
+    <string name="e2e_details_view_safety_number">Ver número de seguridad</string>
     <string name="e2e_verify_title">Número de seguridad</string>
     <string name="e2e_verify_explainer">Compara este número con %1$s en persona o por otro canal: una llamada u otra app. Si los números coinciden, habláis entre vosotros sin nadie en medio.</string>
     <string name="e2e_verify_mark">Marcar como verificado</string>

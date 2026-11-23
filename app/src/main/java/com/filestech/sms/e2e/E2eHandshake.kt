@@ -6,6 +6,11 @@ package com.filestech.sms.e2e
  * the system inbox, so a probe to a phone without Relay is silently
  * dropped by the OS — the recipient sees nothing.
  *
+ * Round 45 — the same packets can also travel as regular SMS
+ * ([E2eHandshakeSms]): one `RLYH:` text each, for peers whose data
+ * SMS never arrive. A bundle reply follows the probe's arrival
+ * channel ([HandshakeChannel]) — symmetric, no extra signalling.
+ *
  * Both packets share a header — magic `RLYH` (4 bytes) + version `0x01`
  * (1 byte) + type (1 byte) — and both fit in one 140-byte data-SMS
  * segment:
@@ -175,4 +180,18 @@ object E2eHandshake {
                 oneTimeKey = bytes.copyOfRange(HEADER_SIZE + 2 * E2E_KEY_LENGTH, BUNDLE_SIZE),
             )
         }
+}
+
+/**
+ * Which transport carried (or will carry) a handshake packet
+ * (round 45). A bundle reply follows the probe's arrival channel,
+ * and a manual retry picks one channel per button — symmetric, no
+ * extra signalling. Automatic probing stays data-SMS-only.
+ */
+enum class HandshakeChannel {
+    /** Port-addressed data SMS (the original handshake transport). */
+    DATA_SMS,
+
+    /** Regular SMS, `RLYH:` + base64 (the round-45 fallback). */
+    TEXT_SMS,
 }

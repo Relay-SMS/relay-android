@@ -194,8 +194,10 @@
     <string name="e2e_details_verified">Vérifié ✓</string>
     <string name="e2e_details_setting_up">Vérification si %1$s utilise Relay…</string>
     <string name="e2e_details_not_encrypted">Non chiffré</string>
-    <string name="e2e_details_retry_setup">Appuie pour réessayer la configuration du chiffrement</string>
     <string name="e2e_details_auto_start">Le chiffrement démarrera automatiquement quand %1$s utilisera Relay</string>
+    <string name="e2e_details_retry_encryption">Réessayer le chiffrement</string>
+    <string name="e2e_details_retry_via_sms">Réessayer par SMS</string>
+    <string name="e2e_details_view_safety_number">Voir le numéro de sécurité</string>
     <string name="e2e_verify_title">Numéro de sécurité</string>
     <string name="e2e_verify_explainer">Compare ce numéro avec %1$s en personne ou par un autre canal — un appel, ou une autre application. Si les numéros correspondent, vous vous parlez directement, sans personne entre vous.</string>
     <string name="e2e_verify_mark">Marquer comme vérifié</string>

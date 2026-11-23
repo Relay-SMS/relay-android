@@ -43,6 +43,11 @@ class ConversationMirrorE2eImportTest {
         const val ALICE = "+33612345678"
         const val THREAD_ID = 5L
         const val CONV_ID = 9L
+
+        // A full-length handshake probe text (101 chars): the `RLYH:`
+        // magic + the base64 of 70 zero bytes (94 `A`s + `==`).
+        const val HANDSHAKE_PROBE_TEXT: String =
+            "RLYH:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
     }
 
     private val database = mockk<AppDatabase>()
@@ -164,6 +169,69 @@ class ConversationMirrorE2eImportTest {
             listOf(
                 row("RLY1:abcdef:01/02:QUJDREVGR0g=", date = 1000L),
                 row("RLY1:abcdef:02/02:S0tMTU5PUFF=", date = 1100L),
+            ),
+        )
+
+        coVerify(exactly = 0) { conversationDao.findByThreadId(any()) }
+        coVerify(exactly = 0) { messageDao.insertAll(any()) }
+        coVerify(exactly = 0) { conversationDao.update(any()) }
+    }
+
+    // ──────────────────── Handshake SMS (round 45) ────────────────────
+    // A `RLYH:` text is the wire form of a probe or bundle, handled
+    // live by the handshake path — never a bubble. The literal here
+    // mirrors the `:app` magic, like the `RLY1:` literals above.
+
+    @Test
+    fun `handshake SMS are skipped and plain rows import`() = runTest {
+        stubConversation()
+        val inserted = slot<List<MessageEntity>>()
+        coEvery { messageDao.insertAll(capture(inserted)) } answers {
+            List(firstArg<List<*>>().size) { it + 1L }
+        }
+
+        mirror().bulkImportFromTelephony(
+            listOf(
+                row("hello", date = 1000L),
+                row(HANDSHAKE_PROBE_TEXT, date = 1500L),
+                row("reply", date = 2000L, direction = MessageDirection.OUTGOING),
+            ),
+        )
+
+        assertThat(inserted.isCaptured).isTrue()
+        assertThat(inserted.captured.map { it.body }).containsExactly("hello", "reply")
+        assertThat(inserted.captured.all { it.conversationId == CONV_ID }).isTrue()
+    }
+
+    @Test
+    fun `a newer handshake SMS never becomes the conversation preview`() = runTest {
+        stubConversation()
+        val touched = slot<ConversationEntity>()
+        coEvery { conversationDao.update(capture(touched)) } just Runs
+
+        mirror().bulkImportFromTelephony(
+            listOf(
+                row("hello", date = 1000L),
+                // The handshake SMS is the NEWEST row in the group:
+                // without the skip it would win the preview via
+                // `maxBy date`.
+                row(HANDSHAKE_PROBE_TEXT, date = 3000L),
+            ),
+        )
+
+        assertThat(touched.isCaptured).isTrue()
+        assertThat(touched.captured.lastMessagePreview).isEqualTo("hello")
+        assertThat(touched.captured.lastMessageAt).isEqualTo(1000L)
+    }
+
+    @Test
+    fun `an all-handshake group creates no conversation`() = runTest {
+        stubConversation()
+
+        mirror().bulkImportFromTelephony(
+            listOf(
+                row(HANDSHAKE_PROBE_TEXT, date = 1000L),
+                row(HANDSHAKE_PROBE_TEXT, date = 1100L),
             ),
         )
 

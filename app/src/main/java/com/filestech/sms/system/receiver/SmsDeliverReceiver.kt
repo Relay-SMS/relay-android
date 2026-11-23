@@ -11,6 +11,11 @@ import com.filestech.sms.data.sms.TelephonyReader
 import com.filestech.sms.di.ApplicationScope
 import com.filestech.sms.domain.reaction.IncomingReactionDecoder
 import com.filestech.sms.domain.repository.ConversationRepository
+import com.filestech.sms.domain.settings.AppSettings
+import com.filestech.sms.domain.settings.AppSettingsSource
+import com.filestech.sms.domain.settings.DeviceMode
+import com.filestech.sms.e2e.E2eHandshakeHandler
+import com.filestech.sms.e2e.E2eHandshakeSms
 import com.filestech.sms.e2e.E2eReceiveManager
 import com.filestech.sms.e2e.E2eWireFormat
 import com.filestech.sms.system.notifications.IncomingMessageNotifier
@@ -66,6 +71,20 @@ class SmsDeliverReceiver : BroadcastReceiver() {
      * it reaches the Room database through the fragment store.
      */
     @Inject lateinit var e2eReceiveManagerLazy: dagger.Lazy<E2eReceiveManager>
+
+    /**
+     * E2E (round 45) — the handshake-over-SMS path. Resolved lazily
+     * like the rest: it reaches the Room database through the peer
+     * store.
+     */
+    @Inject lateinit var handshakeHandlerLazy: dagger.Lazy<E2eHandshakeHandler>
+
+    /**
+     * E2E (round 45) — the client-mode gate for the handshake-SMS
+     * branch (see [handleE2eHandshakeSms]). Resolved lazily like the
+     * rest; the settings read itself is a suspend call.
+     */
+    @Inject lateinit var settingsLazy: dagger.Lazy<AppSettingsSource>
 
     @Inject @ApplicationScope lateinit var scope: CoroutineScope
 
@@ -135,6 +154,8 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                         conversationRepo = conversationRepoLazy.get(),
                         blockPolicy = blockPolicyLazy.get(),
                         e2eReceiveManager = e2eReceiveManagerLazy.get(),
+                        handshakeHandler = handshakeHandlerLazy.get(),
+                        settings = settingsLazy.get(),
                     )
                 }
                 val telephonyReader = deps.telephonyReader
@@ -163,6 +184,20 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                 // duty); the bulk import skips `RLY1:` bodies, so it never
                 // re-surfaces as a bubble.
                 if (handleE2eFragment(deps, address, body, ts, subId)) {
+                    persistedToSystem = true
+                    return@launch
+                }
+                // E2E (round 45) — a handshake SMS is never a visible
+                // message either: it enters the handshake path (probe
+                // → bundle reply, bundle → session), which stores
+                // nothing as a message. Like a fragment, it is still
+                // written to the system inbox (the default-SMS-app
+                // duty); the bulk import skips `RLYH:` bodies, so it
+                // never re-surfaces as a bubble. The magics are
+                // distinct (`RLYH:` vs `RLY1:`), so the order of the
+                // two branches cannot matter — the fragment branch
+                // runs first because it is the older path.
+                if (handleE2eHandshakeSms(deps, address, body, ts, subId)) {
                     persistedToSystem = true
                     return@launch
                 }
@@ -380,6 +415,44 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         }
         return true
     }
+
+    /**
+     * The E2E handshake-SMS branch (round 45): `true` when the body
+     * parsed as a handshake SMS (handled — the caller returns). The
+     * SMS is written to the system inbox first, like every SMS; a
+     * failure inside the handshake path is logged, not rethrown
+     * (except `CancellationException`), so one bad handshake SMS
+     * cannot kill the receiver — the sender's retry re-sends the
+     * probe.
+     *
+     * Client mode — a linked device must never hold an E2E identity,
+     * and the default-SMS role can linger after a switch to client
+     * mode (nothing relinquishes it), so SMS_DELIVER still fires and
+     * this branch still runs: the mode check, not the role, is the
+     * gate — same shape as the data-SMS gate (`hydratedOrNull`,
+     * never `state.value`). The SMS is still swallowed in client
+     * mode (never a bubble): it is written to the system inbox
+     * above and dropped here.
+     */
+    private suspend fun handleE2eHandshakeSms(
+        deps: Collaborators,
+        address: String,
+        body: String,
+        ts: Long,
+        subId: Int?,
+    ): Boolean {
+        if (!E2eHandshakeSms.isHandshakeSms(body)) return false
+        deps.telephonyReader.insertInboxSms(address, body, ts, subId)
+        if ((deps.settings.hydratedOrNull() ?: AppSettings()).mode == DeviceMode.CLIENT) return true
+        try {
+            deps.handshakeHandler.handleSms(address, body, subId, ts)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            Timber.w(t, "E2E: handshake SMS handling failed")
+        }
+        return true
+    }
 }
 
 /** Carrier so the collaborators are resolved in a single hop onto the IO dispatcher. */
@@ -392,4 +465,8 @@ private class Collaborators(
     val blockPolicy: IncomingBlockPolicy,
     // E2E — the ciphertext fragment path.
     val e2eReceiveManager: E2eReceiveManager,
+    // E2E (round 45) — the handshake-over-SMS path.
+    val handshakeHandler: E2eHandshakeHandler,
+    // E2E (round 45) — the client-mode gate for the handshake branch.
+    val settings: AppSettingsSource,
 )

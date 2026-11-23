@@ -13,6 +13,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,6 +48,8 @@ import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Refresh
@@ -70,6 +73,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -99,15 +103,14 @@ import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.GroupMemberAvatar
 import com.filestech.sms.ui.components.RelayAvatar
 import com.filestech.sms.ui.components.RelayGroupAvatar
-import com.filestech.sms.ui.components.RelayGroupItem
 import com.filestech.sms.ui.components.RelaySettingRow
+import com.filestech.sms.ui.components.RelaySettingsGroup
+import com.filestech.sms.ui.components.RelaySwitchRow
 import com.filestech.sms.ui.components.rememberAttachmentOpener
 import com.filestech.sms.ui.screens.media.MediaGalleryViewModel
 import com.filestech.sms.ui.screens.media.MediaTile
 import com.filestech.sms.ui.screens.notes.NoteMediaTile
 import com.filestech.sms.ui.theme.RelayText
-import com.filestech.sms.ui.theme.brandBlue
-import com.filestech.sms.ui.theme.onBrandBlue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -145,6 +148,15 @@ data class ConversationDetailsActions(
     val onMoveVault: (() -> Unit)?,
     /** Sets the conversation avatar (`null` = back to the default). */
     val onSetAvatar: (String?) -> Unit,
+    /**
+     * Round 45 — E2E manual probe retry via regular SMS: the
+     * fallback handshake for a peer whose data SMS never arrives.
+     * Null hides the "Retry via SMS" row in the encryption box's
+     * expanded area. (The data-SMS retry stays a panel param —
+     * the bundle only carries the new callback because the panel
+     * is at Detekt's 20-parameter ceiling.)
+     */
+    val onRetryE2eProbeViaSms: (() -> Unit)? = null,
 )
 
 private enum class DetailsMediaTab { Photos, Videos, Files }
@@ -1138,21 +1150,59 @@ private fun groupMemberAvatars(
 }
 
 /**
+ * Round 45 — the actions the encryption box's expanded area can
+ * show. Non-encrypted states offer the two manual retries (the
+ * data-SMS probe first, then the regular-SMS handshake); ENCRYPTED
+ * offers the safety-number sheet instead — a retry is meaningless
+ * once a session is live.
+ */
+internal enum class E2eDetailsExpandedAction {
+    RetryProbe,
+    RetryViaSms,
+    ViewSafetyNumber,
+}
+
+/**
+ * Round 45 — which expanded actions show for this peer state. An
+ * action only appears when its handler exists, so a row never
+ * promises a tap that does nothing. Pure, so the visibility table
+ * is unit-testable without a Compose harness.
+ */
+internal fun e2eDetailsExpandedActions(
+    peerState: E2ePeerState,
+    hasRetryProbe: Boolean,
+    hasRetryViaSms: Boolean,
+    hasOpenVerification: Boolean,
+): List<E2eDetailsExpandedAction> = when (peerState) {
+    E2ePeerState.ENCRYPTED -> if (hasOpenVerification) {
+        listOf(E2eDetailsExpandedAction.ViewSafetyNumber)
+    } else {
+        emptyList()
+    }
+    E2ePeerState.PROBING, E2ePeerState.UNKNOWN, E2ePeerState.NOT_RELAY -> buildList {
+        if (hasRetryProbe) add(E2eDetailsExpandedAction.RetryProbe)
+        if (hasRetryViaSms) add(E2eDetailsExpandedAction.RetryViaSms)
+    }
+}
+
+/**
+ * Round 45 — the mute row's icon shows the CURRENT state: the bell
+ * while unmuted, the muted bell once muted — the same pair the
+ * category rows use for muted categories. The toggle carries the
+ * state too; the icon is the at-a-glance read.
+ */
+internal fun muteIconFor(muted: Boolean): ImageVector =
+    if (muted) Icons.Outlined.NotificationsOff else Icons.Outlined.Notifications
+
+/**
  * E2E — the encryption row, first in the action rows (design §7.2).
  * 1:1 only — the caller passes no state for groups and client
  * mode, so this never renders there.
  *
- * ENCRYPTED shows the closed lock glyph and taps open the
- * safety-number sheet ("Tap to verify NAME's safety number", or
- * "Verified ✓" once marked); PROBING reads "Encryption /
+ * ENCRYPTED shows the closed lock glyph; PROBING reads "Encryption /
  * Checking if NAME uses Relay…"; UNKNOWN reads "Not encrypted /
- * Encryption starts automatically when NAME uses Relay";
- * NOT_RELAY reads "Not encrypted / Tap to retry encryption
- * setup". Every state is a tap target: encrypted opens the
- * safety-number sheet, the others send one manual probe now
- * (bypassing the budget and the discovery toggle — NOT_RELAY
- * included, it IS the budget-exhausted state, so a manual retry
- * is the only way back in).
+ * Encryption starts automatically when NAME uses Relay"; NOT_RELAY
+ * reads "Not encrypted" with no subtitle.
  *
  * Round 41 — the row mirrors the 'Encryption' row at the bottom of
  * Security & privacy (a [RelaySettingRow]: the lock in a tonal
@@ -1161,17 +1211,27 @@ private fun groupMemberAvatars(
  * (the E2E mark, as on the avatar badge and in the bubbles).
  *
  * Round 42 — the rounded box is real now: the row renders inside
- * a [RelayGroupItem] (single segment, all four corners 24dp),
- * the same source of truth as Settings — round 41 called
- * [RelaySettingRow] directly, and the row carries no background
- * of its own, so the box never showed. The group item owns the
- * tap (the row's onClick stays null), so a tap cannot fire twice.
- * The panel adds no horizontal padding above this row, so the
- * group's own 16dp inset is the only one — the box lands exactly
- * where the Settings row's does. The non-encrypted states show a
- * refresh icon in the row's trailing slot instead of a chevron,
- * and the separate "Retry encryption" button row is gone — the
- * whole row IS the retry.
+ * a group segment (single segment, all four corners 24dp), the same
+ * source of truth as Settings — round 41 called [RelaySettingRow]
+ * directly, and the row carries no background of its own, so the
+ * box never showed. The panel adds no horizontal padding above this
+ * row, so the group's own 16dp inset is the only one — the box lands
+ * exactly where the Settings row's does.
+ *
+ * Round 45 — the box expands: tapping it opens a dropdown (the
+ * "Verified contacts" pattern from the Encryption screen — a
+ * [RelaySettingsGroup] whose guarded items register only while
+ * expanded), and the chevron shows in every state. The expanded
+ * area holds the manual actions as rows in the same group:
+ * non-encrypted states show "Retry encryption" (the data-SMS probe
+ * retry) and "Retry via SMS" (the regular-SMS handshake); ENCRYPTED
+ * shows "View safety number" (the sheet, unchanged). The expanded
+ * area stays open after a tap, so the state flip the retry causes
+ * (PROBING, then ENCRYPTED) shows in the box's own subtitle. The
+ * old refresh icon and the "Tap to retry encryption setup"
+ * subtitle are gone — the retries live in the expanded area now.
+ * No expanded actions (no handlers at all) means no chevron and no
+ * tap: the box is plain status.
  */
 @Composable
 private fun E2eDetailsEncryptionRow(
@@ -1180,8 +1240,8 @@ private fun E2eDetailsEncryptionRow(
     contactName: String,
     onOpenVerification: (() -> Unit)?,
     onRetryProbe: (() -> Unit)?,
+    onRetryProbeViaSms: (() -> Unit)? = null,
 ) {
-    val cs = MaterialTheme.colorScheme
     val encrypted = peerState == E2ePeerState.ENCRYPTED
     val title = when (peerState) {
         E2ePeerState.ENCRYPTED -> stringResource(R.string.e2e_details_encrypted)
@@ -1197,47 +1257,61 @@ private fun E2eDetailsEncryptionRow(
         }
         E2ePeerState.PROBING -> stringResource(R.string.e2e_details_setting_up, contactName)
         E2ePeerState.UNKNOWN -> stringResource(R.string.e2e_details_auto_start, contactName)
-        E2ePeerState.NOT_RELAY -> stringResource(R.string.e2e_details_retry_setup)
+        // Round 45 — no subtitle: the retry moved into the expanded
+        // area, and the old "Tap to retry encryption setup" line is
+        // gone with it.
+        E2ePeerState.NOT_RELAY -> null
     }
-    // Round 42 — the row mirrors the 'Encryption' row at the bottom
-    // of Security & privacy, box included: a single-segment
-    // RelayGroupItem (all four corners 24dp, the group's tonal
-    // surface) owns the tap, and the RelaySettingRow inside is plain
-    // layout. The chevron marks the encrypted state as tappable (it
-    // opens the safety-number sheet); the other states show a refresh
-    // icon instead, and tapping the row retries the probe. No refresh
-    // icon without a retry handler — it would promise a tap that
-    // does nothing.
-    val retryTrailing: (@Composable () -> Unit)? =
-        if (!encrypted && onRetryProbe != null) {
-            {
-                Icon(
-                    Icons.Outlined.Refresh,
-                    contentDescription = null,
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        } else {
-            null
-        }
-    RelayGroupItem(
-        index = 0,
-        count = 1,
-        onClick = if (encrypted) onOpenVerification else onRetryProbe,
-    ) {
-        RelaySettingRow(
-            icon = if (encrypted) null else Icons.Outlined.LockOpen,
-            iconPainter = if (encrypted) {
-                painterResource(R.drawable.ic_lock_encrypted)
+    val expandedActions = e2eDetailsExpandedActions(
+        peerState = peerState,
+        hasRetryProbe = onRetryProbe != null,
+        hasRetryViaSms = onRetryProbeViaSms != null,
+        hasOpenVerification = onOpenVerification != null,
+    )
+    var expanded by remember { mutableStateOf(false) }
+    // Hoisted above the group: the group content lambda is plain
+    // (not @Composable), so stringResource calls cannot live inside
+    // it — same rule as the Encryption screen's verified list.
+    val retryLabel = stringResource(R.string.e2e_details_retry_encryption)
+    val retryViaSmsLabel = stringResource(R.string.e2e_details_retry_via_sms)
+    val viewSafetyNumberLabel = stringResource(R.string.e2e_details_view_safety_number)
+    RelaySettingsGroup {
+        item(
+            onClick = if (expandedActions.isNotEmpty()) {
+                { expanded = !expanded }
             } else {
                 null
             },
-            title = title,
-            subtitle = subtitle,
-            chevron = encrypted && onOpenVerification != null,
-            trailing = retryTrailing,
-        )
+        ) {
+            RelaySettingRow(
+                icon = if (encrypted) null else Icons.Outlined.LockOpen,
+                iconPainter = if (encrypted) {
+                    painterResource(R.drawable.ic_lock_encrypted)
+                } else {
+                    null
+                },
+                title = title,
+                subtitle = subtitle,
+                chevron = expandedActions.isNotEmpty(),
+            )
+        }
+        if (expanded) {
+            for (action in expandedActions) {
+                when (action) {
+                    E2eDetailsExpandedAction.RetryProbe -> item(onClick = onRetryProbe) {
+                        RelaySettingRow(title = retryLabel)
+                    }
+                    E2eDetailsExpandedAction.RetryViaSms -> item(onClick = onRetryProbeViaSms) {
+                        RelaySettingRow(title = retryViaSmsLabel)
+                    }
+                    // The sheet is navigation, like a verified
+                    // contact's row — it keeps its chevron.
+                    E2eDetailsExpandedAction.ViewSafetyNumber -> item(onClick = onOpenVerification) {
+                        RelaySettingRow(title = viewSafetyNumberLabel, chevron = true)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1259,11 +1333,16 @@ private fun DetailsActionRows(
     /** E2E — manual probe retry (round 41): sends one probe now. */
     onRetryE2eProbe: (() -> Unit)? = null,
 ) {
-    val cs = MaterialTheme.colorScheme
-    var addContactMenuOpen by remember { mutableStateOf(false) }
     Column(modifier = Modifier.padding(top = 16.dp)) {
         // E2E — the encryption row, first in the list, under the
         // header: the thread's encryption state at a glance.
+        // Round 45 — the box sits just above the grouped menu
+        // items with a MINOR gap (8dp, the panel's minor spacing
+        // — the same 8dp as the row and tab spacing): Part 6
+        // supersedes Part 4's 24dp here. The 24dp matched the
+        // media-tabs gap, but the box and the menu group belong
+        // together, so the gap is minor, not the 24dp section gap.
+        // The 24dp above the media tabs is unchanged.
         val e2eState = e2ePeerState
         if (e2eState != null) {
             E2eDetailsEncryptionRow(
@@ -1272,100 +1351,106 @@ private fun DetailsActionRows(
                 contactName = conversation.title,
                 onOpenVerification = onOpenE2eVerification,
                 onRetryProbe = onRetryE2eProbe,
+                onRetryProbeViaSms = actions.onRetryE2eProbeViaSms,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        DetailsMenuGroup(
+            conversation = conversation,
+            showAddToContacts = showAddToContacts,
+            showEditContact = showEditContact,
+            canSchedule = canSchedule,
+            canExport = canExport,
+            isExporting = isExporting,
+            actions = actions,
+        )
+    }
+}
+
+/**
+ * Round 45 — the menu rows as ONE Settings-style group (the same
+ * [RelaySettingsGroup] / [RelaySettingRow] pair Settings uses, so
+ * the panel and Settings match): Schedule, Export to PDF, Chat
+ * colors, Mute, Add to contacts, Edit contact, Rename, Block,
+ * Delete, Move to/out of the vault — the same rows, in the same
+ * order, with the same conditions as before, only grouped now.
+ * One group, not split: Settings keeps even its destructive rows
+ * (Advanced's Reset all / Erase data) in the same group as the
+ * rest, so the panel does the same. The E2E encryption box stays
+ * its own group above this one, separated by the minor gap.
+ *
+ * A disabled row (Schedule, Export) keeps its greyed look
+ * ([DISABLED_ALPHA], as before) and registers no click, so it
+ * reads as unavailable rather than dead. The group can never be
+ * empty — Schedule, Export, Chat colors, Mute and Block are
+ * unconditional — and an empty group renders nothing anyway (the
+ * background lives on each segment, not on the group).
+ */
+@Composable
+private fun DetailsMenuGroup(
+    conversation: Conversation,
+    showAddToContacts: Boolean,
+    showEditContact: Boolean,
+    canSchedule: Boolean,
+    canExport: Boolean,
+    isExporting: Boolean,
+    actions: ConversationDetailsActions,
+) {
+    var addContactMenuOpen by remember { mutableStateOf(false) }
+    val canExportNow = canExport && !isExporting
+    RelaySettingsGroup {
+        item(onClick = if (canSchedule) actions.onSchedule else null) {
+            RelaySettingRow(
+                iconPainter = painterResource(R.drawable.ic_schedule),
+                title = stringResource(R.string.details_schedule),
+                modifier = Modifier.alpha(if (canSchedule) 1f else DISABLED_ALPHA),
             )
         }
-        DetailsActionRow(
-            label = stringResource(R.string.details_schedule),
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_schedule),
-                    contentDescription = null,
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
-                )
-            },
-            enabled = canSchedule,
-            onClick = actions.onSchedule,
-        )
-        DetailsActionRow(
-            label = stringResource(R.string.action_export_pdf),
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_export_pdf),
-                    contentDescription = null,
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
-                )
-            },
-            enabled = canExport && !isExporting,
-            onClick = actions.onExportPdf,
-        )
-        DetailsActionRow(
-            label = stringResource(R.string.appearance_dialog_title),
-            icon = {
-                Icon(
-                    Icons.Outlined.Palette,
-                    contentDescription = null,
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
-                )
-            },
-            onClick = actions.onChatColors,
-        )
-        // The icon shows the current state (the plain speaker while
-        // unmuted, the muted speaker once muted) and the label names
-        // the action. Round 33 — no blue pill: the mute row looks
-        // like every other row; the icon alone carries the state.
-        DetailsActionRow(
-            label = stringResource(
-                if (conversation.muted) R.string.action_unmute else R.string.action_mute,
-            ),
-            icon = {
-                Icon(
-                    painter = painterResource(
-                        if (conversation.muted) {
-                            R.drawable.ic_volume_mute
-                        } else {
-                            R.drawable.ic_volume_on
-                        },
-                    ),
-                    contentDescription = null,
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
-                )
-            },
-            onClick = actions.onToggleMute,
-        )
+        item(onClick = if (canExportNow) actions.onExportPdf else null) {
+            RelaySettingRow(
+                iconPainter = painterResource(R.drawable.ic_export_pdf),
+                title = stringResource(R.string.action_export_pdf),
+                modifier = Modifier.alpha(if (canExportNow) 1f else DISABLED_ALPHA),
+            )
+        }
+        item(onClick = actions.onChatColors) {
+            RelaySettingRow(
+                icon = Icons.Outlined.Palette,
+                title = stringResource(R.string.appearance_dialog_title),
+            )
+        }
+        // The mute row is a toggle now (the Settings switch row):
+        // the label names the feature ("Mute") and the toggle shows
+        // the state; the icon shows the CURRENT state too (the bell
+        // while unmuted, the muted bell once muted). No onClick on
+        // the item — the switch row owns the tap (its whole row is
+        // the control, like the Encryption screen's auto-discover
+        // row), so one tap flips it exactly once.
+        item {
+            RelaySwitchRow(
+                icon = muteIconFor(conversation.muted),
+                title = stringResource(R.string.action_mute),
+                checked = conversation.muted,
+                onCheckedChange = { actions.onToggleMute() },
+            )
+        }
         if (showAddToContacts) {
-            // The menu anchors to this Box, so it opens under the row
-            // instead of at the top of the actions column.
-            Box {
-                DetailsActionRow(
-                    label = stringResource(R.string.details_add_to_contacts),
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_add_contact),
-                            contentDescription = null,
-                            tint = cs.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    },
-                    onClick = { addContactMenuOpen = true },
-                )
-                DropdownMenu(
-                    expanded = addContactMenuOpen,
-                    onDismissRequest = { addContactMenuOpen = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.thread_create_contact)) },
-                        onClick = {
+            // The menu anchors to this Box, so it opens under the
+            // row instead of at the top of the actions column.
+            item(onClick = { addContactMenuOpen = true }) {
+                Box {
+                    RelaySettingRow(
+                        iconPainter = painterResource(R.drawable.ic_add_contact),
+                        title = stringResource(R.string.details_add_to_contacts),
+                    )
+                    DetailsAddContactMenu(
+                        expanded = addContactMenuOpen,
+                        onDismissRequest = { addContactMenuOpen = false },
+                        onCreateContact = {
                             addContactMenuOpen = false
                             actions.onCreateContact()
                         },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.thread_update_contact)) },
-                        onClick = {
+                        onAddContact = {
                             addContactMenuOpen = false
                             actions.onAddContact()
                         },
@@ -1380,78 +1465,75 @@ private fun DetailsActionRows(
             // contact URI, via onEditContact). The old wiring called
             // onAddContact (ACTION_INSERT_OR_EDIT with the number
             // and no URI), which opened the whole contacts list.
-            DetailsActionRow(
-                label = stringResource(R.string.details_edit_contact),
-                icon = {
-                    Icon(
-                        Icons.Outlined.Edit,
-                        contentDescription = null,
-                        tint = cs.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp),
-                    )
-                },
-                onClick = actions.onEditContact ?: actions.onAddContact,
-            )
+            item(onClick = actions.onEditContact ?: actions.onAddContact) {
+                RelaySettingRow(
+                    icon = Icons.Outlined.Edit,
+                    title = stringResource(R.string.details_edit_contact),
+                )
+            }
         }
         val renameAction = actions.onRename
         if (conversation.isGroup && renameAction != null) {
-            DetailsActionRow(
-                label = stringResource(R.string.action_rename_group),
-                icon = {
-                    Icon(
-                        Icons.Outlined.Edit,
-                        contentDescription = null,
-                        tint = cs.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp),
-                    )
-                },
-                onClick = renameAction,
+            item(onClick = renameAction) {
+                RelaySettingRow(
+                    icon = Icons.Outlined.Edit,
+                    title = stringResource(R.string.action_rename_group),
+                )
+            }
+        }
+        item(onClick = actions.onBlock) {
+            RelaySettingRow(
+                iconPainter = painterResource(R.drawable.ic_block),
+                title = stringResource(R.string.action_block),
             )
         }
-        DetailsActionRow(
-            label = stringResource(R.string.action_block),
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_block),
-                    contentDescription = null,
-                    tint = cs.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
-                )
-            },
-            onClick = actions.onBlock,
-        )
         val deleteAction = actions.onDelete
         if (deleteAction != null) {
-            DetailsActionRow(
-                label = stringResource(R.string.action_delete),
-                icon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_trash),
-                        contentDescription = null,
-                        tint = cs.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp),
-                    )
-                },
-                onClick = deleteAction,
-            )
+            item(onClick = deleteAction) {
+                RelaySettingRow(
+                    iconPainter = painterResource(R.drawable.ic_trash),
+                    title = stringResource(R.string.action_delete),
+                )
+            }
         }
         val moveVaultAction = actions.onMoveVault
         if (moveVaultAction != null) {
-            val moveVaultLabelRes = if (conversation.inVault) R.string.vault_move_out else R.string.vault_move_in
-            val moveVaultIcon = if (conversation.inVault) Icons.Outlined.LockOpen else Icons.Outlined.Lock
-            DetailsActionRow(
-                label = stringResource(moveVaultLabelRes),
-                icon = {
-                    Icon(
-                        moveVaultIcon,
-                        contentDescription = null,
-                        tint = cs.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp),
-                    )
-                },
-                onClick = moveVaultAction,
-            )
+            item(onClick = moveVaultAction) {
+                RelaySettingRow(
+                    icon = if (conversation.inVault) Icons.Outlined.LockOpen else Icons.Outlined.Lock,
+                    title = stringResource(
+                        if (conversation.inVault) R.string.vault_move_out else R.string.vault_move_in,
+                    ),
+                )
+            }
         }
+    }
+}
+
+/**
+ * Round 45 — the Add-to-contacts dropdown (Create new contact /
+ * Add to existing contact), extracted so the menu group stays
+ * flat. Each tap closes the menu first, then runs its action.
+ */
+@Composable
+private fun DetailsAddContactMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    onCreateContact: () -> Unit,
+    onAddContact: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+    ) {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.thread_create_contact)) },
+            onClick = onCreateContact,
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.thread_update_contact)) },
+            onClick = onAddContact,
+        )
     }
 }
 
@@ -1573,40 +1655,72 @@ private fun DetailsMembersSection(
     }
 }
 
+/**
+ * Round 45 — the Photos / Videos / Files tabs, restyled to match
+ * the home category tabs (CategoryTabRow's pills): 48dp row,
+ * 24dp corners, selected = `primaryContainer` /
+ * `onPrimaryContainer`, unselected = `surfaceContainerHigh` /
+ * `onSurface`, colours animated. A plain [Row], not a LazyRow —
+ * three fixed tabs never scroll. No unread counts or mute icons
+ * (the Details tabs have none).
+ */
 @Composable
 private fun DetailsMediaTabs(
     selected: DetailsMediaTab,
     onSelect: (DetailsMediaTab) -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
     Row(
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 12.dp),
+        modifier = Modifier
+            .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 12.dp)
+            .height(48.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         DetailsMediaTab.entries.forEach { tab ->
-            val isSelected = tab == selected
-            Box(
-                modifier = Modifier
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (isSelected) brandBlue() else Color.Transparent)
-                    .clickable(onClick = { onSelect(tab) })
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(
-                        when (tab) {
-                            DetailsMediaTab.Photos -> R.string.details_tab_photos
-                            DetailsMediaTab.Videos -> R.string.details_tab_videos
-                            DetailsMediaTab.Files -> R.string.details_tab_files
-                        },
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) onBrandBlue() else cs.onSurface,
-                )
-            }
+            DetailsMediaTabPill(
+                tab = tab,
+                selected = tab == selected,
+                onSelect = { onSelect(tab) },
+            )
         }
+    }
+}
+
+/** One Details media pill — the home category pill's colours and size. */
+@Composable
+private fun DetailsMediaTabPill(
+    tab: DetailsMediaTab,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) cs.primaryContainer else cs.surfaceContainerHigh,
+        label = "detailsMediaTabContainer",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) cs.onPrimaryContainer else cs.onSurface,
+        label = "detailsMediaTabContent",
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(24.dp))
+            .background(containerColor)
+            .clickable(onClick = onSelect)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(
+                when (tab) {
+                    DetailsMediaTab.Photos -> R.string.details_tab_photos
+                    DetailsMediaTab.Videos -> R.string.details_tab_videos
+                    DetailsMediaTab.Files -> R.string.details_tab_files
+                },
+            ),
+            style = MaterialTheme.typography.labelLarge,
+            color = contentColor,
+        )
     }
 }
 

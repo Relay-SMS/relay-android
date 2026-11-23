@@ -1999,6 +1999,21 @@ class ThreadViewModel @Inject constructor(
             }
     }
 
+    /**
+     * E2E — manual probe retry over regular SMS (round 45): the
+     * Details panel "Send via SMS" button. Same shape as
+     * [retryE2eProbe], but the probe travels as one `RLYH:` text —
+     * for peers whose data SMS never arrive. Hub mode only, like
+     * [retryE2eProbe]: the panel shows no encryption row in client
+     * mode, so this never fires there.
+     */
+    fun retryE2eProbeViaSms() {
+        runCatching { e2eEntryPoint().probeManager().retryProbeViaSms(conversationId) }
+            .onFailure {
+                timber.log.Timber.w(it, "ThreadViewModel: e2e manual SMS probe retry failed")
+            }
+    }
+
     fun deleteMessage(messageId: Long) {
         viewModelScope.launch { repo.deleteMessage(messageId) }
     }

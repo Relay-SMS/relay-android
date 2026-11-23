@@ -2012,6 +2012,9 @@ fun ThreadScreen(
                             uri,
                         )
                     },
+                    // Round 45 — the regular-SMS handshake retry,
+                    // in the encryption box's expanded area.
+                    onRetryE2eProbeViaSms = { viewModel.retryE2eProbeViaSms() },
                 ),
                 onDismiss = { detailsPanelOpen = false },
             )

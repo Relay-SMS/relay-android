@@ -76,6 +76,16 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * form, so a peer whose number was stored with formatting never
  * showed its state change in the panel.
  *
+ * Round 45 — the second manual retry ([retryProbeViaSms], Details
+ * panel "Send via SMS"): the same one-probe-now shape as
+ * [retryProbe], but the probe travels as a single `RLYH:` text
+ * instead of a data SMS — for peers whose data SMS never arrive.
+ * The two retries are separate buttons, one transport each; the
+ * detailed cores take a [HandshakeChannel] and share everything
+ * else (gates, budget, the round-44 PROBING rule, the
+ * `e2e-manual-retry` recording). Automatic probing stays
+ * data-SMS-only.
+ *
  * All entry points are fire-and-forget (non-suspend, own scope): a
  * probe must never delay opening a thread or sending a message. The
  * suspend cores ([probeConversation], [probeAddress]) are the testable
@@ -213,8 +223,32 @@ class E2eProbeManager @Inject constructor(
      * no trace anywhere.
      */
     fun retryProbe(conversationId: Long) {
+        manualRetry(conversationId, HandshakeChannel.DATA_SMS)
+    }
+
+    /**
+     * Manual retry over regular SMS (round 45, Details panel "Send
+     * via SMS"): the same one-probe-now shape as [retryProbe], but
+     * the probe travels as a single `RLYH:` text instead of a data
+     * SMS — for peers whose data SMS never arrive. Same gates
+     * (manual lifts the budget and the discovery toggle only), same
+     * budget accounting, same `e2e-manual-retry` failure recording.
+     * Fire-and-forget, like the other triggers.
+     */
+    fun retryProbeViaSms(conversationId: Long) {
+        manualRetry(conversationId, HandshakeChannel.TEXT_SMS)
+    }
+
+    /**
+     * Shared fire-and-forget core of the two manual retries: runs
+     * the detailed core on the chosen [channel] and records every
+     * non-[ProbeResult.Sent] outcome in the error log (round 42).
+     */
+    private fun manualRetry(conversationId: Long, channel: HandshakeChannel) {
         scope.launch {
-            runCatching { probeConversationDetailed(conversationId, manual = true) }
+            runCatching {
+                probeConversationDetailed(conversationId, manual = true, channel = channel)
+            }
                 .onSuccess { result -> recordManualResult(result) }
                 .onFailure { error ->
                     recorder.record(MANUAL_RETRY_TAG, error)
@@ -262,12 +296,15 @@ class E2eProbeManager @Inject constructor(
      * Detailed core of [probeConversation]: resolves the conversation
      * to its single address, then probes it. [ProbeResult.Gated] with
      * [ProbeGate.NoConversation] / [ProbeGate.NotOneToOne] when the
-     * conversation is missing or not 1:1.
+     * conversation is missing or not 1:1. [channel] picks the
+     * transport (round 45): data SMS by default, regular SMS for the
+     * "Send via SMS" manual retry.
      */
     suspend fun probeConversationDetailed(
         conversationId: Long,
         now: Long = System.currentTimeMillis(),
         manual: Boolean = false,
+        channel: HandshakeChannel = HandshakeChannel.DATA_SMS,
     ): ProbeResult {
         val conversation = conversationDao.findById(conversationId)
             ?: return ProbeResult.Gated(ProbeGate.NoConversation)
@@ -279,7 +316,7 @@ class E2eProbeManager @Inject constructor(
         // settings, `null` (system default) when unreadable.
         val subId = runCatching { settings.hydratedOrNull()?.sending?.defaultSubId }
             .getOrNull()
-        return probeAddressDetailed(address, subId, now = now, manual = manual)
+        return probeAddressDetailed(address, subId, now = now, manual = manual, channel = channel)
     }
 
     /**
@@ -300,10 +337,14 @@ class E2eProbeManager @Inject constructor(
 
     /**
      * Detailed core of [probeAddress]: the same probe, with the
-     * outcome instead of a Boolean. The manual path ([retryProbe])
-     * records the non-[ProbeResult.Sent] outcomes in the error log;
-     * the automatic triggers use the Boolean [probeAddress] and
-     * record nothing (automatic probes gate constantly).
+     * outcome instead of a Boolean. The manual path ([retryProbe],
+     * [retryProbeViaSms]) records the non-[ProbeResult.Sent]
+     * outcomes in the error log; the automatic triggers use the
+     * Boolean [probeAddress] and record nothing (automatic probes
+     * gate constantly). [channel] picks the transport (round 45):
+     * data SMS by default, regular SMS for the "Send via SMS"
+     * manual retry — the gates, the budget accounting, and the
+     * round-44 PROBING rule are identical on both channels.
      */
     suspend fun probeAddressDetailed(
         address: String,
@@ -311,6 +352,7 @@ class E2eProbeManager @Inject constructor(
         allowEncrypted: Boolean = false,
         manual: Boolean = false,
         now: Long = System.currentTimeMillis(),
+        channel: HandshakeChannel = HandshakeChannel.DATA_SMS,
     ): ProbeResult = probeMutex.withLock {
         val state = peers.state(address)
         val gate = gateFor(address, state, allowEncrypted, manual, now)
@@ -320,12 +362,19 @@ class E2eProbeManager @Inject constructor(
         // who never use E2E pay nothing (design §4.1).
         val keys = accountManager.get().ensureAccount()
         val probe = E2eHandshake.encodeProbe(keys.curve25519, keys.ed25519)
-        val sent = dataSmsSender.sendDataMessage(
-            address = address,
-            subId = subId,
-            port = E2eHandshake.E2E_DATA_SMS_PORT,
-            data = probe,
-        )
+        val sent = when (channel) {
+            HandshakeChannel.DATA_SMS -> dataSmsSender.sendDataMessage(
+                address = address,
+                subId = subId,
+                port = E2eHandshake.E2E_DATA_SMS_PORT,
+                data = probe,
+            )
+            HandshakeChannel.TEXT_SMS -> dataSmsSender.sendTextMessage(
+                address = address,
+                subId = subId,
+                text = E2eHandshakeSms.encode(probe),
+            )
+        }
         // A failed send must not consume budget: record only after the
         // radio accepted the probe.
         if (!sent) return@withLock ProbeResult.SendFailed

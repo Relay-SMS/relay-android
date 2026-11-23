@@ -1,5 +1,6 @@
 package com.filestech.sms.e2e
 
+import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
 import android.telephony.SmsManager
@@ -18,6 +19,12 @@ import javax.inject.Singleton
  * probe to a phone without Relay is silently dropped by the OS — the
  * recipient sees nothing and pays nothing. No new permission:
  * SEND_SMS is already held.
+ *
+ * Round 45 — the same handshake packets can also go out as regular
+ * SMS ([sendTextMessage]): one `RLYH:` text each, for peers whose
+ * data SMS never arrive. A text handshake SMS is still NOT a
+ * message: it goes straight to the radio, never through the
+ * message store — the receiver intercepts it before any insert.
  *
  * The send returns as soon as the radio accepts the call (no
  * delivery intent — the handshake is idempotent: a lost probe is
@@ -47,6 +54,22 @@ interface E2eDataSmsSender {
         data: ByteArray,
         kind: DataSmsKind = DataSmsKind.PROBE,
     ): Boolean
+
+    /**
+     * Sends [text] as one regular SMS to [address], from the
+     * subscription [subId] (`null` = the system default). Round 45
+     * — the handshake fallback transport: the text is an
+     * [E2eHandshakeSms]-encoded packet, one single-part SMS. Same
+     * contract as [sendDataMessage] (sent intent, failure tag by
+     * [kind], `true` when the radio accepted the send) — and, like
+     * the data path, it never touches the message store.
+     */
+    fun sendTextMessage(
+        address: String,
+        subId: Int?,
+        text: String,
+        kind: DataSmsKind = DataSmsKind.PROBE,
+    ): Boolean
 }
 
 /**
@@ -65,7 +88,7 @@ enum class DataSmsKind(val failureTag: String) {
     BUNDLE("e2e-bundle-send"),
 }
 
-/** The real sender over `SmsManager.sendDataMessage`. */
+/** The real sender over `SmsManager.sendDataMessage` / `sendTextMessage`. */
 @Singleton
 class E2eDataSmsSenderImpl @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -80,37 +103,74 @@ class E2eDataSmsSenderImpl @Inject constructor(
         port: Int,
         data: ByteArray,
         kind: DataSmsKind,
+    ): Boolean = send(address, subId, kind, "Data SMS send failed (port=$port)") { manager, destination, sentIntent ->
+        manager.sendDataMessage(
+            destination,
+            // scAddress: null — let the radio pick the service centre.
+            null,
+            // The port is an unsigned 16-bit value carried in a
+            // `short`: 47832 wraps to a negative short here and the
+            // telephony stack reads it back unsigned (`& 0xFFFF`)
+            // when building the PDU — the standard pattern for data
+            // SMS ports above 32767.
+            port.toShort(),
+            data,
+            sentIntent,
+            null,
+        )
+    }
+
+    override fun sendTextMessage(
+        address: String,
+        subId: Int?,
+        text: String,
+        kind: DataSmsKind,
+    ): Boolean = send(address, subId, kind, "Text SMS send failed") { manager, destination, sentIntent ->
+        manager.sendTextMessage(
+            destination,
+            // scAddress: null — let the radio pick the service centre.
+            null,
+            text,
+            sentIntent,
+            null,
+        )
+    }
+
+    /**
+     * Shared send core for both handshake transports: resolves the
+     * subscription-aware manager, formats the destination to E.164,
+     * attaches the sent intent, and records a sanitized failure on
+     * a synchronous throw. [radioSend] performs the actual radio
+     * call (data or text) with the resolved manager, the formatted
+     * destination, and the sent intent.
+     *
+     * Round 43 — the sent intent, so a radio that silently rejects
+     * the send leaves a trace (the verdict lands in
+     * E2eDataSmsSentReceiver; RESULT_OK records nothing). The
+     * Boolean return is unchanged: true = no synchronous throw. A
+     * null factory result falls back to fire-and-forget.
+     *
+     * [failureLabel] is the fixed, PII-free wording for the failure
+     * (data vs text): a failed text send must not read as a data
+     * send. No address in the log line (design §8.3): the port +
+     * the error class are enough to diagnose a dead radio.
+     */
+    private fun send(
+        address: String,
+        subId: Int?,
+        kind: DataSmsKind,
+        failureLabel: String,
+        radioSend: (manager: SmsManager, destination: String, sentIntent: PendingIntent?) -> Unit,
     ): Boolean {
         return try {
             val manager = subscriptionAwareManager(subId)
-            // Same E.164 normalization as the text path: a foreign SIM
-            // texting a national number must still route.
+            // E.164 normalization (same as the message text path): a
+            // foreign SIM texting a national number must still route.
             val wireDestination = wireFormatter.toWireFormat(address, subId)
-            manager.sendDataMessage(
-                wireDestination,
-                // scAddress: null — let the radio pick the service centre.
-                null,
-                // The port is an unsigned 16-bit value carried in a
-                // `short`: 47832 wraps to a negative short here and the
-                // telephony stack reads it back unsigned (`& 0xFFFF`)
-                // when building the PDU — the standard pattern for data
-                // SMS ports above 32767.
-                port.toShort(),
-                data,
-                // Round 43 — a sent intent, so a radio that silently
-                // rejects the send leaves a trace (the verdict lands
-                // in E2eDataSmsSentReceiver; RESULT_OK records
-                // nothing). The Boolean return is unchanged: true =
-                // no synchronous throw. A null factory result falls
-                // back to fire-and-forget.
-                sentIntentFactory.sentIntent(kind),
-                null,
-            )
+            radioSend(manager, wireDestination, sentIntentFactory.sentIntent(kind))
             true
         } catch (t: Exception) {
-            // No address in the log line (design §8.3): the port + the
-            // error class are enough to diagnose a dead radio.
-            Timber.w(t, "E2E: data SMS send failed (port=%d)", port)
+            Timber.w(t, "E2E: %s", failureLabel)
             // Round 40 — the same failure in the local error log, so a
             // phone that cannot send handshake SMS leaves a trace: a
             // failed probe otherwise looks exactly like a peer without
@@ -123,9 +183,7 @@ class E2eDataSmsSenderImpl @Inject constructor(
             // (the formatter would print both).
             recorder.record(
                 kind.failureTag,
-                E2eCryptoException(
-                    "Data SMS send failed (port=$port): ${t.javaClass.simpleName}",
-                ),
+                E2eCryptoException("$failureLabel: ${t.javaClass.simpleName}"),
             )
             false
         }

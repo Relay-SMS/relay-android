@@ -118,6 +118,8 @@ class E2eProbeManagerTest {
 
         assertThat(probed).isTrue()
         assertThat(harness.sender.sent).hasSize(1)
+        // Automatic probing stays data-SMS-only (round 45).
+        assertThat(harness.sender.sentTexts).isEmpty()
         val sent = harness.sender.sent.single()
         assertThat(sent.address).isEqualTo(ALICE)
         assertThat(sent.subId).isEqualTo(CHOSEN_SUB_ID)
@@ -535,6 +537,157 @@ class E2eProbeManagerTest {
         assertThat(harness.sender.sent).hasSize(1)
         assertThat(harness.sender.sent.single().address).isEqualTo(ALICE)
         assertThat(harness.sender.sent.single().subId).isEqualTo(CHOSEN_SUB_ID)
+    }
+
+    // ──────────────── Manual retry over regular SMS (round 45) ────────────────
+
+    @Test
+    fun `retryProbeViaSms fires the SMS probe in the background`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+        harness.seedPeer(
+            state = E2ePeerState.NOT_RELAY,
+            attempts = 3,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 2 * MS_PER_DAY,
+        )
+
+        harness.manager.retryProbeViaSms(11L)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sentTexts).hasSize(1)
+        assertThat(harness.sender.sent).isEmpty()
+        val reply = harness.sender.sentTexts.single()
+        assertThat(reply.address).isEqualTo(ALICE)
+        assertThat(reply.subId).isEqualTo(CHOSEN_SUB_ID)
+        assertThat(reply.kind).isEqualTo(DataSmsKind.PROBE)
+        // The text is our probe, `RLYH:` + base64, decodable by the peer.
+        assertThat(reply.text).startsWith("RLYH:")
+        assertThat(reply.text.length).isEqualTo(E2eHandshakeSms.PROBE_TEXT_LENGTH)
+        val packet = E2eHandshake.decode(E2eHandshakeSms.parse(reply.text)!!)
+        assertThat(packet).isInstanceOf(E2eHandshake.HandshakePacket.Probe::class.java)
+        val probe = packet as E2eHandshake.HandshakePacket.Probe
+        assertThat(probe.curveKey).isEqualTo(harness.crypto.identityKeys().curve25519)
+        assertThat(probe.edKey).isEqualTo(harness.crypto.identityKeys().ed25519)
+    }
+
+    @Test
+    fun `an SMS probe via the detailed core consumes budget like a data probe`() = runTest {
+        val harness = Harness(scope = this)
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+
+        val result = harness.manager.probeConversationDetailed(
+            11L,
+            NOW,
+            manual = true,
+            channel = HandshakeChannel.TEXT_SMS,
+        )
+
+        assertThat(result).isEqualTo(ProbeResult.Sent)
+        assertThat(harness.sender.sentTexts).hasSize(1)
+        assertThat(harness.sender.sent).isEmpty()
+        assertThat(harness.peerDao.peers[ALICE]?.probeAttempts).isEqualTo(1)
+        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.PROBING)
+    }
+
+    @Test
+    fun `a manual SMS third attempt leaves the peer PROBING`() = runTest {
+        val harness = Harness(scope = this)
+        harness.seedPeer(
+            state = E2ePeerState.PROBING,
+            attempts = 2,
+            windowStartedAt = NOW - 2 * MS_PER_DAY,
+            lastProbeAt = NOW - 2 * MS_PER_DAY,
+        )
+
+        val result = harness.manager.probeAddressDetailed(
+            ALICE,
+            null,
+            manual = true,
+            now = NOW,
+            channel = HandshakeChannel.TEXT_SMS,
+        )
+
+        assertThat(result).isEqualTo(ProbeResult.Sent)
+        assertThat(harness.peerDao.peers[ALICE]?.probeAttempts).isEqualTo(3)
+        // The round-44 rule applies on the SMS channel too: the
+        // NOT_RELAY flip is automatic probes only.
+        assertThat(harness.peerDao.peers[ALICE]?.state).isEqualTo(E2ePeerState.PROBING)
+        assertThat(harness.sender.sentTexts).hasSize(1)
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `an SMS probe still refuses a blocked number`() = runTest {
+        val harness = Harness(scope = this, blocked = FakeBlockedRepo(setOf(ALICE)))
+
+        val result = harness.manager.probeAddressDetailed(
+            ALICE,
+            null,
+            manual = true,
+            now = NOW,
+            channel = HandshakeChannel.TEXT_SMS,
+        )
+
+        assertThat(result).isEqualTo(ProbeResult.Gated(ProbeGate.Blocked))
+        assertThat(harness.sender.sentTexts).isEmpty()
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `an SMS probe still refuses an encrypted peer`() = runTest {
+        val harness = Harness(scope = this)
+        harness.seedPeer(state = E2ePeerState.ENCRYPTED)
+
+        val result = harness.manager.probeAddressDetailed(
+            ALICE,
+            null,
+            manual = true,
+            now = NOW,
+            channel = HandshakeChannel.TEXT_SMS,
+        )
+
+        assertThat(result).isEqualTo(ProbeResult.Gated(ProbeGate.AlreadyEncrypted))
+        assertThat(harness.sender.sentTexts).isEmpty()
+        assertThat(harness.sender.sent).isEmpty()
+    }
+
+    @Test
+    fun `a failed SMS send consumes no budget`() = runTest {
+        val harness = Harness(scope = this)
+        harness.sender.result = false
+
+        val result = harness.manager.probeAddressDetailed(
+            ALICE,
+            null,
+            now = NOW,
+            channel = HandshakeChannel.TEXT_SMS,
+        )
+
+        assertThat(result).isEqualTo(ProbeResult.SendFailed)
+        assertThat(harness.peers.getPeer(ALICE)).isNull()
+    }
+
+    @Test
+    fun `a gated SMS retry records the reason`() = runTest {
+        val harness = Harness(scope = this, blocked = FakeBlockedRepo(setOf(ALICE)))
+        coEvery { harness.conversationDao.findById(11L) } returns
+            harness.conversationWith(ALICE)
+
+        harness.manager.retryProbeViaSms(11L)
+        testScheduler.advanceUntilIdle()
+
+        assertThat(harness.sender.sentTexts).isEmpty()
+        assertThat(harness.sender.sent).isEmpty()
+        verify(exactly = 1) {
+            harness.recorder.recordEvent(
+                "e2e-manual-retry",
+                "Manual retry refused: number is blocked.",
+            )
+        }
+        verify(exactly = 0) { harness.recorder.record(any(), any()) }
     }
 
     // ──────────────────── Peer-left re-probe (round 41) ────────────────────

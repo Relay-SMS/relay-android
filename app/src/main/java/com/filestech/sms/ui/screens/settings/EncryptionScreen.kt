@@ -2,7 +2,9 @@ package com.filestech.sms.ui.screens.settings
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -195,6 +197,13 @@ fun EncryptionScreen(
                     }
                 }
             }
+            // Round 45 — the section gap: the auto-discover group
+            // has no label of its own, so it carries the 24dp a
+            // RelaySectionLabel would have put above it (the gap
+            // between the fingerprint group and the Verified
+            // contacts section) instead of sitting flush against
+            // the Verified contacts group.
+            Spacer(Modifier.height(24.dp))
             // Round 40 — automatic Relay discovery (outbound probing
             // only): OFF stops this phone sending probes; inbound
             // handshakes stay active, so encryption still starts when

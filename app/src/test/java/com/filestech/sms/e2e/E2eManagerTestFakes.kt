@@ -303,7 +303,10 @@ internal class FakeBlockedRepo(private val blocked: Set<String> = emptySet()) :
     override suspend fun blockedRawSnapshot(): List<String> = blocked.toList()
 }
 
-/** Records every data SMS sent; [result] decides whether the radio accepts it. */
+/**
+ * Records every handshake SMS sent, data and text; [result] decides
+ * whether the radio accepts it (both transports share the verdict).
+ */
 internal class RecordingDataSmsSender(var result: Boolean = true) : E2eDataSmsSender {
     data class Sent(
         val address: String,
@@ -313,7 +316,16 @@ internal class RecordingDataSmsSender(var result: Boolean = true) : E2eDataSmsSe
         val kind: DataSmsKind = DataSmsKind.PROBE,
     )
 
+    /** One regular-SMS handshake send (round 45): the `RLYH:` text. */
+    data class SentText(
+        val address: String,
+        val subId: Int?,
+        val text: String,
+        val kind: DataSmsKind = DataSmsKind.PROBE,
+    )
+
     val sent = mutableListOf<Sent>()
+    val sentTexts = mutableListOf<SentText>()
 
     override fun sendDataMessage(
         address: String,
@@ -323,6 +335,16 @@ internal class RecordingDataSmsSender(var result: Boolean = true) : E2eDataSmsSe
         kind: DataSmsKind,
     ): Boolean {
         sent += Sent(address, subId, port, data.copyOf(), kind)
+        return result
+    }
+
+    override fun sendTextMessage(
+        address: String,
+        subId: Int?,
+        text: String,
+        kind: DataSmsKind,
+    ): Boolean {
+        sentTexts += SentText(address, subId, text, kind)
         return result
     }
 }
