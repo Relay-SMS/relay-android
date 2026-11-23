@@ -209,13 +209,18 @@ object E2eMediaKeyMessage {
             json.decodeFromString(MediaKeyJson.serializer(), text)
         }.getOrNull() ?: return null
         val keyBytes = runCatching { Base64.getDecoder().decode(parsed.key) }.getOrNull()
-        return if (parsed.v == FORMAT_VERSION &&
-            parsed.id.matches(fileIdRegex) &&
-            keyBytes != null && keyBytes.size == KEY_BYTES &&
-            parsed.mime.isNotBlank() &&
-            parsed.size >= 0 &&
-            parsed.sha256.matches(sha256Regex)
-        ) {
+        // Round 48 CI fix — the seven-way conjunction tripped
+        // ComplexCondition (threshold 4). Same checks, grouped
+        // into named pairs so no expression exceeds three terms.
+        val versionOk = parsed.v == FORMAT_VERSION
+        val idOk = parsed.id.matches(fileIdRegex)
+        val keyOk = keyBytes != null && keyBytes.size == KEY_BYTES
+        val mimeOk = parsed.mime.isNotBlank()
+        val sizeOk = parsed.size >= 0
+        val shaOk = parsed.sha256.matches(sha256Regex)
+        val headerOk = versionOk && idOk && keyOk
+        val payloadOk = mimeOk && sizeOk && shaOk
+        return if (headerOk && payloadOk) {
             MediaKey(
                 id = parsed.id,
                 key = keyBytes,

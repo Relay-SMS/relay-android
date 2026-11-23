@@ -12,10 +12,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.File
 
 /**
  * Round 48 — the encrypted-media receive path: the writer
@@ -129,7 +129,13 @@ class IntegrationMmsRecuMediaTest {
     fun `a 1-1 relay-media MMS reaches the mirror encrypted`() = runTest {
         preparerInscription()
 
-        val resultat = integration().integrer(contenu(listOf(relayPart())), SUB_ID, null, inclutSoi = false, CLE) { true }
+        val resultat = integration().integrer(
+            contenu(listOf(relayPart())),
+            SUB_ID,
+            null,
+            inclutSoi = false,
+            CLE,
+        ) { true }
 
         assertThat(resultat).isEqualTo(IntegrationMmsRecu.Resultat.Ecrit(MESSAGE_ID))
         coVerify {
@@ -142,7 +148,13 @@ class IntegrationMmsRecuMediaTest {
         preparerInscription()
         val membres = listOf(PhoneAddress.of(ALICE), PhoneAddress.of(BOB), PhoneAddress.of(CAROL))
 
-        val resultat = integration().integrer(contenu(listOf(relayPart())), SUB_ID, membres, inclutSoi = false, CLE) { true }
+        val resultat = integration().integrer(
+            contenu(listOf(relayPart())),
+            SUB_ID,
+            membres,
+            inclutSoi = false,
+            CLE,
+        ) { true }
 
         assertThat(resultat).isEqualTo(IntegrationMmsRecu.Resultat.Ecrit(MESSAGE_ID))
         coVerify {

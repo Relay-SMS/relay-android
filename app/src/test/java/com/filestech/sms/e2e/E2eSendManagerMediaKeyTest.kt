@@ -4,8 +4,8 @@ import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerState
-import com.filestech.sms.domain.sender.SmsSender
 import com.filestech.sms.domain.sender.SentSmsRecorder
+import com.filestech.sms.domain.sender.SmsSender
 import com.google.common.truth.Truth.assertThat
 import io.mockk.Runs
 import io.mockk.every

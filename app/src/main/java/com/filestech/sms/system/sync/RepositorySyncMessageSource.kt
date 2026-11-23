@@ -310,9 +310,12 @@ class RepositorySyncMessageSource @Inject constructor(
         // Only an incoming encrypted MMS with relay-media parts can
         // be pending; anything else clears its withheld entry (a
         // no-op when none exists) instead of leaving it stale.
-        val relayParts = if (!message.isIncoming || message.type != Message.Type.MMS ||
-            !message.encrypted || message.decryptFailed
-        ) {
+        // Round 48 CI fix — the four-way disjunction tripped
+        // ComplexCondition (threshold 4); split into two named
+        // checks, each a single conjunction.
+        val isIncomingMms = message.isIncoming && message.type == Message.Type.MMS
+        val isEncryptedOk = message.encrypted && !message.decryptFailed
+        val relayParts = if (!isIncomingMms || !isEncryptedOk) {
             emptyList()
         } else {
             message.attachments.filter {

@@ -280,8 +280,10 @@ internal class RecordingMmsDispatcher(
     val destinatairesTentes = mutableListOf<String>()
     var appels = 0
     var dernierTexte: String? = null
+
     /** Round 48 — les pièces jointes du dernier sendMediaMms (pour mesurer le chiffrement). */
     var dernierPiecesJointes: List<com.filestech.sms.domain.mms.MmsAttachment>? = null
+
     /** Round 48 — compte les appels par voie (la voix chiffrée passe par sendMediaMms). */
     var appelsVoix = 0
     var appelsMedia = 0

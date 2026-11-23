@@ -209,7 +209,8 @@ fun EncryptedMediaBubble(
     // 24-hour stale purge is the backstop.
     val defaultOpener = rememberAttachmentOpener()
     val onOpen = remember(resolver, defaultOpener, storedById, scope) {
-        { attachment: Attachment ->
+        {
+                attachment: Attachment ->
             scope.launch {
                 val stored = storedById[attachment.id] ?: attachment
                 when (val res = resolver.decryptToPlaybackFile(stored)) {

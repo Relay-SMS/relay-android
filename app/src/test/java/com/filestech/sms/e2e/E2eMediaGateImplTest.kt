@@ -102,7 +102,11 @@ class E2eMediaGateImplTest {
         val file = mediaFile("photo.jpg", bytes)
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(file, "image/jpeg")), CAP, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(file, "image/jpeg")),
+            CAP,
+            NOW,
+            SUB_ID,
         )
 
         assertThat(result).isInstanceOf(E2eMediaGate.PrepareResult.Encrypted::class.java)
@@ -124,7 +128,11 @@ class E2eMediaGateImplTest {
         val file = mediaFile("photo.jpg", bytes)
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(file, "image/jpeg")), CAP, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(file, "image/jpeg")),
+            CAP,
+            NOW,
+            SUB_ID,
         )
 
         val attachments = (result as E2eMediaGate.PrepareResult.Encrypted).attachments
@@ -166,7 +174,11 @@ class E2eMediaGateImplTest {
         val file = mediaFile("photo.jpg", plaintextBytes(100))
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(file, "image/jpeg")), CAP, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(file, "image/jpeg")),
+            CAP,
+            NOW,
+            SUB_ID,
         )
 
         assertThat(result).isEqualTo(E2eMediaGate.PrepareResult.Plain)
@@ -181,7 +193,11 @@ class E2eMediaGateImplTest {
         val file = mediaFile("photo.jpg", plaintextBytes(100))
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(file, "image/jpeg")), CAP, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(file, "image/jpeg")),
+            CAP,
+            NOW,
+            SUB_ID,
         )
 
         assertThat(result).isEqualTo(E2eMediaGate.PrepareResult.Plain)
@@ -196,7 +212,11 @@ class E2eMediaGateImplTest {
         val file = mediaFile("photo.jpg", plaintextBytes(100))
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(file, "image/jpeg")), CAP, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(file, "image/jpeg")),
+            CAP,
+            NOW,
+            SUB_ID,
         )
 
         assertThat(result).isEqualTo(E2eMediaGate.PrepareResult.Plain)
@@ -210,7 +230,11 @@ class E2eMediaGateImplTest {
         val file = mediaFile("photo.jpg", plaintextBytes(100))
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(file, "image/jpeg")), CAP, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(file, "image/jpeg")),
+            CAP,
+            NOW,
+            SUB_ID,
         )
 
         assertThat(result).isEqualTo(E2eMediaGate.PrepareResult.FallbackToPlain)
@@ -227,7 +251,11 @@ class E2eMediaGateImplTest {
         val file = mediaFile("photo.jpg", plaintextBytes(100))
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(file, "image/jpeg")), 100L, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(file, "image/jpeg")),
+            100L,
+            NOW,
+            SUB_ID,
         )
 
         assertThat(result).isInstanceOf(E2eMediaGate.PrepareResult.Refuse::class.java)
@@ -243,7 +271,11 @@ class E2eMediaGateImplTest {
         val missing = File(tempDir, "gone.jpg") // never created
 
         val result = harness.gate.prepareMediaSend(
-            BOB, listOf(MediaFileInput(missing, "image/jpeg")), CAP, NOW, SUB_ID,
+            BOB,
+            listOf(MediaFileInput(missing, "image/jpeg")),
+            CAP,
+            NOW,
+            SUB_ID,
         )
 
         assertThat(result).isEqualTo(E2eMediaGate.PrepareResult.FallbackToPlain)
