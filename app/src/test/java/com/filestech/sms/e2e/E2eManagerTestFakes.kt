@@ -3,11 +3,13 @@ package com.filestech.sms.e2e
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.E2eAccountDao
 import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eMediaKeyDao
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
 import com.filestech.sms.data.local.db.dao.E2eSessionDao
 import com.filestech.sms.data.local.db.entity.E2eAccountEntity
 import com.filestech.sms.data.local.db.entity.E2eFragmentEntity
+import com.filestech.sms.data.local.db.entity.E2eMediaKeyEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
@@ -18,6 +20,7 @@ import com.filestech.sms.domain.repository.BlockedNumberRepository
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 
 /**
@@ -124,6 +127,25 @@ internal class FakeE2ePeerDao : E2ePeerDao {
     override suspend fun recordBundleReply(address: String, lastBundleReplyAt: Long, updatedAt: Long) {
         peers[address]?.let {
             peers[address] = it.copy(lastBundleReplyAt = lastBundleReplyAt, updatedAt = updatedAt)
+        }
+    }
+
+    // Round 48 — media capability columns.
+    override suspend fun setMediaCapable(address: String, mediaCapable: Boolean, updatedAt: Long) {
+        peers[address]?.let {
+            peers[address] = it.copy(mediaCapable = mediaCapable, updatedAt = updatedAt)
+        }
+    }
+
+    override suspend fun setMediaAnnounced(address: String, mediaAnnounced: Boolean, updatedAt: Long) {
+        peers[address]?.let {
+            peers[address] = it.copy(mediaAnnounced = mediaAnnounced, updatedAt = updatedAt)
+        }
+    }
+
+    override suspend fun setHandshakeChannel(address: String, channel: String?, updatedAt: Long) {
+        peers[address]?.let {
+            peers[address] = it.copy(handshakeChannel = channel, updatedAt = updatedAt)
         }
     }
 
@@ -267,6 +289,10 @@ internal class FakeE2eNoticeDao : E2eNoticeDao {
     override suspend fun noticesForConversation(conversationId: Long): List<E2eNoticeEntity> =
         notices.filter { it.conversationId == conversationId }.sortedBy { it.date }
 
+    override suspend fun latestNotice(conversationId: Long): E2eNoticeEntity? =
+        notices.filter { it.conversationId == conversationId }
+            .maxWithOrNull(compareBy({ it.date }, { it.id }))
+
     override fun observeForConversation(conversationId: Long): Flow<List<E2eNoticeEntity>> =
         flowOf(notices.filter { it.conversationId == conversationId }.sortedBy { it.date })
 
@@ -347,4 +373,36 @@ internal class RecordingDataSmsSender(var result: Boolean = true) : E2eDataSmsSe
         sentTexts += SentText(address, subId, text, kind)
         return result
     }
+}
+
+/**
+ * Round 48 — in-memory `e2e_media_keys` stand-in for
+ * [E2eMediaKeyStore] tests. `insert` is IGNORE (a duplicate
+ * file id returns -1 and keeps the first row, like the real
+ * DAO). Observations are live StateFlows, so a write after
+ * subscribing emits the new row.
+ */
+internal class FakeE2eMediaKeyDao : E2eMediaKeyDao {
+    val keys = mutableMapOf<String, E2eMediaKeyEntity>()
+    private val flows = mutableMapOf<String, MutableStateFlow<E2eMediaKeyEntity?>>()
+
+    override suspend fun insert(key: E2eMediaKeyEntity): Long {
+        if (keys.containsKey(key.fileId)) return -1L
+        keys[key.fileId] = key
+        flows[key.fileId]?.value = key
+        return 1L
+    }
+
+    override suspend fun findByFileId(fileId: String): E2eMediaKeyEntity? = keys[fileId]
+
+    override fun observeByFileId(fileId: String): Flow<E2eMediaKeyEntity?> =
+        flows.getOrPut(fileId) { MutableStateFlow(keys[fileId]) }
+
+    override suspend fun deleteByFileId(fileId: String) {
+        keys.remove(fileId)
+        flows[fileId]?.value = null
+    }
+
+    override suspend fun findFileIdsOlderThan(cutoff: Long): List<String> =
+        keys.filterValues { it.receivedAt < cutoff }.keys.toList()
 }

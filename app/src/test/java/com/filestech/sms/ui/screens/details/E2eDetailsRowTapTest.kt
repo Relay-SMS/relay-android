@@ -5,11 +5,15 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * Round 47 — what a tap on the encryption box does. A verified
+ * Round 47 — what a tap on the encryption box does. An encrypted
  * peer opens the safety-number sheet directly (no chevron, no
  * dropdown — the row IS the "View safety number" action); any
  * other state with expanded actions toggles the dropdown; with
  * none, the box is plain status.
+ *
+ * Round 48 — the direct tap no longer requires verification: an
+ * unverified encrypted peer used to open a one-item dropdown, a
+ * pointless extra tap once only verification is left.
  */
 class E2eDetailsRowTapTest {
 
@@ -38,7 +42,7 @@ class E2eDetailsRowTapTest {
     }
 
     @Test
-    fun `unverified encrypted peer with the sheet handler expands`() {
+    fun `unverified encrypted peer with the sheet handler opens the sheet directly`() {
         assertThat(
             e2eDetailsRowTap(
                 peerState = E2ePeerState.ENCRYPTED,
@@ -46,7 +50,7 @@ class E2eDetailsRowTapTest {
                 hasOpenVerification = true,
                 hasExpandedActions = true,
             ),
-        ).isEqualTo(E2eDetailsRowTap.Expand)
+        ).isEqualTo(E2eDetailsRowTap.OpenVerification)
     }
 
     @Test

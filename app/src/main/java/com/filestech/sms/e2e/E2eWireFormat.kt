@@ -56,6 +56,20 @@ object E2eWireFormat {
     enum class PayloadType(val code: Byte) {
         TEXT(0x01),
         REACTION(0x02),
+
+        /**
+         * Round 48 — a media key message ([E2eMediaKeyMessage]):
+         * the per-file AES key + metadata for one encrypted MMS
+         * attachment, sent ahead of the ciphertext part. Only ever
+         * sent to a media-capable peer: a build from before round
+         * 48 throws on the unknown type in [parsePayload], and its
+         * receive path turns that into an undecryptable placeholder
+         * plus a re-probe — so a key message to an old build would
+         * spam it with phantom failed messages. The capability
+         * gate ([E2eMediaGateImpl]) is what keeps that from
+         * happening.
+         */
+        MEDIA_KEY(0x03),
     }
 
     /** One parsed ciphertext fragment. */

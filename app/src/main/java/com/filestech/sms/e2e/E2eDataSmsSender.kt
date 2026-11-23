@@ -59,10 +59,16 @@ interface E2eDataSmsSender {
      * Sends [text] as one regular SMS to [address], from the
      * subscription [subId] (`null` = the system default). Round 45
      * — the handshake fallback transport: the text is an
-     * [E2eHandshakeSms]-encoded packet, one single-part SMS. Same
-     * contract as [sendDataMessage] (sent intent, failure tag by
-     * [kind], `true` when the radio accepted the send) — and, like
-     * the data path, it never touches the message store.
+     * [E2eHandshakeSms]-encoded packet, one single-part SMS. Round
+     * 48 — also the media key-message transport: the text is one
+     * `RLY1:` fragment of a MEDIA_KEY payload. Same contract as
+     * [sendDataMessage] (sent intent, failure tag by [kind],
+     * `true` when the radio accepted the send) — and, like the
+     * data path, it never touches the message store, and its sent
+     * intent carries no message-row id (the async verdict lands
+     * in [E2eDataSmsSentReceiver], never in the message-status
+     * receivers — a key fragment must not flip an MMS row's
+     * status).
      */
     fun sendTextMessage(
         address: String,
@@ -73,12 +79,11 @@ interface E2eDataSmsSender {
 }
 
 /**
- * Which handshake message a data SMS carries. The failure tag
- * in the error log differs by kind: a failed bundle reply used
- * to be recorded under `e2e-probe-send` (one shared send path,
- * one unconditional tag), so it read as a probe failure — now
- * each kind carries its own tag and the two failures are
- * separable.
+ * Which E2E message an SMS carries. The failure tag in the error
+ * log differs by kind: a failed bundle reply used to be recorded
+ * under `e2e-probe-send` (one shared send path, one unconditional
+ * tag), so it read as a probe failure — now each kind carries its
+ * own tag and the failures are separable.
  */
 enum class DataSmsKind(val failureTag: String) {
     /** A probe (the outbound key-exchange opener). */
@@ -86,6 +91,18 @@ enum class DataSmsKind(val failureTag: String) {
 
     /** A bundle reply (the answer to a probe). */
     BUNDLE("e2e-bundle-send"),
+
+    /**
+     * Round 48 — a media-capability declaration (the 0x03
+     * handshake packet, either channel).
+     */
+    MEDIA_CAPABLE("e2e-media-capable-send"),
+
+    /**
+     * Round 48 — one fragment of a media key message (an `RLY1:`
+     * fragment of a MEDIA_KEY payload, regular SMS only).
+     */
+    MEDIA_KEY("e2e-media-key-send"),
 }
 
 /** The real sender over `SmsManager.sendDataMessage` / `sendTextMessage`. */

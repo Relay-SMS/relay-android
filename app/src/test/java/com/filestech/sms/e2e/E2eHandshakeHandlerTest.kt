@@ -4,6 +4,7 @@ import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
+import com.filestech.sms.data.local.db.entity.E2ePeerEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.sms.PhoneIdentity
@@ -60,6 +61,9 @@ class E2eHandshakeHandlerTest {
         val messageDao = mockk<MessageDao>()
         val phoneIdentity = mockk<PhoneIdentity>()
         val recorder = mockk<E2eFailureRecorder>(relaxed = true)
+        // Round 48 — relaxed: the declaration is best-effort and
+        // invisible to the existing assertions.
+        val mediaCapability = mockk<E2eMediaCapabilityManager>(relaxed = true)
 
         val peers = E2ePeerRepository(peerDao)
         val sessions = E2eSessionStore(sessionDao, aliceCrypto, fakeKeyManager())
@@ -83,6 +87,7 @@ class E2eHandshakeHandlerTest {
             phoneIdentity = phoneIdentity,
             blockedRepo = FakeBlockedRepo(),
             recorder = recorder,
+            mediaCapability = mediaCapability,
         )
 
         init {
@@ -662,5 +667,72 @@ class E2eHandshakeHandlerTest {
 
         coVerify(exactly = 0) { harness.messageDao.update(any()) }
         coVerify(exactly = 0) { harness.messageDao.refreshConversationPreview(any()) }
+    }
+
+    // ──────────────────────────── Round 48: media capability ────────────────────────────
+
+    @Test
+    fun `a capability packet by data SMS is handled and delegated, with no bundle reply`() = runTest {
+        val harness = Harness()
+
+        val handled = harness.handler.handleDataSms(BOB, E2eHandshake.encodeMediaCapable(), 3, NOW)
+
+        assertThat(handled).isTrue()
+        coVerify { harness.mediaCapability.onDeclarationReceived(BOB, 3, NOW) }
+        // A declaration earns no bundle reply — it is not a probe.
+        assertThat(harness.sender.sent).isEmpty()
+        assertThat(harness.sender.sentTexts).isEmpty()
+    }
+
+    @Test
+    fun `a capability packet by text SMS is handled and delegated`() = runTest {
+        val harness = Harness()
+        val text = E2eHandshakeSms.encode(E2eHandshake.encodeMediaCapable())
+
+        val handled = harness.handler.handleSms(BOB, text, null, NOW)
+
+        assertThat(handled).isTrue()
+        coVerify { harness.mediaCapability.onDeclarationReceived(BOB, null, NOW) }
+        assertThat(harness.sender.sent).isEmpty()
+        assertThat(harness.sender.sentTexts).isEmpty()
+    }
+
+    @Test
+    fun `a bundle receipt records the channel and announces our capability`() = runTest {
+        val harness = Harness()
+
+        harness.handler.handleDataSms(BOB, harness.bundleFrom(harness.bobCrypto), null, NOW)
+
+        // The bundle arrived on data SMS, so our probe reached them
+        // on it: the channel is proven for our declaration.
+        assertThat(harness.peerDao.peers[BOB]!!.handshakeChannel).isEqualTo("DATA_SMS")
+        coVerify { harness.mediaCapability.announceNow(BOB, null, NOW) }
+    }
+
+    @Test
+    fun `a probe receipt records the channel while not yet ENCRYPTED`() = runTest {
+        val harness = Harness()
+
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        assertThat(harness.peerDao.peers[BOB]!!.handshakeChannel).isEqualTo("DATA_SMS")
+    }
+
+    @Test
+    fun `a probe from an already-ENCRYPTED peer does not overwrite the recorded channel`() = runTest {
+        val harness = Harness()
+        harness.peerDao.peers[BOB] = E2ePeerEntity(
+            address = BOB,
+            state = E2ePeerState.ENCRYPTED,
+            handshakeChannel = "TEXT_SMS",
+            updatedAt = NOW,
+        )
+
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.bobCrypto), null, NOW)
+
+        // The proven channel survives a later exchange on another
+        // channel (a key-change probe is not proof the new
+        // channel delivers).
+        assertThat(harness.peerDao.peers[BOB]!!.handshakeChannel).isEqualTo("TEXT_SMS")
     }
 }

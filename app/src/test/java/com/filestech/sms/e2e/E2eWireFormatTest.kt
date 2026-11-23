@@ -204,7 +204,7 @@ class E2eWireFormatTest {
             E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x03, 0x01, 0x00))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x01, 0x03, 0x00))
+            E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x01, 0x04, 0x00))
         }
         assertThrows(IllegalArgumentException::class.java) {
             E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x01, 0x01))

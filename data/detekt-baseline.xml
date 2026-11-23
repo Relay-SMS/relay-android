@@ -105,6 +105,12 @@
          role as the single write path. -->
     <ID>TooManyFunctions:ConversationMirror.kt$ConversationMirror : OutgoingMessageMirror</ID>
     <ID>TooManyFunctions:ConversationRepositoryImpl.kt$ConversationRepositoryImpl : ConversationRepository</ID>
+    <!-- Round 48 — the media-capability columns (media_capable /
+         media_announced / handshake_channel) take E2ePeerDao to
+         exactly 20 methods, the interface threshold. The DAO is
+         the peer row's single access path; splitting it would
+         scatter the peer queries across two DAOs for no benefit. -->
+    <ID>TooManyFunctions:E2ePeerDao.kt$E2ePeerDao</ID>
     <ID>TooManyFunctions:MessageDao.kt$MessageDao</ID>
     <ID>UnusedImports:SettingsRepository.kt$import kotlinx.coroutines.flow.first</ID>
     <ID>UnusedPrivateMember:TelephonyReader.kt$TelephonyReader$private fun readMmsParts(mmsId: Long): Pair&lt;String, List&lt;MmsPartImport&gt;&gt;</ID>

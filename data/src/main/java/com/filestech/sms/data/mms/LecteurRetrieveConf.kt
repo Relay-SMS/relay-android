@@ -37,7 +37,18 @@ data class ContenuMmsRecu(
 }
 
 /** Une partie média d'un MMS reçu. Pas une `data class` : l'égalité d'un tableau d'octets est l'identité. */
-class PartieMms(val octets: ByteArray, val mime: String)
+class PartieMms(
+    val octets: ByteArray,
+    val mime: String,
+    /**
+     * Round 48 — the part's filename, from `Content-Location`
+     * (primary) or `Name` (fallback), or null when the PDU carries
+     * neither. Only the relay-media name (`relay-media-<id>.bin`)
+     * is preserved at write time — every other part keeps its
+     * generated name, so plain MMS is untouched.
+     */
+    val name: String? = null,
+)
 
 object LecteurRetrieveConf {
 
@@ -84,7 +95,15 @@ object LecteurRetrieveConf {
     internal fun partiesMedia(body: PduBody): List<PartieMms> = parties(body).mapNotNull { partie ->
         val mime = decoderMime(partie.contentType)?.takeIf { it !in HORS_PIECES }
         val donnees = partie.data?.takeIf { it.isNotEmpty() }
-        if (mime != null && donnees != null) PartieMms(donnees, mime) else null
+        // Round 48 — the part name rides along: the relay-media
+        // filename is the key lookup for an encrypted part, and
+        // the live path used to drop it (the writer generated a
+        // fresh name for every part).
+        if (mime != null && donnees != null) {
+            PartieMms(donnees, mime, decoderNom(partie.contentLocation) ?: decoderNom(partie.name))
+        } else {
+            null
+        }
     }
 
     /**
@@ -117,6 +136,21 @@ object LecteurRetrieveConf {
         val fin = octets.indexOf(0.toByte()).let { if (it < 0) octets.size else it }
         if (fin == 0) return null
         return String(octets, 0, fin).substringBefore(';').trim().lowercase().takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Round 48 — a part's filename, from the raw `Content-Location`
+     * or `Name` bytes: cut at the WAP NUL terminator like
+     * [decoderMime], decoded as UTF-8 (ASCII is a subset, and a
+     * relay-media name is ASCII). Unlike the MIME, the name is
+     * NOT lowercased and its parameters are NOT stripped — a
+     * filename is matched exactly.
+     */
+    internal fun decoderNom(octets: ByteArray?): String? {
+        if (octets == null || octets.isEmpty()) return null
+        val fin = octets.indexOf(0.toByte()).let { if (it < 0) octets.size else it }
+        if (fin == 0) return null
+        return String(octets, 0, fin, Charsets.UTF_8).trim().takeIf { it.isNotEmpty() }
     }
 
     /** Le libellé d'aperçu quand il n'y a ni légende ni sujet, sur le modèle des messageries courantes. */

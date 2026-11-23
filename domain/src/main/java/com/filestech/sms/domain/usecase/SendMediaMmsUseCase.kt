@@ -2,6 +2,8 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.e2e.E2eMediaGate
+import com.filestech.sms.domain.e2e.MediaFileInput
 import com.filestech.sms.domain.mms.MediaAttachmentSpec
 import com.filestech.sms.domain.mms.MmsAttachment
 import com.filestech.sms.domain.mms.MmsDispatcher
@@ -26,6 +28,18 @@ import javax.inject.Inject
  * MMSCs accept (Free is the tightest at ~300 KB; Orange / SFR / Sosh / Bouygues handle up to
  * ~1 MB). The cap is conservative on purpose so the user always gets a usable error before
  * the MMSC rejects the upload.
+ *
+ * Round 48 — media encryption (1:1 only, never for groups): before
+ * any mirror row exists, each non-blocked recipient goes through
+ * [E2eMediaGate.prepareMediaSend], which decides (ENCRYPTED +
+ * media-capable → encrypt) and, when it encrypts, sends the key
+ * messages FIRST and returns the ciphertext parts. The mirror row
+ * keeps the PLAINTEXT sender copy (the durable files) and carries
+ * the `encrypted` flag, so the bubble shows the lock + blue. A
+ * Refuse (ciphertext over the cap) fails the WHOLE send before
+ * anything is mirrored or dispatched; a fallback (encryption
+ * failure) dispatches the originals plain — the gate records it
+ * in the error log, so the fallback is never silent.
  */
 class SendMediaMmsUseCase @Inject constructor(
     private val defaultAppManager: DefaultSmsAppChecker,
@@ -34,6 +48,7 @@ class SendMediaMmsUseCase @Inject constructor(
     private val sender: MmsDispatcher,
     private val settings: AppSettingsSource,
     private val attachmentStore: OutgoingAttachmentStore,
+    private val mediaGate: E2eMediaGate = E2eMediaGate.NoOp,
 ) {
     private val envoi = EnvoiParDestinataire(blockedRepo, mirror)
 
@@ -115,48 +130,106 @@ class SendMediaMmsUseCase @Inject constructor(
         // Slice 3 — même règle que côté SMS : la clé ne va que sur UNE ligne.
         val cleSurLigne = clientMessageId.takeIf { !echoInGroup && recipients.size == 1 }
         val cleSurEcho = clientMessageId.takeIf { echoInGroup }
-        // v1.28.3 (F21, second passage) — le `continue` muet était ici AUSSI : le correctif
-        // n'avait été posé que sur `SendSmsUseCase`. v1.28.4 — la boucle n'existe plus qu'une
-        // fois, dans [EnvoiParDestinataire] ; ce chemin ne peut plus diverger du SMS.
-        return envoi.parDestinataire(
-            recipients = recipients,
-            sansRemise = "no MMS dispatched",
-            miroir = { r, _ ->
-                mirror.upsertOutgoingMediaMms(
-                    address = r.raw,
-                    attachments = mirrorSpecs,
-                    textBody = textBody,
-                    date = now,
-                    subId = effectiveSubId,
-                    clientMessageId = cleSurLigne,
-                )
-            },
-            envoi = { localId, r ->
-                sender.sendMediaMms(
-                    localMessageId = localId,
-                    recipients = listOf(r.raw),
-                    attachments = pduAttachments,
-                    textBody = textBody.ifBlank { null },
-                    subId = effectiveSubId,
-                    requestDeliveryReport = deliveryReports,
-                )
-            },
-            echoDeGroupe = if (echoInGroup) {
-                { statut ->
-                    mirror.upsertGroupEcho(
-                        addresses = recipients,
-                        body = textBody,
+
+        // Round 48 — préparation du chiffrement AVANT toute ligne
+        // miroir : pour chaque destinataire non bloqué, le gate
+        // décide (chiffré / clair) et, le cas échéant, chiffre les
+        // pièces jointes ET envoie les messages-clés. Un Refuse
+        // (chiffré au-dessus du plafond) fait échouer l'envoi
+        // ENTIER avant que quoi que ce soit ne soit miroité ou
+        // remis — jamais de demi-envoi. Les bloqués ne passent
+        // jamais par le gate : leur ligne est marquée en échec sans
+        // remise, un message-clé pour eux serait perdu. Les groupes
+        // ne passent jamais ici (envoiDeGroupe, plus haut).
+        val mediaInputs = durableAttachments.map { MediaFileInput(it.file, it.mimeType) }
+        val prepared = mutableMapOf<String, E2eMediaGate.PrepareResult.Encrypted>()
+        try {
+            for (r in recipients) {
+                if (blockedRepo.isBlocked(r.raw)) continue
+                when (
+                    val result = mediaGate.prepareMediaSend(
+                        address = r.raw,
+                        files = mediaInputs,
+                        maxTotalBytes = MAX_PAYLOAD_BYTES,
                         date = now,
                         subId = effectiveSubId,
-                        status = statut,
-                        attachments = mirrorSpecs,
-                        clientMessageId = cleSurEcho,
                     )
+                ) {
+                    is E2eMediaGate.PrepareResult.Encrypted -> prepared[r.raw] = result
+                    is E2eMediaGate.PrepareResult.Plain,
+                    E2eMediaGate.PrepareResult.FallbackToPlain -> Unit
+                    is E2eMediaGate.PrepareResult.Refuse ->
+                        return Outcome.Failure(AppError.Validation(result.message))
                 }
-            } else {
-                null
-            },
-        )
+            }
+            // v1.28.3 (F21, second passage) — le `continue` muet était ici AUSSI : le correctif
+            // n'avait été posé que sur `SendSmsUseCase`. v1.28.4 — la boucle n'existe plus qu'une
+            // fois, dans [EnvoiParDestinataire] ; ce chemin ne peut plus diverger du SMS.
+            return envoi.parDestinataire(
+                recipients = recipients,
+                sansRemise = "no MMS dispatched",
+                miroir = { r, _ ->
+                    mirror.upsertOutgoingMediaMms(
+                        address = r.raw,
+                        attachments = mirrorSpecs,
+                        textBody = textBody,
+                        date = now,
+                        subId = effectiveSubId,
+                        clientMessageId = cleSurLigne,
+                        encrypted = prepared.containsKey(r.raw),
+                    )
+                },
+                envoi = { localId, r ->
+                    val pieces = prepared[r.raw]?.attachments ?: pduAttachments
+                    try {
+                        sender.sendMediaMms(
+                            localMessageId = localId,
+                            recipients = listOf(r.raw),
+                            attachments = pieces,
+                            textBody = textBody.ifBlank { null },
+                            subId = effectiveSubId,
+                            requestDeliveryReport = deliveryReports,
+                        )
+                    } finally {
+                        // Les fichiers chiffrés sont lus par le
+                        // builder pendant la remise ; après, ils
+                        // sont morts — on les supprime.
+                        prepared[r.raw]?.attachments?.forEach {
+                            runCatching { it.file.delete() }
+                        }
+                    }
+                },
+                echoDeGroupe = if (echoInGroup) {
+                    { statut ->
+                        mirror.upsertGroupEcho(
+                            addresses = recipients,
+                            body = textBody,
+                            date = now,
+                            subId = effectiveSubId,
+                            status = statut,
+                            attachments = mirrorSpecs,
+                            clientMessageId = cleSurEcho,
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
+        } finally {
+            // Les restes (destinataire dont la remise n'a jamais eu
+            // lieu, exception dans la boucle) : delete() sur un
+            // fichier déjà supprimé est sans effet.
+            deletePrepared(prepared)
+        }
+    }
+
+    /** Round 48 — supprime les fichiers chiffrés temporaires préparés (best-effort). */
+    private fun deletePrepared(prepared: Map<String, E2eMediaGate.PrepareResult.Encrypted>) {
+        for (result in prepared.values) {
+            for (attachment in result.attachments) {
+                runCatching { attachment.file.delete() }
+            }
+        }
     }
 
     /**

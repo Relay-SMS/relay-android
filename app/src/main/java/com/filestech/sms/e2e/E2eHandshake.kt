@@ -41,6 +41,30 @@ package com.filestech.sms.e2e
  * build would ignore: every header byte is validated (magic,
  * version, type, exact length) and the key bytes are real keys.
  *
+ * Round 48 — the media-capability declaration (type `0x03`): "I can
+ * send and receive encrypted media". It is a NEW packet type, not a
+ * flag inside the probe/bundle — those packets have no spare byte
+ * (see above), so the signal could not ride inside them. It is sent
+ * AFTER the session is established (see
+ * [E2eMediaCapabilityManager]), on the same channel the handshake
+ * used ([HandshakeChannel]).
+ *
+ * The declaration is deliberately PROBE-SIZED (70 bytes, flags in
+ * the first payload byte, the rest zeroes) — not the 6-byte header
+ * alone. An old build drops an unknown packet type silently on the
+ * data-SMS path ([decode] returns null), but on the `RLYH:` text
+ * path the old gate ([E2eHandshakeSmsGate]) only swallows texts
+ * whose decoded length is 70 or 102 bytes
+ * ([E2eHandshakeSms.isHandshakeSms]) — anything else falls through
+ * to the plain-text insert path and would surface as a visible
+ * `RLYH:…` gibberish bubble on the old build. At 70 bytes the
+ * declaration passes the old gate's length check, the old
+ * [decode] returns null for the unknown type, and the text is
+ * swallowed (system inbox only, never a bubble) — silent on both
+ * channels, on every old build. The size costs nothing: one data
+ * segment either way, and the `RLYH:` text stays one 101-char
+ * segment, like a probe.
+ *
  * No signature on the reply: this is TOFU — a man-in-the-middle who swaps
  * the whole bundle defeats any signature on it anyway. Detection is the
  * safety-number verification ([E2eSafetyNumber]). The Olm pre-key message
@@ -60,10 +84,31 @@ object E2eHandshake {
     /** Total size of a bundle-reply packet, in bytes. */
     const val BUNDLE_SIZE: Int = 102
 
+    /**
+     * Total size of a media-capability declaration packet, in bytes
+     * (round 48). Deliberately probe-sized: see the class KDoc for
+     * why a shorter packet would surface as visible gibberish on
+     * old builds on the `RLYH:` text path.
+     */
+    const val MEDIA_CAPABLE_SIZE: Int = PROBE_SIZE
+
     private const val HEADER_SIZE: Int = 6
     private const val VERSION: Byte = 0x01
     private const val TYPE_PROBE: Byte = 0x01
     private const val TYPE_BUNDLE: Byte = 0x02
+    private const val TYPE_MEDIA_CAPABLE: Byte = 0x03
+
+    /**
+     * Flags byte offset inside a media-capability packet: the first
+     * payload byte, right after the 6-byte header. Bit 0
+     * ([MEDIA_FLAG]) says the sender handles encrypted media; the
+     * remaining bits are reserved (zero today) so a future
+     * capability can ride the same packet without a new type.
+     */
+    private const val MEDIA_FLAGS_OFFSET: Int = HEADER_SIZE
+
+    /** Flags bit 0: the sender can send and receive encrypted media. */
+    private const val MEDIA_FLAG: Int = 0x01
 
     /**
      * Bit 7 of the type byte: set on a probe the user sent by tapping
@@ -78,17 +123,12 @@ object E2eHandshake {
     private val MAGIC: ByteArray = byteArrayOf(0x52, 0x4C, 0x59, 0x48) // "RLYH"
 
     /**
-     * A decoded handshake packet. Plain classes (not data classes):
-     * data-class equality on [ByteArray] is referential, which would
-     * silently break key comparisons.
+     * A decoded handshake packet. The key-carrying classes are plain
+     * classes (not data classes): data-class equality on [ByteArray]
+     * is referential, which would silently break key comparisons.
+     * [MediaCapable] carries no keys, so a data class is safe there.
      */
     sealed interface HandshakePacket {
-
-        /** Our / their Curve25519 identity key (32 bytes). */
-        val curveKey: ByteArray
-
-        /** Our / their Ed25519 identity key (32 bytes). */
-        val edKey: ByteArray
 
         /**
          * A probe: "I run Relay, here are my identity keys".
@@ -97,8 +137,10 @@ object E2eHandshake {
          * rate limit for it. Automatic probes are never manual.
          */
         class Probe(
-            override val curveKey: ByteArray,
-            override val edKey: ByteArray,
+            /** Our / their Curve25519 identity key (32 bytes). */
+            val curveKey: ByteArray,
+            /** Our / their Ed25519 identity key (32 bytes). */
+            val edKey: ByteArray,
             val manual: Boolean = false,
         ) : HandshakePacket {
 
@@ -128,8 +170,10 @@ object E2eHandshake {
 
         /** A bundle reply: identity keys + one one-time public key. */
         class Bundle(
-            override val curveKey: ByteArray,
-            override val edKey: ByteArray,
+            /** Our / their Curve25519 identity key (32 bytes). */
+            val curveKey: ByteArray,
+            /** Our / their Ed25519 identity key (32 bytes). */
+            val edKey: ByteArray,
             val oneTimeKey: ByteArray,
         ) : HandshakePacket {
 
@@ -157,6 +201,22 @@ object E2eHandshake {
             override fun toString(): String =
                 "Bundle(<32-byte curve key>, <32-byte ed key>, <32-byte one-time key>)"
         }
+
+        /**
+         * A media-capability declaration (round 48): "I can send and
+         * receive encrypted media". Sent after the session is
+         * established, on the handshake channel — the receiver
+         * records the sender as media-capable and needs no reply
+         * beyond its own declaration (see
+         * [E2eMediaCapabilityManager]). Carries no keys: the
+         * sender's address identifies the peer, and the session
+         * already exists. A data class is safe here — the only
+         * field is a Boolean, no [ByteArray] equality trap.
+         */
+        data class MediaCapable(
+            /** True when the sender handles encrypted media (flags bit 0). */
+            val mediaCapable: Boolean,
+        ) : HandshakePacket
     }
 
     /**
@@ -182,6 +242,23 @@ object E2eHandshake {
     }
 
     /**
+     * Encode a media-capability declaration packet (round 48, 70
+     * bytes — probe-sized, see the class KDoc): the header, the
+     * flags byte with bit 0 set, and zeroes. Sent after the
+     * session is established, never before — a declaration from a
+     * peer with no session is meaningless, and the receiver only
+     * trusts it alongside an ENCRYPTED state.
+     */
+    fun encodeMediaCapable(): ByteArray {
+        return ByteArray(MEDIA_CAPABLE_SIZE).apply {
+            MAGIC.copyInto(this, 0)
+            this[4] = VERSION
+            this[5] = TYPE_MEDIA_CAPABLE
+            this[MEDIA_FLAGS_OFFSET] = MEDIA_FLAG.toByte()
+        }
+    }
+
+    /**
      * Decode a received packet. Returns null for anything that is not one
      * of our packets (bad magic, version, type, or length) — the receiver
      * drops those silently, since a random data SMS to this port is not
@@ -200,6 +277,7 @@ object E2eHandshake {
         return when ((typeByte.toInt() and TYPE_MASK.toInt()).toByte()) {
             TYPE_PROBE -> decodeProbe(bytes, isManual(typeByte))
             TYPE_BUNDLE -> decodeBundle(bytes)
+            TYPE_MEDIA_CAPABLE -> decodeMediaCapable(bytes)
             else -> null
         }
     }
@@ -242,6 +320,21 @@ object E2eHandshake {
                     HEADER_SIZE + 2 * E2E_KEY_LENGTH,
                 ),
                 oneTimeKey = bytes.copyOfRange(HEADER_SIZE + 2 * E2E_KEY_LENGTH, BUNDLE_SIZE),
+            )
+        }
+
+    /**
+     * Decode a media-capability declaration: exactly
+     * [MEDIA_CAPABLE_SIZE] bytes, flags bit 0 read leniently —
+     * other flags bits are reserved for future capabilities and
+     * must not break decoding when a newer build sets them.
+     */
+    private fun decodeMediaCapable(bytes: ByteArray): HandshakePacket.MediaCapable? =
+        if (bytes.size != MEDIA_CAPABLE_SIZE) {
+            null
+        } else {
+            HandshakePacket.MediaCapable(
+                mediaCapable = (bytes[MEDIA_FLAGS_OFFSET].toInt() and MEDIA_FLAG) != 0,
             )
         }
 }

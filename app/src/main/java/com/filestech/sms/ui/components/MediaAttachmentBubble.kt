@@ -48,6 +48,7 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.GifDecoder
 import coil.decode.VideoFrameDecoder
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.filestech.sms.R
 import com.filestech.sms.domain.model.Attachment
@@ -687,6 +688,14 @@ private fun ImagePreview(
                     .data(modelOverride ?: attachment.modeleImage())
                     .size(THUMBNAIL_PX)
                     .crossfade(true)
+                    // Round 48 — an override model is decrypted
+                    // plaintext (notes / encrypted media): Coil
+                    // must never write it to its disk cache (the
+                    // plain path keeps its cache — those bytes are
+                    // already on disk unencrypted).
+                    .diskCachePolicy(
+                        if (hasOverride) CachePolicy.DISABLED else CachePolicy.ENABLED,
+                    )
                     .build(),
                 imageLoader = gifImageLoader,
                 contentDescription = attachment.fileName ?: stringResource(R.string.attachment_image_label),
@@ -814,6 +823,13 @@ private fun VideoPreview(
                     .data(modelOverride ?: attachment.modeleImage())
                     .size(THUMBNAIL_PX)
                     .crossfade(true)
+                    // Round 48 — an override model is decrypted
+                    // plaintext (notes / encrypted media): Coil
+                    // must never write it to its disk cache (see
+                    // [ImagePreview]).
+                    .diskCachePolicy(
+                        if (hasOverride) CachePolicy.DISABLED else CachePolicy.ENABLED,
+                    )
                     .build(),
                 imageLoader = videoImageLoader,
                 contentDescription = attachment.fileName

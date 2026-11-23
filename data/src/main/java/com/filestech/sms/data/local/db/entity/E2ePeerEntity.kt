@@ -5,7 +5,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * E2E encryption (schema v22) — one row per peer address. The key-exchange state
+ * E2E encryption (schema v23) — one row per peer address. The key-exchange state
  * machine lives here (design §4.3), keyed by normalized phone number rather than
  * conversation id: the session is with a person, and a thread can be re-created for
  * the same number.
@@ -20,6 +20,15 @@ import androidx.room.PrimaryKey
  * none was ever sent; the probe policy reads it before answering a probe.
  * (This column is not in the §8.1 DDL — the rate limit needs a timestamp to
  * persist against, so it was added with the v22 schema.)
+ *
+ * Round 48 (schema v23) — media capability (design §2.7): [mediaCapable]
+ * says the peer declared it handles encrypted media; [mediaAnnounced]
+ * says WE already sent our declaration to this peer; [handshakeChannel]
+ * is the channel our outbound handshake packets provably used
+ * (`DATA_SMS` / `TEXT_SMS`, null when the handshake predates round 48
+ * and no channel was ever recorded). The channel is a raw String, not
+ * the `HandshakeChannel` enum: that enum lives in `:app` and this
+ * entity in `:data`, and the repository maps between the two.
  */
 @Entity(tableName = "e2e_peers")
 data class E2ePeerEntity(
@@ -47,6 +56,34 @@ data class E2ePeerEntity(
     @ColumnInfo(name = "window_started_at") val windowStartedAt: Long? = null,
     /** Epoch ms of the last bundle reply sent to this peer, null if never replied. */
     @ColumnInfo(name = "last_bundle_reply_at") val lastBundleReplyAt: Long? = null,
+    /**
+     * Round 48 — true once this peer's phone declared it handles
+     * encrypted media (the 0x03 capability packet). False by
+     * default: an old build never declares, so media to it stays
+     * plain. Set only by the declaration receive path, never by
+     * the sender guessing.
+     */
+    @ColumnInfo(name = "media_capable", defaultValue = "0") val mediaCapable: Boolean = false,
+    /**
+     * Round 48 — true once WE sent our media-capability
+     * declaration to this peer (and the radio accepted it). The
+     * thread-open hook sends the declaration exactly once per
+     * peer; a failed send leaves this false so the next
+     * thread-open retries. Set only after a successful send.
+     */
+    @ColumnInfo(name = "media_announced", defaultValue = "0") val mediaAnnounced: Boolean = false,
+    /**
+     * Round 48 — the channel our outbound handshake packets
+     * provably used for this peer: `DATA_SMS` or `TEXT_SMS`
+     * (the `HandshakeChannel` enum names, stored raw — the enum
+     * lives in `:app`). Recorded when a bundle arrives (our probe
+     * reached them on that channel) and when a probe arrives
+     * while not yet ENCRYPTED (our bundle reply goes out on that
+     * channel, and the session establishment proves it arrived).
+     * Null when the handshake predates round 48: the declaration
+     * then goes out on BOTH channels, once.
+     */
+    @ColumnInfo(name = "handshake_channel") val handshakeChannel: String? = null,
     /** Epoch ms of the last state/key update. */
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )

@@ -194,9 +194,10 @@
     <string name="e2e_notice_deactivated">Cifrado finalizado — %1$s ya no usa Relay</string>
     <string name="e2e_decrypt_failed">No se pudo descifrar este mensaje.</string>
     <string name="e2e_decrypt_failed_notif">No se pudo descifrar este mensaje.</string>
+    <string name="e2e_media_decrypt_pending">Esperando para descifrar…</string>
     <string name="e2e_encryption">Cifrado</string>
     <string name="e2e_details_encrypted">Cifrado de extremo a extremo</string>
-    <string name="e2e_details_verify_tap">Toca para verificar el número de seguridad de %1$s</string>
+    <string name="e2e_details_verify_tap">Toca para verificar el número de seguridad</string>
     <string name="e2e_details_verified">Verificado ✓</string>
     <string name="e2e_details_setting_up">Comprobando si %1$s usa Relay…</string>
     <string name="e2e_details_not_encrypted">Sin cifrar</string>

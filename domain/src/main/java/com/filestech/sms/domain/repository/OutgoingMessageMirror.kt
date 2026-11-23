@@ -97,7 +97,12 @@ interface OutgoingMessageMirror {
      */
     suspend fun resetOutgoingForRetry(localId: Long): Int?
 
-    /** Miroite un MMS vocal sortant. Renvoie l'id Room local. */
+    /**
+     * Miroite un MMS vocal sortant. Renvoie l'id Room local.
+     * @param encrypted round 48 — marque la ligne chiffrée (la bulle affiche le cadenas + le
+     * bleu). La ligne garde la copie PLAINTEXTE de l'expéditeur, exactement comme une ligne SMS
+     * chiffrée garde son corps en clair.
+     */
     suspend fun upsertOutgoingMms(
         address: String,
         audioFile: File,
@@ -105,11 +110,13 @@ interface OutgoingMessageMirror {
         durationMs: Long,
         date: Long,
         subId: Int? = null,
+        encrypted: Boolean = false,
     ): Long
 
     /**
      * Miroite un MMS multimédia sortant ([attachments] + [textBody]). Renvoie l'id Room local.
      * @param clientMessageId Slice 3 — cf. [upsertOutgoingSms].
+     * @param encrypted round 48 — cf. [upsertOutgoingMms].
      */
     suspend fun upsertOutgoingMediaMms(
         address: String,
@@ -118,6 +125,7 @@ interface OutgoingMessageMirror {
         date: Long,
         subId: Int? = null,
         clientMessageId: String? = null,
+        encrypted: Boolean = false,
     ): Long
 
     /**

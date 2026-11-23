@@ -194,9 +194,10 @@
     <string name="e2e_notice_deactivated">Crittografia terminata — %1$s non usa più Relay</string>
     <string name="e2e_decrypt_failed">Impossibile decrittografare questo messaggio.</string>
     <string name="e2e_decrypt_failed_notif">Impossibile decrittografare questo messaggio.</string>
+    <string name="e2e_media_decrypt_pending">In attesa di decrittografia…</string>
     <string name="e2e_encryption">Crittografia</string>
     <string name="e2e_details_encrypted">Crittografato end-to-end</string>
-    <string name="e2e_details_verify_tap">Tocca per verificare il numero di sicurezza di %1$s</string>
+    <string name="e2e_details_verify_tap">Tocca per verificare il numero di sicurezza</string>
     <string name="e2e_details_verified">Verificato ✓</string>
     <string name="e2e_details_setting_up">Verifica se %1$s usa Relay…</string>
     <string name="e2e_details_not_encrypted">Non crittografato</string>

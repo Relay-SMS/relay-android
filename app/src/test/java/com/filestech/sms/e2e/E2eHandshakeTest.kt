@@ -74,7 +74,7 @@ class E2eHandshakeTest {
     @Test
     fun `decode rejects an unknown type even with the flag bit set`() {
         val bytes = E2eHandshake.encodeProbe(curveKey, edKey)
-        bytes[5] = 0x83.toByte()
+        bytes[5] = 0x84.toByte()
 
         assertThat(E2eHandshake.decode(bytes)).isNull()
     }
@@ -132,7 +132,7 @@ class E2eHandshakeTest {
     @Test
     fun `decode rejects an unknown type`() {
         val bytes = E2eHandshake.encodeProbe(curveKey, edKey)
-        bytes[5] = 0x03
+        bytes[5] = 0x04
         assertThat(E2eHandshake.decode(bytes)).isNull()
     }
 

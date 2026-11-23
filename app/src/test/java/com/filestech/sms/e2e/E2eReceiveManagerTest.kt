@@ -42,6 +42,18 @@ class E2eReceiveManagerTest {
         const val CONV_ID = 11L
         const val NOW = 1_800_000_000_000L
         const val MSG_ID = "a1b2c3"
+        const val MEDIA_FILE_ID = "0123456789abcdef"
+        val MEDIA_KEY_JSON: String = E2eMediaKeyMessage.encode(
+            E2eMediaKeyMessage.MediaKey(
+                id = MEDIA_FILE_ID,
+                key = ByteArray(32) { it.toByte() },
+                mime = "image/jpeg",
+                sizeBytes = 12_345L,
+                sha256Hex = "ab".repeat(32),
+                fileName = "photo.jpg",
+            ),
+        )
+        val MEDIA_KEY = E2eWireFormat.PayloadType.MEDIA_KEY
     }
 
     /** A crypto that throws when decrypting with [failingSessionId] (a corrupt current session). */
@@ -79,6 +91,14 @@ class E2eReceiveManagerTest {
         val notifier = mockk<IncomingMessageNotifier>()
         val probeManager = mockk<E2eProbeManager>()
         val handshakeHandler = mockk<E2eHandshakeHandler>()
+        // Round 48 — relaxed: the declaration is best-effort and
+        // invisible to the existing assertions.
+        val mediaCapability = mockk<E2eMediaCapabilityManager>(relaxed = true)
+        // Round 48 — a REAL store over the fake DAO (like the
+        // fragment/peer stores above): the MEDIA_KEY tests assert
+        // on the stored rows.
+        val mediaKeyDao = FakeE2eMediaKeyDao()
+        val mediaKeys = E2eMediaKeyStore(mediaKeyDao)
         val context = mockk<Context>()
 
         val peers = E2ePeerRepository(peerDao)
@@ -97,6 +117,8 @@ class E2eReceiveManagerTest {
             notifier = notifier,
             probeManager = probeManager,
             handshakeHandler = handshakeHandler,
+            mediaCapability = mediaCapability,
+            mediaKeys = mediaKeys,
             context = context,
         )
 
@@ -112,6 +134,9 @@ class E2eReceiveManagerTest {
             // (the round-47 guard's never-sent path); tests that need a
             // first send re-stub this per test.
             coEvery { messageDao.firstOutgoingEncryptedSince(any(), any()) } returns null
+            // Default: the just-arrived plain text is the first of its
+            // streak (the round-48 override needs 3 to fire).
+            coEvery { messageDao.countPlainIncomingSinceLastEncrypted(any(), any()) } returns 1
             coEvery { conversationRepo.findMessageForResend(any()) } answers {
                 messageInConv(firstArg())
             }
@@ -187,6 +212,17 @@ class E2eReceiveManagerTest {
                 verified = verified,
                 updatedAt = updatedAt,
             )
+        }
+
+        /**
+         * Round 48 — seeds bob ENCRYPTED with our first encrypted send
+         * 10 minutes ago: inside the grace window, so a plain SMS only
+         * fires the fallback via the consecutive-plain override.
+         */
+        fun seedGracePeer() {
+            seedEncryptedPeer(verified = true, updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS)
+            coEvery { messageDao.firstOutgoingEncryptedSince(any(), any()) } returns
+                NOW - 10 * 60 * 1000L
         }
     }
 
@@ -682,5 +718,215 @@ class E2eReceiveManagerTest {
             E2eNoticeKind.DEACTIVATED,
             E2eNoticeKind.ACTIVATED,
         ).inOrder()
+    }
+
+    // ──────────── Consecutive-plain override (round 48) ────────────
+
+    /** The fallback fired: UNKNOWN, verified cleared, one DEACTIVATED notice, one re-probe. */
+    private fun assertDeactivated(harness: Harness) {
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.UNKNOWN)
+        assertThat(harness.peerDao.peers[BOB]?.verified).isFalse()
+        assertThat(harness.noticeDao.notices.filter { it.kind == E2eNoticeKind.DEACTIVATED }).hasSize(1)
+        verify(exactly = 1) { harness.probeManager.reprobeAfterPeerLeft(BOB, 3) }
+    }
+
+    /** The fallback did not fire: still ENCRYPTED and verified, no DEACTIVATED notice, no re-probe. */
+    private fun assertStillEncrypted(harness: Harness) {
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.peerDao.peers[BOB]?.verified).isTrue()
+        assertThat(harness.noticeDao.notices.filter { it.kind == E2eNoticeKind.DEACTIVATED }).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+    }
+
+    @Test
+    fun `a third consecutive plain SMS fires the fallback inside the grace window`() = runTest {
+        val harness = Harness()
+        // Round 48 — the 2026-11-23 case: the peer switched default
+        // SMS apps, but our first encrypted send went out 10 minutes
+        // ago, so every plain reply falls inside the grace window.
+        // One or two plain replies could be a race (in-flight before
+        // the peer flipped); three in a row is a switch.
+        harness.seedGracePeer()
+        coEvery { harness.messageDao.countPlainIncomingSinceLastEncrypted(any(), any()) } returnsMany
+            listOf(1, 2, 3)
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        assertDeactivated(harness)
+    }
+
+    @Test
+    fun `one plain SMS inside the grace window does not fire the fallback`() = runTest {
+        val harness = Harness()
+        harness.seedGracePeer()
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // The default streak stub returns 1 — still inside the window.
+        assertStillEncrypted(harness)
+    }
+
+    @Test
+    fun `two plain SMS inside the grace window do not fire the fallback`() = runTest {
+        val harness = Harness()
+        harness.seedGracePeer()
+        coEvery { harness.messageDao.countPlainIncomingSinceLastEncrypted(any(), any()) } returnsMany
+            listOf(1, 2)
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        assertStillEncrypted(harness)
+    }
+
+    @Test
+    fun `an encrypted message from the peer resets the consecutive-plain count`() = runTest {
+        val harness = Harness()
+        harness.seedGracePeer()
+        // Two plain, then the peer sends encrypted (the streak
+        // resets), then two more plain — still no fire. Only the
+        // third plain after the reset fires.
+        coEvery { harness.messageDao.countPlainIncomingSinceLastEncrypted(any(), any()) } returnsMany
+            listOf(1, 2, 1, 2, 3)
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.feed(harness.bobFragments("still here", messageId = "b7c8d9"))
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // 2 + 2 with an encrypted message in the middle: no fire.
+        assertStillEncrypted(harness)
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        // The third plain after the reset fires.
+        assertDeactivated(harness)
+    }
+
+    @Test
+    fun `three consecutive plain SMS with no encrypted send ever still wait out the backstop`() = runTest {
+        val harness = Harness()
+        // Round 48 — the override applies only to the grace window:
+        // when we never sent encrypted, the peer cannot have flipped
+        // at all, so every plain message is expected no matter how
+        // many arrive. The 24-hour backstop governs, not the count.
+        harness.seedEncryptedPeer(updatedAt = NOW - 2 * E2eReceiveManager.DEACTIVATED_GRACE_MS)
+        coEvery { harness.messageDao.countPlainIncomingSinceLastEncrypted(any(), any()) } returns 3
+
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+        harness.manager.onPlainSmsReceived(BOB, CONV_ID, 3, NOW)
+
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+        assertThat(harness.noticeDao.notices).isEmpty()
+        verify(exactly = 0) { harness.probeManager.reprobeAfterPeerLeft(any(), any()) }
+        // The backstop branch never consults the count at all.
+        coVerify(exactly = 0) { harness.messageDao.countPlainIncomingSinceLastEncrypted(any(), any()) }
+    }
+
+    // ---- Round 48 — MEDIA_KEY messages ----
+
+    @Test
+    fun `a media key message is stored, with no message, notification or re-probe`() = runTest {
+        val harness = Harness()
+        harness.feed(harness.bobFragments(MEDIA_KEY_JSON, payloadType = MEDIA_KEY))
+
+        val stored = harness.mediaKeyDao.keys[MEDIA_FILE_ID]
+        assertThat(stored).isNotNull()
+        assertThat(stored!!.mime).isEqualTo("image/jpeg")
+        assertThat(stored.size).isEqualTo(12_345L)
+        assertThat(stored.sha256).isEqualTo("ab".repeat(32))
+        assertThat(stored.name).isEqualTo("photo.jpg")
+        // The key is invisible: no thread message, no notification,
+        // no decrypt-failure placeholder, no re-probe.
+        coVerify(exactly = 0) {
+            harness.mirror.upsertIncomingSms(any(), any(), any(), any(), any(), any())
+        }
+        coVerify(exactly = 0) {
+            harness.notifier.notifyIncoming(any(), any(), any(), any())
+        }
+        coVerify(exactly = 0) { harness.messageDao.markDecryptFailed(any(), any()) }
+        verify(exactly = 0) { harness.probeManager.reprobeAfterDecryptFailure(any(), any()) }
+        assertThat(harness.noticeDao.notices).isEmpty()
+        // The key still counts as a valid session message: the peer
+        // flips to ENCRYPTED like any first pre-key message.
+        assertThat(harness.peerDao.peers[BOB]?.state).isEqualTo(E2ePeerState.ENCRYPTED)
+    }
+
+    @Test
+    fun `a malformed media key is dropped silently`() = runTest {
+        val harness = Harness()
+        harness.feed(harness.bobFragments("not json at all", payloadType = MEDIA_KEY))
+
+        assertThat(harness.mediaKeyDao.keys).isEmpty()
+        coVerify(exactly = 0) {
+            harness.mirror.upsertIncomingSms(any(), any(), any(), any(), any(), any())
+        }
+        coVerify(exactly = 0) {
+            harness.notifier.notifyIncoming(any(), any(), any(), any())
+        }
+        coVerify(exactly = 0) { harness.messageDao.markDecryptFailed(any(), any()) }
+        verify(exactly = 0) { harness.probeManager.reprobeAfterDecryptFailure(any(), any()) }
+    }
+
+    @Test
+    fun `a media key with a short key is dropped silently`() = runTest {
+        val harness = Harness()
+        // 16 bytes after base64 — the contract is exactly 32.
+        val shortKey = Base64.getEncoder().encodeToString(ByteArray(16))
+        val json = """{"v":1,"id":"$MEDIA_FILE_ID","key":"$shortKey","mime":"image/jpeg",""" +
+            """"size":1,"sha256":"${"ab".repeat(32)}","name":null}"""
+        harness.feed(harness.bobFragments(json, payloadType = MEDIA_KEY))
+
+        assertThat(harness.mediaKeyDao.keys).isEmpty()
+        coVerify(exactly = 0) { harness.messageDao.markDecryptFailed(any(), any()) }
+        verify(exactly = 0) { harness.probeManager.reprobeAfterDecryptFailure(any(), any()) }
+    }
+
+    @Test
+    fun `a duplicate media key keeps the first row`() = runTest {
+        val harness = Harness()
+        harness.feed(harness.bobFragments(MEDIA_KEY_JSON, payloadType = MEDIA_KEY))
+        // A re-sent key for the same file id, under a new message
+        // id (the same message id would be deduped as processed),
+        // carrying DIFFERENT key bytes.
+        val otherKey = E2eMediaKeyMessage.encode(
+            E2eMediaKeyMessage.MediaKey(
+                id = MEDIA_FILE_ID,
+                key = ByteArray(32) { 0xFF.toByte() },
+                mime = "image/jpeg",
+                sizeBytes = 12_345L,
+                sha256Hex = "ab".repeat(32),
+                fileName = "photo.jpg",
+            ),
+        )
+        harness.feed(
+            harness.bobFragments(otherKey, payloadType = MEDIA_KEY, messageId = "d4e5f6"),
+        )
+
+        assertThat(harness.mediaKeyDao.keys).hasSize(1)
+        val stored = harness.mediaKeyDao.keys[MEDIA_FILE_ID]!!
+        assertThat(stored.keyB64).isEqualTo(
+            Base64.getEncoder().encodeToString(ByteArray(32) { it.toByte() }),
+        )
+    }
+
+    @Test
+    fun `a media key on an established session stores without a new-session retry`() = runTest {
+        val harness = Harness()
+        harness.feed(harness.bobFragments("hello"))
+        // The text's new session retried decrypt-failed rows once.
+        coVerify(exactly = 1) { harness.handshakeHandler.retryDecryptFailed(any()) }
+
+        harness.feed(
+            harness.bobFragments(MEDIA_KEY_JSON, payloadType = MEDIA_KEY, messageId = "d4e5f6"),
+        )
+
+        assertThat(harness.mediaKeyDao.keys).hasSize(1)
+        // The key ride on the existing session: no second retry.
+        coVerify(exactly = 1) { harness.handshakeHandler.retryDecryptFailed(any()) }
     }
 }

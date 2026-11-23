@@ -76,6 +76,8 @@ class E2eSendManagerTest {
         val recorder = RecordingRecorder()
         val messageDao = mockk<MessageDao>()
         val probeManager = mockk<E2eProbeManager>()
+        // Round 48 — the text sender for media key messages.
+        val dataSmsSender = RecordingDataSmsSender()
 
         val peers = E2ePeerRepository(peerDao)
         val sessions = E2eSessionStore(sessionDao, sendCrypto, fakeKeyManager())
@@ -90,6 +92,7 @@ class E2eSendManagerTest {
             recorder = recorder,
             messageDao = messageDao,
             probeManager = probeManager,
+            dataSmsSender = dataSmsSender,
         )
 
         init {

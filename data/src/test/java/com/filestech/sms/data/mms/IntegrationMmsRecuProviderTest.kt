@@ -73,7 +73,7 @@ class IntegrationMmsRecuProviderTest {
     private fun preparerInscription() {
         coEvery { messages.findIdByTransactionKey(any()) } returns null
         coEvery {
-            mirror.inscrireMmsRecu(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+            mirror.inscrireMmsRecu(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
         } returns ConversationMirror.InscriptionMmsRecu(MESSAGE_ID, nouveau = true)
     }
 
@@ -114,6 +114,7 @@ class IntegrationMmsRecuProviderTest {
                 any(),
                 any(),
                 THREAD_ID,
+                false,
             )
         }
     }
@@ -144,6 +145,7 @@ class IntegrationMmsRecuProviderTest {
                 any(),
                 any(),
                 FALLBACK_THREAD_ID,
+                false,
             )
         }
     }
@@ -173,6 +175,7 @@ class IntegrationMmsRecuProviderTest {
                 any(),
                 any(),
                 0L,
+                false,
             )
         }
     }

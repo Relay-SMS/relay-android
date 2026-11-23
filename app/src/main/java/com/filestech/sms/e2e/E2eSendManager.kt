@@ -42,6 +42,24 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * (derived from local id + attempt) so the new set can never mix with
  * the old partial one.
  *
+ * Round 48 — media key messages ([sendMediaKey]): the per-file key +
+ * metadata for one encrypted MMS attachment, sent as fragments with
+ * payload type MEDIA_KEY. They deliberately do NOT reuse
+ * [sendEncrypted]: that path is built around a message row (the
+ * fragment-set id derives from the row id, the payload base64 is
+ * stored on the row, and the fragment sent/delivery intents update
+ * the row's status) — and a key message has no row. Wiring its
+ * fragments to the MMS row's id would let a key fragment's async
+ * sent-failure mark the MMS FAILED (and its delivery report mark it
+ * DELIVERED) even when the MMS itself went out fine. Key fragments
+ * therefore travel like handshake texts: a random fragment-set id,
+ * no ciphertext stored anywhere, and the diagnostic-only sent
+ * intent ([E2eDataSmsSender.sendTextMessage]) whose verdict lands
+ * in [E2eDataSmsSentReceiver], never in the message-status
+ * receivers. The only signal is the radio's synchronous accept —
+ * a refusal fails the send, and the caller ([E2eMediaGateImpl])
+ * falls back to plain MMS.
+ *
  * The session store, account manager, and crypto are taken lazily (see
  * [E2eProbeManager]): resolving them provisions [E2eCrypto] (the
  * first native call loads the crypto library), and this manager is
@@ -57,6 +75,7 @@ class E2eSendManager @Inject constructor(
     private val recorder: SentSmsRecorder,
     private val messageDao: MessageDao,
     private val probeManager: E2eProbeManager,
+    private val dataSmsSender: E2eDataSmsSender,
 ) : E2eSendGate {
 
     override suspend fun decideSend(address: String, body: String): E2eSendGate.Decision {
@@ -119,6 +138,64 @@ class E2eSendManager @Inject constructor(
 
     override fun probeForSend(address: String, subId: Int?) {
         probeManager.probeForSend(address, subId)
+    }
+
+    /**
+     * Round 48 — sends one media key message ([E2eMediaKeyMessage]:
+     * the per-file key + metadata JSON) to a media-capable peer as
+     * encrypted fragments with payload type MEDIA_KEY. [keyJson] is
+     * the already-encoded JSON plaintext; [date] is the MMS
+     * message's timestamp, written on the fragment rows in the
+     * system sent box.
+     *
+     * No message row is involved (see the class KDoc for why): the
+     * fragment-set id is random, no ciphertext is stored, and the
+     * fragments go out through [E2eDataSmsSender.sendTextMessage]
+     * (diagnostic-only sent intent, no row-coupled status updates).
+     * A failure anywhere — no session, encrypt failure, a fragment
+     * the radio refuses — returns [Outcome.Failure] and the caller
+     * falls back to plain MMS; a fragment accepted by the radio is
+     * never retried (there is no MMS retry to attach one to, and
+     * the key message is idempotent — a re-send would only
+     * duplicate the key row on the receiver).
+     */
+    suspend fun sendMediaKey(
+        address: String,
+        keyJson: String,
+        date: Long,
+        subId: Int?,
+    ): Outcome<Unit> {
+        val messageId = E2eWireFormat.generateMessageId()
+        val plan = when (
+            val resolution = encryptToFragments(
+                address = address,
+                body = keyJson,
+                messageId = messageId,
+                payloadType = E2ePayloadType.MEDIA_KEY,
+            )
+        ) {
+            is Resolution.Ready -> resolution.plan
+            is Resolution.Failed -> return Outcome.Failure(resolution.error)
+        }
+        for (fragment in plan.fragments) {
+            // The ciphertext SMS is stored like any SMS (design §3.1):
+            // the system store holds what went out on the air.
+            recorder.insertSentSms(address, fragment, date, subId = subId)
+            val sent = dataSmsSender.sendTextMessage(
+                address = address,
+                subId = subId,
+                text = fragment,
+                kind = DataSmsKind.MEDIA_KEY,
+            )
+            if (!sent) {
+                Timber.w("E2E: media key fragment refused by the radio")
+                return Outcome.Failure(
+                    AppError.Telephony("media key message could not be sent"),
+                )
+            }
+        }
+        Timber.i("E2E: media key sent (%d fragment(s))", plan.fragments.size)
+        return Outcome.Success(Unit)
     }
 
     /**
@@ -201,6 +278,26 @@ class E2eSendManager @Inject constructor(
         attempt: Int,
         payloadType: E2ePayloadType,
     ): Resolution {
+        return encryptToFragments(
+            address = address,
+            body = body,
+            messageId = messageIdForLocalId(localMessageId, attempt),
+            payloadType = payloadType,
+        )
+    }
+
+    /**
+     * Encrypts [body] under the peer's current session and fragments
+     * it under [messageId]. The shared core of [encryptFresh] (row
+     * sends, whose id derives from the row) and [sendMediaKey]
+     * (key messages, whose id is random — no row exists).
+     */
+    private suspend fun encryptToFragments(
+        address: String,
+        body: String,
+        messageId: String,
+        payloadType: E2ePayloadType,
+    ): Resolution {
         val sessionId = loadCurrentSession(address)
             ?: return Resolution.Failed(
                 AppError.Validation("no encryption session for this contact"),
@@ -213,7 +310,6 @@ class E2eSendManager @Inject constructor(
         // so a crash cannot replay ratchet state.
         sessions.get().refreshSession(address, sessionId)
         val wireType = payloadType.toWire()
-        val messageId = messageIdForLocalId(localMessageId, attempt)
         val fragments = runCatching {
             E2eWireFormat.encode(messageId, encrypted, wireType)
         }.getOrNull() ?: return Resolution.Failed(
@@ -225,10 +321,11 @@ class E2eSendManager @Inject constructor(
         return Resolution.Ready(Plan.Fresh(base64, fragments))
     }
 
-    /** The domain payload type as a wire payload type (same two kinds, same order). */
+    /** The domain payload type as a wire payload type (same kinds, same order). */
     private fun E2ePayloadType.toWire(): E2eWireFormat.PayloadType = when (this) {
         E2ePayloadType.TEXT -> E2eWireFormat.PayloadType.TEXT
         E2ePayloadType.REACTION -> E2eWireFormat.PayloadType.REACTION
+        E2ePayloadType.MEDIA_KEY -> E2eWireFormat.PayloadType.MEDIA_KEY
     }
 
     /**

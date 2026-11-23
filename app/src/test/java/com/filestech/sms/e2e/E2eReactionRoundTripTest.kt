@@ -79,6 +79,8 @@ class E2eReactionRoundTripTest {
         val recorder = RecordingRecorder()
         val aliceMessageDao = mockk<MessageDao>()
         val aliceProbeManager = mockk<E2eProbeManager>()
+        // Round 48 — the text sender for media key messages.
+        val dataSmsSender = RecordingDataSmsSender()
 
         val alicePeers = E2ePeerRepository(alicePeerDao)
         val aliceSessions = E2eSessionStore(aliceSessionDao, aliceCrypto, fakeKeyManager())
@@ -93,6 +95,7 @@ class E2eReactionRoundTripTest {
             recorder = recorder,
             messageDao = aliceMessageDao,
             probeManager = aliceProbeManager,
+            dataSmsSender = dataSmsSender,
         )
 
         // ── Bob (receiver) ──
@@ -108,6 +111,12 @@ class E2eReactionRoundTripTest {
         val notifier = mockk<IncomingMessageNotifier>()
         val bobProbeManager = mockk<E2eProbeManager>()
         val handshakeHandler = mockk<E2eHandshakeHandler>()
+        // Round 48 — relaxed: the declaration is best-effort and
+        // invisible to the existing assertions.
+        val mediaCapability = mockk<E2eMediaCapabilityManager>(relaxed = true)
+        // Round 48 — relaxed: this test never sends a MEDIA_KEY
+        // payload, so the store is never touched.
+        val mediaKeys = mockk<E2eMediaKeyStore>(relaxed = true)
         val context = mockk<Context>()
 
         val bobPeers = E2ePeerRepository(bobPeerDao)
@@ -130,6 +139,8 @@ class E2eReactionRoundTripTest {
             notifier = notifier,
             probeManager = bobProbeManager,
             handshakeHandler = handshakeHandler,
+            mediaCapability = mediaCapability,
+            mediaKeys = mediaKeys,
             context = context,
         )
 

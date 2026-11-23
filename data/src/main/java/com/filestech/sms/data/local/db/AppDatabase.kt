@@ -10,6 +10,7 @@ import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.E2eAccountDao
 import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eMediaKeyDao
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
 import com.filestech.sms.data.local.db.dao.E2eSessionDao
@@ -27,6 +28,7 @@ import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.E2eAccountEntity
 import com.filestech.sms.data.local.db.entity.E2eFragmentEntity
+import com.filestech.sms.data.local.db.entity.E2eMediaKeyEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
 import com.filestech.sms.data.local.db.entity.E2eSessionEntity
@@ -61,6 +63,7 @@ import com.filestech.sms.data.local.db.entity.SyncedContactEntity
         E2eSessionEntity::class,
         E2eFragmentEntity::class,
         E2eNoticeEntity::class,
+        E2eMediaKeyEntity::class,
     ],
 )
 // v1.16.0 — TypeConverters pour les 3 enums MessageStatus/Type/Direction ↔ Int.
@@ -84,6 +87,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun e2eSessionDao(): E2eSessionDao
     abstract fun e2eFragmentDao(): E2eFragmentDao
     abstract fun e2eNoticeDao(): E2eNoticeDao
+    abstract fun e2eMediaKeyDao(): E2eMediaKeyDao
 
     companion object {
         const val DATABASE_NAME = "smstech.db"
@@ -194,6 +198,14 @@ abstract class AppDatabase : RoomDatabase() {
         //   chiffré brut gardé pour une nouvelle tentative). Strictement additive :
         //   les tables naissent vides et les lignes existantes projettent les
         //   défauts (non chiffré, déchiffrement non échoué, pas de chiffré).
-        const val SCHEMA_VERSION = 22
+        // v23 (2026-11-23, round 48 media encryption): trois colonnes sur
+        //   `e2e_peers` — `media_capable` et `media_announced`
+        //   (`INTEGER NOT NULL DEFAULT 0`) et `handshake_channel` (TEXT
+        //   nullable, le canal prouvé de l'échange) — plus une table
+        //   neuve, `e2e_media_keys` (les clés de fichiers reçues avant
+        //   leur partie MMS). Strictement additive : la table naît vide
+        //   et les lignes existantes projettent les défauts (pair non
+        //   capable, déclaration non envoyée, canal inconnu).
+        const val SCHEMA_VERSION = 23
     }
 }

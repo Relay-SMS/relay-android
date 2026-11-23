@@ -96,6 +96,18 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * and text retries and the desktop retry command all mark theirs);
  * automatic probes are never marked manual.
  *
+ * Round 48 — the same funnel carries the media-capability
+ * declaration for ALREADY-ENCRYPTED peers: a probe to one is
+ * refused ([ProbeGate.AlreadyEncrypted]), but the trigger is
+ * still a contact point, so the detailed core sends our
+ * declaration instead when we have not announced to them yet
+ * ([E2eMediaCapabilityManager.announceIfNeeded]). That is what
+ * covers sessions established before round 48 — no establishment
+ * event ever fires for them again, so without this hook they
+ * would never learn we can do encrypted media. Manual retries
+ * never announce (the tap is about the key exchange, and the
+ * panel only offers it for non-ENCRYPTED peers).
+ *
  * All entry points are fire-and-forget (non-suspend, own scope): a
  * probe must never delay opening a thread or sending a message. The
  * suspend cores ([probeConversation], [probeAddress]) are the testable
@@ -163,6 +175,7 @@ class E2eProbeManager @Inject constructor(
     private val settings: AppSettingsSource,
     @ApplicationScope private val scope: CoroutineScope,
     private val recorder: E2eFailureRecorder,
+    private val mediaCapability: E2eMediaCapabilityManager,
 ) {
     private val probeMutex = Mutex()
 
@@ -366,7 +379,20 @@ class E2eProbeManager @Inject constructor(
     ): ProbeResult = probeMutex.withLock {
         val state = peers.state(address)
         val gate = gateFor(address, state, allowEncrypted, manual, now)
-        if (gate != null) return@withLock ProbeResult.Gated(gate)
+        if (gate != null) {
+            // Round 48 — an ENCRYPTED peer refuses the probe, but
+            // the trigger is still a contact point: send our
+            // media-capability declaration when we have not
+            // announced to them yet (one-shot per peer — the
+            // announced flag makes a repeat trigger a no-op).
+            // Best-effort and never throws; the probe result is
+            // unchanged. Manual retries never announce (see the
+            // class KDoc).
+            if (gate == ProbeGate.AlreadyEncrypted && !manual) {
+                mediaCapability.announceIfNeeded(address, subId, now)
+            }
+            return@withLock ProbeResult.Gated(gate)
+        }
         // Lazy account creation: the first probe sent (or received) is
         // the first E2E use, and the identity is created here — users
         // who never use E2E pay nothing (design §4.1).

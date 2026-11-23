@@ -66,6 +66,23 @@ fun E2eDecryptFailedRow(modifier: Modifier = Modifier) {
 }
 
 /**
+ * Round 48 — the decrypt-pending placeholder: an encrypted-media
+ * message whose key message has not arrived yet. The same
+ * centered system row as the failed row, no lock, tapping does
+ * nothing. The row flips to the decrypted bubble the moment the
+ * key lands (the thread collects the key Flow) — or to the
+ * failed row if the key never arrives within 24 hours.
+ */
+@Composable
+fun E2eMediaDecryptPendingRow(modifier: Modifier = Modifier) {
+    E2eSystemRow(
+        text = stringResource(R.string.e2e_media_decrypt_pending),
+        onClick = null,
+        modifier = modifier,
+    )
+}
+
+/**
  * The shared system-row shell: a centered pill in the day
  * separator's styling (same surface, same text style, so the two
  * can never drift apart visually), tappable only when [onClick]

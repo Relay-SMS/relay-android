@@ -816,6 +816,60 @@ object Migrations {
         }
     }
 
+    /**
+     * E2E media encryption (round 48) — three columns on `e2e_peers`
+     * (`media_capable`, `media_announced`, `handshake_channel`) + one
+     * new table (`e2e_media_keys`).
+     *
+     * Strictly additive: the table is born empty, and existing peer
+     * rows project the defaults (not media-capable, declaration not
+     * sent, channel unknown). The `CREATE TABLE` statement repeats
+     * the form Room generates for the entity (columns, `NOT NULL`,
+     * `PRIMARY KEY`): `runMigrationsAndValidate` compares the real
+     * table against the exported schema and would refuse the
+     * slightest gap.
+     *
+     * - `media_capable` (0) says the peer declared it handles
+     *   encrypted media (the 0x03 capability packet). Old builds
+     *   never declare, so media to them stays plain.
+     * - `media_announced` (0) says WE already sent our declaration
+     *   to this peer; the thread-open hook sends it exactly once.
+     * - `handshake_channel` (NULL) is the channel our outbound
+     *   handshake packets provably used (`DATA_SMS` / `TEXT_SMS`).
+     *   Rows whose handshake predates round 48 keep NULL, and the
+     *   declaration then goes out on BOTH channels, once.
+     * - `e2e_media_keys` holds received per-file keys waiting for
+     *   their MMS part (the key travels as SMS, the ciphertext as
+     *   MMS — the two channels deliver independently). The key is
+     *   stored base64'd in SQLCipher: the whole database is
+     *   encrypted at rest, so no extra pickle wrap is needed.
+     */
+    val MIGRATION_22_23: Migration = object : Migration(22, 23) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `e2e_peers` ADD COLUMN `media_capable` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE `e2e_peers` ADD COLUMN `media_announced` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL("ALTER TABLE `e2e_peers` ADD COLUMN `handshake_channel` TEXT")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_media_keys` (
+                    `file_id` TEXT NOT NULL,
+                    `key_b64` TEXT NOT NULL,
+                    `mime` TEXT NOT NULL,
+                    `size` INTEGER NOT NULL,
+                    `sha256` TEXT NOT NULL,
+                    `name` TEXT,
+                    `received_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`file_id`)
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -839,5 +893,6 @@ object Migrations {
         MIGRATION_19_20,
         MIGRATION_20_21,
         MIGRATION_21_22,
+        MIGRATION_22_23,
     )
 }

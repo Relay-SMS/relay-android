@@ -14,11 +14,16 @@ import org.junit.jupiter.api.Test
  * Round 47 — a verified peer has no expanded actions at all: the
  * dropdown is gone, so the box renders with no chevron and its tap
  * opens the sheet directly (see [E2eDetailsRowTapTest]).
+ *
+ * Round 48 — ENCRYPTED has no expanded actions at all, verified
+ * or not: the row opens the sheet directly either way, so the
+ * one-item "View safety number" dropdown is gone. The dropdown
+ * now holds retries only.
  */
 class E2eDetailsExpandedActionsTest {
 
     @Test
-    fun `encrypted shows only the safety number action`() {
+    fun `encrypted shows no expanded actions`() {
         assertThat(
             e2eDetailsExpandedActions(
                 peerState = E2ePeerState.ENCRYPTED,
@@ -26,7 +31,7 @@ class E2eDetailsExpandedActionsTest {
                 hasRetryViaSms = true,
                 hasOpenVerification = true,
             ),
-        ).isEqualTo(listOf(E2eDetailsExpandedAction.ViewSafetyNumber))
+        ).isEmpty()
     }
 
     @Test

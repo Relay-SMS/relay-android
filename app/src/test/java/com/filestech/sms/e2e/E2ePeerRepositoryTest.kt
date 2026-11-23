@@ -349,4 +349,48 @@ class E2ePeerRepositoryTest {
         assertThat(peer?.theirCurveKey).isEqualTo("Y3VydmU=")
         assertThat(peer?.theirEdKey).isEqualTo("ZWQ=")
     }
+
+    // ──────────────────────────── Round 48: media capability ────────────────────────────
+
+    @Test
+    fun `isMediaCapable is false by default and true after the peer declares`() = runTest {
+        val repository = E2ePeerRepository(FakeE2ePeerDao())
+
+        assertThat(repository.isMediaCapable(address)).isFalse()
+        repository.setMediaCapable(address, true, now)
+        assertThat(repository.isMediaCapable(address)).isTrue()
+        repository.setMediaCapable(address, false, now)
+        assertThat(repository.isMediaCapable(address)).isFalse()
+    }
+
+    @Test
+    fun `media capability canonicalizes the address`() = runTest {
+        val repository = E2ePeerRepository(FakeE2ePeerDao())
+
+        repository.setMediaCapable("+16108423232", true, now)
+
+        assertThat(repository.isMediaCapable("6108423232")).isTrue()
+        assertThat(repository.isMediaCapable("(610) 842-3232")).isTrue()
+    }
+
+    @Test
+    fun `isMediaAnnounced is false by default and true after the declaration goes out`() = runTest {
+        val repository = E2ePeerRepository(FakeE2ePeerDao())
+
+        assertThat(repository.isMediaAnnounced(address)).isFalse()
+        repository.setMediaAnnounced(address, true, now)
+        assertThat(repository.isMediaAnnounced(address)).isTrue()
+    }
+
+    @Test
+    fun `handshakeChannel round-trips and an unknown stored value reads as null`() = runTest {
+        val dao = FakeE2ePeerDao()
+        val repository = E2ePeerRepository(dao)
+
+        assertThat(repository.handshakeChannel(address)).isNull()
+        repository.recordHandshakeChannel(address, HandshakeChannel.TEXT_SMS, now)
+        assertThat(repository.handshakeChannel(address)).isEqualTo(HandshakeChannel.TEXT_SMS)
+        dao.peers[address] = dao.peers[address]!!.copy(handshakeChannel = "PIGEON")
+        assertThat(repository.handshakeChannel(address)).isNull()
+    }
 }

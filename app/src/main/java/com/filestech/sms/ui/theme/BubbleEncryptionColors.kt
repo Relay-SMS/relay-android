@@ -1,6 +1,7 @@
 package com.filestech.sms.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
 /**
  * Round 47 — the default outgoing bubble for a message sent in the
@@ -34,6 +35,20 @@ internal val PlainOutgoingGreen: Color = Color(0xFF3BA803)
  * and `#3BA803` is darker; Kristin's explicit call).
  */
 internal val OnPlainOutgoingGreen: Color = Color.White
+
+/** Round 48 — how far the pressed green darkens toward black: the
+ * same 20% step [brandBluePressed] applies to the blue (Color.kt's
+ * `BRAND_PRESSED_DARKEN`), so the send circle's press feedback
+ * reads the same in both colours. */
+private const val PLAIN_GREEN_PRESSED_DARKEN = 0.2f
+
+/**
+ * Round 48 — the pressed state of [PlainOutgoingGreen]: the green
+ * darkened toward black by [PLAIN_GREEN_PRESSED_DARKEN]. Derived
+ * from [PlainOutgoingGreen], never a second hex.
+ */
+internal val PlainOutgoingGreenPressed: Color =
+    lerp(PlainOutgoingGreen, Color.Black, PLAIN_GREEN_PRESSED_DARKEN)
 
 /**
  * Round 47 — a bubble's resolved colours: its fill plus the text
@@ -83,6 +98,55 @@ internal fun resolveBubbleColors(
         BubbleColors(Color(customBubbleColorArgb), Color.White)
     encrypted -> BubbleColors(defaultBlue, onDefaultBlue)
     else -> BubbleColors(PlainOutgoingGreen, OnPlainOutgoingGreen)
+}
+
+/**
+ * Round 48 — a composer button's resolved colours: its fill, its
+ * pressed fill, and the glyph on top. The three are resolved
+ * together because the glyph depends on the fill (the scheme
+ * `onPrimary` on the dynamic blue, white on the fixed green) —
+ * resolving them separately would let a caller pair the wrong
+ * glyph with a fill.
+ */
+internal data class ComposerButtonColors(
+    val background: Color,
+    val pressedBackground: Color,
+    val content: Color,
+)
+
+/**
+ * Round 48 — the thread-composer button colour rule, as a pure
+ * function (the composable only resolves the theme-dependent
+ * inputs). The buttons (send, mic, voice-review send) are the
+ * blue of the current theme when the conversation encrypts —
+ * [defaultBlue], dynamic-aware, unchanged — and the fixed
+ * [PlainOutgoingGreen] when it does not: the same signal as the
+ * outgoing bubbles ([resolveBubbleColors]) — blue means the next
+ * message goes out encrypted, green means it goes out plain.
+ *
+ * The state is the composer's own `isEncrypted` (the flag behind
+ * the "Relay message" placeholder): groups are never encrypted,
+ * so they read green. Notes have their own composer and stay
+ * blue — they never pass through this function. A
+ * per-conversation custom chat colour does not touch the
+ * composer buttons today (it colours bubbles only), so there is
+ * no custom override here — green/blue is the whole rule.
+ *
+ * The theme-dependent colours ([defaultBlue],
+ * [defaultBluePressed], [onDefaultBlue]) arrive resolved: the
+ * composable reads them from [brandBlue], [brandBluePressed]
+ * and [onBrandBlue], so this function stays pure and
+ * unit-testable on plain JVM.
+ */
+internal fun resolveComposerButtonColors(
+    encrypted: Boolean,
+    defaultBlue: Color,
+    defaultBluePressed: Color,
+    onDefaultBlue: Color,
+): ComposerButtonColors = if (encrypted) {
+    ComposerButtonColors(defaultBlue, defaultBluePressed, onDefaultBlue)
+} else {
+    ComposerButtonColors(PlainOutgoingGreen, PlainOutgoingGreenPressed, OnPlainOutgoingGreen)
 }
 
 /**

@@ -174,6 +174,93 @@ class E2ePeerRepository @Inject constructor(
     }
 
     /**
+     * Round 48 — whether this peer declared it handles encrypted
+     * media (the 0x03 capability packet). False when no row exists
+     * or no declaration ever arrived: an old build never declares,
+     * so media to it stays plain. The sender gate
+     * ([E2eMediaGateImpl]) reads this before encrypting any MMS.
+     */
+    suspend fun isMediaCapable(address: String): Boolean =
+        peerDao.findByAddress(canonicalAddress(address))?.mediaCapable == true
+
+    /**
+     * Round 48 — records that this peer declared it handles
+     * encrypted media. Called only by the declaration receive path
+     * ([E2eMediaCapabilityManager.onDeclarationReceived]) — the
+     * flag is the peer's own statement about itself, never a
+     * sender-side guess.
+     */
+    suspend fun setMediaCapable(
+        address: String,
+        capable: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.setMediaCapable(key, capable, now)
+    }
+
+    /**
+     * Round 48 — whether WE already sent our media-capability
+     * declaration to this peer (and the radio accepted it). False
+     * when no row exists: the thread-open hook sends the
+     * declaration exactly once per peer, and a failed send leaves
+     * this false so the next thread-open retries.
+     */
+    suspend fun isMediaAnnounced(address: String): Boolean =
+        peerDao.findByAddress(canonicalAddress(address))?.mediaAnnounced == true
+
+    /**
+     * Round 48 — records that our declaration went out to this
+     * peer. Call AFTER the radio accepted the send — a failed send
+     * must not consume the one-shot (see [isMediaAnnounced]).
+     */
+    suspend fun setMediaAnnounced(
+        address: String,
+        announced: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.setMediaAnnounced(key, announced, now)
+    }
+
+    /**
+     * Round 48 — the channel our outbound handshake packets
+     * provably used for this peer, or null when the handshake
+     * predates round 48 and no channel was ever recorded. The
+     * column stores the [HandshakeChannel] name raw (the enum
+     * lives in `:app`, the entity in `:data`); an unrecognized
+     * stored value reads as null — the declaration then goes out
+     * on both channels, which is always safe.
+     */
+    suspend fun handshakeChannel(address: String): HandshakeChannel? {
+        val raw = peerDao.findByAddress(canonicalAddress(address))?.handshakeChannel
+            ?: return null
+        return runCatching { HandshakeChannel.valueOf(raw) }.getOrNull()
+    }
+
+    /**
+     * Round 48 — records the channel our outbound handshake
+     * packets provably used for this peer. Called when a bundle
+     * arrives (our probe reached them on that channel) and when a
+     * probe arrives while not yet ENCRYPTED (our bundle reply goes
+     * out on that channel, and the session establishment proves
+     * it arrived). Never called for an already-ENCRYPTED peer's
+     * probe — a later exchange on another channel must not
+     * overwrite the proven one.
+     */
+    suspend fun recordHandshakeChannel(
+        address: String,
+        channel: HandshakeChannel,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.setHandshakeChannel(key, channel.name, now)
+    }
+
+    /**
      * Whether the probe BUDGET allows another probe now: the window has elapsed (or
      * never started), the attempt count is under the cap, and 24 hours have passed
      * since the last probe. State eligibility is the caller's decision (see the

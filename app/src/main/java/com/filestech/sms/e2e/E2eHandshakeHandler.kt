@@ -43,7 +43,25 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  *   to one already used (same keys + a live current session) is ignored.
  *   A bundle with different keys from a known peer is a key change: the
  *   new session becomes current, the old one stays as a fallback, and kept
- *   ciphertext is retried.
+ *   ciphertext is retried. Round 48 — the bundle's arrival channel is
+ *   recorded ([E2ePeerRepository.recordHandshakeChannel]) and our
+ *   media-capability declaration goes out
+ *   ([E2eMediaCapabilityManager.announceNow]): the session exists now,
+ *   so the declaration has something to advertise.
+ * - **Media-capability declaration received** (round 48) → the peer is
+ *   recorded as media-capable, and our own declaration goes back when
+ *   we have not announced to them yet (both in
+ *   [E2eMediaCapabilityManager.onDeclarationReceived]). No session
+ *   work, no notice — the declaration is pure capability signaling.
+ *
+ * Round 48 — the handshake channel is recorded per peer: a bundle
+ * arriving on a channel proves our probe reached them on it, and a
+ * probe arriving while not yet ENCRYPTED means our bundle reply goes
+ * out on that channel (the session establishment proves it arrived).
+ * The media-capability declaration reuses that proven channel
+ * ([E2eMediaCapabilityManager]); a probe arriving for an
+ * already-ENCRYPTED peer does NOT overwrite it — a later exchange on
+ * another channel must not displace the proven one.
  *
  * Anything that is not one of our packets (bad magic, version, type,
  * length) is dropped silently — a random data SMS to this port is not
@@ -70,6 +88,7 @@ class E2eHandshakeHandler @Inject constructor(
     private val phoneIdentity: PhoneIdentity,
     private val blockedRepo: BlockedNumberRepository,
     private val recorder: E2eFailureRecorder,
+    private val mediaCapability: E2eMediaCapabilityManager,
 ) {
 
     /**
@@ -123,7 +142,11 @@ class E2eHandshakeHandler @Inject constructor(
         if (runCatching { blockedRepo.isBlocked(address) }.getOrDefault(false)) return false
         return when (packet) {
             is E2eHandshake.HandshakePacket.Probe -> handleProbe(address, packet, subId, now, channel)
-            is E2eHandshake.HandshakePacket.Bundle -> handleBundle(address, packet, now)
+            is E2eHandshake.HandshakePacket.Bundle -> handleBundle(address, packet, subId, now, channel)
+            is E2eHandshake.HandshakePacket.MediaCapable -> {
+                mediaCapability.onDeclarationReceived(address, subId, now)
+                true
+            }
         }
     }
 
@@ -173,6 +196,12 @@ class E2eHandshakeHandler @Inject constructor(
         // (a key change keeps the state, §4.4 step 3).
         if (peer?.state != StoredPeerState.ENCRYPTED) {
             peers.setState(address, StoredPeerState.PROBING, now)
+            // Round 48 — record the probe's arrival channel: our
+            // bundle reply goes out on it, and the session
+            // establishment proves it arrived — so the channel is
+            // the proven one for our declaration later. Skipped
+            // for an already-ENCRYPTED peer (see the class KDoc).
+            peers.recordHandshakeChannel(address, channel, now)
         }
         // Rate limit: at most one bundle per sender per day (§2.3).
         // The keys above are recorded regardless — only the reply is
@@ -239,11 +268,19 @@ class E2eHandshakeHandler @Inject constructor(
     private suspend fun handleBundle(
         address: String,
         bundle: E2eHandshake.HandshakePacket.Bundle,
+        subId: Int?,
         now: Long,
+        channel: HandshakeChannel,
     ): Boolean {
         val peer = peers.getPeer(address)
         val curveB64 = Base64.getEncoder().encodeToString(bundle.curveKey)
         val edB64 = Base64.getEncoder().encodeToString(bundle.edKey)
+        // Round 48 — the bundle arrived on this channel, so our
+        // probe reached them on it: the channel is proven for our
+        // outbound handshake packets, and the declaration reuses
+        // it. Recorded before the duplicate check: a duplicate
+        // bundle is still proof the channel works.
+        peers.recordHandshakeChannel(address, channel, now)
         // First reply wins (§2.4 dual-install): a bundle identical to
         // the one that already built our current session is the second
         // install answering the same probe — ignore it.
@@ -275,6 +312,12 @@ class E2eHandshakeHandler @Inject constructor(
         }
         Timber.i("E2E: peer state -> ENCRYPTED (bundle received)")
         retryDecryptFailed(address)
+        // Round 48 — the session exists now, so our media
+        // capability is worth declaring: the peer learns we can do
+        // encrypted media, on the channel this bundle just proved.
+        // Best-effort (never throws); a failed send retries on the
+        // next thread-open via the announced flag.
+        mediaCapability.announceNow(address, subId, now)
         return true
     }
 

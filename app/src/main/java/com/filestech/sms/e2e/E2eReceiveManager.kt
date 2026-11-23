@@ -56,6 +56,20 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * RLY1 fragments route to [handleFragment] and MMS never reaches
  * this receiver — so neither can trigger it.
  *
+ * Round 48 — a pre-key message that establishes a NEW inbound
+ * session also sends our media-capability declaration
+ * ([E2eMediaCapabilityManager.announceNow]): this side answered
+ * the probe with a bundle, so its session only exists once the
+ * peer's first encrypted message arrives — without this hook the
+ * bundle-replier side would never declare. A MEDIA_KEY payload
+ * ([E2eMediaKeyMessage]) is the receiver half of media
+ * encryption: the key is parsed and stored ([E2eMediaKeyStore])
+ * and nothing else happens — no message, no notification, no
+ * notice, no re-probe. The ciphertext MMS part (which may
+ * already have arrived, or may arrive later) decrypts against
+ * the stored key on view; a malformed key JSON is dropped
+ * silently (a malformed key is not a message).
+ *
  * Error-log rules (§8.3): message ids (6 hex chars, meaningless alone)
  * and error classes only — never plaintext, ciphertext, or addresses.
  */
@@ -71,6 +85,11 @@ class E2eReceiveManager @Inject constructor(
     private val notifier: IncomingMessageNotifier,
     private val probeManager: E2eProbeManager,
     private val handshakeHandler: E2eHandshakeHandler,
+    private val mediaCapability: E2eMediaCapabilityManager,
+    // Round 48 — the received-media-key store (the MEDIA_KEY
+    // payload branch stores here; the MMS part decrypts against
+    // it on view).
+    private val mediaKeys: E2eMediaKeyStore,
     @ApplicationContext private val context: Context,
 ) {
     private val processedLock = Any()
@@ -112,12 +131,26 @@ class E2eReceiveManager @Inject constructor(
                 val plaintext = result.plaintext.toString(Charsets.UTF_8)
                 if (result.newSession) {
                     peers.setState(address, StoredPeerState.ENCRYPTED, now)
+                    // Round 48 — this side's session exists now
+                    // (it answered the probe with a bundle, so its
+                    // session only starts here): declare our media
+                    // capability on the channel the exchange
+                    // proved. Best-effort (never throws).
+                    mediaCapability.announceNow(address, subId, now)
                 }
                 when (payload.payloadType) {
                     E2eWireFormat.PayloadType.TEXT ->
                         insertDecryptedText(address, plaintext, telephonyUri, dateMs, subId, result.newSession, now)
                     E2eWireFormat.PayloadType.REACTION ->
                         handleDecryptedReaction(address, plaintext, telephonyUri, dateMs, subId, result.newSession, now)
+                    // Round 48 — a media key message: store the
+                    // key, nothing else. This branch is
+                    // functionally required: the `when` is a
+                    // statement (not exhaustive), so without it a
+                    // key message would decrypt and fall through
+                    // silently, and its part would stay pending.
+                    E2eWireFormat.PayloadType.MEDIA_KEY ->
+                        handleDecryptedMediaKey(plaintext, now)
                 }
                 if (result.newSession) {
                     handshakeHandler.retryDecryptFailed(address)
@@ -170,6 +203,26 @@ class E2eReceiveManager @Inject constructor(
      * filter is still an approximation (other writes bump it too), and
      * it fails safe: a bumped `updatedAt` only ever DELAYS a genuine
      * DEACTIVATED, never fires a false one.
+     *
+     * Round 48 — consecutive-plain override: the grace guard cannot
+     * tell a race from a genuine peer switch on timing alone (seen on
+     * device 2026-11-23: the peer switched default SMS apps, but the
+     * first encrypted send was minutes earlier, so every plain reply
+     * fell inside the window and the conversation stayed ENCRYPTED —
+     * outgoing stayed encrypted and unreadable to the peer). So a
+     * streak of [DEACTIVATED_CONSECUTIVE_PLAIN_THRESHOLD] plain SMS
+     * from the peer, with no encrypted message from them in between,
+     * fires the fallback even inside the grace window: a race
+     * produces at most 1-2 in-flight plain replies (messages the
+     * peer sent before processing our encrypted message), while a
+     * genuine switch produces an ongoing plain stream — 3 is the
+     * smallest count that separates the two. The streak is derived
+     * from the message table (plain incoming SMS since the last
+     * encrypted incoming message on this session), so it survives
+     * restarts and needs no new column. The override applies only
+     * to the grace window: when we never sent encrypted, the peer
+     * cannot have flipped at all, so the 24-hour backstop governs
+     * regardless of the count.
      */
     suspend fun onPlainSmsReceived(
         address: String,
@@ -185,7 +238,21 @@ class E2eReceiveManager @Inject constructor(
         val firstEncryptedSentAt =
             messageDao.firstOutgoingEncryptedSince(conversationId, peer.updatedAt)
         if (firstEncryptedSentAt != null) {
-            if (now - firstEncryptedSentAt < DEACTIVATED_GRACE_MS) return
+            if (now - firstEncryptedSentAt < DEACTIVATED_GRACE_MS) {
+                // Round 48 — consecutive-plain override: inside the
+                // grace window, 3 plain SMS in a row still fire the
+                // fallback. A race produces at most 1-2 in-flight
+                // plain replies; a peer who switched default SMS apps
+                // sends an ongoing plain stream. The count is derived
+                // from the message table and includes the plain text
+                // that just arrived — it was stored before this call
+                // — and any encrypted message from the peer resets
+                // it. The query only runs inside the window: past it
+                // the fallback fires regardless.
+                val consecutivePlain =
+                    messageDao.countPlainIncomingSinceLastEncrypted(conversationId, peer.updatedAt)
+                if (consecutivePlain < DEACTIVATED_CONSECUTIVE_PLAIN_THRESHOLD) return
+            }
         } else if (now - peer.updatedAt < DEACTIVATED_NEVER_SENT_MS) {
             // We never sent encrypted on this session: the peer cannot
             // have flipped yet, so their plain messages are expected.
@@ -296,6 +363,38 @@ class E2eReceiveManager @Inject constructor(
     }
 
     /**
+     * Round 48 — an encrypted media key message: the plaintext is
+     * the key JSON ([E2eMediaKeyMessage.decode]). On success the
+     * key is stored; the ciphertext MMS part — which may already
+     * have arrived (pending, waiting for this key) or may arrive
+     * later (the key waits) — decrypts against it on view.
+     * Pending is derived (encrypted + not failed + no key row),
+     * so nothing is written to the message table here: the
+     * thread's key Flow re-emits and the pending row flips to
+     * the decrypted bubble, and the sync engine re-pushes the
+     * conversation on the store's arrival signal.
+     *
+     * A malformed key is dropped SILENTLY: no placeholder, no
+     * notification, no re-probe — a malformed key is not a
+     * message, and the part stays pending until its key arrives
+     * (or the 24-hour prune fails it). Only the error class is
+     * logged — never key bytes. Note the asymmetry with the text
+     * path: a key message whose SESSION decrypt fails never
+     * reaches this method (it becomes a placeholder + re-probe
+     * like any undecryptable payload — we cannot even tell it
+     * was a key message). Only a successfully-decrypted but
+     * malformed key skips the re-probe.
+     */
+    private suspend fun handleDecryptedMediaKey(plaintext: String, now: Long) {
+        val key = E2eMediaKeyMessage.decode(plaintext)
+        if (key == null) {
+            Timber.i("E2E: malformed media key message dropped")
+            return
+        }
+        mediaKeys.store(key, now)
+    }
+
+    /**
      * The undecryptable placeholder (design §3.5, §6.5): an empty-bodied
      * row with `encrypted = 1` / `decrypt_failed = 1` and the raw base64
      * kept for a later retry. The thread renders it as "This message
@@ -360,5 +459,17 @@ class E2eReceiveManager @Inject constructor(
          * read.
          */
         const val DEACTIVATED_NEVER_SENT_MS = 24 * DEACTIVATED_GRACE_MS
+
+        /**
+         * Round 48 — consecutive-plain override threshold: this many
+         * plain SMS in a row from an ENCRYPTED peer (no encrypted
+         * message from them in between) fires the peer-left fallback
+         * even inside the grace window. A race produces at most 1-2
+         * in-flight plain replies; a genuine switch produces an
+         * ongoing plain stream — 3 is the smallest count that
+         * separates the two. Derived from the message table, so it
+         * survives restarts.
+         */
+        const val DEACTIVATED_CONSECUTIVE_PLAIN_THRESHOLD = 3
     }
 }

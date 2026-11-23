@@ -26,6 +26,19 @@ interface E2eNoticeDao {
     suspend fun noticesForConversation(conversationId: Long): List<E2eNoticeEntity>
 
     /**
+     * The conversation's latest notice (newest date; the highest id
+     * breaks a date tie, so the most recently recorded row wins).
+     * Null when the conversation has no notices. Round 48 — the
+     * thread-open ACTIVATED backfill reads this one row instead of
+     * the whole notice list.
+     */
+    @Query(
+        "SELECT * FROM e2e_notices WHERE conversation_id = :conversationId " +
+            "ORDER BY date DESC, id DESC LIMIT 1",
+    )
+    suspend fun latestNotice(conversationId: Long): E2eNoticeEntity?
+
+    /**
      * Live view of a conversation's notices, oldest first (the thread
      * merge order). The thread UI collects it: a notice recorded while
      * the thread is open (a bundle landing, a key change) appears

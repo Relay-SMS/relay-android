@@ -188,9 +188,10 @@
     <string name="e2e_notice_deactivated">Chiffrement terminé — %1$s n’utilise plus Relay</string>
     <string name="e2e_decrypt_failed">Ce message n’a pas pu être déchiffré.</string>
     <string name="e2e_decrypt_failed_notif">Ce message n’a pas pu être déchiffré.</string>
+    <string name="e2e_media_decrypt_pending">En attente de déchiffrement…</string>
     <string name="e2e_encryption">Chiffrement</string>
     <string name="e2e_details_encrypted">Chiffré de bout en bout</string>
-    <string name="e2e_details_verify_tap">Appuie pour vérifier le numéro de sécurité de %1$s</string>
+    <string name="e2e_details_verify_tap">Appuie pour vérifier le numéro de sécurité</string>
     <string name="e2e_details_verified">Vérifié ✓</string>
     <string name="e2e_details_setting_up">Vérification si %1$s utilise Relay…</string>
     <string name="e2e_details_not_encrypted">Non chiffré</string>

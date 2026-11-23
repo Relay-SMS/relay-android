@@ -10,6 +10,7 @@ import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.E2eAccountDao
 import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eMediaKeyDao
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
 import com.filestech.sms.data.local.db.dao.E2eSessionDao
@@ -67,4 +68,7 @@ object DatabaseModule {
     @Provides fun e2eFragmentDao(db: AppDatabase): E2eFragmentDao = db.e2eFragmentDao()
 
     @Provides fun e2eNoticeDao(db: AppDatabase): E2eNoticeDao = db.e2eNoticeDao()
+
+    // E2E media encryption (schema v23, round 48) — the received media keys.
+    @Provides fun e2eMediaKeyDao(db: AppDatabase): E2eMediaKeyDao = db.e2eMediaKeyDao()
 }

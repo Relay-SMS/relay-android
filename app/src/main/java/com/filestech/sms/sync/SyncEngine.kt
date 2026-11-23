@@ -177,6 +177,7 @@ class SyncEngine(
         scope.launch { collectCategoryMutes() }
         scope.launch { collectE2eSafetyNumbers() }
         scope.launch { collectE2eNotices() }
+        scope.launch { collectMediaKeyArrivals() }
         noteEngine?.start()
     }
 
@@ -1105,6 +1106,29 @@ class SyncEngine(
         val e2e = e2eSource ?: return
         e2e.observeNotices().drop(1).distinctUntilChanged().collect { notices ->
             send(SyncProtocol.encodeE2eNotices(SyncProtocol.E2eNotices(notices)))
+        }
+    }
+
+    /**
+     * Round 48 — media-key-arrival collector: a pending encrypted
+     * media message is WITHHELD from the desktop until its key
+     * arrives, and the key arrival changes no message row — so
+     * the conversation watch would never fire for it. On each
+     * arrival, the owning conversation (if the part already
+     * arrived) is re-pushed: `messagesAfter` re-includes the
+     * newly decryptable message even when later messages were
+     * already pushed past its id. A session without an E2E
+     * source collects nothing. No `drop(1)`: the arrivals flow
+     * replays its last id to a fresh collector, and a redundant
+     * re-push is a no-op at the source (the message is no longer
+     * withheld) — the replay closes the race between the
+     * snapshot read and this collector's start.
+     */
+    private suspend fun collectMediaKeyArrivals() {
+        val e2e = e2eSource ?: return
+        e2e.observeMediaKeyArrivals().collect { fileId ->
+            val conversationId = e2e.conversationForMediaKey(fileId) ?: return@collect
+            pushNewMessages(conversationId)
         }
     }
 

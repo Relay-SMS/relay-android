@@ -24,6 +24,7 @@ import com.filestech.sms.domain.purge.SAFETY_NET_DAYS
 import com.filestech.sms.domain.purge.purgeCutoffMs
 import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.e2e.E2eFragmentStore
+import com.filestech.sms.e2e.E2eMediaPrune
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -63,6 +64,10 @@ class TelephonySyncWorker @AssistedInject constructor(
     private val pdusEnAttente: com.filestech.sms.data.mms.PdusEnAttente,
     // E2E (schema v22) — prune les fragments de chiffré incomplets de plus de 24 h.
     private val e2eFragmentStore: E2eFragmentStore,
+    // E2E media (schema v23, round 48) — expire les clés média de
+    // plus de 24 h et marque en échec les messages en attente
+    // restés sans clé. Hub only (les clés vivent sur le hub).
+    private val e2eMediaPrune: E2eMediaPrune,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -107,6 +112,21 @@ class TelephonySyncWorker @AssistedInject constructor(
                 val pruned = e2eFragmentStore.pruneExpired()
                 if (pruned > 0) Timber.i("E2E: %d expired fragments pruned", pruned)
             }.onFailure { Timber.w(it, "E2E fragment prune failed") }
+            // E2E media (schema v23, round 48) — media keys older
+            // than 24 h expire, and pending media messages left
+            // without a key are marked failed (they can never
+            // decrypt — the thread must not wait forever). Same
+            // 12-hour cadence as the fragment prune above.
+            runCatching {
+                val result = e2eMediaPrune.prune()
+                if (result.keysDeleted > 0 || result.messagesFailed > 0) {
+                    Timber.i(
+                        "E2E media: %d expired keys pruned, %d pending messages failed",
+                        result.keysDeleted,
+                        result.messagesFailed,
+                    )
+                }
+            }.onFailure { Timber.w(it, "E2E media prune failed") }
             // Audit M-5: stalls-watchdog. Promote outgoing messages stuck in PENDING past 15 min
             // to FAILED so the UI stops showing the "Sending…" spinner indefinitely. The 15 min
             // threshold is loose on purpose — a real-world carrier roundtrip is usually < 30 s,

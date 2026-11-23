@@ -1211,4 +1211,77 @@ class MigrationTest {
             assertThat(c.getString(0)).isEqualTo("ACTIVATED")
         }
     }
+
+    /**
+     * E2E media encryption (round 48) — 22 → 23 : trois colonnes sur
+     * `e2e_peers` (`media_capable`, `media_announced`,
+     * `handshake_channel`) + une table neuve (`e2e_media_keys`).
+     * Strictement additive : la ligne de pair existante projette les
+     * défauts (non capable, déclaration non envoyée, canal inconnu),
+     * la table naît vide, et sa clé primaire refuse un doublon de
+     * `file_id` (deux clés pour le même fichier ne peuvent pas
+     * coexister — la première gagne).
+     *
+     * Nécessite `23.json` dans les assets (émis par Room à la compilation).
+     */
+    @Test
+    fun migrate22To23_addsMediaCapabilityColumnsAndMediaKeysTable_withDefaultsAndPk() {
+        helper.createDatabase(TEST_DB, 22).use { db ->
+            db.execSQL(
+                "INSERT INTO e2e_peers (address, state, updated_at) " +
+                    "VALUES ('+33600000001', 'ENCRYPTED', 1700000000000)",
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 23, true, Migrations.MIGRATION_22_23)
+
+        // La ligne existante ne bouge pas ; les nouvelles colonnes projettent les défauts.
+        db.query(
+            "SELECT state, media_capable, media_announced, handshake_channel FROM e2e_peers " +
+                "WHERE address = '+33600000001'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("ENCRYPTED")
+            assertThat(c.getInt(1)).isEqualTo(0)
+            assertThat(c.getInt(2)).isEqualTo(0)
+            assertThat(c.isNull(3)).isTrue()
+        }
+
+        // La table neuve existe et naît vide.
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'e2e_media_keys'",
+        ).use { c -> assertThat(c.count).isEqualTo(1) }
+        db.query("SELECT COUNT(*) FROM e2e_media_keys").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+
+        // Une clé s'insère et se relit ; le nom est nullable.
+        db.execSQL(
+            "INSERT INTO e2e_media_keys (file_id, key_b64, mime, size, sha256, name, received_at) " +
+                "VALUES ('0123456789abcdef', 'a2V5', 'image/jpeg', 1024, " +
+                "'0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', " +
+                "NULL, 1700000000000)",
+        )
+        db.query(
+            "SELECT mime, size, name FROM e2e_media_keys WHERE file_id = '0123456789abcdef'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("image/jpeg")
+            assertThat(c.getLong(1)).isEqualTo(1024L)
+            assertThat(c.isNull(2)).isTrue()
+        }
+
+        // La clé primaire refuse un doublon de file_id.
+        val doublonCle = runCatching {
+            db.execSQL(
+                "INSERT INTO e2e_media_keys (file_id, key_b64, mime, size, sha256, name, received_at) " +
+                    "VALUES ('0123456789abcdef', 'b3RoZXI=', 'image/jpeg', 2048, " +
+                    "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', " +
+                    "NULL, 1700000000001)",
+            )
+        }
+        assertThat(doublonCle.isFailure).isTrue()
+        assertThat(doublonCle.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
+    }
 }

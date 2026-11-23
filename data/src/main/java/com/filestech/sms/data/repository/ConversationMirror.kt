@@ -13,6 +13,7 @@ import com.filestech.sms.data.local.db.entity.AttachmentEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.MessageEntity
 import com.filestech.sms.data.media.probePngDimensions
+import com.filestech.sms.data.mms.RelayMediaFilename
 import com.filestech.sms.data.sms.PhoneIdentity
 import com.filestech.sms.di.IoDispatcher
 import com.filestech.sms.domain.mms.MediaAttachmentSpec
@@ -850,6 +851,7 @@ class ConversationMirror @Inject constructor(
         durationMs: Long,
         date: Long,
         subId: Int?,
+        encrypted: Boolean,
     ): Long = withContext(io) {
         val durationLabel = formatDurationLabel(durationMs)
         val preview = "🎤 $durationLabel"
@@ -871,6 +873,7 @@ class ConversationMirror @Inject constructor(
                 subId = subId,
                 scheduledAt = null,
                 attachmentsCount = 1,
+                encrypted = encrypted,
             )
             val msgId = messageDao.insert(msg)
             attachmentDao.insert(
@@ -906,6 +909,7 @@ class ConversationMirror @Inject constructor(
         date: Long,
         subId: Int?,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long = withContext(io) {
         require(attachments.isNotEmpty()) { "upsertOutgoingMediaMms requires at least one attachment" }
         // v1.3.10 — `messages.body` stores the **user caption verbatim** (possibly empty), so
@@ -933,6 +937,7 @@ class ConversationMirror @Inject constructor(
                 scheduledAt = null,
                 attachmentsCount = attachments.size,
                 clientMessageId = clientMessageId,
+                encrypted = encrypted,
             )
             val msgId = messageDao.insert(msg)
             for (a in attachments) {
@@ -1140,6 +1145,13 @@ class ConversationMirror @Inject constructor(
         // `IntegrationMmsRecu` before the transaction). `0L` = unknown: routing is exactly
         // as before. When > 0, `ensureConversation` tries it first.
         systemThreadId: Long = 0L,
+        // Round 48 — `true` when this is an encrypted-media MMS
+        // (1:1 with a ciphertext part, decided by
+        // `IntegrationMmsRecu` from the part shape). The row is
+        // pending until its key message arrives — pending is
+        // DERIVED (encrypted + not failed + no key row), so no
+        // other column is set here.
+        encrypted: Boolean = false,
     ): InscriptionMmsRecu? = withContext(io) {
         val storedBody = caption?.trim().orEmpty()
         database.withTransaction {
@@ -1168,6 +1180,7 @@ class ConversationMirror @Inject constructor(
                 scheduledAt = null,
                 attachmentsCount = pieces.size,
                 mmsTransactionKey = transactionKey,
+                encrypted = encrypted,
             )
             val msgId = messageDao.insert(msg)
             if (msgId == -1L) {
@@ -1315,11 +1328,34 @@ class ConversationMirror @Inject constructor(
                     systemThreadId = first.threadId,
                     addresses = listOf(PhoneAddress.of(first.address)),
                 )
+                // Round 48 — media encryption is 1:1 only: a group
+                // thread's encrypted-looking part stays plain. The
+                // conversation row carries the member list
+                // (`addresses_csv`); one address = 1:1. Read once
+                // per thread group, not once per row.
+                val isOneToOne = conversationDao.findById(convId)
+                    ?.let { PhoneAddress.list(it.addressesCsv).size == 1 } == true
                 var maxDate = 0L
                 var lastPreview = ""
                 var unreadDelta = 0
                 attachmentsBuf.clear()
                 for (row in group) {
+                    // Round 48 — an encrypted-media part in a 1:1
+                    // import: the ciphertext stays in the system
+                    // store (it is encrypted — any app with MMS
+                    // permission reads only opaque bytes) and the
+                    // row is flagged encrypted, pending its key.
+                    // An OUTGOING row is failed outright: the
+                    // sender keeps no copy of the per-file keys,
+                    // and the plaintext original is gone with the
+                    // reinstall that triggered this import — the
+                    // media can never decrypt again, so the row
+                    // renders "couldn't be decrypted" instead of a
+                    // file icon that opens garbage.
+                    val hasCiphertextPart = isOneToOne &&
+                        row.attachments.any {
+                            RelayMediaFilename.isEncryptedPart(it.contentType, it.filename)
+                        }
                     val msg = MessageEntity(
                         conversationId = convId,
                         telephonyUri = "content://mms/${row.telephonyId}",
@@ -1336,6 +1372,9 @@ class ConversationMirror @Inject constructor(
                         subId = row.subId,
                         scheduledAt = null,
                         attachmentsCount = row.attachments.size,
+                        encrypted = hasCiphertextPart,
+                        decryptFailed = hasCiphertextPart &&
+                            row.direction == MessageDirection.OUTGOING,
                     )
                     val insertedId = messageDao.insert(msg)
                     // Insert id < 0 → conflict, row already mirrored; skip part insertion.

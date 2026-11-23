@@ -87,6 +87,18 @@ class SyncEngineE2eTest {
             probeRetries += address
             return probeResult
         }
+
+        // Round 48 — media-key arrivals: the engine re-pushes
+        // the owning conversation when a key lands.
+        val mediaKeyArrivals = MutableSharedFlow<String>(replay = 1)
+
+        /** What [conversationForMediaKey] answers per file id (null = no part yet). */
+        val mediaKeyConversations = mutableMapOf<String, Long?>()
+
+        override fun observeMediaKeyArrivals(): Flow<String> = mediaKeyArrivals
+
+        override suspend fun conversationForMediaKey(fileId: String): Long? =
+            mediaKeyConversations[fileId]
     }
 
     private companion object {
@@ -376,6 +388,68 @@ class SyncEngineE2eTest {
                 .containsExactly("false", "false")
             assertThat(results.map { it["code"]?.jsonPrimitive?.content })
                 .containsExactly("internal", "internal")
+        }
+    }
+
+    // ---- Round 48 — media-key arrivals re-push the conversation ----
+
+    @Test fun `a media key arrival pushes the newly decryptable message`() = runTest {
+        val source = FakeSyncMessageSource()
+        // The message was withheld while pending (never pushed);
+        // the fake now answers it from `messagesAfter`, as the
+        // real source's re-inclusion does once the key lands.
+        // Seeded by direct map assignment, NOT `store()`: `store`
+        // raises `maxId`, which would lift the engine's live
+        // baseline past the message — the withheld message sits
+        // BELOW the baseline by construction.
+        source.messagesByConversation[11L] = mutableListOf(sampleMessage(id = 5, conversationId = 11))
+        val e2e = FakeE2eSyncSource()
+        e2e.mediaKeyConversations["0123456789abcdef"] = 11L
+        runEngineWithE2e(source, e2e) { engine, sent ->
+            engine.start()
+            advanceUntilIdle()
+            assertThat(sent).isEmpty()
+
+            assertThat(e2e.mediaKeyArrivals.tryEmit("0123456789abcdef")).isTrue()
+            advanceUntilIdle()
+
+            assertThat(sent.map { it.frameType() }).containsExactly("message_new")
+            val pushed = sent.first().asObject()
+            assertThat(pushed["message"]?.jsonObject?.get("id")?.jsonPrimitive?.content)
+                .isEqualTo("5")
+        }
+    }
+
+    @Test fun `a media key arrival with no part yet pushes nothing`() = runTest {
+        val source = FakeSyncMessageSource()
+        val e2e = FakeE2eSyncSource()
+        e2e.mediaKeyConversations["0123456789abcdef"] = null
+        runEngineWithE2e(source, e2e) { engine, sent ->
+            engine.start()
+            advanceUntilIdle()
+
+            assertThat(e2e.mediaKeyArrivals.tryEmit("0123456789abcdef")).isTrue()
+            advanceUntilIdle()
+
+            assertThat(sent).isEmpty()
+        }
+    }
+
+    @Test fun `a media key that arrived before start still pushes on start`() = runTest {
+        val source = FakeSyncMessageSource()
+        // Direct map assignment, NOT `store()` — see the test
+        // above: the withheld message sits below the baseline.
+        source.messagesByConversation[11L] = mutableListOf(sampleMessage(id = 5, conversationId = 11))
+        val e2e = FakeE2eSyncSource()
+        e2e.mediaKeyConversations["0123456789abcdef"] = 11L
+        // Emitted before the engine starts: the replay-1 flow
+        // hands it to the collector on subscribe.
+        assertThat(e2e.mediaKeyArrivals.tryEmit("0123456789abcdef")).isTrue()
+        runEngineWithE2e(source, e2e) { engine, sent ->
+            engine.start()
+            advanceUntilIdle()
+
+            assertThat(sent.map { it.frameType() }).containsExactly("message_new")
         }
     }
 }

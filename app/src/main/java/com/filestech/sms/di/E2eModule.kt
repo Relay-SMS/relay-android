@@ -1,10 +1,12 @@
 package com.filestech.sms.di
 
+import com.filestech.sms.domain.e2e.E2eMediaGate
 import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.e2e.E2eCrypto
 import com.filestech.sms.e2e.E2eDataSmsSender
 import com.filestech.sms.e2e.E2eDataSmsSenderImpl
 import com.filestech.sms.e2e.E2eFailureRecorder
+import com.filestech.sms.e2e.E2eMediaGateImpl
 import com.filestech.sms.e2e.E2eSendManager
 import com.filestech.sms.e2e.UnavailableE2eCrypto
 import com.filestech.sms.e2e.VodozemacCrypto
@@ -49,6 +51,11 @@ abstract class E2eModule {
     @Binds
     @Singleton
     abstract fun bindE2eDataSmsSender(impl: E2eDataSmsSenderImpl): E2eDataSmsSender
+
+    /** Round 48 — the media-encryption gate for the MMS use cases. */
+    @Binds
+    @Singleton
+    abstract fun bindE2eMediaGate(impl: E2eMediaGateImpl): E2eMediaGate
 
     companion object {
 

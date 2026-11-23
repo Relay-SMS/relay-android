@@ -3,6 +3,8 @@ package com.filestech.sms.e2e
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
+import com.filestech.sms.data.local.db.entity.E2ePeerEntity
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -67,6 +69,50 @@ class E2eNoticeStore @Inject constructor(
         val lastDeactivated = notices.indexOfLast { it.kind == E2eNoticeKind.DEACTIVATED }
         if (lastActivated >= 0 && lastActivated > lastDeactivated) return false
         record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        return true
+    }
+
+    /**
+     * Thread-open backfill (round 48): repairs the notice story for a
+     * conversation that re-established encryption under round 46, when
+     * [recordActivated] was still [recordOnce] and refused a second
+     * ACTIVATED. Round 47's [recordActivated] only runs on a NEW
+     * bundle / encrypted-message receipt, so such a conversation kept
+     * "Encryption ended" as its latest pill while encryption was
+     * working — nothing ever recorded the second activation.
+     *
+     * Inserts one ACTIVATED notice — dated at the peer's [E2ePeerEntity.updatedAt]
+     * (the latest ENCRYPTED flip, which is after the DEACTIVATED notice,
+     * so the new pill sorts below it) — when and only when the peer is
+     * ENCRYPTED and the conversation's latest notice is DEACTIVATED.
+     * Returns true when the notice was recorded.
+     *
+     * Self-limiting: after the insert the latest notice is ACTIVATED,
+     * so a later thread open finds nothing to repair. A peer that is
+     * not ENCRYPTED never gets an ACTIVATED pill from here, and a
+     * conversation with no notices at all is left alone — a fresh
+     * ENCRYPTED conversation gets its ACTIVATED from the normal bundle
+     * path ([recordActivated]); this only repairs the
+     * DEACTIVATED-then-ENCRYPTED sequence. A missing or zero
+     * [E2ePeerEntity.updatedAt] (should not happen for an ENCRYPTED
+     * peer) falls back to [now].
+     *
+     * The caller passes the peer row it already read
+     * ([E2ePeerRepository.getPeer]) — this store owns notices, not
+     * peers — and calls this once per thread open (see
+     * ThreadViewModel's `init`): one latest-notice query plus the
+     * conditional insert, never on every message or recomposition.
+     */
+    suspend fun backfillActivatedIfNeeded(
+        conversationId: Long,
+        peer: E2ePeerEntity?,
+        now: Long = System.currentTimeMillis(),
+    ): Boolean {
+        if (peer == null || peer.state != E2ePeerState.ENCRYPTED) return false
+        val latest = noticeDao.latestNotice(conversationId) ?: return false
+        if (latest.kind != E2eNoticeKind.DEACTIVATED) return false
+        val date = peer.updatedAt.takeIf { it > 0 } ?: now
+        record(conversationId, E2eNoticeKind.ACTIVATED, date)
         return true
     }
 

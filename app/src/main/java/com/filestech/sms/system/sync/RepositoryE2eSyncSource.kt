@@ -1,11 +1,16 @@
 package com.filestech.sms.system.sync
 
+import com.filestech.sms.core.ext.canonicalPhone
+import com.filestech.sms.data.local.db.dao.AttachmentDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
+import com.filestech.sms.data.local.db.dao.MessageDao
 import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
+import com.filestech.sms.data.mms.RelayMediaFilename
 import com.filestech.sms.data.sms.PhoneIdentity
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.e2e.E2eAccountManager
+import com.filestech.sms.e2e.E2eMediaKeyStore
 import com.filestech.sms.e2e.E2eNoticeStore
 import com.filestech.sms.e2e.E2ePeerRepository
 import com.filestech.sms.e2e.E2eProbeManager
@@ -54,6 +59,12 @@ class RepositoryE2eSyncSource @Inject constructor(
     private val probeManager: E2eProbeManager,
     private val conversationDao: ConversationDao,
     private val phoneIdentity: PhoneIdentity,
+    // Round 48 — the media-key arrival signal + the part lookup
+    // for the pending → decryptable push (see
+    // [observeMediaKeyArrivals] / [conversationForMediaKey]).
+    private val mediaKeys: E2eMediaKeyStore,
+    private val attachmentDao: AttachmentDao,
+    private val messageDao: MessageDao,
 ) : E2eSyncSource {
 
     override suspend fun safetyNumbers(): List<SyncedE2ePeer> =
@@ -69,6 +80,15 @@ class RepositoryE2eSyncSource @Inject constructor(
 
     override fun observeNotices(): Flow<List<SyncedE2eNotice>> =
         noticeStore.observeAllNotices().map { list -> list.map { it.toSynced() } }
+
+    override fun observeMediaKeyArrivals(): Flow<String> = mediaKeys.keyArrivals
+
+    override suspend fun conversationForMediaKey(fileId: String): Long? =
+        withContext(Dispatchers.IO) {
+            val attachment = attachmentDao.findByFileName(RelayMediaFilename.fileNameFor(fileId))
+                ?: return@withContext null
+            messageDao.findById(attachment.messageId)?.conversationId
+        }
 
     override suspend fun setVerified(address: String, verified: Boolean): ActionResult {
         peerRepository.setVerified(address, verified)
@@ -100,13 +120,21 @@ class RepositoryE2eSyncSource @Inject constructor(
      * loaded at most once per pass (and only when needed — see
      * [loadOurKeysIfNeeded]); a peer without keys, or with keys
      * that do not decode, carries a null number.
+     *
+     * Round 48 — the rows are deduplicated by canonical address
+     * first (see [dedupeByCanonicalAddress]): pre-round-46 rows
+     * can sit under the +1 form while the live row sits under the
+     * canonical national form, and sending both lets the desktop
+     * resolve the keyless legacy row first. The sent address is
+     * the canonical form.
      */
     private suspend fun deriveAll(peers: List<E2ePeerEntity>): List<SyncedE2ePeer> =
         withContext(Dispatchers.IO) {
-            val ours = loadOurKeysIfNeeded(peers)
-            peers.map { peer ->
+            val deduped = dedupeByCanonicalAddress(peers)
+            val ours = loadOurKeysIfNeeded(deduped)
+            deduped.map { peer ->
                 SyncedE2ePeer(
-                    address = peer.address,
+                    address = peer.address.canonicalPhone(),
                     state = peer.state.name.lowercase(),
                     safetyNumber = ours?.let {
                         E2eSafetyNumber.deriveForPeer(it, peer.theirCurveKey, peer.theirEdKey)
@@ -114,6 +142,30 @@ class RepositoryE2eSyncSource @Inject constructor(
                     verified = peer.verified,
                 )
             }
+        }
+
+    /**
+     * Round 48 — one canonical address, one synced peer. Legacy
+     * pre-round-46 rows can sit under the +1 form while the live
+     * row sits under the canonical national form ([canonicalPhone]
+     * strips the NANP country code); the DAO's `ORDER BY address
+     * ASC` puts "+1…" first, so without this the desktop's
+     * first-match fallback resolves the keyless legacy row and
+     * shows "No safety number yet" for an encrypted peer
+     * (device-proven 2026-11-23).
+     *
+     * Within a canonical group the row holding identity keys
+     * wins; the tie-break is most recently updated. The legacy
+     * rows stay in the DB — the dedup is at the sync boundary
+     * only. Distinct canonical addresses keep their input order.
+     */
+    private fun dedupeByCanonicalAddress(peers: List<E2ePeerEntity>): List<E2ePeerEntity> =
+        peers.groupBy { it.address.canonicalPhone() }.values.map { group ->
+            group.sortedWith(
+                compareByDescending<E2ePeerEntity> {
+                    it.theirCurveKey != null && it.theirEdKey != null
+                }.thenByDescending { it.updatedAt },
+            ).first()
         }
 
     /**

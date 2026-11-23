@@ -3,6 +3,8 @@ package com.filestech.sms.e2e
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
+import com.filestech.sms.data.local.db.entity.E2ePeerEntity
+import com.filestech.sms.data.local.db.entity.E2ePeerState
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -103,6 +105,148 @@ class E2eNoticeStoreTest {
         store.record(conversationId, E2eNoticeKind.ACTIVATED, now + 2000)
 
         assertThat(store.recordActivated(conversationId, now + 3000)).isFalse()
+        assertThat(dao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED }).hasSize(2)
+    }
+
+    // -- Round 48: thread-open ACTIVATED backfill ----------------------
+
+    private fun peer(
+        state: E2ePeerState,
+        updatedAt: Long,
+    ): E2ePeerEntity =
+        E2ePeerEntity(address = "6108423232", state = state, updatedAt = updatedAt)
+
+    @Test
+    fun `backfill inserts ACTIVATED dated at the ENCRYPTED flip when latest is DEACTIVATED`() =
+        runTest {
+            val dao = FakeE2eNoticeDao()
+            val store = E2eNoticeStore(dao)
+            store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+            store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+
+            val inserted = store.backfillActivatedIfNeeded(
+                conversationId,
+                peer(E2ePeerState.ENCRYPTED, now + 2000),
+                now + 9000,
+            )
+
+            assertThat(inserted).isTrue()
+            val ordered = store.noticesForConversation(conversationId)
+            assertThat(ordered.map { it.kind }).containsExactly(
+                E2eNoticeKind.ACTIVATED,
+                E2eNoticeKind.DEACTIVATED,
+                E2eNoticeKind.ACTIVATED,
+            ).inOrder()
+            // Dated at the peer's ENCRYPTED flip, not at "now" — so the
+            // new pill sorts below the DEACTIVATED pill, at its true
+            // position in the thread's story.
+            assertThat(ordered.last().date).isEqualTo(now + 2000)
+        }
+
+    @Test
+    fun `backfill does nothing when latest is ACTIVATED`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now + 2000)
+
+        val inserted = store.backfillActivatedIfNeeded(
+            conversationId,
+            peer(E2ePeerState.ENCRYPTED, now + 2000),
+        )
+
+        assertThat(inserted).isFalse()
+        assertThat(dao.notices).hasSize(3)
+    }
+
+    @Test
+    fun `backfill does nothing for a non-ENCRYPTED peer`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+
+        val inserted = store.backfillActivatedIfNeeded(
+            conversationId,
+            peer(E2ePeerState.PROBING, now + 2000),
+        )
+
+        assertThat(inserted).isFalse()
+        assertThat(dao.notices).hasSize(2)
+    }
+
+    @Test
+    fun `backfill does nothing when there is no peer row`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+
+        val inserted = store.backfillActivatedIfNeeded(conversationId, null)
+
+        assertThat(inserted).isFalse()
+        assertThat(dao.notices).hasSize(2)
+    }
+
+    @Test
+    fun `backfill does nothing when there are no notices`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+
+        val inserted = store.backfillActivatedIfNeeded(
+            conversationId,
+            peer(E2ePeerState.ENCRYPTED, now + 2000),
+        )
+
+        assertThat(inserted).isFalse()
+        assertThat(dao.notices).isEmpty()
+    }
+
+    @Test
+    fun `backfill does nothing when latest is a key change`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.KEY_CHANGED, now + 1000)
+
+        val inserted = store.backfillActivatedIfNeeded(
+            conversationId,
+            peer(E2ePeerState.ENCRYPTED, now + 2000),
+        )
+
+        assertThat(inserted).isFalse()
+        assertThat(dao.notices).hasSize(2)
+    }
+
+    @Test
+    fun `backfill falls back to now when the peer updatedAt is zero`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+
+        val inserted = store.backfillActivatedIfNeeded(
+            conversationId,
+            peer(E2ePeerState.ENCRYPTED, 0),
+            now + 9000,
+        )
+
+        assertThat(inserted).isTrue()
+        assertThat(store.noticesForConversation(conversationId).last().date)
+            .isEqualTo(now + 9000)
+    }
+
+    @Test
+    fun `a second thread open does not insert a duplicate backfill`() = runTest {
+        val dao = FakeE2eNoticeDao()
+        val store = E2eNoticeStore(dao)
+        store.record(conversationId, E2eNoticeKind.ACTIVATED, now)
+        store.record(conversationId, E2eNoticeKind.DEACTIVATED, now + 1000)
+        val encrypted = peer(E2ePeerState.ENCRYPTED, now + 2000)
+
+        assertThat(store.backfillActivatedIfNeeded(conversationId, encrypted)).isTrue()
+        assertThat(store.backfillActivatedIfNeeded(conversationId, encrypted)).isFalse()
         assertThat(dao.notices.filter { it.kind == E2eNoticeKind.ACTIVATED }).hasSize(2)
     }
 

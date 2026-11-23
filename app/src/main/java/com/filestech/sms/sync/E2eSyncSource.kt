@@ -65,6 +65,25 @@ interface E2eSyncSource {
     fun observeNotices(): Flow<List<SyncedE2eNotice>>
 
     /**
+     * Round 48 — the file ids of newly stored media keys, in
+     * arrival order. The engine re-pushes the owning conversation
+     * on each arrival: a pending message becomes decryptable, and
+     * the message table itself never changes on a key arrival, so
+     * the conversation watch would not fire on its own.
+     */
+    fun observeMediaKeyArrivals(): Flow<String>
+
+    /**
+     * Round 48 — the conversation owning the pending message for
+     * one media file id (via the part filename
+     * `relay-media-<id>.bin`), or null when no message carries
+     * that part yet (the key arrived before its MMS part — the
+     * part's own arrival then pushes the message through the
+     * normal new-message path).
+     */
+    suspend fun conversationForMediaKey(fileId: String): Long?
+
+    /**
      * Applies `set_e2e_verified`: marks (or unmarks) the peer
      * verified in the phone's store. Creates the peer row when
      * none exists yet, like the phone's own sheet does. The

@@ -2,6 +2,8 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.e2e.E2eMediaGate
+import com.filestech.sms.domain.e2e.MediaFileInput
 import com.filestech.sms.domain.mms.MmsDispatcher
 import com.filestech.sms.domain.mms.OutgoingAttachmentStore
 import com.filestech.sms.domain.model.PhoneAddress
@@ -30,6 +32,16 @@ import javax.inject.Inject
  * just-in-time own-number guard here ([OwnNumberEnsurer]): a
  * still-blank number after detection fails fast with
  * [AppError.OwnNumberMissing], before any mirror row exists.
+ *
+ * Round 48 — media encryption (1:1 only, never for groups), same
+ * shape as [SendMediaMmsUseCase]: the gate prepares (decide +
+ * encrypt + key-send) before any mirror row exists, the mirror
+ * row keeps the plaintext sender copy and carries the `encrypted`
+ * flag, and an encrypted voice clip dispatches via
+ * [MmsDispatcher.sendMediaMms] — NOT `sendVoiceMms`, which forces
+ * the AUDIO kind in the SMIL while a ciphertext part is an
+ * octet-stream OTHER. The voice path has no size cap today, so
+ * the gate gets none here (a Refuse can never fire for voice).
  */
 class SendVoiceMmsUseCase @Inject constructor(
     private val defaultAppManager: DefaultSmsAppChecker,
@@ -39,6 +51,7 @@ class SendVoiceMmsUseCase @Inject constructor(
     private val settings: AppSettingsSource,
     private val attachmentStore: OutgoingAttachmentStore,
     private val ownNumberEnsurer: OwnNumberEnsurer,
+    private val mediaGate: E2eMediaGate = E2eMediaGate.NoOp,
 ) {
     private val envoi = EnvoiParDestinataire(blockedRepo, mirror)
 
@@ -53,17 +66,23 @@ class SendVoiceMmsUseCase @Inject constructor(
         /** v1.28.4 — MMS de groupe, même règle que [SendMediaMmsUseCase]. */
         groupMms: Boolean = false,
     ): Outcome<SendReport> {
-        refusPrealable(recipients, audioFile)?.let { return Outcome.Failure(it) }
-
         // Group-send own-number fix — same guard as the router, same
         // condition as the group branch below: a group voice MMS with
         // a still-blank number fails fast here, before the audio is
         // promoted and before any mirror row exists. 1:1 voice sends
         // never reach this guard.
+        //
+        // One early failure, two sources, in order: the refusal
+        // check runs first (it never touches the number), the
+        // group-number guard second.
         val groupeMms = groupMms && recipients.size > 1
-        if (groupeMms && !ownNumberEnsurer.ensureForGroupSend()) {
-            return Outcome.Failure(AppError.OwnNumberMissing)
-        }
+        val earlyFailure = refusPrealable(recipients, audioFile)
+            ?: if (groupeMms && !ownNumberEnsurer.ensureForGroupSend()) {
+                AppError.OwnNumberMissing
+            } else {
+                null
+            }
+        if (earlyFailure != null) return Outcome.Failure(earlyFailure)
 
         // Audit H3 (v1.14.8) — on évite `flow.first()` (ouverture DataStore) sur chaque envoi.
         //
@@ -85,53 +104,115 @@ class SendVoiceMmsUseCase @Inject constructor(
         }
 
         val now = System.currentTimeMillis()
-        // v1.28.3 (F21, second passage) — troisième occurrence du même `continue` muet, sur la
-        // voie VOCALE que personne ne citait. v1.28.4 — la boucle n'existe plus qu'une fois,
-        // dans [EnvoiParDestinataire] ; les trois voies ne peuvent plus diverger.
-        return envoi.parDestinataire(
-            recipients = recipients,
-            sansRemise = "no MMS dispatched",
-            miroir = { r, _ ->
-                mirror.upsertOutgoingMms(
-                    address = r.raw,
-                    audioFile = durableAudio,
-                    mimeType = mimeType,
-                    durationMs = durationMs,
-                    date = now,
-                    subId = effectiveSubId,
-                )
-            },
-            envoi = { localId, r ->
-                sender.sendVoiceMms(
-                    localMessageId = localId,
-                    recipients = listOf(r.raw),
-                    audioFile = durableAudio,
-                    mimeType = mimeType,
-                    subId = effectiveSubId,
-                    requestDeliveryReport = deliveryReports,
-                )
-            },
-            echoDeGroupe = if (echoInGroup) {
-                { statut ->
-                    mirror.upsertGroupEcho(
-                        addresses = recipients,
-                        body = "",
+
+        // Round 48 — préparation du chiffrement AVANT toute ligne
+        // miroir (même raison que [SendMediaMmsUseCase]) : un seul
+        // fichier, et pas de plafond — la voix n'en a pas
+        // aujourd'hui, on n'en ajoute pas (un Refuse ne peut donc
+        // jamais se produire ici, mais le gate reste le même).
+        val prepared = mutableMapOf<String, E2eMediaGate.PrepareResult.Encrypted>()
+        try {
+            for (r in recipients) {
+                if (blockedRepo.isBlocked(r.raw)) continue
+                when (
+                    val result = mediaGate.prepareMediaSend(
+                        address = r.raw,
+                        files = listOf(MediaFileInput(durableAudio, mimeType)),
+                        maxTotalBytes = Long.MAX_VALUE,
                         date = now,
                         subId = effectiveSubId,
-                        status = statut,
-                        attachments = listOf(
-                            com.filestech.sms.domain.mms.MediaAttachmentSpec(
-                                durableAudio,
-                                mimeType,
-                                durationMs = durationMs,
-                            ),
-                        ),
                     )
+                ) {
+                    is E2eMediaGate.PrepareResult.Encrypted -> prepared[r.raw] = result
+                    is E2eMediaGate.PrepareResult.Plain,
+                    E2eMediaGate.PrepareResult.FallbackToPlain -> Unit
+                    is E2eMediaGate.PrepareResult.Refuse ->
+                        return Outcome.Failure(AppError.Validation(result.message))
                 }
-            } else {
-                null
-            },
-        )
+            }
+            // v1.28.3 (F21, second passage) — troisième occurrence du même `continue` muet, sur la
+            // voie VOCALE que personne ne citait. v1.28.4 — la boucle n'existe plus qu'une fois,
+            // dans [EnvoiParDestinataire] ; les trois voies ne peuvent plus diverger.
+            return envoi.parDestinataire(
+                recipients = recipients,
+                sansRemise = "no MMS dispatched",
+                miroir = { r, _ ->
+                    mirror.upsertOutgoingMms(
+                        address = r.raw,
+                        audioFile = durableAudio,
+                        mimeType = mimeType,
+                        durationMs = durationMs,
+                        date = now,
+                        subId = effectiveSubId,
+                        encrypted = prepared.containsKey(r.raw),
+                    )
+                },
+                envoi = { localId, r ->
+                    val encrypted = prepared[r.raw]
+                    try {
+                        if (encrypted != null) {
+                            // Voix chiffrée : sendMediaMms, pas
+                            // sendVoiceMms — ce dernier force le
+                            // genre AUDIO dans le SMIL, alors que
+                            // la partie chiffrée est un
+                            // octet-stream OTHER.
+                            sender.sendMediaMms(
+                                localMessageId = localId,
+                                recipients = listOf(r.raw),
+                                attachments = encrypted.attachments,
+                                textBody = null,
+                                subId = effectiveSubId,
+                                requestDeliveryReport = deliveryReports,
+                            )
+                        } else {
+                            sender.sendVoiceMms(
+                                localMessageId = localId,
+                                recipients = listOf(r.raw),
+                                audioFile = durableAudio,
+                                mimeType = mimeType,
+                                subId = effectiveSubId,
+                                requestDeliveryReport = deliveryReports,
+                            )
+                        }
+                    } finally {
+                        encrypted?.attachments?.forEach {
+                            runCatching { it.file.delete() }
+                        }
+                    }
+                },
+                echoDeGroupe = if (echoInGroup) {
+                    { statut ->
+                        mirror.upsertGroupEcho(
+                            addresses = recipients,
+                            body = "",
+                            date = now,
+                            subId = effectiveSubId,
+                            status = statut,
+                            attachments = listOf(
+                                com.filestech.sms.domain.mms.MediaAttachmentSpec(
+                                    durableAudio,
+                                    mimeType,
+                                    durationMs = durationMs,
+                                ),
+                            ),
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
+        } finally {
+            deletePrepared(prepared)
+        }
+    }
+
+    /** Round 48 — supprime les fichiers chiffrés temporaires préparés (best-effort). */
+    private fun deletePrepared(prepared: Map<String, E2eMediaGate.PrepareResult.Encrypted>) {
+        for (result in prepared.values) {
+            for (attachment in result.attachments) {
+                runCatching { attachment.file.delete() }
+            }
+        }
     }
 
     /** v1.28.3 (F21, second passage) — cf. le jumeau de [SendMediaMmsUseCase]. */

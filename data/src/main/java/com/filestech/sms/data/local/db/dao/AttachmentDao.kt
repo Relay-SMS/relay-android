@@ -191,4 +191,39 @@ interface AttachmentDao {
      */
     @Query("DELETE FROM attachments WHERE message_id = :messageId AND hub_attachment_id IS NULL")
     suspend fun deleteOptimisticForMessage(messageId: Long)
+
+    /**
+     * Round 48 — the attachment row stored under one filename.
+     * The key-arrival path resolves a file id to its pending
+     * message through the part name (`relay-media-<id>.bin`,
+     * preserved at write time) — the filename is the only link
+     * between the key message and the MMS part. Exact match: the
+     * name is written by our own writer, byte-identical.
+     */
+    @Query("SELECT * FROM attachments WHERE file_name = :fileName LIMIT 1")
+    suspend fun findByFileName(fileName: String): AttachmentEntity?
+
+    /**
+     * Round 48 — the prune candidates: encrypted MMS messages
+     * older than [before] that still carry a relay-media
+     * ciphertext part and are not already failed. The caller
+     * checks the key table per candidate (see
+     * [PendingMediaAttachment]) — a candidate with no key row
+     * can never decrypt and is marked failed. No direction
+     * filter: outgoing rows never carry a relay-media filename
+     * (the sender keeps the plaintext original), so the filename
+     * pattern alone excludes them; no type filter either (only
+     * MMS rows have attachments).
+     */
+    @Query(
+        """
+        SELECT m.id AS message_id, a.file_name AS file_name FROM messages m
+        JOIN attachments a ON a.message_id = m.id
+        WHERE m.encrypted = 1
+          AND m.decrypt_failed = 0
+          AND m.date < :before
+          AND a.file_name LIKE 'relay-media-%.bin'
+        """,
+    )
+    suspend fun findPendingMediaMessages(before: Long): List<PendingMediaAttachment>
 }

@@ -199,6 +199,7 @@ internal class NoopMirror(
         durationMs: Long,
         date: Long,
         subId: Int?,
+        encrypted: Boolean,
     ): Long = error("non utilise")
 
     override suspend fun upsertOutgoingMediaMms(
@@ -208,6 +209,7 @@ internal class NoopMirror(
         date: Long,
         subId: Int?,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long = error("non utilise")
 
     override suspend fun upsertOutgoingGroupMms(

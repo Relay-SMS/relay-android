@@ -185,6 +185,7 @@ import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.brandBlue
 import com.filestech.sms.ui.theme.brandBluePressed
 import com.filestech.sms.ui.theme.onBrandBlue
+import com.filestech.sms.ui.theme.resolveComposerButtonColors
 import com.filestech.sms.ui.util.daySeparatorLabel
 import com.filestech.sms.ui.util.rememberChatFormatters
 import com.filestech.sms.ui.util.rememberSimLabeler
@@ -361,7 +362,8 @@ fun ThreadScreen(
     var e2eVerificationOpen by remember { mutableStateOf(false) }
     val e2ePeerAddress = state.conversation?.takeIf { !it.isGroup }?.firstAddress?.normalized
     // E2E — this thread encrypts: the composer placeholder, the send
-    // icon and the timestamp locks all key off this one flag.
+    // icon, the composer button colours (round 48) and the timestamp
+    // locks all key off this one flag.
     val isThreadEncrypted = state.e2ePeerState == E2ePeerState.ENCRYPTED
     // v1.11.0 — Sujet 5 apparence : dialog ouvert depuis le panneau latéral de détails.
     var appearanceOpen by remember { mutableStateOf(false) }
@@ -1311,6 +1313,7 @@ fun ThreadScreen(
             ThreadMessageItemActions(
                 onTogglePlayback = { audio -> viewModel.togglePlayback(audio.localUri, audio.toPlaybackUri()) },
                 onSeekPlayback = viewModel::seekPlaybackTo,
+                onTogglePlaybackAt = viewModel::togglePlayback,
                 onTapFailed = { msg ->
                     // Client mode C3 — retry is wired on a linked
                     // device (same-key resend via the hub); the
@@ -2689,7 +2692,8 @@ private fun ComposerBar(
     /** v1.3.4 M1 audit fix — flag pour basculer mic → send button quand des PJ sont stagées. */
     hasPendingAttachments: Boolean,
     /** E2E — this 1:1 thread encrypts: the placeholder reads "Relay
-     * message" and the send button shows the encrypted-send glyph. */
+     * message", the send button shows the encrypted-send glyph, and
+     * the composer buttons are blue (round 48 — green when plain). */
     isEncrypted: Boolean = false,
     onDraftChanged: (String) -> Unit,
     onSendText: () -> Unit,
@@ -2770,6 +2774,7 @@ private fun ComposerBar(
                 durationMs = voice.durationMs,
                 playback = playback,
                 isSending = isSendingVoice,
+                isEncrypted = isEncrypted,
                 onTogglePlay = onTogglePreview,
                 onSeek = onSeekPreview,
                 onDiscard = onDiscardDraft,
@@ -2790,9 +2795,10 @@ private fun ComposerBar(
  *
  * Relay UI refresh: the composer is a filled pill (`surfaceVariant`, 24dp radius, min
  * 48dp, grows to 5 lines) with Kristin's smiley leading and her camera + add-circle
- * inside trailing; the send affordance is a 48dp blue circle with a white paper-airplane
+ * inside trailing; the send affordance is a 48dp circle with a white paper-airplane
  * send icon, shown only when there is text (or staged attachments), and a mic glyph when the
- * composer is empty. The mic circle is the same 48dp height as the pill, so the row
+ * composer is empty. Round 48 — the circles are the theme blue when the thread encrypts,
+ * the plain green (`#3BA803`) when it does not. The mic circle is the same 48dp height as the pill, so the row
  * reads as one aligned unit. Round 4: the camera opens the camera directly
  * ([onCameraClick]), only the + opens the attachment sheet ([onAttachClick]).
  * Feedback round 6 — reverted to the 48dp pill: the 36dp version read cramped
@@ -2877,7 +2883,8 @@ private fun ComposingRow(
     /** v1.26.1 (audit H7) — envoi en cours : le bouton Envoyer est désactivé le temps du vol. */
     isSending: Boolean,
     /** E2E — this 1:1 thread encrypts: the placeholder reads "Relay
-     * message" and the send button shows the encrypted-send glyph. */
+     * message", the send button shows the encrypted-send glyph, and
+     * the composer buttons are blue (round 48 — green when plain). */
     isEncrypted: Boolean = false,
     onDraftChanged: (String) -> Unit,
     onSendText: () -> Unit,
@@ -3051,6 +3058,7 @@ private fun ComposingRow(
                     isRecording = isRecording,
                     cancelHinted = cancelHinted,
                     permissionGranted = permissionGranted,
+                    isEncrypted = isEncrypted,
                     onRequestPermission = onRequestPermission,
                     onPressStart = onPressStart,
                     onReleaseStop = onReleaseStop,
@@ -3135,10 +3143,17 @@ private fun ComposerIconButton(
 }
 
 /**
- * Relay UI refresh — send affordance: a 48dp blue circle with a white paper-airplane
+ * Relay UI refresh — send affordance: a 48dp circle with a white paper-airplane
  * send icon, the same height as the composer pill. It slides up with a spring each
  * time it appears and scales to 0.90 while pressed; the haptic tick is fired by the
  * caller's [onClick] (see [ComposerBar]).
+ *
+ * Round 48 — the circle is the theme blue when this thread encrypts, the plain
+ * green (`#3BA803`) when it does not ([resolveComposerButtonColors], the same
+ * signal as the outgoing bubbles). The glyph switch (lock vs plain plane) is
+ * unchanged; only the colour moves. The long-press schedule entry rides this
+ * same button, so it inherits the colour — there is no separate schedule
+ * button in the composer.
  *
  * Round 13 — [onLongClick] opens the schedule menu (long-press to schedule); it is
  * null when there is nothing to schedule, so a long-press then does nothing. The
@@ -3176,6 +3191,16 @@ private fun SendCircleButton(
         targetValue = if (entered) 1f else 0.9f,
         label = "sendSlideAlpha",
     )
+    // Round 48 — blue when this thread encrypts, the plain green
+    // when it does not (the same signal as the outgoing bubbles).
+    // Resolved here, at the leaf, so the colour follows the same
+    // `isEncrypted` recomposition as the placeholder and the glyph.
+    val buttonColors = resolveComposerButtonColors(
+        encrypted = isEncrypted,
+        defaultBlue = brandBlue(),
+        defaultBluePressed = brandBluePressed(),
+        onDefaultBlue = onBrandBlue(),
+    )
     Box(
         modifier = Modifier
             .size(48.dp)
@@ -3184,7 +3209,7 @@ private fun SendCircleButton(
             .alpha(if (enabled) 1f else 0.38f)
             .scale(pressScale)
             .clip(CircleShape)
-            .background(if (pressed) brandBluePressed() else brandBlue())
+            .background(if (pressed) buttonColors.pressedBackground else buttonColors.background)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -3206,14 +3231,14 @@ private fun SendCircleButton(
             Icon(
                 painter = painterResource(R.drawable.ic_send_encrypted),
                 contentDescription = stringResource(R.string.action_send),
-                tint = onBrandBlue(),
+                tint = buttonColors.content,
                 modifier = Modifier.size(width = 21.dp, height = 24.dp),
             )
         } else {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.Send,
                 contentDescription = stringResource(R.string.action_send),
-                tint = onBrandBlue(),
+                tint = buttonColors.content,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -3309,6 +3334,12 @@ private fun MicButton(
     isRecording: Boolean,
     cancelHinted: Boolean,
     permissionGranted: Boolean,
+    /**
+     * Round 48 — this 1:1 thread encrypts: the idle mic circle is
+     * the theme blue; in a plain thread it is the plain green
+     * (`#3BA803`), like the send circle. Recording/cancel stay red.
+     */
+    isEncrypted: Boolean = false,
     onRequestPermission: () -> Unit,
     onPressStart: () -> Unit,
     onReleaseStop: () -> Unit,
@@ -3322,12 +3353,21 @@ private fun MicButton(
     // Round 20 — the idle tile is [brandBlue] (fixed brand blue, or the
     // wallpaper `primary` when dynamic colours are on) with [onBrandBlue]
     // content; the recording/cancel states stay the danger red with white.
+    // Round 48 — in a plain thread the idle tile is the plain green
+    // instead (the same signal as the send circle and the outgoing
+    // bubbles); recording/cancel are untouched.
+    val buttonColors = resolveComposerButtonColors(
+        encrypted = isEncrypted,
+        defaultBlue = brandBlue(),
+        defaultBluePressed = brandBluePressed(),
+        onDefaultBlue = onBrandBlue(),
+    )
     val containerColor = when {
         cancelHinted -> danger
         isRecording -> danger
-        else -> brandBlue()
+        else -> buttonColors.background
     }
-    val contentColor = if (cancelHinted || isRecording) Color.White else onBrandBlue()
+    val contentColor = if (cancelHinted || isRecording) Color.White else buttonColors.content
 
     val pushToTalk = Modifier.pointerInput(permissionGranted) {
         awaitEachGesture {
@@ -3359,9 +3399,10 @@ private fun MicButton(
         }
     }
 
-    // Relay UI refresh: a 48dp blue circle with Kristin's white mic — the same height
-    // as the composer pill, matching the send circle. While recording it grows to 56dp
-    // and turns red, as before.
+    // Relay UI refresh: a 48dp circle with Kristin's white mic — the same height
+    // as the composer pill, matching the send circle (round 48 — blue when this
+    // thread encrypts, the plain green when it does not). While recording it
+    // grows to 56dp and turns red, as before.
     // Phase 8 — TalkBack : le geste press-and-hold (`pointerInput`) n'expose aucune
     // action d'accessibilité — un utilisateur TalkBack entendait « Enregistrer un
     // message vocal » sans pouvoir le déclencher. La sémantique ci-dessous donne au
@@ -3419,6 +3460,13 @@ private fun ReviewingMode(
     durationMs: Long,
     playback: VoicePlaybackController.PlaybackState,
     isSending: Boolean,
+    /**
+     * Round 48 — this 1:1 thread encrypts: the send tile is the
+     * theme blue; in a plain thread it is the plain green
+     * (`#3BA803`), like the composer send circle — the clip goes
+     * out plain there too.
+     */
+    isEncrypted: Boolean = false,
     onTogglePlay: () -> Unit,
     onSeek: (Int) -> Unit,
     onDiscard: () -> Unit,
@@ -3580,12 +3628,20 @@ private fun ReviewingMode(
             // dark-navy arrow instead of the brand blue with a white arrow
             // Kristin asked for. Round 20 — [brandBlue] / [onBrandBlue] keep
             // that fixed pair when dynamic colours are off, and follow the
-            // wallpaper pair when they are on.
+            // wallpaper pair when they are on. Round 48 — in a plain
+            // thread the tile is the plain green instead, like the
+            // composer send circle.
+            val buttonColors = resolveComposerButtonColors(
+                encrypted = isEncrypted,
+                defaultBlue = brandBlue(),
+                defaultBluePressed = brandBluePressed(),
+                onDefaultBlue = onBrandBlue(),
+            )
             FilledIconButton(
                 onClick = onSend,
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = brandBlue(),
-                    contentColor = onBrandBlue(),
+                    containerColor = buttonColors.background,
+                    contentColor = buttonColors.content,
                 ),
             ) {
                 Icon(
@@ -3850,6 +3906,15 @@ private class ThreadMessageItemActions(
     val onTogglePlayback: (com.filestech.sms.domain.model.Attachment) -> Unit,
     // Position en millisecondes ; aligné sur la signature [ThreadViewModel.seekPlaybackTo].
     val onSeekPlayback: (Int) -> Unit,
+    /**
+     * Round 48 — the two-arg playback toggle (`key`, `uri`) for
+     * encrypted voice notes: the key is the attachment's
+     * `localUri` (the ciphertext path — the stable identity),
+     * the URI is the decrypted playback file. The one-arg
+     * toggle couples key + URI from a single attachment and
+     * cannot express that split.
+     */
+    val onTogglePlaybackAt: (String, android.net.Uri) -> Unit,
     /** Tap sur bulle FAILED — l'action interne distingue WATCHDOG_TIMEOUT vs SYNCHRONOUS. */
     val onTapFailed: (Message) -> Unit,
     val onDelete: (Message) -> Unit,
@@ -4129,6 +4194,38 @@ private fun ThreadMessageItem(
             // and tapping it does nothing in v1.
             msg.decryptFailed -> {
                 E2eDecryptFailedRow()
+            }
+            // Round 48 — an incoming encrypted-media MMS: the
+            // wrapper renders the pending row while any part's
+            // key is missing, else the decrypted bubble. BEFORE
+            // the audio/media branches: the stored MIME is
+            // `application/octet-stream`, so the media branch
+            // would otherwise claim it as a generic file. INCOMING
+            // only — our own outgoing encrypted media renders
+            // from the plaintext original the sender kept.
+            msg.isIncoming && msg.type == Message.Type.MMS && msg.encrypted &&
+                msg.attachments.any {
+                    com.filestech.sms.data.mms.RelayMediaFilename.isEncryptedPart(it.mimeType, it.fileName)
+                } -> {
+                EncryptedMediaBubble(
+                    message = msg,
+                    showTimestamp = showTimestamp,
+                    showStatus = showStatus,
+                    senderLabel = senderLabel,
+                    playbackProvider = playbackProvider,
+                    repliedToPreview = repliedToPreview,
+                    searchHighlight = searchHighlight,
+                    onDelete = gatedOnDelete,
+                    onReply = gatedOnReply,
+                    onReact = gatedOnReact,
+                    quickReactions = gatedQuickReactions,
+                    onForward = gatedOnForward,
+                    toggles = gatedToggles,
+                    onCopy = if (msg.body.isNotBlank()) onCopy else null,
+                    onPhoneClick = actions.onPhoneClick,
+                    onSeekPlayback = actions.onSeekPlayback,
+                    onTogglePlaybackAt = actions.onTogglePlaybackAt,
+                )
             }
             audio != null -> {
                 AudioMessageBubble(

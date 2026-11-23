@@ -14,6 +14,15 @@ import java.util.Base64
  * no UCS-2 fallback and no multi-part sending). One SMS each way,
  * the same count as the data-SMS handshake.
  *
+ * Round 48 — the media-capability declaration rides the same two
+ * functions unchanged: it is probe-sized (70 bytes →
+ * [PROBE_TEXT_LENGTH] chars), so [encode] and [parse] accept it
+ * with no new size case. That is deliberate, not incidental: an
+ * old build's [parse] accepts the 70-byte declaration too, its
+ * gate swallows the text, and its handshake decoder drops the
+ * unknown type silently — so the declaration is invisible on old
+ * builds on this channel as well (see [E2eHandshake]).
+ *
  * The magic `RLYH:` is distinct from the ciphertext magic `RLY1:`
  * ([E2eWireFormat.MAGIC]): a handshake SMS never parses as a
  * fragment and vice versa — the two receive branches are disjoint

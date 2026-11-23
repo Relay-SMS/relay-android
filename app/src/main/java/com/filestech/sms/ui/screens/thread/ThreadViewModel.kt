@@ -620,6 +620,9 @@ class ThreadViewModel @Inject constructor(
     /** E2E — the probe-on-open guard (once per ViewModel, see `init`). */
     private var e2eProbeOnOpenDone = false
 
+    /** E2E — the notice-backfill-on-open guard (once per ViewModel, see `init`). */
+    private var e2eBackfillOnOpenDone = false
+
     /**
      * Feedback round 7 — re-resolution trigger for the header contact photo.
      * The address flow below only re-runs when the address changes, so a
@@ -816,6 +819,36 @@ class ThreadViewModel @Inject constructor(
                     .onFailure {
                         timber.log.Timber.w(it, "ThreadViewModel: e2e probe-on-open failed")
                     }
+            }
+            // E2E — ACTIVATED-notice backfill on thread open (round
+            // 48): a conversation that re-established encryption
+            // under round 46 never got its second ACTIVATED pill
+            // (round 47's recordActivated only runs on a new bundle
+            // or encrypted message), so its latest pill still says
+            // "Encryption ended" while encryption is working. Same
+            // once-per-ViewModel, 1:1-only, hub-only gate as the
+            // probe above — a linked device holds no peer rows of
+            // its own and receives its notices from the hub. The
+            // backfill itself is self-limiting (after the insert
+            // the latest notice is ACTIVATED), so the guard only
+            // stops the redundant reads on later row emissions.
+            val e2eShouldBackfill = conv != null && !conv.isGroup &&
+                !e2eBackfillOnOpenDone &&
+                settings.state.value.mode != DeviceMode.CLIENT
+            if (e2eShouldBackfill) {
+                e2eBackfillOnOpenDone = true
+                conv?.firstAddress?.normalized?.let { address ->
+                    viewModelScope.launch {
+                        runCatching {
+                            val e2e = e2eEntryPoint()
+                            val peer = e2e.peerRepository().getPeer(address)
+                            e2e.noticeStore()
+                                .backfillActivatedIfNeeded(conversationId, peer)
+                        }.onFailure {
+                            timber.log.Timber.w(it, "ThreadViewModel: e2e notice backfill failed")
+                        }
+                    }
+                }
             }
         }.launchIn(viewModelScope)
         combine(

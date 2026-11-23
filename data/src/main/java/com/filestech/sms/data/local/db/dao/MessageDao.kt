@@ -517,6 +517,23 @@ interface MessageDao {
     suspend fun markDecrypted(id: Long)
 
     /**
+     * E2E media (schema v23, round 48) — marks an encrypted-media
+     * row as undecryptable (bad GCM tag, SHA/size mismatch, or the
+     * key never arrived within 24 h). No ciphertext argument: the
+     * media ciphertext lives in the attachment file, not the
+     * `ciphertext` column — and unlike the text path there is no
+     * retry (a media key that never arrived will not arrive on a
+     * re-probe; the row stays failed). The thread already renders
+     * any `decrypt_failed` row as "This message couldn't be
+     * decrypted.", so no UI branch is needed for this state. The
+     * text retry path ([com.filestech.sms.e2e.E2eHandshakeHandler.retryDecryptFailed])
+     * skips media rows safely: it reads the (null) `ciphertext`
+     * column and `decryptKept` returns null on a null ciphertext.
+     */
+    @Query("UPDATE messages SET encrypted = 1, decrypt_failed = 1 WHERE id = :id")
+    suspend fun markMediaDecryptFailed(id: Long)
+
+    /**
      * E2E (schema v22) — keeps the raw base64 ciphertext on an OUTGOING
      * encrypted row, so a retry re-sends the EXACT bytes of the first
      * attempt (same fragment set, same message id — the receiver dedupes
@@ -559,6 +576,50 @@ interface MessageDao {
         """,
     )
     suspend fun firstOutgoingEncryptedSince(conversationId: Long, since: Long): Long?
+
+    /**
+     * E2E (round 48) — the number of CONSECUTIVE plain incoming SMS in
+     * [conversationId] since the last encrypted incoming message on this
+     * session, or since [since] (the peer's establishment time, approximated
+     * by the peer row's `updated_at`) when the peer never sent encrypted on
+     * this session. The peer-left fallback's grace guard
+     * ([com.filestech.sms.e2e.E2eReceiveManager]) uses it for the
+     * consecutive-plain override: 3 plain in a row within the grace window
+     * means the peer switched apps, not a race.
+     *
+     * Consecutive is derived from the message table — no new column:
+     * plain incoming SMS (direction 0, type 0, encrypted 0) whose row id
+     * is past the newest encrypted incoming row's id. Ids (insertion
+     * order) anchor the streak, not dates — two messages can share a
+     * millisecond, and insertion order is the true arrival order. The
+     * `date >= :since` floor keeps pre-establishment plain history out
+     * of the count: before the flip, plain was expected, so without it
+     * a peer who never sent encrypted would fire on their first plain
+     * message. Hidden rows (reaction sentinels) don't count — they
+     * aren't messages. An undecryptable placeholder (encrypted 1)
+     * resets the streak: the peer sent encrypted, even if we couldn't
+     * read it.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM messages m
+        WHERE m.conversation_id = :conversationId
+          AND m.direction = 0
+          AND m.type = 0
+          AND m.encrypted = 0
+          AND m.hidden = 0
+          AND m.date >= :since
+          AND m.id > COALESCE(
+            (SELECT MAX(id) FROM messages
+             WHERE conversation_id = :conversationId
+               AND direction = 0
+               AND encrypted = 1
+               AND date >= :since),
+            0
+          )
+        """,
+    )
+    suspend fun countPlainIncomingSinceLastEncrypted(conversationId: Long, since: Long): Int
 
     /**
      * E2E — the conversations whose LATEST visible message is an

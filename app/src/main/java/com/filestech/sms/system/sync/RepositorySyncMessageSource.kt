@@ -9,6 +9,7 @@ import com.filestech.sms.core.ext.canonicalPhone
 import com.filestech.sms.core.mms.MmsConstants
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.data.mms.RelayMediaFilename
 import com.filestech.sms.domain.categories.MessageCategory
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Contact
@@ -32,7 +33,9 @@ import com.filestech.sms.domain.usecase.ScheduleMessageUseCase
 import com.filestech.sms.domain.usecase.SendMediaMmsUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
 import com.filestech.sms.domain.usecase.UnblockNumberUseCase
+import com.filestech.sms.e2e.E2eMediaResolver
 import com.filestech.sms.e2e.E2ePeerRepository
+import com.filestech.sms.e2e.withMediaKey
 import com.filestech.sms.sync.ActionResult
 import com.filestech.sms.sync.AttachmentData
 import com.filestech.sms.sync.AttachmentOpenResult
@@ -67,9 +70,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.Collections
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.filestech.sms.domain.model.MessageState as DomainMessageState
@@ -174,10 +179,35 @@ class RepositorySyncMessageSource @Inject constructor(
     // encrypted conversation — every conversation then maps
     // `encrypted = false`).
     private val e2ePeerRepository: E2ePeerRepository? = null,
+    // Round 48 — the encrypted-media resolver, or null in tests
+    // (which never sync encrypted media — pending messages are
+    // then never withheld and relay-media parts read as
+    // Unreadable, the safe defaults).
+    private val mediaResolver: E2eMediaResolver? = null,
 ) : SyncMessageSource {
 
     /** Serializes all send handling — see the class KDoc. */
     private val sendMutex = Mutex()
+
+    /**
+     * Round 48 — (conversationId, messageId) pairs withheld as
+     * decrypt-pending: an incoming encrypted-media message whose
+     * key has not arrived yet is NOT synced (the desktop must
+     * never see a ciphertext part). The pair stays here until the
+     * key lands — then the engine's key-arrival collector
+     * re-pushes the conversation and [messagesAfter] re-includes
+     * the message even when later messages were already pushed
+     * past its id. The set is the only memory of a withhold: the
+     * message table never changes on a key arrival, so without
+     * it a revived message would be missed forever. Synchronized:
+     * the engine calls the message queries from several
+     * coroutines. Entries leave when the message is delivered,
+     * or when it is deleted (the re-inclusion read finds
+     * nothing); a message that times out to failed is delivered
+     * by the same re-inclusion path (it is no longer pending).
+     */
+    private val withheldMediaMessages =
+        Collections.synchronizedSet(mutableSetOf<Pair<Long, Long>>())
 
     /**
      * In-flight uploads, keyed by sanitized client key + index (see
@@ -234,10 +264,149 @@ class RepositorySyncMessageSource @Inject constructor(
         beforeId: Long,
         limit: Int,
     ): List<SyncedMessage> =
-        repository.messagesBefore(conversationId, beforeId, limit).map { it.toSynced() }
+        repository.messagesBefore(conversationId, beforeId, limit)
+            .filterSyncable()
+            .map { it.toSynced() }
 
-    override suspend fun messagesAfter(conversationId: Long, afterId: Long): List<SyncedMessage> =
-        repository.messagesAfter(conversationId, afterId).map { it.toSynced() }
+    override suspend fun messagesAfter(conversationId: Long, afterId: Long): List<SyncedMessage> {
+        val fresh = repository.messagesAfter(conversationId, afterId)
+        // Round 48 — re-include messages withheld earlier in this
+        // session whose keys have since arrived: they sit BELOW
+        // afterId (later messages were already pushed past them),
+        // so the plain `id > afterId` query would never return
+        // them. Sorted back into id order before mapping.
+        val revived = withheldDecryptable(conversationId)
+        return (fresh + revived).sortedBy { it.id }
+            .filterSyncable()
+            .map { it.toSynced() }
+    }
+
+    /**
+     * Round 48 — drops decrypt-pending media messages from a page
+     * (recording the withhold — see [isPendingMedia]). A suspend
+     * loop, not `filterNot`: the pending check reads key rows.
+     */
+    private suspend fun List<Message>.filterSyncable(): List<Message> {
+        val out = ArrayList<Message>(size)
+        for (message in this) if (!isPendingMedia(message)) out += message
+        return out
+    }
+
+    /**
+     * Round 48 — whether a message is decrypt-pending: an incoming
+     * encrypted MMS with a relay-media part whose key has not
+     * arrived yet. Pending messages are withheld from the desktop
+     * (it must never see a ciphertext part); the withhold is
+     * recorded in [withheldMediaMessages] so the key-arrival
+     * re-inclusion can find the message again. A message that is
+     * no longer pending clears its entry. Failed messages are NOT
+     * pending — they sync with `decryptFailed = true` and the
+     * desktop renders the placeholder. Outgoing encrypted media
+     * is never pending (the sender keeps the plaintext original,
+     * so its parts are never relay-media named).
+     */
+    private suspend fun isPendingMedia(message: Message): Boolean {
+        val resolver = mediaResolver ?: return false
+        // Only an incoming encrypted MMS with relay-media parts can
+        // be pending; anything else clears its withheld entry (a
+        // no-op when none exists) instead of leaving it stale.
+        val relayParts = if (!message.isIncoming || message.type != Message.Type.MMS ||
+            !message.encrypted || message.decryptFailed
+        ) {
+            emptyList()
+        } else {
+            message.attachments.filter {
+                RelayMediaFilename.isEncryptedPart(it.mimeType, it.fileName)
+            }
+        }
+        val pending = relayParts.any { resolver.keyFor(it) == null }
+        val key = message.conversationId to message.id
+        if (pending) {
+            withheldMediaMessages.add(key)
+        } else {
+            withheldMediaMessages.remove(key)
+        }
+        return pending
+    }
+
+    /**
+     * Round 48 — the withheld messages of one conversation that
+     * are decryptable now (their keys arrived, or the prune
+     * failed them — failed is deliverable too). Each id is
+     * re-read by `messagesBefore(id + 1, 1)`, which returns
+     * exactly the row with this id with its attachments
+     * (`findMessageById` does not load attachments by design);
+     * a deleted message leaves the set quietly. Delivered ids
+     * leave the set here — the caller maps them this round.
+     */
+    private suspend fun withheldDecryptable(conversationId: Long): List<Message> {
+        val ids = withheldMediaMessages
+            .filter { it.first == conversationId }
+            .map { it.second }
+        if (ids.isEmpty()) return emptyList()
+        val out = ArrayList<Message>()
+        for (id in ids) {
+            val msg = repository.messagesBefore(conversationId, id + 1, 1)
+                .firstOrNull()
+                ?.takeIf { it.id == id }
+            if (msg == null) {
+                withheldMediaMessages.remove(conversationId to id)
+                continue
+            }
+            if (isPendingMedia(msg)) continue
+            withheldMediaMessages.remove(conversationId to id)
+            out += msg
+        }
+        return out
+    }
+
+    /**
+     * Round 48 — domain → wire mapping with media-key metadata:
+     * a relay-media attachment WITH a key row maps its ORIGINAL
+     * mime/name/size (the desktop renders from these — the
+     * stored row describes the ciphertext part). Without a key
+     * row the message is withheld upstream, so this mapping
+     * never sees a pending part — except a race (the key pruned
+     * between the filter and the map), in which case the stored
+     * ciphertext metadata maps as-is and the desktop shows a
+     * generic file until the failed state reaches it on the next
+     * message or reconnect.
+     */
+    private suspend fun Message.toSynced(): SyncedMessage = SyncedMessage(
+        id = id.toString(),
+        conversationId = conversationId.toString(),
+        address = address,
+        body = body,
+        type = type.name.lowercase(),
+        direction = direction.name.lowercase(),
+        date = date,
+        dateSent = dateSent,
+        read = read,
+        starred = starred,
+        status = status.name.lowercase(),
+        errorCode = errorCode,
+        replyToMessageId = replyToMessageId?.toString(),
+        reaction = reactionEmoji,
+        attachments = attachments.map { it.toSyncedWithKey() },
+        clientMessageId = clientMessageId,
+        // E2E (§9.1): the stored flags, not the bytes — the `ciphertext`
+        // column never leaves the hub.
+        encrypted = encrypted,
+        decryptFailed = decryptFailed,
+    )
+
+    /** Round 48 — one attachment → its wire DTO, substituting key metadata when keyed. */
+    private suspend fun Attachment.toSyncedWithKey(): SyncedAttachment {
+        val resolver = mediaResolver
+        val key = if (resolver != null &&
+            RelayMediaFilename.isEncryptedPart(mimeType, fileName)
+        ) {
+            resolver.keyFor(this)
+        } else {
+            null
+        }
+        return if (key != null) withMediaKey(key).toSynced() else toSynced()
+    }
 
     override suspend fun totalMessageCount(): Long = repository.totalMessageCount()
 
@@ -687,6 +856,28 @@ class RepositorySyncMessageSource @Inject constructor(
     ): AttachmentOpenResult {
         val attachment = resolveDownloadTarget(attachmentId, messageId)
             ?: return AttachmentOpenResult.Unknown
+        // Round 48 — an encrypted-media part serves DECRYPTED
+        // bytes: the desktop renders from the plaintext, and the
+        // device link is already encrypted (keys never leave the
+        // hub — design decision 10). The size is the PLAINTEXT
+        // size: `streamAttachment` enforces its cap on it. A part
+        // without a key — or a decrypt failure — is Unreadable:
+        // the message is withheld while pending, so a download
+        // request for it should not happen, and a failed
+        // message's part is unrecoverable. No resolver (tests)
+        // reads as Unreadable, the safe default.
+        if (RelayMediaFilename.isEncryptedPart(attachment.mimeType, attachment.fileName)) {
+            val resolver = mediaResolver ?: return AttachmentOpenResult.Unreadable
+            return when (val decrypted = resolver.decryptToMemory(attachment)) {
+                is Outcome.Success -> AttachmentOpenResult.Opened(
+                    AttachmentData(
+                        decrypted.value.size.toLong(),
+                        ByteArrayInputStream(decrypted.value),
+                    ),
+                )
+                is Outcome.Failure -> AttachmentOpenResult.Unreadable
+            }
+        }
         return withContext(Dispatchers.IO) {
             try {
                 // Both read paths the thread UI already handles: a
@@ -1398,29 +1589,6 @@ private fun Conversation.toSynced(
         encrypted = encrypted,
     )
 }
-
-private fun Message.toSynced(): SyncedMessage = SyncedMessage(
-    id = id.toString(),
-    conversationId = conversationId.toString(),
-    address = address,
-    body = body,
-    type = type.name.lowercase(),
-    direction = direction.name.lowercase(),
-    date = date,
-    dateSent = dateSent,
-    read = read,
-    starred = starred,
-    status = status.name.lowercase(),
-    errorCode = errorCode,
-    replyToMessageId = replyToMessageId?.toString(),
-    reaction = reactionEmoji,
-    attachments = attachments.map { it.toSynced() },
-    clientMessageId = clientMessageId,
-    // E2E (§9.1): the stored flags, not the bytes — the `ciphertext`
-    // column never leaves the hub.
-    encrypted = encrypted,
-    decryptFailed = decryptFailed,
-)
 
 private fun Attachment.toSynced(): SyncedAttachment = SyncedAttachment(
     id = id.toString(),

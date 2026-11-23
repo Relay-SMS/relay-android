@@ -1152,9 +1152,14 @@ private fun groupMemberAvatars(
 /**
  * Round 45 — the actions the encryption box's expanded area can
  * show. Non-encrypted states offer the two manual retries (the
- * data-SMS probe first, then the regular-SMS handshake); ENCRYPTED
- * offers the safety-number sheet instead — a retry is meaningless
- * once a session is live.
+ * data-SMS probe first, then the regular-SMS handshake); a retry
+ * is meaningless once a session is live.
+ *
+ * Round 48 — ENCRYPTED has no expanded actions: the row opens
+ * the safety-number sheet directly (see [e2eDetailsRowTap]), so
+ * the dropdown holds retries only. ViewSafetyNumber stays in the
+ * enum — the render branch still handles it — but the table no
+ * longer produces it.
  */
 internal enum class E2eDetailsExpandedAction {
     RetryProbe,
@@ -1173,6 +1178,14 @@ internal enum class E2eDetailsExpandedAction {
  * row opens the sheet directly instead — see
  * [e2eDetailsRowTap]), so ENCRYPTED + verified shows nothing
  * here and the box renders with no chevron and no expand.
+ *
+ * Round 48 — ENCRYPTED has no expanded actions at all, verified
+ * or not: the row opens the sheet directly either way, so the
+ * one-item "View safety number" dropdown an unverified peer used
+ * to get is gone. The dropdown now holds retries only (PROBING /
+ * UNKNOWN / NOT_RELAY). `verified` and `hasOpenVerification`
+ * are kept for call-site stability; neither changes the result
+ * anymore.
  */
 internal fun e2eDetailsExpandedActions(
     peerState: E2ePeerState,
@@ -1181,11 +1194,9 @@ internal fun e2eDetailsExpandedActions(
     hasRetryViaSms: Boolean,
     hasOpenVerification: Boolean,
 ): List<E2eDetailsExpandedAction> = when (peerState) {
-    E2ePeerState.ENCRYPTED -> if (verified || !hasOpenVerification) {
-        emptyList()
-    } else {
-        listOf(E2eDetailsExpandedAction.ViewSafetyNumber)
-    }
+    // Round 48 — no dropdown for an encrypted peer: the row
+    // itself opens the safety-number sheet.
+    E2ePeerState.ENCRYPTED -> emptyList()
     E2ePeerState.PROBING, E2ePeerState.UNKNOWN, E2ePeerState.NOT_RELAY -> buildList {
         if (hasRetryProbe) add(E2eDetailsExpandedAction.RetryProbe)
         if (hasRetryViaSms) add(E2eDetailsExpandedAction.RetryViaSms)
@@ -1193,14 +1204,20 @@ internal fun e2eDetailsExpandedActions(
 }
 
 /**
- * Round 47 — what a tap on the encryption box does. A verified
- * peer opens the safety-number sheet directly: once the number is
- * verified the dropdown is a redundant step, so the box has no
- * chevron and no expand — tapping it is the "View safety number"
- * action, without the dropdown in between. Any other state with
- * expanded actions toggles the dropdown; with none, the box is
- * plain status. Pure, so the tap table is unit-testable without a
- * Compose harness.
+ * Round 47 — what a tap on the encryption box does. An encrypted
+ * peer opens the safety-number sheet directly: once the two
+ * people are connected the dropdown is a redundant step, so the
+ * box has no chevron and no expand — tapping it is the "View
+ * safety number" action, without the dropdown in between. Any
+ * other state with expanded actions toggles the dropdown; with
+ * none, the box is plain status. Pure, so the tap table is
+ * unit-testable without a Compose harness.
+ *
+ * Round 48 — the direct tap no longer requires verification:
+ * an unverified ENCRYPTED peer used to open a dropdown whose
+ * only item was "View safety number", a pointless extra tap once
+ * only verification is left. `verified` is kept for call-site
+ * stability; it no longer changes the result.
  */
 internal enum class E2eDetailsRowTap {
     /** Tap opens the safety-number sheet directly. */
@@ -1219,7 +1236,7 @@ internal fun e2eDetailsRowTap(
     hasOpenVerification: Boolean,
     hasExpandedActions: Boolean,
 ): E2eDetailsRowTap = when {
-    peerState == E2ePeerState.ENCRYPTED && verified && hasOpenVerification ->
+    peerState == E2ePeerState.ENCRYPTED && hasOpenVerification ->
         E2eDetailsRowTap.OpenVerification
     hasExpandedActions -> E2eDetailsRowTap.Expand
     else -> E2eDetailsRowTap.None
@@ -1290,6 +1307,13 @@ internal fun muteIconFor(muted: Boolean): ImageVector =
  * so viewing the number and clearing verification stay one tap
  * away. An unverified ENCRYPTED peer keeps the chevron +
  * dropdown, and the non-encrypted states keep their two retries.
+ *
+ * Round 48 — every ENCRYPTED peer taps directly to the sheet,
+ * verified or not: the unverified peer's one-item dropdown is
+ * gone, so the box has no chevron and no expand in either case.
+ * The dropdown is now only for the non-encrypted states and
+ * their two retries. The unverified subtitle drops the contact
+ * name ("Tap to verify safety number") so it stays on one line.
  */
 @Composable
 private fun E2eDetailsEncryptionRow(
@@ -1311,7 +1335,7 @@ private fun E2eDetailsEncryptionRow(
         E2ePeerState.ENCRYPTED -> if (verified) {
             stringResource(R.string.e2e_details_verified)
         } else {
-            stringResource(R.string.e2e_details_verify_tap, contactName)
+            stringResource(R.string.e2e_details_verify_tap)
         }
         E2ePeerState.PROBING -> stringResource(R.string.e2e_details_setting_up, contactName)
         E2ePeerState.UNKNOWN -> stringResource(R.string.e2e_details_auto_start, contactName)
@@ -1327,12 +1351,13 @@ private fun E2eDetailsEncryptionRow(
         hasRetryViaSms = onRetryProbeViaSms != null,
         hasOpenVerification = onOpenVerification != null,
     )
-    // Round 47 — what a tap on the box does: a verified peer
+    // Round 47 — what a tap on the box does: an encrypted peer
     // opens the safety-number sheet directly (the dropdown is
     // gone, so the row IS the "View safety number" action);
     // anything else with expanded actions toggles the dropdown.
-    // The chevron follows the dropdown, never the sheet — a
-    // verified row has none.
+    // The chevron follows the dropdown, never the sheet — an
+    // encrypted row has none. Round 48 — the direct tap no
+    // longer requires verification.
     val rowTap = e2eDetailsRowTap(
         peerState = peerState,
         verified = verified,

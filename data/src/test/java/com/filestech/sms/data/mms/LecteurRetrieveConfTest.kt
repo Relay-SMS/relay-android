@@ -146,6 +146,64 @@ class LecteurRetrieveConfTest {
         assertThat(contenu.legende).isEqualTo("été")
     }
 
+    // ---- Round 48 — le nom de la partie chiffrée ----
+
+    @Test
+    fun `une partie avec Content-Location garde son nom`() {
+        val part = partie("application/octet-stream", byteArrayOf(1, 2, 3)).apply {
+            setContentLocation("relay-media-0123456789abcdef.bin".toByteArray(Charsets.US_ASCII))
+        }
+        val contenu = LecteurRetrieveConf.lire(
+            conf(part),
+            indiceExpediteur = null,
+            maintenant = maintenant,
+        )
+
+        assertThat(contenu.parties).hasSize(1)
+        assertThat(contenu.parties[0].name).isEqualTo("relay-media-0123456789abcdef.bin")
+    }
+
+    @Test
+    fun `sans Content-Location, le Name sert de repli`() {
+        val part = partie("application/octet-stream", byteArrayOf(1, 2, 3)).apply {
+            setName("relay-media-0123456789abcdef.bin".toByteArray(Charsets.US_ASCII))
+        }
+        val contenu = LecteurRetrieveConf.lire(
+            conf(part),
+            indiceExpediteur = null,
+            maintenant = maintenant,
+        )
+
+        assertThat(contenu.parties[0].name).isEqualTo("relay-media-0123456789abcdef.bin")
+    }
+
+    @Test
+    fun `sans nom ni Content-Location, la partie n'a pas de nom`() {
+        val contenu = LecteurRetrieveConf.lire(
+            conf(partie("application/octet-stream", byteArrayOf(1, 2, 3))),
+            indiceExpediteur = null,
+            maintenant = maintenant,
+        )
+
+        assertThat(contenu.parties[0].name).isNull()
+    }
+
+    @Test
+    fun `le nom perd le NUL final des chaines WAP`() {
+        val part = partie("application/octet-stream", byteArrayOf(1, 2, 3)).apply {
+            setContentLocation(
+                "relay-media-0123456789abcdef.bin\u0000".toByteArray(Charsets.US_ASCII),
+            )
+        }
+        val contenu = LecteurRetrieveConf.lire(
+            conf(part),
+            indiceExpediteur = null,
+            maintenant = maintenant,
+        )
+
+        assertThat(contenu.parties[0].name).isEqualTo("relay-media-0123456789abcdef.bin")
+    }
+
     private companion object {
         /** MIBenum d'UTF-8. */
         const val UTF8_MIB = 106

@@ -192,9 +192,10 @@
     <string name="e2e_notice_key_changed_verified">%1$s\'s security code changed. %1$s was verified — compare the safety number again to confirm it\'s still them.</string>
     <string name="e2e_notice_deactivated">Encryption ended — %1$s no longer uses Relay</string>
     <string name="e2e_decrypt_failed">This message couldn\'t be decrypted.</string>
+    <string name="e2e_media_decrypt_pending">Waiting to decrypt…</string>
     <string name="e2e_encryption">Encryption</string>
     <string name="e2e_details_encrypted">End-to-end encrypted</string>
-    <string name="e2e_details_verify_tap">Tap to verify %1$s\'s safety number</string>
+    <string name="e2e_details_verify_tap">Tap to verify safety number</string>
     <string name="e2e_details_verified">Verified ✓</string>
     <string name="e2e_details_setting_up">Checking if %1$s uses Relay…</string>
     <string name="e2e_details_not_encrypted">Not encrypted</string>

@@ -113,6 +113,28 @@ interface E2ePeerDao {
     suspend fun setVerified(address: String, verified: Boolean, updatedAt: Long)
 
     /**
+     * Round 48 — records that this peer declared it handles
+     * encrypted media (the 0x03 capability packet). Targeted
+     * UPDATE, like the other peer writes: a bundle arriving
+     * between a read and a write cannot be clobbered.
+     */
+    @Query("UPDATE e2e_peers SET media_capable = :mediaCapable, updated_at = :updatedAt WHERE address = :address")
+    suspend fun setMediaCapable(address: String, mediaCapable: Boolean, updatedAt: Long)
+
+    /** Round 48 — records that our declaration went out to this peer (radio accepted it). */
+    @Query("UPDATE e2e_peers SET media_announced = :announced, updated_at = :updatedAt WHERE address = :address")
+    suspend fun setMediaAnnounced(address: String, announced: Boolean, updatedAt: Long)
+
+    /**
+     * Round 48 — records the channel our outbound handshake
+     * packets provably used for this peer (`DATA_SMS` /
+     * `TEXT_SMS`, the `HandshakeChannel` enum names stored raw).
+     * Null clears it (unused today — recorded channels stay).
+     */
+    @Query("UPDATE e2e_peers SET handshake_channel = :channel, updated_at = :updatedAt WHERE address = :address")
+    suspend fun setHandshakeChannel(address: String, channel: String?, updatedAt: Long)
+
+    /**
      * Records a probe send: the attempt count, the window the attempt belongs to, and
      * the send time. The caller ([com.filestech.sms.e2e.E2ePeerRepository]) computes
      * the new values — including the window reset when 30 days have elapsed.

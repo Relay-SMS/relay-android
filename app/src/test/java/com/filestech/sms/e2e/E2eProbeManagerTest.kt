@@ -11,6 +11,7 @@ import com.filestech.sms.domain.settings.EncryptionSettings
 import com.filestech.sms.domain.settings.SendingSettings
 import com.google.common.truth.Truth.assertThat
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -66,6 +67,9 @@ class E2eProbeManagerTest {
         val settings: AppSettingsSource = SettingsWithSubId(CHOSEN_SUB_ID),
         val crypto: FakeE2eCrypto = FakeE2eCrypto("alice"),
         val recorder: E2eFailureRecorder = mockk(relaxed = true),
+        // Round 48 — relaxed: the declaration is best-effort and
+        // invisible to the existing assertions.
+        val mediaCapability: E2eMediaCapabilityManager = mockk(relaxed = true),
         scope: CoroutineScope,
     ) {
         val peers = E2ePeerRepository(peerDao)
@@ -80,6 +84,7 @@ class E2eProbeManagerTest {
             settings = settings,
             scope = scope,
             recorder = recorder,
+            mediaCapability = mediaCapability,
         )
 
         fun seedPeer(
@@ -921,5 +926,45 @@ class E2eProbeManagerTest {
         assertThat(harness.sender.sent).isEmpty()
         verify(exactly = 0) { harness.recorder.recordEvent(any(), any()) }
         verify(exactly = 0) { harness.recorder.record(any(), any()) }
+    }
+
+    // ──────────────────────────── Round 48: media capability ────────────────────────────
+
+    @Test
+    fun `an automatic probe to an encrypted peer announces our capability instead`() = runTest {
+        val mediaCapability = mockk<E2eMediaCapabilityManager>()
+        coEvery { mediaCapability.announceIfNeeded(any(), any(), any()) } returns true
+        val harness = Harness(scope = this, mediaCapability = mediaCapability)
+        harness.seedPeer(state = E2ePeerState.ENCRYPTED)
+
+        val result = harness.manager.probeAddressDetailed(
+            ALICE,
+            null,
+            now = NOW,
+            channel = HandshakeChannel.DATA_SMS,
+        )
+
+        assertThat(result).isEqualTo(ProbeResult.Gated(ProbeGate.AlreadyEncrypted))
+        assertThat(harness.sender.sent).isEmpty()
+        coVerify { mediaCapability.announceIfNeeded(ALICE, null, NOW) }
+    }
+
+    @Test
+    fun `a manual probe to an encrypted peer never announces`() = runTest {
+        val mediaCapability = mockk<E2eMediaCapabilityManager>()
+        coEvery { mediaCapability.announceIfNeeded(any(), any(), any()) } returns true
+        val harness = Harness(scope = this, mediaCapability = mediaCapability)
+        harness.seedPeer(state = E2ePeerState.ENCRYPTED)
+
+        val result = harness.manager.probeAddressDetailed(
+            ALICE,
+            null,
+            manual = true,
+            now = NOW,
+            channel = HandshakeChannel.DATA_SMS,
+        )
+
+        assertThat(result).isEqualTo(ProbeResult.Gated(ProbeGate.AlreadyEncrypted))
+        coVerify(exactly = 0) { mediaCapability.announceIfNeeded(any(), any(), any()) }
     }
 }

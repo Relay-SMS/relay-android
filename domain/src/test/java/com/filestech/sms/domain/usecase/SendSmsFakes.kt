@@ -138,7 +138,7 @@ internal class NoopMirror : OutgoingMessageMirror {
      * jetaient `error("non utilise")` : c'etait vrai tant que seuls les tests de la voie SMS
      * existaient, et cette affirmation-la a vieilli comme les autres.
      */
-    data class LigneMms(val adresse: String, val piecesJointes: Int)
+    data class LigneMms(val adresse: String, val piecesJointes: Int, val encrypted: Boolean = false)
 
     val lignesMms = mutableListOf<LigneMms>()
 
@@ -149,8 +149,9 @@ internal class NoopMirror : OutgoingMessageMirror {
         durationMs: Long,
         date: Long,
         subId: Int?,
+        encrypted: Boolean,
     ): Long {
-        lignesMms += LigneMms(address, 1)
+        lignesMms += LigneMms(address, 1, encrypted)
         return prochainId++
     }
 
@@ -161,9 +162,10 @@ internal class NoopMirror : OutgoingMessageMirror {
         date: Long,
         subId: Int?,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long {
-        lignes += LigneEcrite(address, telephonyUri = null, statut = MessageStatus.PENDING)
-        lignesMms += LigneMms(address, attachments.size)
+        lignes += LigneEcrite(address, telephonyUri = null, statut = MessageStatus.PENDING, encrypted = encrypted)
+        lignesMms += LigneMms(address, attachments.size, encrypted)
         cles += clientMessageId
         return prochainId++
     }
@@ -278,6 +280,11 @@ internal class RecordingMmsDispatcher(
     val destinatairesTentes = mutableListOf<String>()
     var appels = 0
     var dernierTexte: String? = null
+    /** Round 48 — les pièces jointes du dernier sendMediaMms (pour mesurer le chiffrement). */
+    var dernierPiecesJointes: List<com.filestech.sms.domain.mms.MmsAttachment>? = null
+    /** Round 48 — compte les appels par voie (la voix chiffrée passe par sendMediaMms). */
+    var appelsVoix = 0
+    var appelsMedia = 0
 
     override suspend fun sendVoiceMms(
         localMessageId: Long,
@@ -288,6 +295,7 @@ internal class RecordingMmsDispatcher(
         requestDeliveryReport: Boolean,
     ): Outcome<Unit> {
         appels++
+        appelsVoix++
         destinatairesTentes += recipients
         return outcome
     }
@@ -301,8 +309,10 @@ internal class RecordingMmsDispatcher(
         requestDeliveryReport: Boolean,
     ): Outcome<Unit> {
         appels++
+        appelsMedia++
         destinatairesTentes += recipients
         dernierTexte = textBody
+        dernierPiecesJointes = attachments
         return outcome
     }
 }

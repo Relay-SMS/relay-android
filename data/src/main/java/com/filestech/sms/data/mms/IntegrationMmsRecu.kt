@@ -150,6 +150,14 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
         val systemThreadId = systemWrite?.threadId
             ?: if (membres != null) threadResolver?.resolve(membres.map { it.raw }) ?: 0L else 0L
         val telephonyUri = systemWrite?.let { "content://mms/${it.mmsId}" }
+        // Round 48 — an encrypted-media MMS: 1:1 only (`membres ==
+        // null`) with at least one ciphertext part. The part SHAPE
+        // is the signal — the receiver does not gate on the
+        // sender's capability flag, which could be stale if a
+        // bundle was missed. Groups stay plain even with an
+        // encrypted-looking part (v1 encrypts 1:1 only).
+        val encrypted = membres == null &&
+            contenu.parties.any { RelayMediaFilename.isEncryptedPart(it.mime, it.name) }
         val inscription = try {
             mirror.inscrireMmsRecu(
                 address = contenu.expediteur,
@@ -164,6 +172,7 @@ class IntegrationMmsRecu @VisibleForTesting constructor(
                 transactionKey = cle,
                 encoreVoulu = pduPresent,
                 systemThreadId = systemThreadId,
+                encrypted = encrypted,
             )
         } catch (t: Throwable) {
             // Transaction annulée : aucune ligne ne cite ces fichiers.
@@ -307,8 +316,17 @@ class EcrivainDePiecesSurDisque(private val context: Context) : IntegrationMmsRe
         return try {
             // Racine durable des pièces, UNE constante pour les envois et les réceptions (audit de cohérence, C4).
             val dossier = File(context.filesDir, OutgoingAttachmentStoreImpl.ATTACHMENTS_DIR).apply { mkdirs() }
-            val nom = "in-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}." +
-                extension(partie.mime)
+            // Round 48 — a relay-media part keeps its PDU name
+            // (`relay-media-<id>.bin`): the filename is the key
+            // lookup for the encrypted part, and a generated name
+            // would sever the only link to the key message. Every
+            // other part keeps its generated name, as before.
+            val nom = if (RelayMediaFilename.parse(partie.name) != null) {
+                checkNotNull(partie.name)
+            } else {
+                "in-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}." +
+                    extension(partie.mime)
+            }
             val final = File(dossier, nom)
             val tmp = File(dossier, "$nom.tmp")
             temporaire = tmp
