@@ -201,12 +201,12 @@ class E2eGroupSessionManager @Inject constructor(
         val skipped = mutableListOf<String>()
         val already = groupKeys.distributedMembers(key.groupId, key.keyId)
         for (member in members) {
-            if (member == key.senderAddress) continue
-            if (member in already) {
-                skipped += member
-                continue
+            when {
+                member == key.senderAddress -> Unit // Our own address is never distributed to.
+                member in already -> skipped += member
+                sendKeyToMember(key, member, subId, now) -> sent += member
+                else -> failed += member
             }
-            if (sendKeyToMember(key, member, subId, now)) sent += member else failed += member
         }
         return DistributionReport(sent, failed, skipped)
     }
@@ -348,7 +348,6 @@ class E2eGroupSessionManager @Inject constructor(
     suspend fun decryptGroupMessage(
         senderAddress: String,
         envelopeBytes: ByteArray,
-        now: Long,
     ): GroupDecrypted? {
         val envelope = E2eGroupWireFormat.parseEnvelope(envelopeBytes) ?: return null
         val sender = senderAddress.canonicalPhone()
@@ -537,9 +536,10 @@ class E2eGroupSessionManager @Inject constructor(
     suspend fun onPeerLeftRelay(address: String, now: Long) {
         val canonical = address.canonicalPhone()
         for (groupId in groupKeys.groupIdsForSender(canonical)) {
-            val conversationId = conversationIdForGroup(groupId, members = null) ?: continue
-            if (!wasGroupEncrypted(conversationId)) continue
-            notices.record(conversationId, E2eNoticeKind.GROUP_DEACTIVATED, now, subject = canonical)
+            val conversationId = conversationIdForGroup(groupId, members = null)
+            if (conversationId != null && wasGroupEncrypted(conversationId)) {
+                notices.record(conversationId, E2eNoticeKind.GROUP_DEACTIVATED, now, subject = canonical)
+            }
         }
     }
 

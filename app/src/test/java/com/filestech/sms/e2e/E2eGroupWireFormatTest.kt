@@ -17,9 +17,9 @@ import java.util.Base64
 class E2eGroupWireFormatTest {
 
     private companion object {
-        val ALICE = "+1 (610) 842-3232"
-        val BOB = "6108423233"
-        val CAROL = "+16108423234"
+        const val ALICE = "+1 (610) 842-3232"
+        const val BOB = "6108423233"
+        const val CAROL = "+16108423234"
         val MEMBERS = listOf(ALICE, BOB, CAROL)
         val KEY = ByteArray(32) { it.toByte() }
         const val GROUP_ID = "0123456789abcdef0123456789abcdef"

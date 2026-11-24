@@ -284,7 +284,7 @@ class E2eGroupSessionManagerTest {
         )
         assertThat(payload.message.type).isEqualTo(OlmMessageType.GROUP)
         assertThat(payload.payloadType).isEqualTo(E2eWireFormat.PayloadType.GROUP_TEXT)
-        val decrypted = harness.bob.manager.decryptGroupMessage(ALICE, payload.message.bytes, NOW)
+        val decrypted = harness.bob.manager.decryptGroupMessage(ALICE, payload.message.bytes)
         assertThat(decrypted).isNotNull()
         assertThat(decrypted!!.plaintext).isEqualTo("hello group")
         assertThat(decrypted.groupId).isEqualTo(encrypted.groupId)
@@ -337,7 +337,7 @@ class E2eGroupSessionManagerTest {
             E2eWireFormat.assemble(encrypted.fragments.map { E2eWireFormat.parseFragment(it)!! }),
         )
         assertThat(payload.payloadType).isEqualTo(E2eWireFormat.PayloadType.GROUP_REACTION)
-        val decrypted = harness.bob.manager.decryptGroupMessage(ALICE, payload.message.bytes, NOW)
+        val decrypted = harness.bob.manager.decryptGroupMessage(ALICE, payload.message.bytes)
         assertThat(decrypted!!.plaintext).isEqualTo("Reacted \u2764\uFE0F to \u00ABhello\u00BB")
     }
 
@@ -545,7 +545,6 @@ class E2eGroupSessionManagerTest {
         val oldDecrypted = harness.bob.manager.decryptGroupMessage(
             ALICE,
             oldPayload.message.bytes,
-            NOW,
         )
         assertThat(oldDecrypted!!.plaintext).isEqualTo("before")
     }
@@ -569,7 +568,7 @@ class E2eGroupSessionManagerTest {
         )
 
         // Bob never received alice's key: no decrypt.
-        assertThat(harness.bob.manager.decryptGroupMessage(ALICE, payload.message.bytes, NOW)).isNull()
+        assertThat(harness.bob.manager.decryptGroupMessage(ALICE, payload.message.bytes)).isNull()
     }
 
     @Test
@@ -598,7 +597,7 @@ class E2eGroupSessionManagerTest {
         )
         val tampered = payload.message.bytes.copyOf().also { it[it.size - 1] = (it[it.size - 1] + 1).toByte() }
 
-        assertThat(harness.bob.manager.decryptGroupMessage(ALICE, tampered, NOW)).isNull()
+        assertThat(harness.bob.manager.decryptGroupMessage(ALICE, tampered)).isNull()
     }
 
     // ──────────────────────────── Key requests ────────────────────────────

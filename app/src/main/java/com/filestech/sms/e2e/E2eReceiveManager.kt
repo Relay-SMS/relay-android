@@ -368,7 +368,7 @@ class E2eReceiveManager @Inject constructor(
         subId: Int?,
         now: Long,
     ) {
-        val decrypted = groupSessions.decryptGroupMessage(address, payload.message.bytes, now)
+        val decrypted = groupSessions.decryptGroupMessage(address, payload.message.bytes)
         if (decrypted == null) {
             handleUndecryptableGroupMessage(address, payload, base64, telephonyUri, dateMs, subId, now)
             return

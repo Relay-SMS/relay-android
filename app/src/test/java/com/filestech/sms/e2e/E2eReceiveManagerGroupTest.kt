@@ -180,7 +180,7 @@ class E2eReceiveManagerGroupTest {
         val harness = Harness()
         val decrypted = GroupDecrypted("hello group", GROUP_ID, MEMBERS, KEY_ID)
         coEvery {
-            harness.groupSessions.decryptGroupMessage(any(), any(), any())
+            harness.groupSessions.decryptGroupMessage(any(), any())
         } returns decrypted
         coEvery {
             harness.groupSessions.conversationIdForGroup(GROUP_ID, MEMBERS)
@@ -215,7 +215,7 @@ class E2eReceiveManagerGroupTest {
     fun `a group text with no resolvable conversation is dropped, not misrouted`() = runTest {
         val harness = Harness()
         coEvery {
-            harness.groupSessions.decryptGroupMessage(any(), any(), any())
+            harness.groupSessions.decryptGroupMessage(any(), any())
         } returns GroupDecrypted("hello group", GROUP_ID, MEMBERS, KEY_ID)
         coEvery {
             harness.groupSessions.conversationIdForGroup(GROUP_ID, MEMBERS)
@@ -240,7 +240,7 @@ class E2eReceiveManagerGroupTest {
     fun `a group reaction folds onto its target and records the activation`() = runTest {
         val harness = Harness()
         coEvery {
-            harness.groupSessions.decryptGroupMessage(any(), any(), any())
+            harness.groupSessions.decryptGroupMessage(any(), any())
         } returns GroupDecrypted("Reacted ❤️ to «Hello»", GROUP_ID, MEMBERS, KEY_ID)
         coEvery {
             harness.mirror.applyIncomingReaction(any(), any(), any(), any(), any(), any(), any())
@@ -274,7 +274,7 @@ class E2eReceiveManagerGroupTest {
     fun `a group reaction with no target becomes a message in the group conversation`() = runTest {
         val harness = Harness()
         coEvery {
-            harness.groupSessions.decryptGroupMessage(any(), any(), any())
+            harness.groupSessions.decryptGroupMessage(any(), any())
         } returns GroupDecrypted("Reacted ❤️ to «Hello»", GROUP_ID, MEMBERS, KEY_ID)
         coEvery {
             harness.groupSessions.conversationIdForGroup(GROUP_ID, MEMBERS)
@@ -308,7 +308,7 @@ class E2eReceiveManagerGroupTest {
     fun `an undecryptable group message becomes a placeholder plus a key request`() = runTest {
         val harness = Harness()
         coEvery {
-            harness.groupSessions.decryptGroupMessage(any(), any(), any())
+            harness.groupSessions.decryptGroupMessage(any(), any())
         } returns null
         coEvery {
             harness.groupSessions.conversationIdForGroup(GROUP_ID, null)
@@ -349,7 +349,7 @@ class E2eReceiveManagerGroupTest {
     fun `an undecryptable group message with no conversation still requests the key`() = runTest {
         val harness = Harness()
         coEvery {
-            harness.groupSessions.decryptGroupMessage(any(), any(), any())
+            harness.groupSessions.decryptGroupMessage(any(), any())
         } returns null
         coEvery {
             harness.groupSessions.conversationIdForGroup(GROUP_ID, null)
@@ -370,7 +370,7 @@ class E2eReceiveManagerGroupTest {
     fun `a group message with a malformed envelope is dropped without a key request`() = runTest {
         val harness = Harness()
         coEvery {
-            harness.groupSessions.decryptGroupMessage(any(), any(), any())
+            harness.groupSessions.decryptGroupMessage(any(), any())
         } returns null
         coEvery { harness.groupSessions.requestSenderKey(any(), any(), any(), any()) } just Runs
 

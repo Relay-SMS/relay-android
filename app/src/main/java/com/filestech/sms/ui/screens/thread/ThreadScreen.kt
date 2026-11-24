@@ -143,9 +143,9 @@ import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendErrorCode
-import com.filestech.sms.e2e.GroupEncryptionState
 import com.filestech.sms.e2e.E2eNoticesForItem
 import com.filestech.sms.e2e.E2eThreadNotices
+import com.filestech.sms.e2e.GroupEncryptionState
 import com.filestech.sms.sync.client.ClientCallState
 import com.filestech.sms.ui.components.AttachmentKind
 import com.filestech.sms.ui.components.AttachmentPickerSheet
