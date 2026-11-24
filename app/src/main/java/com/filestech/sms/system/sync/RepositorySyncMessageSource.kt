@@ -354,11 +354,10 @@ class RepositorySyncMessageSource @Inject constructor(
                 ?.takeIf { it.id == id }
             if (msg == null) {
                 withheldMediaMessages.remove(conversationId to id)
-                continue
+            } else if (!isPendingMedia(msg)) {
+                withheldMediaMessages.remove(conversationId to id)
+                out += msg
             }
-            if (isPendingMedia(msg)) continue
-            withheldMediaMessages.remove(conversationId to id)
-            out += msg
         }
         return out
     }

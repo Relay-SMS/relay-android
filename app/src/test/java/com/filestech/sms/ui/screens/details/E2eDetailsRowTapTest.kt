@@ -18,11 +18,10 @@ import org.junit.jupiter.api.Test
 class E2eDetailsRowTapTest {
 
     @Test
-    fun `verified encrypted peer opens the sheet directly`() {
+    fun `encrypted peer opens the sheet directly`() {
         assertThat(
             e2eDetailsRowTap(
                 peerState = E2ePeerState.ENCRYPTED,
-                verified = true,
                 hasOpenVerification = true,
                 hasExpandedActions = false,
             ),
@@ -30,11 +29,10 @@ class E2eDetailsRowTapTest {
     }
 
     @Test
-    fun `verified encrypted peer without a sheet handler has no tap`() {
+    fun `encrypted peer without a sheet handler has no tap`() {
         assertThat(
             e2eDetailsRowTap(
                 peerState = E2ePeerState.ENCRYPTED,
-                verified = true,
                 hasOpenVerification = false,
                 hasExpandedActions = false,
             ),
@@ -42,11 +40,10 @@ class E2eDetailsRowTapTest {
     }
 
     @Test
-    fun `unverified encrypted peer with the sheet handler opens the sheet directly`() {
+    fun `encrypted peer opens the sheet directly even with expanded actions`() {
         assertThat(
             e2eDetailsRowTap(
                 peerState = E2ePeerState.ENCRYPTED,
-                verified = false,
                 hasOpenVerification = true,
                 hasExpandedActions = true,
             ),
@@ -54,23 +51,10 @@ class E2eDetailsRowTapTest {
     }
 
     @Test
-    fun `unverified encrypted peer without a handler has no tap`() {
-        assertThat(
-            e2eDetailsRowTap(
-                peerState = E2ePeerState.ENCRYPTED,
-                verified = false,
-                hasOpenVerification = false,
-                hasExpandedActions = false,
-            ),
-        ).isEqualTo(E2eDetailsRowTap.None)
-    }
-
-    @Test
     fun `non-encrypted peer with retries expands`() {
         assertThat(
             e2eDetailsRowTap(
                 peerState = E2ePeerState.PROBING,
-                verified = false,
                 hasOpenVerification = false,
                 hasExpandedActions = true,
             ),
@@ -82,7 +66,6 @@ class E2eDetailsRowTapTest {
         assertThat(
             e2eDetailsRowTap(
                 peerState = E2ePeerState.UNKNOWN,
-                verified = false,
                 hasOpenVerification = false,
                 hasExpandedActions = false,
             ),
@@ -90,11 +73,10 @@ class E2eDetailsRowTapTest {
     }
 
     @Test
-    fun `verified flag does not change the tap for a non-encrypted peer`() {
+    fun `non-encrypted peer with a sheet handler and retries expands`() {
         assertThat(
             e2eDetailsRowTap(
                 peerState = E2ePeerState.NOT_RELAY,
-                verified = true,
                 hasOpenVerification = true,
                 hasExpandedActions = true,
             ),

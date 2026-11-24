@@ -1183,16 +1183,12 @@ internal enum class E2eDetailsExpandedAction {
  * or not: the row opens the sheet directly either way, so the
  * one-item "View safety number" dropdown an unverified peer used
  * to get is gone. The dropdown now holds retries only (PROBING /
- * UNKNOWN / NOT_RELAY). `verified` and `hasOpenVerification`
- * are kept for call-site stability; neither changes the result
- * anymore.
+ * UNKNOWN / NOT_RELAY).
  */
 internal fun e2eDetailsExpandedActions(
     peerState: E2ePeerState,
-    verified: Boolean = false,
     hasRetryProbe: Boolean,
     hasRetryViaSms: Boolean,
-    hasOpenVerification: Boolean,
 ): List<E2eDetailsExpandedAction> = when (peerState) {
     // Round 48 — no dropdown for an encrypted peer: the row
     // itself opens the safety-number sheet.
@@ -1216,8 +1212,7 @@ internal fun e2eDetailsExpandedActions(
  * Round 48 — the direct tap no longer requires verification:
  * an unverified ENCRYPTED peer used to open a dropdown whose
  * only item was "View safety number", a pointless extra tap once
- * only verification is left. `verified` is kept for call-site
- * stability; it no longer changes the result.
+ * only verification is left.
  */
 internal enum class E2eDetailsRowTap {
     /** Tap opens the safety-number sheet directly. */
@@ -1232,7 +1227,6 @@ internal enum class E2eDetailsRowTap {
 
 internal fun e2eDetailsRowTap(
     peerState: E2ePeerState,
-    verified: Boolean,
     hasOpenVerification: Boolean,
     hasExpandedActions: Boolean,
 ): E2eDetailsRowTap = when {
@@ -1346,10 +1340,8 @@ private fun E2eDetailsEncryptionRow(
     }
     val expandedActions = e2eDetailsExpandedActions(
         peerState = peerState,
-        verified = verified,
         hasRetryProbe = onRetryProbe != null,
         hasRetryViaSms = onRetryProbeViaSms != null,
-        hasOpenVerification = onOpenVerification != null,
     )
     // Round 47 — what a tap on the box does: an encrypted peer
     // opens the safety-number sheet directly (the dropdown is
@@ -1360,7 +1352,6 @@ private fun E2eDetailsEncryptionRow(
     // longer requires verification.
     val rowTap = e2eDetailsRowTap(
         peerState = peerState,
-        verified = verified,
         hasOpenVerification = onOpenVerification != null,
         hasExpandedActions = expandedActions.isNotEmpty(),
     )

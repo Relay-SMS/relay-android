@@ -14,7 +14,6 @@ import com.filestech.sms.data.mms.RelayMediaFilename
 import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Message
-import com.filestech.sms.e2e.E2eMediaResolver
 import com.filestech.sms.e2e.withMediaKey
 import com.filestech.sms.ui.components.AudioMessageBubble
 import com.filestech.sms.ui.components.BubbleMenuToggles
@@ -26,27 +25,11 @@ import com.filestech.sms.ui.components.ReplyQuotePreview
 import com.filestech.sms.ui.components.SearchHighlight
 import com.filestech.sms.ui.components.rememberAttachmentOpener
 import com.filestech.sms.ui.screens.notes.extractVideoFrame
-import dagger.hilt.EntryPoint
-import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
-import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-
-/**
- * The Hilt entry point for [E2eMediaResolver], for the thread
- * wrapper below — the same pattern as `ViewerChoiceStoreEntryPoint`
- * ([com.filestech.sms.ui.components.rememberAttachmentOpener]).
- * The resolver cannot come through the ViewModel: its constructor
- * is at the Detekt 20-parameter limit.
- */
-@EntryPoint
-@InstallIn(SingletonComponent::class)
-interface E2eMediaResolverEntryPoint {
-    fun mediaResolver(): E2eMediaResolver
-}
 
 /**
  * Round 48 — the media bubble for an INCOMING encrypted MMS
@@ -83,7 +66,7 @@ interface E2eMediaResolverEntryPoint {
  * playback file first (the plaintext file lives in the
  * `cacheDir` playback dir until the 24-hour stale purge — the
  * transient-plaintext window documented on
- * [E2eMediaResolver.decryptToPlaybackFile]).
+ * [com.filestech.sms.e2e.E2eMediaResolver.decryptToPlaybackFile]).
  *
  * INCOMING only: the caller gates on it. Our own outgoing
  * encrypted media renders from the plaintext original the sender

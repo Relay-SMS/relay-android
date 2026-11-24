@@ -76,6 +76,7 @@ class E2eSendManagerTest {
         val recorder = RecordingRecorder()
         val messageDao = mockk<MessageDao>()
         val probeManager = mockk<E2eProbeManager>()
+
         // Round 48 — the text sender for media key messages.
         val dataSmsSender = RecordingDataSmsSender()
 

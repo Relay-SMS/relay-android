@@ -61,6 +61,7 @@ class E2eHandshakeHandlerTest {
         val messageDao = mockk<MessageDao>()
         val phoneIdentity = mockk<PhoneIdentity>()
         val recorder = mockk<E2eFailureRecorder>(relaxed = true)
+
         // Round 48 — relaxed: the declaration is best-effort and
         // invisible to the existing assertions.
         val mediaCapability = mockk<E2eMediaCapabilityManager>(relaxed = true)

@@ -29,52 +29,8 @@ class E2eDetailsExpandedActionsTest {
                 peerState = E2ePeerState.ENCRYPTED,
                 hasRetryProbe = true,
                 hasRetryViaSms = true,
-                hasOpenVerification = true,
             ),
         ).isEmpty()
-    }
-
-    @Test
-    fun `encrypted without a verification handler shows nothing`() {
-        assertThat(
-            e2eDetailsExpandedActions(
-                peerState = E2ePeerState.ENCRYPTED,
-                hasRetryProbe = true,
-                hasRetryViaSms = true,
-                hasOpenVerification = false,
-            ),
-        ).isEmpty()
-    }
-
-    @Test
-    fun `encrypted and verified shows no expanded actions`() {
-        assertThat(
-            e2eDetailsExpandedActions(
-                peerState = E2ePeerState.ENCRYPTED,
-                verified = true,
-                hasRetryProbe = true,
-                hasRetryViaSms = true,
-                hasOpenVerification = true,
-            ),
-        ).isEmpty()
-    }
-
-    @Test
-    fun `verified does not hide retries for a non-encrypted peer`() {
-        assertThat(
-            e2eDetailsExpandedActions(
-                peerState = E2ePeerState.UNKNOWN,
-                verified = true,
-                hasRetryProbe = true,
-                hasRetryViaSms = true,
-                hasOpenVerification = true,
-            ),
-        ).isEqualTo(
-            listOf(
-                E2eDetailsExpandedAction.RetryProbe,
-                E2eDetailsExpandedAction.RetryViaSms,
-            ),
-        )
     }
 
     @Test
@@ -84,7 +40,6 @@ class E2eDetailsExpandedActionsTest {
                 peerState = E2ePeerState.PROBING,
                 hasRetryProbe = true,
                 hasRetryViaSms = true,
-                hasOpenVerification = true,
             ),
         ).isEqualTo(
             listOf(
@@ -101,7 +56,6 @@ class E2eDetailsExpandedActionsTest {
                 peerState = E2ePeerState.UNKNOWN,
                 hasRetryProbe = true,
                 hasRetryViaSms = true,
-                hasOpenVerification = true,
             ),
         ).isEqualTo(
             listOf(
@@ -118,7 +72,6 @@ class E2eDetailsExpandedActionsTest {
                 peerState = E2ePeerState.NOT_RELAY,
                 hasRetryProbe = true,
                 hasRetryViaSms = true,
-                hasOpenVerification = true,
             ),
         ).isEqualTo(
             listOf(
@@ -135,7 +88,6 @@ class E2eDetailsExpandedActionsTest {
                 peerState = E2ePeerState.UNKNOWN,
                 hasRetryProbe = false,
                 hasRetryViaSms = true,
-                hasOpenVerification = true,
             ),
         ).isEqualTo(listOf(E2eDetailsExpandedAction.RetryViaSms))
     }
@@ -147,7 +99,6 @@ class E2eDetailsExpandedActionsTest {
                 peerState = E2ePeerState.UNKNOWN,
                 hasRetryProbe = true,
                 hasRetryViaSms = false,
-                hasOpenVerification = true,
             ),
         ).isEqualTo(listOf(E2eDetailsExpandedAction.RetryProbe))
     }
@@ -159,7 +110,6 @@ class E2eDetailsExpandedActionsTest {
                 peerState = E2ePeerState.PROBING,
                 hasRetryProbe = false,
                 hasRetryViaSms = false,
-                hasOpenVerification = false,
             ),
         ).isEmpty()
     }

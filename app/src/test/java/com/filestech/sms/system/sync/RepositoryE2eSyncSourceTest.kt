@@ -57,6 +57,7 @@ class RepositoryE2eSyncSourceTest {
         val probes = mockk<E2eProbeManager>()
         val conversations = mockk<ConversationDao>()
         val phoneIdentity = mockk<PhoneIdentity>()
+
         // Round 48 — the media-key arrival signal + the part
         // lookup for the pending → decryptable push.
         val mediaKeys = mockk<E2eMediaKeyStore>()

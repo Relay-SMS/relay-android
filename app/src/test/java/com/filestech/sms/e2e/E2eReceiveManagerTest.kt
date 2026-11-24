@@ -91,9 +91,11 @@ class E2eReceiveManagerTest {
         val notifier = mockk<IncomingMessageNotifier>()
         val probeManager = mockk<E2eProbeManager>()
         val handshakeHandler = mockk<E2eHandshakeHandler>()
+
         // Round 48 — relaxed: the declaration is best-effort and
         // invisible to the existing assertions.
         val mediaCapability = mockk<E2eMediaCapabilityManager>(relaxed = true)
+
         // Round 48 — a REAL store over the fake DAO (like the
         // fragment/peer stores above): the MEDIA_KEY tests assert
         // on the stored rows.

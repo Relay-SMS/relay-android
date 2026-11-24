@@ -75,15 +75,17 @@ class E2eMediaPrune @Inject constructor(
             // failed: a message with one keyed part and one
             // keyless part must still fail (on the keyless row),
             // whichever row the join returns first.
-            if (candidate.messageId in failedIds) continue
-            val fileId = RelayMediaFilename.parse(candidate.fileName) ?: continue
-            if (mediaKeys.get(fileId) != null) continue
-            failedIds.add(candidate.messageId)
-            runCatching { messageDao.markMediaDecryptFailed(candidate.messageId) }
-                .onSuccess { messagesFailed++ }
-                .onFailure {
-                    Timber.w(it, "E2E media prune: could not fail message %d", candidate.messageId)
+            if (candidate.messageId !in failedIds) {
+                val fileId = RelayMediaFilename.parse(candidate.fileName)
+                if (fileId != null && mediaKeys.get(fileId) == null) {
+                    failedIds.add(candidate.messageId)
+                    runCatching { messageDao.markMediaDecryptFailed(candidate.messageId) }
+                        .onSuccess { messagesFailed++ }
+                        .onFailure {
+                            Timber.w(it, "E2E media prune: could not fail message %d", candidate.messageId)
+                        }
                 }
+            }
         }
         return Result(keysDeleted, messagesFailed)
     }
