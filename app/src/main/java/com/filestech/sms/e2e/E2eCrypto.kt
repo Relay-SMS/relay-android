@@ -118,10 +118,25 @@ class InboundResult(val sessionId: String, val plaintext: ByteArray) {
     override fun toString(): String = "InboundResult(sessionId=$sessionId, plaintext=<${plaintext.size} bytes>)"
 }
 
-/** The two Olm message kinds. A pre-key message carries the session-establishment keys. */
+/**
+ * The message kinds on the ciphertext wire (design §3.2). The first
+ * two are Olm message kinds: a pre-key message carries the
+ * session-establishment keys.
+ *
+ * [GROUP] is NOT an Olm message: it marks a sender-key AEAD
+ * envelope (round 49 encrypted groups, design §13) — the bytes
+ * are `[group id: 16][key id: 8][AEAD blob]`, decrypted with the
+ * sender's sender key for the group, never with a vodozemac
+ * session. Only the group path produces or consumes it; every
+ * [E2eCrypto] implementation rejects it (encrypt never produces
+ * it, decrypt throws [E2eCryptoException] on it), and the session
+ * decryptor answers Failed for it — the receive path routes GROUP
+ * payloads to the group decryptor before any session work.
+ */
 enum class OlmMessageType {
     PRE_KEY,
     NORMAL,
+    GROUP,
 }
 
 /** An encrypted message: its Olm type plus the serialized Olm message bytes. */

@@ -7,7 +7,9 @@ import dagger.hilt.components.SingletonComponent
 /**
  * Hilt entry point for the E2E pieces the thread ViewModel needs: the
  * peer state (composer placeholder, send icon, details-panel row), the
- * in-thread notices, and the probe manager (probe on thread open).
+ * in-thread notices, the probe manager (probe on thread open), and the
+ * group encryption state (round 49 — the group composer placeholder,
+ * the group details-panel row).
  *
  * Resolved from the injected application context, the same way
  * `ClientSyncEngineEntryPoint` / `ClientSendManagerEntryPoint` are
@@ -30,4 +32,7 @@ interface E2eThreadEntryPoint {
 
     /** The probe trigger (thread open → key exchange, B3-owned). */
     fun probeManager(): E2eProbeManager
+
+    /** Round 49 — the group encryption state provider (design §13). */
+    fun groupStateProvider(): E2eGroupStateProvider
 }

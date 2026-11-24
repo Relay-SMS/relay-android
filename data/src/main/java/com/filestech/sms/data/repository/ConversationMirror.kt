@@ -176,6 +176,93 @@ class ConversationMirror @Inject constructor(
     }
 
     /**
+     * Round 49 — the minus-one group lookup for encrypted groups:
+     * [memberAddresses] is the FULL member list (canonical
+     * addresses, including ourselves — from a sender-key row), and
+     * the stored group holds exactly one member fewer (ourselves
+     * excluded). Returns the conversation id, or null when no
+     * stored group matches. NEVER creates: a stray distribution
+     * or an undecryptable message from an unknown group must not
+     * conjure a thread. See [rapprocherGroupeMoinsUn] (the
+     * group-MMS path's twin of this rule).
+     */
+    suspend fun findGroupConversationId(memberAddresses: List<PhoneAddress>): Long? =
+        withContext(io) {
+            rapprocherGroupeMoinsUn(memberAddresses)?.id
+        }
+
+    /**
+     * Round 49 — find-or-create for an encrypted group:
+     * [threadAddresses] are the thread's addresses (ourselves
+     * EXCLUDED — exactly what `Conversation.addresses` holds).
+     * The exact group match finds the stored conversation; when
+     * none exists, the conversation is created (a first encrypted
+     * group message from a group Relay has never seen still needs
+     * a thread to land in).
+     */
+    suspend fun ensureGroupConversation(threadAddresses: List<PhoneAddress>): Long =
+        withContext(io) {
+            database.withTransaction {
+                ensureConversation(threadAddresses)
+            }
+        }
+
+    /**
+     * Round 49 — inserts a decrypted (or undecryptable —
+     * placeholder, empty body) group SMS into a KNOWN group
+     * conversation. Same row shape as [upsertIncomingSms]
+     * (IGNORE insert, unread touch, conflict returns the existing
+     * id), but the conversation is the caller's — the group
+     * session manager resolved it from the sender-key row's
+     * member list, so no address-based resolution happens here.
+     * The sender is the message's `address` (the member who sent
+     * it), not the conversation's address list.
+     */
+    suspend fun upsertIncomingGroupSms(
+        conversationId: Long,
+        senderAddress: String,
+        body: String,
+        date: Long,
+        telephonyUri: String?,
+        subId: Int? = null,
+        encrypted: Boolean = false,
+    ): Long = withContext(io) {
+        database.withTransaction {
+            val msg = MessageEntity(
+                conversationId = conversationId,
+                telephonyUri = telephonyUri,
+                address = senderAddress,
+                body = body,
+                type = MessageType.SMS,
+                direction = MessageDirection.INCOMING,
+                date = date,
+                dateSent = date,
+                read = false,
+                starred = false,
+                status = MessageStatus.RECEIVED,
+                errorCode = null,
+                subId = subId,
+                scheduledAt = null,
+                attachmentsCount = 0,
+                encrypted = encrypted,
+            )
+            val insertedId = messageDao.insert(msg)
+            if (insertedId > 0L) {
+                stickyCategories.onIncomingMessage(
+                    conversationId,
+                    body,
+                    PhoneAddress.of(senderAddress),
+                    date,
+                )
+                touchConversation(conversationId, date, body, deltaUnread = +1)
+                insertedId
+            } else {
+                telephonyUri?.let { messageDao.findByTelephonyUri(it)?.id } ?: -1L
+            }
+        }
+    }
+
+    /**
      * v1.4.1 (SEC-01) — drops a "poison-pill" Room row carrying the system [telephonyUri]
      * of an SMS that was already folded into a reaction badge by
      * [applyIncomingReaction] — an incoming tapback, or our own outgoing
@@ -1021,6 +1108,7 @@ class ConversationMirror @Inject constructor(
         replyToMessageId: Long?,
         attachments: List<MediaAttachmentSpec>,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long = withContext(io) {
         val corps = body.trim()
         val preview = corps.ifBlank { attachments.firstOrNull()?.let { mediaPreviewLabel(it) }.orEmpty() }
@@ -1045,6 +1133,7 @@ class ConversationMirror @Inject constructor(
                     attachmentsCount = attachments.size,
                     replyToMessageId = replyToMessageId,
                     clientMessageId = clientMessageId,
+                    encrypted = encrypted,
                 ),
             )
             for (a in attachments) {

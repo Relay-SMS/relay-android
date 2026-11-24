@@ -72,6 +72,14 @@ import java.io.File
  * encrypted media renders from the plaintext original the sender
  * kept — the receiver must never try to decrypt our own parts
  * (we hold no key for them; the sender keeps none).
+ *
+ * Round 49 — the lock rides the delegated bubbles: both
+ * [MediaAttachmentBubble] and [AudioMessageBubble] render their
+ * timestamp line through
+ * [com.filestech.sms.ui.components.BubbleTimestamp]
+ * ([com.filestech.sms.ui.components.shouldShowLock]), so an
+ * incoming encrypted photo, video or voice clip shows it with no
+ * lock code in this wrapper.
  */
 @Composable
 fun EncryptedMediaBubble(

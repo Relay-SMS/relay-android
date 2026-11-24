@@ -17,6 +17,7 @@ import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendReport
+import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.domain.repository.ContactPhotoWriteResult
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
@@ -184,6 +185,12 @@ class RepositorySyncMessageSource @Inject constructor(
     // then never withheld and relay-media parts read as
     // Unreadable, the safe defaults).
     private val mediaResolver: E2eMediaResolver? = null,
+    // Round 49 — the blocklist, or null in tests (which never
+    // block a member — a group then maps `encrypted` from the
+    // group-capable set alone). A group with a blocked member
+    // never encrypts (design §13), so the blocked addresses are
+    // subtracted from the group-encrypted set.
+    private val blockedRepo: BlockedNumberRepository? = null,
 ) : SyncMessageSource {
 
     /** Serializes all send handling — see the class KDoc. */
@@ -225,9 +232,10 @@ class RepositorySyncMessageSource @Inject constructor(
     override suspend fun conversations(): List<SyncedConversation> {
         val counts = repository.messageCountsByConversation()
         val encrypted = e2ePeerRepository?.encryptedAddresses().orEmpty()
+        val groupEncrypted = groupEncryptedAddresses()
         return allConversations().first()
             .sortedByDescending { it.lastMessageAt }
-            .map { it.toSynced(counts[it.id] ?: 0, encrypted) }
+            .map { it.toSynced(counts[it.id] ?: 0, encrypted, groupEncrypted) }
     }
 
     override fun observeConversations(): Flow<List<SyncedConversation>> {
@@ -238,13 +246,42 @@ class RepositorySyncMessageSource @Inject constructor(
         // without any conversation row changing. Without the peer
         // repository (tests) the set is empty and every conversation
         // maps `encrypted = false`, as before.
+        // Round 49 — the same for groups: the group-capable set
+        // and the blocklist are combine arms too, so a member flip
+        // (or a block/unblock) re-emits the list and the engine
+        // pushes a `conversation_updated` for the flipped group.
         val encryptedAddresses = e2ePeerRepository?.observeEncryptedAddresses()
             ?: flowOf(emptySet())
-        return combine(allConversations(), encryptedAddresses) { list, encrypted ->
+        val groupEncryptedAddresses = e2ePeerRepository?.observeGroupEncryptedAddresses()
+            ?: flowOf(emptySet())
+        val blockedAddresses = blockedRepo?.observe()?.map { blocked ->
+            blocked.map { it.normalizedNumber.canonicalPhone() }.toSet()
+        } ?: flowOf(emptySet())
+        return combine(
+            allConversations(),
+            encryptedAddresses,
+            groupEncryptedAddresses,
+            blockedAddresses,
+        ) { list, encrypted, groupEncrypted, blocked ->
             val counts = repository.messageCountsByConversation()
             list.sortedByDescending { it.lastMessageAt }
-                .map { it.toSynced(counts[it.id] ?: 0, encrypted) }
+                .map { it.toSynced(counts[it.id] ?: 0, encrypted, groupEncrypted - blocked) }
         }
+    }
+
+    /**
+     * Round 49 — the one-shot group-encrypted set for the
+     * snapshot paths ([conversations], [createConversation]): the
+     * ENCRYPTED + group-capable addresses MINUS the blocked
+     * addresses (a group with a blocked member never encrypts,
+     * design §13). The blocklist snapshot holds normalized
+     * numbers, canonicalized before the subtraction.
+     */
+    private suspend fun groupEncryptedAddresses(): Set<String> {
+        val groupEncrypted = e2ePeerRepository?.groupEncryptedAddresses().orEmpty()
+        val blocked = blockedRepo?.blockedNormalizedSnapshot().orEmpty()
+            .map { it.canonicalPhone() }.toSet()
+        return groupEncrypted - blocked
     }
 
     /**
@@ -842,10 +879,12 @@ class RepositorySyncMessageSource @Inject constructor(
                 // be real so the desktop opens it with its history.
                 // The encrypted set, from the same read too — a
                 // created 1:1 with an ENCRYPTED peer opens with its
-                // lock, not on the next list emission.
+                // lock, not on the next list emission. Round 49: the
+                // group-encrypted set alongside it, same reason.
                 val count = repository.messageCountsByConversation()[created.id] ?: 0
                 val encrypted = e2ePeerRepository?.encryptedAddresses().orEmpty()
-                CreateConversationResult.Created(fresh.toSynced(count, encrypted))
+                val groupEncrypted = groupEncryptedAddresses()
+                CreateConversationResult.Created(fresh.toSynced(count, encrypted, groupEncrypted))
             }
         }
     }
@@ -1550,9 +1589,11 @@ private fun sha256Hex(file: File): String? = try {
 /**
  * Domain → wire mapping. Ids are decimal strings of the Room ids.
  * E2E (§9.1): [encryptedAddresses] is the set of addresses whose
- * peer state is ENCRYPTED — a conversation is `encrypted` only when
- * it is 1:1 and its single address is in the set (groups are never
- * encrypted in v1).
+ * peer state is ENCRYPTED — a 1:1 conversation is `encrypted` when
+ * its single address is in the set. Round 49 (design §13): a GROUP
+ * is `encrypted` when EVERY member is in [groupEncryptedAddresses]
+ * (the ENCRYPTED + group-capable set, blocked members already
+ * subtracted by the caller).
  *
  * Round 47 — the set holds CANONICAL keys (round 46: the peer
  * repository keys rows by [canonicalPhone], NANP country code
@@ -1568,9 +1609,18 @@ private fun sha256Hex(file: File): String? = try {
 private fun Conversation.toSynced(
     messageCount: Int,
     encryptedAddresses: Set<String> = emptySet(),
+    groupEncryptedAddresses: Set<String> = emptySet(),
 ): SyncedConversation {
-    val single = addresses.singleOrNull()
-    val encrypted = single != null && single.normalized.canonicalPhone() in encryptedAddresses
+    val encrypted = if (isGroup) {
+        // An empty group never flags encrypted — `all` on an empty
+        // list is vacuously true, so the non-empty check is
+        // load-bearing.
+        addresses.isNotEmpty() &&
+            addresses.all { it.normalized.canonicalPhone() in groupEncryptedAddresses }
+    } else {
+        val single = addresses.singleOrNull()
+        single != null && single.normalized.canonicalPhone() in encryptedAddresses
+    }
     return SyncedConversation(
         id = id.toString(),
         threadId = threadId,

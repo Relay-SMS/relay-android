@@ -7,11 +7,14 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 
 /**
- * Media-capability declaration tests (round 48, design §2):
- * the one-shot announce, the proven-channel rule (recorded
- * channel only; both channels when none is recorded), the
- * announce-back on receipt, and the blocked / not-ENCRYPTED /
- * radio-refused gates.
+ * Capability declaration tests (round 48 media, round 49 groups,
+ * design §2 / §13): the one-shot announce, the proven-channel
+ * rule (recorded channel only; both channels when none is
+ * recorded), the announce-back on receipt, and the blocked /
+ * not-ENCRYPTED / radio-refused gates. Round 49: one packet
+ * announces media + groups, and the announce re-fires when
+ * EITHER announced flag is unset (a round-48 peer still needs
+ * the group bit).
  *
  * Every test ends with a void assertion — JUnit silently skips a
  * `@Test` whose `runTest` body returns a value.
@@ -40,6 +43,8 @@ class E2eMediaCapabilityManagerTest {
             state: E2ePeerState = E2ePeerState.ENCRYPTED,
             mediaCapable: Boolean = false,
             mediaAnnounced: Boolean = false,
+            groupCapable: Boolean = false,
+            groupAnnounced: Boolean = false,
             handshakeChannel: String? = null,
         ) {
             peerDao.peers[BOB] = E2ePeerEntity(
@@ -47,6 +52,8 @@ class E2eMediaCapabilityManagerTest {
                 state = state,
                 mediaCapable = mediaCapable,
                 mediaAnnounced = mediaAnnounced,
+                groupCapable = groupCapable,
+                groupAnnounced = groupAnnounced,
                 handshakeChannel = handshakeChannel,
                 updatedAt = NOW,
             )
@@ -64,9 +71,10 @@ class E2eMediaCapabilityManagerTest {
         assertThat(harness.sender.sent).hasSize(1)
         assertThat(harness.sender.sentTexts).isEmpty()
         assertThat(harness.sender.sent[0].port).isEqualTo(E2eHandshake.E2E_DATA_SMS_PORT)
-        assertThat(harness.sender.sent[0].kind).isEqualTo(DataSmsKind.MEDIA_CAPABLE)
+        assertThat(harness.sender.sent[0].kind).isEqualTo(DataSmsKind.CAPABILITY)
         assertThat(harness.sender.sent[0].data.size).isEqualTo(70)
         assertThat(harness.peerDao.peers[BOB]!!.mediaAnnounced).isTrue()
+        assertThat(harness.peerDao.peers[BOB]!!.groupAnnounced).isTrue()
     }
 
     @Test
@@ -79,7 +87,7 @@ class E2eMediaCapabilityManagerTest {
         assertThat(sent).isTrue()
         assertThat(harness.sender.sent).isEmpty()
         assertThat(harness.sender.sentTexts).hasSize(1)
-        assertThat(harness.sender.sentTexts[0].kind).isEqualTo(DataSmsKind.MEDIA_CAPABLE)
+        assertThat(harness.sender.sentTexts[0].kind).isEqualTo(DataSmsKind.CAPABILITY)
         assertThat(harness.sender.sentTexts[0].text).startsWith("RLYH:")
         assertThat(harness.peerDao.peers[BOB]!!.mediaAnnounced).isTrue()
     }
@@ -104,13 +112,25 @@ class E2eMediaCapabilityManagerTest {
     @Test
     fun `announceIfNeeded is a no-op once announced`() = runTest {
         val harness = Harness()
-        harness.seedPeer(mediaAnnounced = true)
+        harness.seedPeer(mediaAnnounced = true, groupAnnounced = true)
 
         val sent = harness.manager.announceIfNeeded(BOB, SUB_ID, NOW)
 
         assertThat(sent).isFalse()
         assertThat(harness.sender.sent).isEmpty()
         assertThat(harness.sender.sentTexts).isEmpty()
+    }
+
+    @Test
+    fun `announceIfNeeded re-fires for a round-48 peer with only the media flag set`() = runTest {
+        val harness = Harness()
+        harness.seedPeer(mediaAnnounced = true, groupAnnounced = false, handshakeChannel = "DATA_SMS")
+
+        val sent = harness.manager.announceIfNeeded(BOB, SUB_ID, NOW)
+
+        assertThat(sent).isTrue()
+        assertThat(harness.sender.sent).hasSize(1)
+        assertThat(harness.peerDao.peers[BOB]!!.groupAnnounced).isTrue()
     }
 
     @Test
@@ -192,8 +212,10 @@ class E2eMediaCapabilityManagerTest {
         harness.manager.onDeclarationReceived(BOB, SUB_ID, NOW)
 
         assertThat(harness.peerDao.peers[BOB]!!.mediaCapable).isTrue()
+        assertThat(harness.peerDao.peers[BOB]!!.groupCapable).isFalse()
         assertThat(harness.sender.sentTexts).hasSize(1)
         assertThat(harness.peerDao.peers[BOB]!!.mediaAnnounced).isTrue()
+        assertThat(harness.peerDao.peers[BOB]!!.groupAnnounced).isTrue()
     }
 
     @Test
@@ -214,7 +236,7 @@ class E2eMediaCapabilityManagerTest {
     @Test
     fun `onDeclarationReceived does not announce back when already announced`() = runTest {
         val harness = Harness()
-        harness.seedPeer(mediaAnnounced = true, handshakeChannel = "DATA_SMS")
+        harness.seedPeer(mediaAnnounced = true, groupAnnounced = true, handshakeChannel = "DATA_SMS")
 
         harness.manager.onDeclarationReceived(BOB, SUB_ID, NOW)
 

@@ -152,11 +152,12 @@ private fun rowGating(
 )
 
 /**
- * E2E — whether this conversation shows its avatar lock badge: it
- * is 1:1 and its single address has a live encryption session. A
- * group never shows one (no single peer). A top-level function,
- * not an inline lambda: [ConversationsScreen] sits at the Detekt
- * complexity ceiling.
+ * E2E — whether this conversation shows its avatar lock badge: a
+ * 1:1 thread whose single address has a live encryption session,
+ * or (round 49, design §13) a GROUP whose EVERY member is
+ * ENCRYPTED + group-capable. A top-level function, not an inline
+ * lambda: [ConversationsScreen] sits at the Detekt complexity
+ * ceiling.
  *
  * Round 47 — the set holds CANONICAL keys (round 46: the peer
  * repository keys rows by [canonicalPhone], NANP country code
@@ -169,12 +170,25 @@ private fun rowGating(
  * unreachable by design — matching it would show a lock for a
  * peer whose thread reads UNKNOWN and whose messages go out
  * plain. It simply never matches a canonicalized address.
+ *
+ * Round 49 — the group set is the group-capable ENCRYPTED set
+ * MINUS the blocked addresses (the ViewModel subtracts them): a
+ * group with a blocked member never encrypts, so it never shows
+ * the badge. An empty group (no addresses) never shows one
+ * either — `all` on an empty list is vacuously true, so the
+ * non-empty check is load-bearing.
  */
 internal fun isConversationEncrypted(
     conv: Conversation,
     encryptedAddresses: Set<String>,
-): Boolean =
-    !conv.isGroup && conv.firstAddress?.normalized?.let { it.canonicalPhone() in encryptedAddresses } == true
+    groupEncryptedAddresses: Set<String> = emptySet(),
+): Boolean {
+    if (conv.isGroup) {
+        return conv.addresses.isNotEmpty() &&
+            conv.addresses.all { it.normalized.canonicalPhone() in groupEncryptedAddresses }
+    }
+    return conv.firstAddress?.normalized?.let { it.canonicalPhone() in encryptedAddresses } == true
+}
 
 /**
  * v1.23.x — the number under a conversation's name, shown only
@@ -234,8 +248,11 @@ fun ConversationsScreen(
     val groupMemberPhotos by viewModel.groupMemberPhotos.collectAsStateWithLifecycle()
     // E2E — the addresses with a live encryption session: a 1:1 row
     // whose single address is in this set shows its avatar lock badge
-    // (see [isConversationEncrypted]).
+    // (see [isConversationEncrypted]). Round 49: the group-capable
+    // set alongside it — a group row badges when EVERY member is in
+    // it (blocked members already subtracted by the ViewModel).
     val encryptedAddresses by viewModel.encryptedAddresses.collectAsStateWithLifecycle()
+    val groupEncryptedAddresses by viewModel.groupEncryptedAddresses.collectAsStateWithLifecycle()
     val cs = MaterialTheme.colorScheme
     // Feedback round 10 — the app's locale (for the date-group week
     // boundary, which follows the locale's first day of week, like
@@ -937,7 +954,11 @@ fun ConversationsScreen(
                             previewLines = state.settings.conversations.previewLines.coerceIn(1, 2),
                             contactPhotoUri = contactPhotos[conv.id],
                             groupMemberPhotos = groupMemberPhotos[conv.id],
-                            isEncrypted = isConversationEncrypted(conv, encryptedAddresses),
+                            isEncrypted = isConversationEncrypted(
+                                conv,
+                                encryptedAddresses,
+                                groupEncryptedAddresses,
+                            ),
                             // Client mode C3 — the row gates what is
                             // not wired (right swipe = delete, rename,
                             // delete in the sheet); the rest is live
@@ -1054,7 +1075,11 @@ fun ConversationsScreen(
                                     .coerceIn(1, 2),
                                 contactPhotoUri = contactPhotos[conv.id],
                                 groupMemberPhotos = groupMemberPhotos[conv.id],
-                                isEncrypted = isConversationEncrypted(conv, encryptedAddresses),
+                                isEncrypted = isConversationEncrypted(
+                                    conv,
+                                    encryptedAddresses,
+                                    groupEncryptedAddresses,
+                                ),
                                 // v1.25.3 — les lignes bloquées ne participent PAS au mode
                                 // sélection : elles utilisent `ConversationRow` nu, sans l'état
                                 // visuel de sélection de `SwipeableConversationRow`. Les y

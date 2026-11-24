@@ -3,12 +3,16 @@ package com.filestech.sms.e2e
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.data.local.db.dao.E2eAccountDao
 import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eGroupDistributionDao
+import com.filestech.sms.data.local.db.dao.E2eGroupKeyDao
 import com.filestech.sms.data.local.db.dao.E2eMediaKeyDao
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
 import com.filestech.sms.data.local.db.dao.E2eSessionDao
 import com.filestech.sms.data.local.db.entity.E2eAccountEntity
 import com.filestech.sms.data.local.db.entity.E2eFragmentEntity
+import com.filestech.sms.data.local.db.entity.E2eGroupDistributionEntity
+import com.filestech.sms.data.local.db.entity.E2eGroupKeyEntity
 import com.filestech.sms.data.local.db.entity.E2eMediaKeyEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
@@ -81,6 +85,12 @@ internal class FakeE2ePeerDao : E2ePeerDao {
     override fun observeEncryptedAddresses(): Flow<List<String>> =
         flowOf(peers.values.filter { it.state == E2ePeerState.ENCRYPTED }.map { it.address })
 
+    override suspend fun groupEncryptedAddresses(): List<String> =
+        peers.values.filter { it.state == E2ePeerState.ENCRYPTED && it.groupCapable }.map { it.address }
+
+    override fun observeGroupEncryptedAddresses(): Flow<List<String>> =
+        flowOf(peers.values.filter { it.state == E2ePeerState.ENCRYPTED && it.groupCapable }.map { it.address })
+
     override suspend fun allPeers(): List<E2ePeerEntity> =
         peers.values.sortedBy { it.address }
 
@@ -140,6 +150,19 @@ internal class FakeE2ePeerDao : E2ePeerDao {
     override suspend fun setMediaAnnounced(address: String, mediaAnnounced: Boolean, updatedAt: Long) {
         peers[address]?.let {
             peers[address] = it.copy(mediaAnnounced = mediaAnnounced, updatedAt = updatedAt)
+        }
+    }
+
+    // Round 49 — group capability columns.
+    override suspend fun setGroupCapable(address: String, groupCapable: Boolean, updatedAt: Long) {
+        peers[address]?.let {
+            peers[address] = it.copy(groupCapable = groupCapable, updatedAt = updatedAt)
+        }
+    }
+
+    override suspend fun setGroupAnnounced(address: String, groupAnnounced: Boolean, updatedAt: Long) {
+        peers[address]?.let {
+            peers[address] = it.copy(groupAnnounced = groupAnnounced, updatedAt = updatedAt)
         }
     }
 
@@ -405,4 +428,145 @@ internal class FakeE2eMediaKeyDao : E2eMediaKeyDao {
 
     override suspend fun findFileIdsOlderThan(cutoff: Long): List<String> =
         keys.filterValues { it.receivedAt < cutoff }.keys.toList()
+}
+
+/**
+ * Round 49 — in-memory sender-key table for the
+ * [E2eGroupSenderKeyStore] / [E2eGroupSessionManager] tests.
+ * Mirrors the Room semantics the DAO declares: IGNORE insert
+ * (first key wins), current-key marking, generation-ordered
+ * prune that never prunes the current key.
+ */
+internal class FakeE2eGroupKeyDao : E2eGroupKeyDao {
+    val keys = mutableMapOf<Triple<String, String, String>, E2eGroupKeyEntity>()
+
+    override suspend fun insert(key: E2eGroupKeyEntity): Long {
+        val triple = Triple(key.groupId, key.senderAddress, key.keyId)
+        if (keys.containsKey(triple)) return -1L
+        keys[triple] = key
+        return 1L
+    }
+
+    override suspend fun findKey(
+        groupId: String,
+        senderAddress: String,
+        keyId: String,
+    ): E2eGroupKeyEntity? = keys[Triple(groupId, senderAddress, keyId)]
+
+    override suspend fun keysForSender(
+        groupId: String,
+        senderAddress: String,
+    ): List<E2eGroupKeyEntity> = keys.values
+        .filter { it.groupId == groupId && it.senderAddress == senderAddress }
+        .sortedWith(compareByDescending<E2eGroupKeyEntity> { it.generation }.thenByDescending { it.createdAt })
+
+    override suspend fun currentKeyForSender(
+        groupId: String,
+        senderAddress: String,
+    ): E2eGroupKeyEntity? = keys.values.firstOrNull {
+        it.groupId == groupId && it.senderAddress == senderAddress && it.isCurrent
+    }
+
+    override suspend fun keysForGroup(groupId: String): List<E2eGroupKeyEntity> =
+        keys.values.filter { it.groupId == groupId }
+
+    override suspend fun allMembersLists(): List<String> =
+        keys.values.map { it.membersCsv }.distinct()
+
+    override suspend fun groupIdsForSender(senderAddress: String): List<String> =
+        keys.values.filter { it.senderAddress == senderAddress }.map { it.groupId }.distinct()
+
+    override suspend fun setCurrentKey(groupId: String, senderAddress: String, keyId: String) {
+        clearCurrentForSender(groupId, senderAddress)
+        markCurrent(groupId, senderAddress, keyId)
+    }
+
+    override suspend fun clearCurrentForSender(groupId: String, senderAddress: String) {
+        keys.replaceAll { _, key ->
+            if (key.groupId == groupId && key.senderAddress == senderAddress) {
+                key.copy(isCurrent = false)
+            } else {
+                key
+            }
+        }
+    }
+
+    override suspend fun markCurrent(groupId: String, senderAddress: String, keyId: String) {
+        val triple = Triple(groupId, senderAddress, keyId)
+        keys[triple]?.let { keys[triple] = it.copy(isCurrent = true) }
+    }
+
+    override suspend fun pruneOldGenerations(
+        groupId: String,
+        senderAddress: String,
+        keep: Int,
+    ): Int {
+        // Mirrors the SQL: the keep-set is the top `keep` keys by
+        // (generation DESC, recency) INCLUDING the current key,
+        // and only non-current keys outside it are deleted.
+        val senderKeys = keysForSender(groupId, senderAddress)
+        val keepIds = senderKeys.take(keep).map { it.keyId }.toSet()
+        val doomed = senderKeys.filter { !it.isCurrent && it.keyId !in keepIds }
+        doomed.forEach { keys.remove(Triple(it.groupId, it.senderAddress, it.keyId)) }
+        return doomed.size
+    }
+
+    override suspend fun deleteByGroup(groupId: String): Int {
+        val doomed = keys.filterValues { it.groupId == groupId }.keys.toList()
+        doomed.forEach { keys.remove(it) }
+        return doomed.size
+    }
+
+    override suspend fun deleteBySender(senderAddress: String): Int {
+        val doomed = keys.filterValues { it.senderAddress == senderAddress }.keys.toList()
+        doomed.forEach { keys.remove(it) }
+        return doomed.size
+    }
+}
+
+/**
+ * Round 49 — in-memory distribution table for the
+ * [E2eGroupSenderKeyStore] / [E2eGroupSessionManager] tests.
+ * `insert` is REPLACE (a re-send refreshes the timestamp, like
+ * the real DAO).
+ */
+internal class FakeE2eGroupDistributionDao : E2eGroupDistributionDao {
+    val distributions = mutableMapOf<Triple<String, String, String>, E2eGroupDistributionEntity>()
+
+    override suspend fun insert(distribution: E2eGroupDistributionEntity) {
+        distributions[Triple(distribution.groupId, distribution.memberAddress, distribution.keyId)] =
+            distribution
+    }
+
+    override suspend fun find(
+        groupId: String,
+        memberAddress: String,
+        keyId: String,
+    ): E2eGroupDistributionEntity? =
+        distributions[Triple(groupId, memberAddress, keyId)]
+
+    override suspend fun distributedMembers(groupId: String, keyId: String): List<String> =
+        distributions.values
+            .filter { it.groupId == groupId && it.keyId == keyId }
+            .map { it.memberAddress }
+
+    override suspend fun deleteForGroupExceptKey(groupId: String, currentKeyId: String): Int {
+        val doomed = distributions.filterValues {
+            it.groupId == groupId && it.keyId != currentKeyId
+        }.keys.toList()
+        doomed.forEach { distributions.remove(it) }
+        return doomed.size
+    }
+
+    override suspend fun deleteByGroup(groupId: String): Int {
+        val doomed = distributions.filterValues { it.groupId == groupId }.keys.toList()
+        doomed.forEach { distributions.remove(it) }
+        return doomed.size
+    }
+
+    override suspend fun deleteByMember(memberAddress: String): Int {
+        val doomed = distributions.filterValues { it.memberAddress == memberAddress }.keys.toList()
+        doomed.forEach { distributions.remove(it) }
+        return doomed.size
+    }
 }

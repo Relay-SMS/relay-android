@@ -34,14 +34,20 @@ class E2eNoticeStore @Inject constructor(
     private val noticeDao: E2eNoticeDao,
 ) {
 
-    /** Records a notice, returning its row id. */
+    /**
+     * Records a notice, returning its row id. [subject] is the
+     * canonical address of the member the notice is about (round
+     * 49 — the group key-change / deactivation notices name their
+     * member); null for notices about the thread itself.
+     */
     suspend fun record(
         conversationId: Long,
         kind: E2eNoticeKind,
         now: Long = System.currentTimeMillis(),
+        subject: String? = null,
     ): Long =
         noticeDao.insert(
-            E2eNoticeEntity(conversationId = conversationId, kind = kind, date = now),
+            E2eNoticeEntity(conversationId = conversationId, kind = kind, date = now, subject = subject),
         )
 
     /**

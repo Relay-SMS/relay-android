@@ -1284,4 +1284,126 @@ class MigrationTest {
         assertThat(doublonCle.isFailure).isTrue()
         assertThat(doublonCle.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
     }
+
+    /**
+     * E2E encrypted groups (round 49) — 23 → 24 : deux colonnes sur
+     * `e2e_peers` (`group_capable`, `group_announced`) + deux tables
+     * neuves (`e2e_group_keys`, `e2e_group_distributions`).
+     * Strictement additive : la ligne de pair existante projette les
+     * défauts (non capable de groupes, déclaration non envoyée), les
+     * tables naissent vides, et la clé primaire composée de
+     * `e2e_group_keys` refuse un doublon de (groupe, expéditeur,
+     * clé) — deux clés différentes ne peuvent pas partager le même
+     * identifiant (la première gagne).
+     *
+     * Nécessite `24.json` dans les assets (émis par Room à la compilation).
+     */
+    @Test
+    fun migrate23To24_addsGroupColumnsTablesAndNoticeSubject_withDefaultsAndPk() {
+        helper.createDatabase(TEST_DB, 23).use { db ->
+            db.execSQL(
+                "INSERT INTO e2e_peers (address, state, media_capable, updated_at) " +
+                    "VALUES ('+33600000001', 'ENCRYPTED', 1, 1700000000000)",
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 24, true, Migrations.MIGRATION_23_24)
+
+        // La ligne existante ne bouge pas ; les nouvelles colonnes projettent les défauts.
+        db.query(
+            "SELECT state, media_capable, group_capable, group_announced FROM e2e_peers " +
+                "WHERE address = '+33600000001'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("ENCRYPTED")
+            assertThat(c.getInt(1)).isEqualTo(1)
+            assertThat(c.getInt(2)).isEqualTo(0)
+            assertThat(c.getInt(3)).isEqualTo(0)
+        }
+
+        // Les tables neuves existent et naissent vides.
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'e2e_group_keys'",
+        ).use { c -> assertThat(c.count).isEqualTo(1) }
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'e2e_group_distributions'",
+        ).use { c -> assertThat(c.count).isEqualTo(1) }
+        db.query("SELECT COUNT(*) FROM e2e_group_keys").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.query("SELECT COUNT(*) FROM e2e_group_distributions").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getInt(0)).isEqualTo(0)
+        }
+
+        // Une clé s'insère et se relit ; la clé d'identité de l'expéditeur est nullable.
+        db.execSQL(
+            "INSERT INTO e2e_group_keys (group_id, sender_address, key_id, key_b64, members_csv, " +
+                "key_generation, sender_curve_key_b64, is_own, is_current, created_at) " +
+                "VALUES ('0123456789abcdef0123456789abcdef', '33600000002', " +
+                "'0123456789abcdef', 'a2V5', '33600000001;33600000002;33600000003', " +
+                "1, NULL, 0, 1, 1700000000000)",
+        )
+        db.query(
+            "SELECT members_csv, key_generation, sender_curve_key_b64, is_current " +
+                "FROM e2e_group_keys WHERE group_id = '0123456789abcdef0123456789abcdef'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("33600000001;33600000002;33600000003")
+            assertThat(c.getInt(1)).isEqualTo(1)
+            assertThat(c.isNull(2)).isTrue()
+            assertThat(c.getInt(3)).isEqualTo(1)
+        }
+
+        // La clé primaire composée refuse un doublon de (groupe, expéditeur, clé).
+        val doublonCle = runCatching {
+            db.execSQL(
+                "INSERT INTO e2e_group_keys (group_id, sender_address, key_id, key_b64, members_csv, " +
+                    "key_generation, sender_curve_key_b64, is_own, is_current, created_at) " +
+                    "VALUES ('0123456789abcdef0123456789abcdef', '33600000002', " +
+                    "'0123456789abcdef', 'b3RoZXI=', '33600000001;33600000002;33600000003', " +
+                    "2, NULL, 0, 0, 1700000000001)",
+            )
+        }
+        assertThat(doublonCle.isFailure).isTrue()
+        assertThat(doublonCle.exceptionOrNull()?.message.orEmpty()).contains("UNIQUE")
+
+        // Une distribution s'insère et se relit.
+        db.execSQL(
+            "INSERT INTO e2e_group_distributions (group_id, member_address, key_id, distributed_at) " +
+                "VALUES ('0123456789abcdef0123456789abcdef', '33600000002', " +
+                "'0123456789abcdef', 1700000000000)",
+        )
+        db.query(
+            "SELECT distributed_at FROM e2e_group_distributions " +
+                "WHERE group_id = '0123456789abcdef0123456789abcdef' " +
+                "AND member_address = '33600000002'",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getLong(0)).isEqualTo(1_700_000_000_000L)
+        }
+
+        // La colonne `subject` de e2e_notices existe, nullable : une
+        // notice de groupe y range l'adresse du membre concerné,
+        // une notice de fil (sans sujet) y laisse NULL.
+        db.execSQL(
+            "INSERT INTO e2e_notices (conversation_id, kind, date, subject) " +
+                "VALUES (11, 'GROUP_KEY_CHANGED', 1700000000000, '33600000002')",
+        )
+        db.execSQL(
+            "INSERT INTO e2e_notices (conversation_id, kind, date) " +
+                "VALUES (11, 'ACTIVATED', 1700000000001)",
+        )
+        db.query(
+            "SELECT kind, subject FROM e2e_notices WHERE conversation_id = 11 ORDER BY date",
+        ).use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("GROUP_KEY_CHANGED")
+            assertThat(c.getString(1)).isEqualTo("33600000002")
+            assertThat(c.moveToNext()).isTrue()
+            assertThat(c.getString(0)).isEqualTo("ACTIVATED")
+            assertThat(c.isNull(1)).isTrue()
+        }
+    }
 }

@@ -106,6 +106,12 @@ class FakeE2eCrypto(private val seed: String = "default") : E2eCrypto {
                 parsed.ciphertext
             }
             OlmMessageType.NORMAL -> message.bytes
+            // Round 49 — a GROUP envelope is a sender-key AEAD blob,
+            // not an Olm message: the real implementation throws the
+            // same way (see VodozemacCrypto.decrypt).
+            OlmMessageType.GROUP -> throw E2eCryptoException(
+                "a sender-key group envelope cannot be decrypted by vodozemac",
+            )
         }
         val plaintext = xor(ciphertext, keystream(sessionId, session.counter))
         session.counter++

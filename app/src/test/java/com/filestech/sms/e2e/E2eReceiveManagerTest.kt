@@ -101,6 +101,10 @@ class E2eReceiveManagerTest {
         // on the stored rows.
         val mediaKeyDao = FakeE2eMediaKeyDao()
         val mediaKeys = E2eMediaKeyStore(mediaKeyDao)
+
+        // Round 49 — relaxed: the group branches are covered by
+        // the group receive tests, not here.
+        val groupSessions = mockk<E2eGroupSessionManager>(relaxed = true)
         val context = mockk<Context>()
 
         val peers = E2ePeerRepository(peerDao)
@@ -121,6 +125,7 @@ class E2eReceiveManagerTest {
             handshakeHandler = handshakeHandler,
             mediaCapability = mediaCapability,
             mediaKeys = mediaKeys,
+            groupSessions = groupSessions,
             context = context,
         )
 

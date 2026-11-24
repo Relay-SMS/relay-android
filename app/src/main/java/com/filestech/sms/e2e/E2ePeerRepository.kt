@@ -226,6 +226,63 @@ class E2ePeerRepository @Inject constructor(
     }
 
     /**
+     * Round 49 — whether this peer declared it handles encrypted
+     * groups (the 0x03 capability packet's group flag). False
+     * when no row exists or no declaration ever arrived: an old
+     * build never declares, so a group with them stays plain.
+     * The group state derivation ([E2eGroupState]) reads this
+     * before a group may encrypt.
+     */
+    suspend fun isGroupCapable(address: String): Boolean =
+        peerDao.findByAddress(canonicalAddress(address))?.groupCapable == true
+
+    /**
+     * Round 49 — records that this peer declared it handles
+     * encrypted groups. Called only by the declaration receive
+     * path ([E2eMediaCapabilityManager.onDeclarationReceived]) —
+     * the flag is the peer's own statement about itself, never a
+     * sender-side guess.
+     */
+    suspend fun setGroupCapable(
+        address: String,
+        capable: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.setGroupCapable(key, capable, now)
+    }
+
+    /**
+     * Round 49 — whether WE already sent our group-capability
+     * declaration to this peer (and the radio accepted it). False
+     * when no row exists: the thread-open hook sends the
+     * declaration exactly once per peer, and a failed send leaves
+     * this false so the next thread-open retries. The declaration
+     * is one packet for media + groups, but the flags are
+     * separate — a peer announced in round 48 (media only) still
+     * needs the round-49 declaration, which the unset group flag
+     * triggers.
+     */
+    suspend fun isGroupAnnounced(address: String): Boolean =
+        peerDao.findByAddress(canonicalAddress(address))?.groupAnnounced == true
+
+    /**
+     * Round 49 — records that our declaration went out to this
+     * peer. Call AFTER the radio accepted the send — a failed send
+     * must not consume the one-shot (see [isGroupAnnounced]).
+     */
+    suspend fun setGroupAnnounced(
+        address: String,
+        announced: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        val key = canonicalAddress(address)
+        getOrCreateUnknown(key, now)
+        peerDao.setGroupAnnounced(key, announced, now)
+    }
+
+    /**
      * Round 48 — the channel our outbound handshake packets
      * provably used for this peer, or null when the handshake
      * predates round 48 and no channel was ever recorded. The
@@ -345,6 +402,25 @@ class E2ePeerRepository @Inject constructor(
      */
     fun observeEncryptedAddresses(): Flow<Set<String>> =
         peerDao.observeEncryptedAddresses().map { it.toSet() }
+
+    /**
+     * Round 49 (E2E groups, design §13) — the addresses whose
+     * peer state is ENCRYPTED AND whose Relay version supports
+     * group sender keys: a group encrypts only when EVERY member
+     * is in this set. One-shot, for the snapshot paths.
+     */
+    suspend fun groupEncryptedAddresses(): Set<String> =
+        peerDao.groupEncryptedAddresses().toSet()
+
+    /**
+     * Round 49 — the live version of [groupEncryptedAddresses]:
+     * re-emits whenever any `e2e_peers` row changes, so a member
+     * flip re-emits the hub's conversation list and the sync
+     * engine pushes a `conversation_updated` for the flipped
+     * group thread.
+     */
+    fun observeGroupEncryptedAddresses(): Flow<Set<String>> =
+        peerDao.observeGroupEncryptedAddresses().map { it.toSet() }
 
     /** Deletes a peer's row (panic wipe / reset — its sessions are deleted separately). */
     suspend fun deletePeer(address: String) {

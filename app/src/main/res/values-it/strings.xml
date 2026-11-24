@@ -192,6 +192,10 @@
     <string name="e2e_notice_key_changed">Il codice di sicurezza di %1$s è cambiato. I messaggi restano crittografati end-to-end.</string>
     <string name="e2e_notice_key_changed_verified">Il codice di sicurezza di %1$s è cambiato. %1$s era verificato: confronta di nuovo il numero di sicurezza per confermare che sia ancora la stessa persona.</string>
     <string name="e2e_notice_deactivated">Crittografia terminata — %1$s non usa più Relay</string>
+    <string name="e2e_notice_group_activated">I messaggi di questo gruppo ora sono crittografati end-to-end.</string>
+    <string name="e2e_notice_group_deactivated">Crittografia terminata in questo gruppo — %1$s non usa più Relay</string>
+    <string name="e2e_notice_group_key_changed">Il codice di sicurezza di %1$s è cambiato. I messaggi di questo gruppo restano crittografati end-to-end.</string>
+    <string name="e2e_notice_group_key_changed_verified">Il codice di sicurezza di %1$s è cambiato. %1$s era verificato: confronta di nuovo il numero di sicurezza per confermare che sia ancora la stessa persona.</string>
     <string name="e2e_decrypt_failed">Impossibile decrittografare questo messaggio.</string>
     <string name="e2e_decrypt_failed_notif">Impossibile decrittografare questo messaggio.</string>
     <string name="e2e_media_decrypt_pending">In attesa di decrittografia…</string>
@@ -201,6 +205,12 @@
     <string name="e2e_details_verified">Verificato ✓</string>
     <string name="e2e_details_setting_up">Verifica se %1$s usa Relay…</string>
     <string name="e2e_details_not_encrypted">Non crittografato</string>
+    <string name="e2e_details_group_every_member">Tutti i membri usano Relay</string>
+    <string name="e2e_details_group_checking">Verifica se tutti usano Relay…</string>
+    <string name="e2e_details_group_not_relay">%1$s non usa ancora Relay</string>
+    <string name="e2e_details_group_not_relay_more">%1$s non usa ancora Relay, e altri %2$d</string>
+    <string name="e2e_details_group_not_capable">La versione di Relay di %1$s non è aggiornata</string>
+    <string name="e2e_details_group_blocked">%1$s è bloccato</string>
     <string name="e2e_details_auto_start">La crittografia partirà automaticamente quando %1$s userà Relay</string>
     <string name="e2e_details_retry_encryption">Riprova la crittografia</string>
     <string name="e2e_details_retry_via_sms">Riprova in un altro modo</string>
@@ -213,7 +223,7 @@
     <string name="e2e_verify_verified">Verificato</string>
     <string name="e2e_verify_copy">Copia</string>
     <string name="e2e_verify_load_failed">Impossibile caricare il numero di sicurezza.</string>
-    <string name="e2e_settings_explainer">Da Relay a Relay la crittografia è automatica. Quando entrambe le persone usano Relay, i messaggi 1:1 sono crittografati end-to-end automaticamente, senza configurare nulla. I messaggi a chi non ha Relay, le chat di gruppo, le foto e i file vengono inviati come normali SMS/MMS. I messaggi crittografati usano qualche segmento di testo in più rispetto ai messaggi normali.</string>
+    <string name="e2e_settings_explainer">Da Relay a Relay la crittografia è automatica. Quando entrambe le persone usano Relay, i messaggi 1:1 sono crittografati end-to-end automaticamente, senza configurare nulla. I messaggi a chi non ha Relay, e le foto e i file nei gruppi, vengono inviati come normali SMS/MMS. Un gruppo si crittografa solo quando tutti i suoi membri usano Relay. I messaggi crittografati usano qualche segmento di testo in più rispetto ai messaggi normali.</string>
     <string name="e2e_settings_status_subtitle">Automatico quando entrambe le persone usano Relay</string>
     <string name="e2e_settings_fingerprint">La tua impronta</string>
     <string name="e2e_settings_unavailable">Crittografia non disponibile</string>

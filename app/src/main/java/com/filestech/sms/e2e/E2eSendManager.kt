@@ -164,14 +164,100 @@ class E2eSendManager @Inject constructor(
         keyJson: String,
         date: Long,
         subId: Int?,
+    ): Outcome<Unit> = sendControlMessage(
+        address = address,
+        body = keyJson,
+        date = date,
+        subId = subId,
+        payloadType = E2ePayloadType.MEDIA_KEY,
+        kind = DataSmsKind.MEDIA_KEY,
+        logLabel = "media key",
+    )
+
+    /**
+     * Round 49 — sends one sender-key distribution
+     * ([E2eGroupSenderKeyMessage]: our per-group AES key + the
+     * member list, as JSON) to one group member as encrypted
+     * fragments with payload type SENDER_KEY. [keyJson] is the
+     * already-encoded JSON plaintext; [date] is the group
+     * message's timestamp, written on the fragment rows in the
+     * system sent box. Same shape as [sendMediaKey]: no message
+     * row, random fragment-set id, diagnostic-only sent intent.
+     * A failure anywhere returns [Outcome.Failure] and the caller
+     * retries the distribution on the next group send; the key
+     * message is idempotent, so a re-send is safe (first key wins
+     * on the receiver).
+     */
+    suspend fun sendSenderKey(
+        address: String,
+        keyJson: String,
+        date: Long,
+        subId: Int?,
+    ): Outcome<Unit> = sendControlMessage(
+        address = address,
+        body = keyJson,
+        date = date,
+        subId = subId,
+        payloadType = E2ePayloadType.SENDER_KEY,
+        kind = DataSmsKind.SENDER_KEY,
+        logLabel = "sender key",
+    )
+
+    /**
+     * Round 49 — sends one group key request
+     * ([E2eGroupSenderKeyMessage]: the group id, as JSON) to one
+     * group member as encrypted fragments with payload type
+     * GROUP_KEY_REQUEST. [requestJson] is the already-encoded JSON
+     * plaintext; [date] is the undecryptable message's timestamp,
+     * written on the fragment rows in the system sent box. Same
+     * shape as [sendMediaKey]: no message row, random
+     * fragment-set id, diagnostic-only sent intent. Fire-and-
+     * forget — the caller ignores the result (a failed request
+     * just means this message stays a placeholder until the next
+     * undecryptable message from that sender re-triggers it).
+     */
+    suspend fun sendGroupKeyRequest(
+        address: String,
+        requestJson: String,
+        date: Long,
+        subId: Int?,
+    ): Outcome<Unit> = sendControlMessage(
+        address = address,
+        body = requestJson,
+        date = date,
+        subId = subId,
+        payloadType = E2ePayloadType.GROUP_KEY_REQUEST,
+        kind = DataSmsKind.GROUP_KEY_REQUEST,
+        logLabel = "group key request",
+    )
+
+    /**
+     * One row-less control message (a media key, a sender-key
+     * distribution, a key request): encrypt under the pairwise
+     * session, fragment, store the fragments in the system sent
+     * box, and send each through [E2eDataSmsSender.sendTextMessage]
+     * with the kind's diagnostic-only sent intent. A failure
+     * anywhere — no session, encrypt failure, a fragment the radio
+     * refuses — returns [Outcome.Failure]; a fragment accepted by
+     * the radio is never retried (control messages are
+     * idempotent, and there is no row to attach a retry to).
+     */
+    private suspend fun sendControlMessage(
+        address: String,
+        body: String,
+        date: Long,
+        subId: Int?,
+        payloadType: E2ePayloadType,
+        kind: DataSmsKind,
+        logLabel: String,
     ): Outcome<Unit> {
         val messageId = E2eWireFormat.generateMessageId()
         val plan = when (
             val resolution = encryptToFragments(
                 address = address,
-                body = keyJson,
+                body = body,
                 messageId = messageId,
-                payloadType = E2ePayloadType.MEDIA_KEY,
+                payloadType = payloadType,
             )
         ) {
             is Resolution.Ready -> resolution.plan
@@ -185,16 +271,16 @@ class E2eSendManager @Inject constructor(
                 address = address,
                 subId = subId,
                 text = fragment,
-                kind = DataSmsKind.MEDIA_KEY,
+                kind = kind,
             )
             if (!sent) {
-                Timber.w("E2E: media key fragment refused by the radio")
+                Timber.w("E2E: %s fragment refused by the radio", logLabel)
                 return Outcome.Failure(
-                    AppError.Telephony("media key message could not be sent"),
+                    AppError.Telephony("$logLabel message could not be sent"),
                 )
             }
         }
-        Timber.i("E2E: media key sent (%d fragment(s))", plan.fragments.size)
+        Timber.i("E2E: %s sent (%d fragment(s))", logLabel, plan.fragments.size)
         return Outcome.Success(Unit)
     }
 
@@ -326,6 +412,8 @@ class E2eSendManager @Inject constructor(
         E2ePayloadType.TEXT -> E2eWireFormat.PayloadType.TEXT
         E2ePayloadType.REACTION -> E2eWireFormat.PayloadType.REACTION
         E2ePayloadType.MEDIA_KEY -> E2eWireFormat.PayloadType.MEDIA_KEY
+        E2ePayloadType.SENDER_KEY -> E2eWireFormat.PayloadType.SENDER_KEY
+        E2ePayloadType.GROUP_KEY_REQUEST -> E2eWireFormat.PayloadType.GROUP_KEY_REQUEST
     }
 
     /**

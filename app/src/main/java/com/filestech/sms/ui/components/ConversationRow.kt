@@ -39,8 +39,6 @@ import com.filestech.sms.ui.theme.LocalMessageTextFactor
 import com.filestech.sms.ui.theme.MessageTextSize
 import com.filestech.sms.ui.theme.RelayText
 import com.filestech.sms.ui.theme.blockedTextColor
-import com.filestech.sms.ui.theme.brandBlue
-import com.filestech.sms.ui.theme.onBrandBlue
 import com.filestech.sms.ui.theme.scaledBy
 import com.filestech.sms.ui.util.relativeRowLabel
 import com.filestech.sms.ui.util.rememberChatFormatters
@@ -150,10 +148,11 @@ fun ConversationRow(
         ) {
             if (showAvatars) {
                 // E2E — the lock badge on an encrypted 1:1 row: a small
-                // brand-blue disc overlapping the avatar's bottom-right
-                // (round 41 — was bottom-left), carrying the white
-                // lock glyph. The surface-coloured ring separates the
-                // disc from a photo avatar; the glyph is decorative for
+                // surface-coloured disc overlapping the avatar's bottom-right
+                // (round 41 — was bottom-left), carrying the lock glyph in
+                // [onSurface] — dark on light, white on dark. The disc
+                // blends into the row background (round 49 — was a brand-blue
+                // disc with a surface ring); the glyph is decorative for
                 // screen readers (the row is announced by its title).
                 Box {
                     ConversationAvatar(conversation, contactPhotoUri, groupMemberPhotos)
@@ -164,14 +163,13 @@ fun ConversationRow(
                                 .offset(x = 2.dp, y = 2.dp)
                                 .size(18.dp)
                                 .clip(CircleShape)
-                                .background(brandBlue())
-                                .border(1.5.dp, cs.surface, CircleShape),
+                                .background(cs.surface),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_lock_encrypted),
                                 contentDescription = null,
-                                tint = onBrandBlue(),
+                                tint = cs.onSurface,
                                 modifier = Modifier.size(9.dp, 11.dp),
                             )
                         }

@@ -190,6 +190,10 @@
     <string name="e2e_notice_key_changed">Der Sicherheitscode von %1$s hat sich geändert. Nachrichten sind weiterhin Ende-zu-Ende-verschlüsselt.</string>
     <string name="e2e_notice_key_changed_verified">Der Sicherheitscode von %1$s hat sich geändert. %1$s war verifiziert – vergleiche die Sicherheitsnummer erneut, um sicherzugehen, dass es noch dieselbe Person ist.</string>
     <string name="e2e_notice_deactivated">Verschlüsselung beendet – %1$s nutzt Relay nicht mehr</string>
+    <string name="e2e_notice_group_activated">Nachrichten in dieser Gruppe sind jetzt Ende-zu-Ende-verschlüsselt.</string>
+    <string name="e2e_notice_group_deactivated">Verschlüsselung in dieser Gruppe beendet – %1$s nutzt Relay nicht mehr</string>
+    <string name="e2e_notice_group_key_changed">Der Sicherheitscode von %1$s hat sich geändert. Nachrichten in dieser Gruppe sind weiterhin Ende-zu-Ende-verschlüsselt.</string>
+    <string name="e2e_notice_group_key_changed_verified">Der Sicherheitscode von %1$s hat sich geändert. %1$s war verifiziert – vergleiche die Sicherheitsnummer erneut, um sicherzugehen, dass es noch dieselbe Person ist.</string>
     <string name="e2e_decrypt_failed">Diese Nachricht konnte nicht entschlüsselt werden.</string>
     <string name="e2e_decrypt_failed_notif">Diese Nachricht konnte nicht entschlüsselt werden.</string>
     <string name="e2e_media_decrypt_pending">Warten auf Entschlüsselung…</string>
@@ -199,6 +203,12 @@
     <string name="e2e_details_verified">Verifiziert ✓</string>
     <string name="e2e_details_setting_up">Prüfen, ob %1$s Relay nutzt…</string>
     <string name="e2e_details_not_encrypted">Nicht verschlüsselt</string>
+    <string name="e2e_details_group_every_member">Jedes Mitglied nutzt Relay</string>
+    <string name="e2e_details_group_checking">Prüfen, ob alle Relay nutzen…</string>
+    <string name="e2e_details_group_not_relay">%1$s nutzt Relay noch nicht</string>
+    <string name="e2e_details_group_not_relay_more">%1$s nutzt Relay noch nicht, und %2$d weitere</string>
+    <string name="e2e_details_group_not_capable">Die Relay-Version von %1$s ist veraltet</string>
+    <string name="e2e_details_group_blocked">%1$s ist blockiert</string>
     <string name="e2e_details_auto_start">Die Verschlüsselung startet automatisch, sobald %1$s Relay nutzt</string>
     <string name="e2e_details_retry_encryption">Verschlüsselung erneut versuchen</string>
     <string name="e2e_details_retry_via_sms">Anders erneut versuchen</string>
@@ -211,7 +221,7 @@
     <string name="e2e_verify_verified">Verifiziert</string>
     <string name="e2e_verify_copy">Kopieren</string>
     <string name="e2e_verify_load_failed">Die Sicherheitsnummer konnte nicht geladen werden.</string>
-    <string name="e2e_settings_explainer">Relay-zu-Relay verschlüsselt automatisch. Wenn beide Relay nutzen, sind eure 1:1-Nachrichten automatisch Ende-zu-Ende-verschlüsselt – ganz ohne Einrichtung. Nachrichten an Personen ohne Relay, Gruppenchats sowie Fotos und Dateien werden als normale SMS/MMS gesendet. Verschlüsselte Nachrichten verbrauchen ein paar mehr Textsegmente als unverschlüsselte.</string>
+    <string name="e2e_settings_explainer">Relay-zu-Relay verschlüsselt automatisch. Wenn beide Relay nutzen, sind eure 1:1-Nachrichten automatisch Ende-zu-Ende-verschlüsselt – ganz ohne Einrichtung. Nachrichten an Personen ohne Relay sowie Fotos und Dateien in Gruppen werden als normale SMS/MMS gesendet. Eine Gruppe verschlüsselt nur, wenn alle Mitglieder Relay nutzen. Verschlüsselte Nachrichten verbrauchen ein paar mehr Textsegmente als unverschlüsselte.</string>
     <string name="e2e_settings_status_subtitle">Automatisch, wenn beide Relay nutzen</string>
     <string name="e2e_settings_fingerprint">Dein Fingerabdruck</string>
     <string name="e2e_settings_unavailable">Verschlüsselung nicht verfügbar</string>

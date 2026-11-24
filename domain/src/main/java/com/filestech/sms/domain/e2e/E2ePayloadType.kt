@@ -15,9 +15,17 @@ package com.filestech.sms.domain.e2e
  *   metadata for one encrypted MMS attachment, as JSON). Only ever
  *   sent to a media-capable peer — an old build would turn the
  *   unknown wire type into an undecryptable placeholder.
+ * - [SENDER_KEY] — round 49: a sender-key distribution (one member's
+ *   per-group AES key + the member list, as JSON), sent 1:1 over the
+ *   pairwise session to a group-capable peer. Never a message row.
+ * - [GROUP_KEY_REQUEST] — round 49: a key request (the group id, as
+ *   JSON), sent 1:1 over the pairwise session when a group message
+ *   arrives under an unknown key. Never a message row.
  */
 enum class E2ePayloadType {
     TEXT,
     REACTION,
     MEDIA_KEY,
+    SENDER_KEY,
+    GROUP_KEY_REQUEST,
 }

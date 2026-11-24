@@ -7,15 +7,23 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Media-capability signaling (round 48, design §2.7): the "I can do
- * encrypted media" declaration, and the record of who declared it.
+ * Capability signaling (round 48 media, round 49 groups, design
+ * §2.7 / §13): the "I can do encrypted media / encrypted groups"
+ * declaration, and the record of who declared what.
  *
  * The probe/bundle packets have NO spare byte (both are validated
  * magic + version + type + exact length, and old builds drop
  * anything else), so the capability signal could not ride inside
  * the handshake — it is a NEW handshake packet type (`0x03`, see
  * [E2eHandshake]), sent AFTER the session is established, on the
- * SAME channel the handshake used ([HandshakeChannel]).
+ * SAME channel the handshake used ([HandshakeChannel]). One
+ * packet announces BOTH capabilities: the flags byte carries the
+ * media bit (bit 0) and the group bit (bit 1) — a round-48 build
+ * reads the media bit and ignores the group bit, a round-49
+ * build reads both. The announced flags stay separate per
+ * capability, so a peer announced in round 48 (media only) still
+ * gets the round-49 declaration: the unset group flag re-fires
+ * the thread-open trigger.
  *
  * Three send triggers, all best-effort and idempotent (a duplicate
  * declaration is a no-op on receipt — the flag just sets again):
@@ -75,8 +83,11 @@ class E2eMediaCapabilityManager @Inject constructor(
      * declaration went out on this call; `false` when nothing was
      * sent (already announced, not ENCRYPTED, blocked, or the
      * radio refused both channels). A `false` from a refused send
-     * is retried on the next thread-open — the announced flag is
-     * only set after an accepted send.
+     * is retried on the next thread-open — the announced flags
+     * are only set after an accepted send. Round 49: the
+     * declaration re-fires when EITHER capability flag is unset —
+     * a peer announced in round 48 (media only) still needs the
+     * round-49 declaration, which carries the group bit.
      */
     suspend fun announceIfNeeded(
         address: String,
@@ -85,7 +96,9 @@ class E2eMediaCapabilityManager @Inject constructor(
     ): Boolean {
         return runCatching {
             if (peers.state(address) != E2ePeerState.ENCRYPTED) return@runCatching false
-            if (peers.isMediaAnnounced(address)) return@runCatching false
+            if (peers.isMediaAnnounced(address) && peers.isGroupAnnounced(address)) {
+                return@runCatching false
+            }
             announce(address, subId, now)
         }.getOrDefault(false)
     }
@@ -110,13 +123,15 @@ class E2eMediaCapabilityManager @Inject constructor(
     }
 
     /**
-     * A declaration arrived from this peer: record them as
-     * media-capable, and announce back when we have not announced
-     * to them yet (the symmetric close — see the class KDoc).
-     * Called by [E2eHandshakeHandler] after its blocked check, so
-     * no second blocked check happens here; the announce-back
-     * re-checks anyway (cheap, and the handler's check is about
-     * the inbound packet, this one about the outbound send).
+     * A declaration arrived from this peer: record the
+     * capabilities they declared (media and/or groups, as
+     * decoded from the flags byte), and announce back when we
+     * have not announced to them yet (the symmetric close — see
+     * the class KDoc). Called by [E2eHandshakeHandler] after its
+     * blocked check, so no second blocked check happens here;
+     * the announce-back re-checks anyway (cheap, and the
+     * handler's check is about the inbound packet, this one
+     * about the outbound send).
      *
      * The announce-back is gated on ENCRYPTED, like every other
      * declaration: a declaration without a session is
@@ -125,32 +140,38 @@ class E2eMediaCapabilityManager @Inject constructor(
      * the first encrypted message arrives, and that arrival
      * fires its own announce (see the class KDoc), so a peer
      * that is PROBING now still declares once it is ENCRYPTED.
-     * Never throws.
+     * Round 49: the announce-back fires when EITHER announced
+     * flag is unset. Never throws.
      */
     suspend fun onDeclarationReceived(
         address: String,
         subId: Int?,
         now: Long = System.currentTimeMillis(),
+        mediaCapable: Boolean = true,
+        groupCapable: Boolean = false,
     ) {
         runCatching {
-            peers.setMediaCapable(address, true, now)
-            Timber.i("E2E: peer declared media capability")
-            if (peers.state(address) == E2ePeerState.ENCRYPTED && !peers.isMediaAnnounced(address)) {
+            peers.setMediaCapable(address, mediaCapable, now)
+            peers.setGroupCapable(address, groupCapable, now)
+            Timber.i("E2E: peer declared capabilities (media=$mediaCapable, groups=$groupCapable)")
+            val announced = peers.isMediaAnnounced(address) && peers.isGroupAnnounced(address)
+            if (peers.state(address) == E2ePeerState.ENCRYPTED && !announced) {
                 announce(address, subId, now)
             }
-        }.onFailure { Timber.w(it, "E2E: media declaration handling failed") }
+        }.onFailure { Timber.w(it, "E2E: capability declaration handling failed") }
     }
 
     /**
      * Sends one declaration on the peer's proven channel (or both
      * channels when none is recorded — see the class KDoc) and
-     * marks the peer announced when at least one send was
-     * accepted. Returns `true` when at least one send went out.
-     * Blocked peers get nothing.
+     * marks the peer announced (BOTH capability flags — one
+     * packet announces both) when at least one send was accepted.
+     * Returns `true` when at least one send went out. Blocked
+     * peers get nothing.
      */
     private suspend fun announce(address: String, subId: Int?, now: Long): Boolean {
         if (runCatching { blockedRepo.isBlocked(address) }.getOrDefault(false)) return false
-        val packet = E2eHandshake.encodeMediaCapable()
+        val packet = E2eHandshake.encodeCapabilityDeclaration()
         val sent = when (peers.handshakeChannel(address)) {
             HandshakeChannel.DATA_SMS -> sendData(address, subId, packet)
             HandshakeChannel.TEXT_SMS -> sendText(address, subId, packet)
@@ -167,7 +188,8 @@ class E2eMediaCapabilityManager @Inject constructor(
         }
         if (sent) {
             peers.setMediaAnnounced(address, true, now)
-            Timber.i("E2E: media-capability declaration sent")
+            peers.setGroupAnnounced(address, true, now)
+            Timber.i("E2E: capability declaration sent")
         }
         return sent
     }
@@ -178,7 +200,7 @@ class E2eMediaCapabilityManager @Inject constructor(
             subId = subId,
             port = E2eHandshake.E2E_DATA_SMS_PORT,
             data = packet,
-            kind = DataSmsKind.MEDIA_CAPABLE,
+            kind = DataSmsKind.CAPABILITY,
         )
 
     private fun sendText(address: String, subId: Int?, packet: ByteArray): Boolean =
@@ -186,6 +208,6 @@ class E2eMediaCapabilityManager @Inject constructor(
             address = address,
             subId = subId,
             text = E2eHandshakeSms.encode(packet),
-            kind = DataSmsKind.MEDIA_CAPABLE,
+            kind = DataSmsKind.CAPABILITY,
         )
 }

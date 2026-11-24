@@ -1,5 +1,6 @@
 package com.filestech.sms.e2e
 
+import com.filestech.sms.core.ext.canonicalPhone
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
 import com.filestech.sms.domain.model.Message
 
@@ -19,6 +20,14 @@ data class E2eNoticeUi(
     val kind: E2eNoticeKind,
     /** Epoch ms the notice was recorded — its position in the thread. */
     val date: Long,
+    /**
+     * Round 49 — the canonical address of the member the notice is
+     * about (the group kinds only): the name in the wording resolves
+     * from it via [memberDisplayName]. Null for the 1:1 kinds (the
+     * thread's contact name is used) and for GROUP_ACTIVATED (the
+     * wording names nobody).
+     */
+    val subject: String? = null,
 )
 
 /**
@@ -52,7 +61,29 @@ data class E2eNoticesForItem(
     val notices: List<E2eNoticeUi>,
     /** The contact name the notice wording uses (title or number). */
     val contactName: String,
+    /**
+     * Round 49 — the group members' names by RAW address (the
+     * thread state's `memberNames`): the group notice wording
+     * resolves a notice subject through [memberDisplayName], which
+     * canonicalizes the keys. Empty for a 1:1 thread.
+     */
+    val memberNames: Map<String, String> = emptyMap(),
 )
+
+/**
+ * Round 49 (design §13) — the display name for a group notice's
+ * subject: the contact name when the canonical address is a known
+ * member, the number itself otherwise. The member-name map is keyed
+ * by RAW address (as the thread state carries it), so its keys are
+ * canonicalized before the lookup — a member stored as `+1…` and a
+ * subject stored as the 10-digit form are the same person.
+ *
+ * Pure Kotlin, no Android APIs — fully unit testable.
+ */
+fun memberDisplayName(canonicalAddress: String, memberNames: Map<String, String>): String {
+    val byCanonical = memberNames.entries.associateBy({ it.key.canonicalPhone() }, { it.value })
+    return byCanonical[canonicalAddress] ?: canonicalAddress
+}
 
 /**
  * Places a conversation's E2E notices among its loaded messages (design

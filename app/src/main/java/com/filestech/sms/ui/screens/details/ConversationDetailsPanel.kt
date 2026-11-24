@@ -99,6 +99,9 @@ import com.filestech.sms.domain.model.Attachment
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.Note
 import com.filestech.sms.domain.notes.NoteAttachmentResolver
+import com.filestech.sms.e2e.GroupEncryptionState
+import com.filestech.sms.e2e.PlainReason
+import com.filestech.sms.e2e.memberDisplayName
 import com.filestech.sms.sync.client.ClientDownloadState
 import com.filestech.sms.ui.components.GroupMemberAvatar
 import com.filestech.sms.ui.components.RelayAvatar
@@ -157,6 +160,16 @@ data class ConversationDetailsActions(
      * is at Detekt's 20-parameter ceiling.)
      */
     val onRetryE2eProbeViaSms: (() -> Unit)? = null,
+    /**
+     * Round 49 — E2E groups (design §13): this group's encryption
+     * state. Null = no group encryption row (1:1 threads use the
+     * peer-state row; a linked device holds no identity keys).
+     * Rides the bundle because the panel is at Detekt's
+     * 20-parameter ceiling — the same reason the retry above
+     * does. The row has NO tap action in v1 (no group safety
+     * sheet), so this carries the state and nothing else.
+     */
+    val e2eGroupState: GroupEncryptionState? = null,
 )
 
 private enum class DetailsMediaTab { Photos, Videos, Files }
@@ -531,6 +544,7 @@ private fun DetailsPanelContent(
                     e2eVerified = e2eVerified,
                     onOpenE2eVerification = onOpenE2eVerification,
                     onRetryE2eProbe = onRetryE2eProbe,
+                    memberNames = memberNames,
                 )
             }
             if (conversation.isGroup) {
@@ -1246,6 +1260,60 @@ internal fun muteIconFor(muted: Boolean): ImageVector =
     if (muted) Icons.Outlined.NotificationsOff else Icons.Outlined.Notifications
 
 /**
+ * Round 49 — what the group encryption row shows (design §7.2).
+ * The names are resolved display names (contact name, number as
+ * fallback) — the mapping function takes the resolver, so the
+ * wording stays pure and unit-testable without a Compose harness.
+ */
+internal sealed interface GroupEncryptionDisplay {
+    /** Every member uses Relay — the closed lock. */
+    data object Encrypted : GroupEncryptionDisplay
+
+    /** Exchanges still in flight — "Checking if everyone uses Relay…". */
+    data object SettingUp : GroupEncryptionDisplay
+
+    /** At least one member does not use Relay (yet). */
+    data class NotRelay(val firstName: String, val others: Int) : GroupEncryptionDisplay
+
+    /** At least one member's Relay is too old for group keys. */
+    data class NotCapable(val firstName: String) : GroupEncryptionDisplay
+
+    /** At least one member is blocked. */
+    data class Blocked(val firstName: String) : GroupEncryptionDisplay
+}
+
+/**
+ * Round 49 — the group encryption state → row display mapping
+ * (design §7.2). Null when there is no row: [PlainReason.NOT_A_GROUP]
+ * (a 1:1 thread's state — the caller never passes it, but the
+ * mapping refuses it anyway) or a Plain reason with no blocking
+ * member (unreachable in practice — the provider always names at
+ * least one — but a row with no name would be worse than none).
+ * Only the FIRST blocking member is named, with "and N others"
+ * when several are blocked for the same reason; the provider
+ * orders them, so the first is the one to show.
+ */
+internal fun groupEncryptionDisplay(
+    state: GroupEncryptionState,
+    resolveName: (String) -> String,
+): GroupEncryptionDisplay? = when (state) {
+    GroupEncryptionState.Encrypted -> GroupEncryptionDisplay.Encrypted
+    is GroupEncryptionState.SettingUp -> GroupEncryptionDisplay.SettingUp
+    is GroupEncryptionState.Plain -> {
+        val first = state.blockingMembers.firstOrNull() ?: return null
+        when (state.reason) {
+            PlainReason.NOT_A_GROUP -> null
+            PlainReason.MEMBER_NOT_RELAY -> GroupEncryptionDisplay.NotRelay(
+                firstName = resolveName(first),
+                others = state.blockingMembers.size - 1,
+            )
+            PlainReason.MEMBER_NOT_CAPABLE -> GroupEncryptionDisplay.NotCapable(resolveName(first))
+            PlainReason.MEMBER_BLOCKED -> GroupEncryptionDisplay.Blocked(resolveName(first))
+        }
+    }
+}
+
+/**
  * E2E — the encryption row, first in the action rows (design §7.2).
  * 1:1 only — the caller passes no state for groups and client
  * mode, so this never renders there.
@@ -1457,6 +1525,66 @@ private fun E2eDetailsEncryptionRow(
     }
 }
 
+/**
+ * Round 49 — the GROUP encryption row (design §7.2): the same
+ * [RelaySettingsGroup] / [RelaySettingRow] shell as the 1:1 row
+ * above, so the two can never drift apart visually. No tap action
+ * in v1 (no group safety sheet), no chevron, no expanded area:
+ * the row is plain status. Encrypted shows the closed lock glyph
+ * ("End-to-end encrypted / Every member uses Relay"); SettingUp
+ * reads "Encryption / Checking if everyone uses Relay…"; a Plain
+ * state reads "Not encrypted" with the first blocking member
+ * named ("NAME doesn't use Relay yet", "and N others" when
+ * several) — see [groupEncryptionDisplay] for the mapping.
+ */
+@Composable
+private fun E2eDetailsGroupEncryptionRow(
+    display: GroupEncryptionDisplay,
+) {
+    val encrypted = display == GroupEncryptionDisplay.Encrypted
+    val title = when (display) {
+        GroupEncryptionDisplay.Encrypted -> stringResource(R.string.e2e_details_encrypted)
+        GroupEncryptionDisplay.SettingUp -> stringResource(R.string.e2e_encryption)
+        is GroupEncryptionDisplay.NotRelay,
+        is GroupEncryptionDisplay.NotCapable,
+        is GroupEncryptionDisplay.Blocked,
+        -> stringResource(R.string.e2e_details_not_encrypted)
+    }
+    val subtitle = when (display) {
+        GroupEncryptionDisplay.Encrypted ->
+            stringResource(R.string.e2e_details_group_every_member)
+        GroupEncryptionDisplay.SettingUp ->
+            stringResource(R.string.e2e_details_group_checking)
+        is GroupEncryptionDisplay.NotRelay -> if (display.others > 0) {
+            stringResource(
+                R.string.e2e_details_group_not_relay_more,
+                display.firstName,
+                display.others,
+            )
+        } else {
+            stringResource(R.string.e2e_details_group_not_relay, display.firstName)
+        }
+        is GroupEncryptionDisplay.NotCapable ->
+            stringResource(R.string.e2e_details_group_not_capable, display.firstName)
+        is GroupEncryptionDisplay.Blocked ->
+            stringResource(R.string.e2e_details_group_blocked, display.firstName)
+    }
+    RelaySettingsGroup {
+        item {
+            RelaySettingRow(
+                icon = if (encrypted) null else Icons.Outlined.LockOpen,
+                iconPainter = if (encrypted) {
+                    painterResource(R.drawable.ic_lock_encrypted)
+                } else {
+                    null
+                },
+                title = title,
+                subtitle = subtitle,
+            )
+        }
+    }
+}
+
 @Composable
 private fun DetailsActionRows(
     conversation: Conversation,
@@ -1474,6 +1602,12 @@ private fun DetailsActionRows(
     onOpenE2eVerification: (() -> Unit)? = null,
     /** E2E — manual probe retry (round 41): sends one probe now. */
     onRetryE2eProbe: (() -> Unit)? = null,
+    /**
+     * Round 49 — the group members' names by RAW address: the
+     * group encryption row names its blocking member through
+     * [memberDisplayName]. Empty for a 1:1 thread.
+     */
+    memberNames: Map<String, String> = emptyMap(),
 ) {
     // Round 47 — the gap above the encryption box is the 24dp
     // Settings section gap, measured in the Encryption screen:
@@ -1481,10 +1615,17 @@ private fun DetailsActionRows(
     // RelaySectionLabel puts 24dp above the groups it heads — the
     // same 24dp the panel uses above the media tabs. The 16dp here
     // read tighter than Settings. The menu group keeps its 16dp
-    // when there is no encryption box (groups, client mode).
+    // when there is no encryption box (client mode, or a group
+    // whose state maps to no row).
+    // Round 49 — the group row's display is computed here (the
+    // mapping is pure): the 1:1 row and the group row are mutually
+    // exclusive — the caller passes one state or the other.
+    val groupDisplay = actions.e2eGroupState?.let { groupState ->
+        groupEncryptionDisplay(groupState) { address -> memberDisplayName(address, memberNames) }
+    }
     Column(
         modifier = Modifier.padding(
-            top = if (e2ePeerState != null) 24.dp else 16.dp,
+            top = if (e2ePeerState != null || groupDisplay != null) 24.dp else 16.dp,
         ),
     ) {
         // E2E — the encryption row, first in the list, under the
@@ -1506,6 +1647,9 @@ private fun DetailsActionRows(
                 onRetryProbe = onRetryE2eProbe,
                 onRetryProbeViaSms = actions.onRetryE2eProbeViaSms,
             )
+            Spacer(Modifier.height(8.dp))
+        } else if (groupDisplay != null) {
+            E2eDetailsGroupEncryptionRow(display = groupDisplay)
             Spacer(Modifier.height(8.dp))
         }
         DetailsMenuGroup(

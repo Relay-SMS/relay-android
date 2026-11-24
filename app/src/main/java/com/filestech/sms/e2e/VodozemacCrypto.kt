@@ -150,6 +150,14 @@ class VodozemacCrypto private constructor(
                 val parsed = when (message.type) {
                     OlmMessageType.PRE_KEY -> OlmMessage.PreKey.Bytes(message.bytes)
                     OlmMessageType.NORMAL -> OlmMessage.Normal.Bytes(message.bytes)
+                    // Round 49 — a GROUP envelope is a sender-key
+                    // AEAD blob, not an Olm message: the group path
+                    // decrypts it with the sender's sender key and
+                    // never hands it to vodozemac. Reaching here is
+                    // a wiring bug, so fail loudly.
+                    OlmMessageType.GROUP -> throw E2eCryptoException(
+                        "a sender-key group envelope cannot be decrypted by vodozemac",
+                    )
                 }
                 session.decrypt(parsed)
             }

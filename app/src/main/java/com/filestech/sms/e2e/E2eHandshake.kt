@@ -41,13 +41,22 @@ package com.filestech.sms.e2e
  * build would ignore: every header byte is validated (magic,
  * version, type, exact length) and the key bytes are real keys.
  *
- * Round 48 — the media-capability declaration (type `0x03`): "I can
- * send and receive encrypted media". It is a NEW packet type, not a
- * flag inside the probe/bundle — those packets have no spare byte
- * (see above), so the signal could not ride inside them. It is sent
- * AFTER the session is established (see
+ * Round 48 — the capability declaration (type `0x03`): "I can send
+ * and receive encrypted media" (flags bit 0). It is a NEW packet
+ * type, not a flag inside the probe/bundle — those packets have no
+ * spare byte (see above), so the signal could not ride inside
+ * them. It is sent AFTER the session is established (see
  * [E2eMediaCapabilityManager]), on the same channel the handshake
  * used ([HandshakeChannel]).
+ *
+ * Round 49 — flags bit 1 declares encrypted groups ("I can send
+ * and receive encrypted group messages", design §13). The packet
+ * was designed for this: the flags byte's remaining bits were
+ * reserved so a future capability could ride the same packet
+ * without a new type. One declaration carries both bits, so a
+ * single send announces both capabilities — and a build from
+ * before round 49 reads only bit 0, ignoring bit 1 exactly as its
+ * decoder was written to (reserved bits ignored).
  *
  * The declaration is deliberately PROBE-SIZED (70 bytes, flags in
  * the first payload byte, the rest zeroes) — not the 6-byte header
@@ -85,30 +94,35 @@ object E2eHandshake {
     const val BUNDLE_SIZE: Int = 102
 
     /**
-     * Total size of a media-capability declaration packet, in bytes
+     * Total size of a capability declaration packet, in bytes
      * (round 48). Deliberately probe-sized: see the class KDoc for
      * why a shorter packet would surface as visible gibberish on
      * old builds on the `RLYH:` text path.
      */
-    const val MEDIA_CAPABLE_SIZE: Int = PROBE_SIZE
+    const val CAPABILITY_SIZE: Int = PROBE_SIZE
 
     private const val HEADER_SIZE: Int = 6
     private const val VERSION: Byte = 0x01
     private const val TYPE_PROBE: Byte = 0x01
     private const val TYPE_BUNDLE: Byte = 0x02
-    private const val TYPE_MEDIA_CAPABLE: Byte = 0x03
+    private const val TYPE_CAPABILITY: Byte = 0x03
 
     /**
-     * Flags byte offset inside a media-capability packet: the first
+     * Flags byte offset inside a capability packet: the first
      * payload byte, right after the 6-byte header. Bit 0
-     * ([MEDIA_FLAG]) says the sender handles encrypted media; the
-     * remaining bits are reserved (zero today) so a future
-     * capability can ride the same packet without a new type.
+     * ([MEDIA_FLAG]) says the sender handles encrypted media;
+     * bit 1 ([GROUP_FLAG], round 49) says the sender handles
+     * encrypted groups. Bits 2–7 are reserved (zero today) so a
+     * future capability can ride the same packet without a new
+     * type.
      */
-    private const val MEDIA_FLAGS_OFFSET: Int = HEADER_SIZE
+    private const val CAPABILITY_FLAGS_OFFSET: Int = HEADER_SIZE
 
     /** Flags bit 0: the sender can send and receive encrypted media. */
     private const val MEDIA_FLAG: Int = 0x01
+
+    /** Flags bit 1 (round 49): the sender can send and receive encrypted groups. */
+    private const val GROUP_FLAG: Int = 0x02
 
     /**
      * Bit 7 of the type byte: set on a probe the user sent by tapping
@@ -126,7 +140,7 @@ object E2eHandshake {
      * A decoded handshake packet. The key-carrying classes are plain
      * classes (not data classes): data-class equality on [ByteArray]
      * is referential, which would silently break key comparisons.
-     * [MediaCapable] carries no keys, so a data class is safe there.
+     * [Capability] carries no keys, so a data class is safe there.
      */
     sealed interface HandshakePacket {
 
@@ -203,19 +217,27 @@ object E2eHandshake {
         }
 
         /**
-         * A media-capability declaration (round 48): "I can send and
-         * receive encrypted media". Sent after the session is
+         * A capability declaration (round 48, extended round 49):
+         * "I can send and receive encrypted media" (flags bit 0)
+         * and / or "I can send and receive encrypted groups"
+         * (flags bit 1, round 49). Sent after the session is
          * established, on the handshake channel — the receiver
-         * records the sender as media-capable and needs no reply
+         * records the sender's capabilities and needs no reply
          * beyond its own declaration (see
          * [E2eMediaCapabilityManager]). Carries no keys: the
          * sender's address identifies the peer, and the session
-         * already exists. A data class is safe here — the only
-         * field is a Boolean, no [ByteArray] equality trap.
+         * already exists. A data class is safe here — the fields
+         * are Booleans, no [ByteArray] equality trap.
          */
-        data class MediaCapable(
+        data class Capability(
             /** True when the sender handles encrypted media (flags bit 0). */
             val mediaCapable: Boolean,
+            /**
+             * True when the sender handles encrypted groups
+             * (flags bit 1, round 49). Defaults to false so a
+             * declaration built before round 49 still decodes.
+             */
+            val groupCapable: Boolean = false,
         ) : HandshakePacket
     }
 
@@ -242,19 +264,20 @@ object E2eHandshake {
     }
 
     /**
-     * Encode a media-capability declaration packet (round 48, 70
-     * bytes — probe-sized, see the class KDoc): the header, the
-     * flags byte with bit 0 set, and zeroes. Sent after the
-     * session is established, never before — a declaration from a
-     * peer with no session is meaningless, and the receiver only
-     * trusts it alongside an ENCRYPTED state.
+     * Encode a capability declaration packet (round 48, 70 bytes
+     * — probe-sized, see the class KDoc): the header, the flags
+     * byte with bits 0 (media) and 1 (groups, round 49) set, and
+     * zeroes. Sent after the session is established, never
+     * before — a declaration from a peer with no session is
+     * meaningless, and the receiver only trusts it alongside an
+     * ENCRYPTED state.
      */
-    fun encodeMediaCapable(): ByteArray {
-        return ByteArray(MEDIA_CAPABLE_SIZE).apply {
+    fun encodeCapabilityDeclaration(): ByteArray {
+        return ByteArray(CAPABILITY_SIZE).apply {
             MAGIC.copyInto(this, 0)
             this[4] = VERSION
-            this[5] = TYPE_MEDIA_CAPABLE
-            this[MEDIA_FLAGS_OFFSET] = MEDIA_FLAG.toByte()
+            this[5] = TYPE_CAPABILITY
+            this[CAPABILITY_FLAGS_OFFSET] = (MEDIA_FLAG or GROUP_FLAG).toByte()
         }
     }
 
@@ -277,7 +300,7 @@ object E2eHandshake {
         return when ((typeByte.toInt() and TYPE_MASK.toInt()).toByte()) {
             TYPE_PROBE -> decodeProbe(bytes, isManual(typeByte))
             TYPE_BUNDLE -> decodeBundle(bytes)
-            TYPE_MEDIA_CAPABLE -> decodeMediaCapable(bytes)
+            TYPE_CAPABILITY -> decodeCapability(bytes)
             else -> null
         }
     }
@@ -324,17 +347,18 @@ object E2eHandshake {
         }
 
     /**
-     * Decode a media-capability declaration: exactly
-     * [MEDIA_CAPABLE_SIZE] bytes, flags bit 0 read leniently —
-     * other flags bits are reserved for future capabilities and
-     * must not break decoding when a newer build sets them.
+     * Decode a capability declaration: exactly [CAPABILITY_SIZE]
+     * bytes, flags bits 0 (media) and 1 (groups, round 49) read
+     * leniently — bits 2–7 are reserved for future capabilities
+     * and must not break decoding when a newer build sets them.
      */
-    private fun decodeMediaCapable(bytes: ByteArray): HandshakePacket.MediaCapable? =
-        if (bytes.size != MEDIA_CAPABLE_SIZE) {
+    private fun decodeCapability(bytes: ByteArray): HandshakePacket.Capability? =
+        if (bytes.size != CAPABILITY_SIZE) {
             null
         } else {
-            HandshakePacket.MediaCapable(
-                mediaCapable = (bytes[MEDIA_FLAGS_OFFSET].toInt() and MEDIA_FLAG) != 0,
+            HandshakePacket.Capability(
+                mediaCapable = (bytes[CAPABILITY_FLAGS_OFFSET].toInt() and MEDIA_FLAG) != 0,
+                groupCapable = (bytes[CAPABILITY_FLAGS_OFFSET].toInt() and GROUP_FLAG) != 0,
             )
         }
 }

@@ -120,6 +120,10 @@ class E2eReactionRoundTripTest {
         // Round 48 — relaxed: this test never sends a MEDIA_KEY
         // payload, so the store is never touched.
         val mediaKeys = mockk<E2eMediaKeyStore>(relaxed = true)
+
+        // Round 49 — relaxed: this test never sends a group
+        // payload, so the manager is never touched.
+        val groupSessions = mockk<E2eGroupSessionManager>(relaxed = true)
         val context = mockk<Context>()
 
         val bobPeers = E2ePeerRepository(bobPeerDao)
@@ -144,6 +148,7 @@ class E2eReactionRoundTripTest {
             handshakeHandler = handshakeHandler,
             mediaCapability = mediaCapability,
             mediaKeys = mediaKeys,
+            groupSessions = groupSessions,
             context = context,
         )
 

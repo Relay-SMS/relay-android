@@ -1,11 +1,13 @@
 package com.filestech.sms.di
 
+import com.filestech.sms.domain.e2e.E2eGroupSendGate
 import com.filestech.sms.domain.e2e.E2eMediaGate
 import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.e2e.E2eCrypto
 import com.filestech.sms.e2e.E2eDataSmsSender
 import com.filestech.sms.e2e.E2eDataSmsSenderImpl
 import com.filestech.sms.e2e.E2eFailureRecorder
+import com.filestech.sms.e2e.E2eGroupSessionManager
 import com.filestech.sms.e2e.E2eMediaGateImpl
 import com.filestech.sms.e2e.E2eSendManager
 import com.filestech.sms.e2e.UnavailableE2eCrypto
@@ -56,6 +58,11 @@ abstract class E2eModule {
     @Binds
     @Singleton
     abstract fun bindE2eMediaGate(impl: E2eMediaGateImpl): E2eMediaGate
+
+    /** Round 49 — the encrypted-group gate for the group send path. */
+    @Binds
+    @Singleton
+    abstract fun bindE2eGroupSendGate(impl: E2eGroupSessionManager): E2eGroupSendGate
 
     companion object {
 

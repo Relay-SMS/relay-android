@@ -68,6 +68,22 @@ interface E2ePeerDao {
     fun observeEncryptedAddresses(): Flow<List<String>>
 
     /**
+     * Round 49 (E2E groups, design §13) — the addresses whose
+     * peer state is ENCRYPTED AND whose Relay version supports
+     * group sender keys: a group encrypts only when EVERY member
+     * is in this set. Same invalidation note as
+     * [observeEncryptedAddresses]: Room re-emits on any write to
+     * the table, and the whole-DTO diff drops the no-change
+     * emissions.
+     */
+    @Query("SELECT address FROM e2e_peers WHERE state = 'ENCRYPTED' AND group_capable = 1")
+    suspend fun groupEncryptedAddresses(): List<String>
+
+    /** Round 49 — the live version of [groupEncryptedAddresses]. */
+    @Query("SELECT address FROM e2e_peers WHERE state = 'ENCRYPTED' AND group_capable = 1")
+    fun observeGroupEncryptedAddresses(): Flow<List<String>>
+
+    /**
      * E2E sync (round 42) — every peer row, address order: the
      * device-link snapshot source (the safety-number + verified
      * set). A stable order keeps the frame stable.
@@ -124,6 +140,19 @@ interface E2ePeerDao {
     /** Round 48 — records that our declaration went out to this peer (radio accepted it). */
     @Query("UPDATE e2e_peers SET media_announced = :announced, updated_at = :updatedAt WHERE address = :address")
     suspend fun setMediaAnnounced(address: String, announced: Boolean, updatedAt: Long)
+
+    /**
+     * Round 49 — records that this peer declared it handles
+     * encrypted groups (the 0x03 capability packet, flags bit 1).
+     * Targeted UPDATE, like the other peer writes: a bundle
+     * arriving between a read and a write cannot be clobbered.
+     */
+    @Query("UPDATE e2e_peers SET group_capable = :groupCapable, updated_at = :updatedAt WHERE address = :address")
+    suspend fun setGroupCapable(address: String, groupCapable: Boolean, updatedAt: Long)
+
+    /** Round 49 — records that our capability declaration went out to this peer (radio accepted it). */
+    @Query("UPDATE e2e_peers SET group_announced = :announced, updated_at = :updatedAt WHERE address = :address")
+    suspend fun setGroupAnnounced(address: String, announced: Boolean, updatedAt: Long)
 
     /**
      * Round 48 — records the channel our outbound handshake

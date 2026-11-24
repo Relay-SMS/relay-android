@@ -89,6 +89,8 @@ class E2eHandshakeHandler @Inject constructor(
     private val blockedRepo: BlockedNumberRepository,
     private val recorder: E2eFailureRecorder,
     private val mediaCapability: E2eMediaCapabilityManager,
+    // Round 49 — the group session manager (group key-change notices).
+    private val groupSessions: E2eGroupSessionManager,
 ) {
 
     /**
@@ -143,8 +145,14 @@ class E2eHandshakeHandler @Inject constructor(
         return when (packet) {
             is E2eHandshake.HandshakePacket.Probe -> handleProbe(address, packet, subId, now, channel)
             is E2eHandshake.HandshakePacket.Bundle -> handleBundle(address, packet, subId, now, channel)
-            is E2eHandshake.HandshakePacket.MediaCapable -> {
-                mediaCapability.onDeclarationReceived(address, subId, now)
+            is E2eHandshake.HandshakePacket.Capability -> {
+                mediaCapability.onDeclarationReceived(
+                    address,
+                    subId,
+                    now,
+                    mediaCapable = packet.mediaCapable,
+                    groupCapable = packet.groupCapable,
+                )
                 true
             }
         }
@@ -338,6 +346,11 @@ class E2eHandshakeHandler @Inject constructor(
             notices.record(conversationId, kind, now)
             Timber.i("E2E: peer key changed (conversation=%d, wasVerified=%b)", conversationId, wasVerified)
         }
+        // Round 49 — the group half: a GROUP_KEY_CHANGED notice in
+        // every group where the member held a sender key. Fires
+        // even when no 1:1 conversation exists — a member can be
+        // in groups without a 1:1 thread.
+        groupSessions.onPeerKeyChanged(address, wasVerified, now)
     }
 
     /** True when the peer has keys on file and either differs from these. */

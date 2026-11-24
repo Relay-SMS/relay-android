@@ -2,6 +2,7 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.e2e.E2eGroupSendGate
 import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.domain.mms.MediaAttachmentSpec
 import com.filestech.sms.domain.model.BlockedNumber
@@ -171,7 +172,14 @@ internal class NoopMirror : OutgoingMessageMirror {
     }
 
     /** v1.28.3 (groupes) — l'écho écrit dans le fil du groupe, retenu pour être mesuré. */
-    data class Echo(val adresses: List<String>, val corps: String, val statut: MessageStatus, val piecesJointes: Int)
+    data class Echo(
+        val adresses: List<String>,
+        val corps: String,
+        val statut: MessageStatus,
+        val piecesJointes: Int,
+        // Round 49 — whether the echo carries the encrypted flag.
+        val encrypted: Boolean = false,
+    )
 
     val echos = mutableListOf<Echo>()
 
@@ -198,8 +206,9 @@ internal class NoopMirror : OutgoingMessageMirror {
         replyToMessageId: Long?,
         attachments: List<MediaAttachmentSpec>,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long {
-        echos += Echo(addresses.map { it.raw }, body, status, attachments.size)
+        echos += Echo(addresses.map { it.raw }, body, status, attachments.size, encrypted)
         clesEcho += clientMessageId
         return prochainId++
     }
@@ -229,6 +238,7 @@ internal fun sendSmsUseCase(
     mirror: OutgoingMessageMirror = NoopMirror(),
     blocked: BlockedNumberRepository = NeverBlocked(),
     e2eGate: E2eSendGate = E2eSendGate.NoOp,
+    groupGate: E2eGroupSendGate = E2eGroupSendGate.NoOp,
 ) = SendSmsUseCase(
     defaultAppManager = object : DefaultSmsAppChecker {
         override fun isDefault() = isDefaultSmsApp
@@ -239,6 +249,7 @@ internal fun sendSmsUseCase(
     blockedRepo = blocked,
     settings = settings,
     e2eGate = e2eGate,
+    groupGate = groupGate,
 )
 
 /** v1.28.3 (F21) — bloque les numeros dont la forme brute figure dans [numeros]. */

@@ -191,6 +191,10 @@
     <string name="e2e_notice_key_changed">%1$s\'s security code changed. Messages are still end-to-end encrypted.</string>
     <string name="e2e_notice_key_changed_verified">%1$s\'s security code changed. %1$s was verified — compare the safety number again to confirm it\'s still them.</string>
     <string name="e2e_notice_deactivated">Encryption ended — %1$s no longer uses Relay</string>
+    <string name="e2e_notice_group_activated">Messages in this group are now end-to-end encrypted.</string>
+    <string name="e2e_notice_group_deactivated">Encryption ended in this group — %1$s no longer uses Relay</string>
+    <string name="e2e_notice_group_key_changed">%1$s\'s security code changed. Messages in this group are still end-to-end encrypted.</string>
+    <string name="e2e_notice_group_key_changed_verified">%1$s\'s security code changed. %1$s was verified — compare the safety number again to confirm it\'s still them.</string>
     <string name="e2e_decrypt_failed">This message couldn\'t be decrypted.</string>
     <string name="e2e_media_decrypt_pending">Waiting to decrypt…</string>
     <string name="e2e_encryption">Encryption</string>
@@ -199,6 +203,12 @@
     <string name="e2e_details_verified">Verified ✓</string>
     <string name="e2e_details_setting_up">Checking if %1$s uses Relay…</string>
     <string name="e2e_details_not_encrypted">Not encrypted</string>
+    <string name="e2e_details_group_every_member">Every member uses Relay</string>
+    <string name="e2e_details_group_checking">Checking if everyone uses Relay…</string>
+    <string name="e2e_details_group_not_relay">%1$s doesn\'t use Relay yet</string>
+    <string name="e2e_details_group_not_relay_more">%1$s doesn\'t use Relay yet, and %2$d others</string>
+    <string name="e2e_details_group_not_capable">%1$s\'s Relay is out of date</string>
+    <string name="e2e_details_group_blocked">%1$s is blocked</string>
     <string name="e2e_details_auto_start">Encryption starts automatically when %1$s uses Relay</string>
     <string name="e2e_details_retry_encryption">Retry encryption</string>
     <string name="e2e_details_retry_via_sms">Retry another way</string>
@@ -211,7 +221,7 @@
     <string name="e2e_verify_verified">Verified</string>
     <string name="e2e_verify_copy">Copy</string>
     <string name="e2e_verify_load_failed">Couldn\'t load the safety number.</string>
-    <string name="e2e_settings_explainer">Relay to Relay auto-encrypts. When both people use Relay, your 1:1 texts are end-to-end encrypted automatically — no setup needed. Messages to anyone without Relay, group chats, and photos and files are sent as plain SMS/MMS. Encrypted messages use a few more text segments than plain messages.</string>
+    <string name="e2e_settings_explainer">Relay to Relay auto-encrypts. When both people use Relay, your 1:1 texts are end-to-end encrypted automatically — no setup needed. Messages to anyone without Relay, and photos and files in groups, are sent as plain SMS/MMS. A group encrypts only when every member uses Relay. Encrypted messages use a few more text segments than plain messages.</string>
     <string name="e2e_settings_status_subtitle">Automatic when both people use Relay</string>
     <string name="e2e_settings_fingerprint">Your fingerprint</string>
     <string name="e2e_settings_unavailable">Encryption unavailable</string>

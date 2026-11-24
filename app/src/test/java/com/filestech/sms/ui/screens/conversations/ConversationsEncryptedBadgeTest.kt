@@ -119,6 +119,9 @@ class ConversationsEncryptedBadgeTest {
         }
         val peers: E2ePeerRepository = mockk {
             every { observeEncryptedAddresses() } returns peerFlow
+            // Round 49 — the badge reads the group-encrypted set
+            // too; these 1:1 tests keep it empty.
+            every { observeGroupEncryptedAddresses() } returns flowOf(emptySet())
         }
         return ConversationsViewModel(
             savedStateHandle = SavedStateHandle(),

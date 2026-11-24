@@ -71,6 +71,9 @@ class RepositorySyncMessageSourceE2eTest {
         every { repository.observeAll(false) } returns flowOf(listOf(conversation()))
         every { repository.observeAll(true) } returns flowOf(emptyList())
         coEvery { repository.messageCountsByConversation() } returns mapOf(123L to 3)
+        // Round 49 — the sync flag reads the group-encrypted set
+        // too; these 1:1 tests keep it empty.
+        coEvery { peerRepository.groupEncryptedAddresses() } returns emptySet()
     }
 
     @Test fun `conversations marks a 1-1 thread encrypted when its peer is encrypted`() = runTest {
@@ -91,6 +94,7 @@ class RepositorySyncMessageSourceE2eTest {
             every { repository.observeAll(true) } returns flowOf(emptyList())
             coEvery { repository.messageCountsByConversation() } returns mapOf(123L to 3)
             coEvery { peerRepository.encryptedAddresses() } returns setOf(peerAddress)
+            coEvery { peerRepository.groupEncryptedAddresses() } returns emptySet()
 
             val result = source().conversations()
 
@@ -125,7 +129,7 @@ class RepositorySyncMessageSourceE2eTest {
         assertThat(result[0].encrypted).isFalse()
     }
 
-    @Test fun `conversations never marks a group encrypted`() = runTest {
+    @Test fun `conversations leaves a group plain when its members are not group-encrypted`() = runTest {
         every { repository.observeAll(false) } returns flowOf(
             listOf(
                 conversation(
@@ -136,6 +140,9 @@ class RepositorySyncMessageSourceE2eTest {
         every { repository.observeAll(true) } returns flowOf(emptyList())
         coEvery { repository.messageCountsByConversation() } returns mapOf(123L to 3)
         coEvery { peerRepository.encryptedAddresses() } returns setOf(peerAddress)
+        // Round 49 — groups CAN be encrypted now; this one stays
+        // plain because no member is in the group-encrypted set.
+        coEvery { peerRepository.groupEncryptedAddresses() } returns emptySet()
 
         val result = source().conversations()
 
@@ -157,6 +164,7 @@ class RepositorySyncMessageSourceE2eTest {
             stubConversations()
             val encrypted = MutableStateFlow(emptySet<String>())
             every { peerRepository.observeEncryptedAddresses() } returns encrypted
+            every { peerRepository.observeGroupEncryptedAddresses() } returns flowOf(emptySet())
 
             source().observeConversations().test {
                 // Plain at first: no peer is encrypted yet.

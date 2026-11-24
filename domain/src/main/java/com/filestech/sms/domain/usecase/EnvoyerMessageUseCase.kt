@@ -4,6 +4,8 @@ import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
 import com.filestech.sms.domain.clientmode.ClientSendGateway
 import com.filestech.sms.domain.clientmode.NoOpClientSendGateway
+import com.filestech.sms.domain.e2e.E2eGroupSendGate
+import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendReport
 import com.filestech.sms.domain.ownnumber.OwnNumberEnsurer
@@ -33,6 +35,16 @@ import javax.inject.Inject
  * que rien ne reste coincé en « envoi… ». La voie vocale, qui
  * contourne ce routeur, porte la même garde dans
  * [SendVoiceMmsUseCase].
+ *
+ * Round 49 (E2E groups, design §13) — an encrypted group TEXT
+ * always travels as per-member SMS fragments: the group MMS path
+ * has no encrypted-text channel, so the group-MMS setting never
+ * applies to it. The router consults the group gate for group
+ * texts and routes Encrypted to the SMS path; the decision is
+ * re-taken in [SendSmsUseCase] with the final (signed) body, so
+ * this pre-check only routes (and refuses an over-cap body before
+ * any row is written). Media in groups stays plain — the gate is
+ * never consulted when there are attachments.
  */
 class EnvoyerMessageUseCase @Inject constructor(
     private val sendSms: SendSmsUseCase,
@@ -45,6 +57,22 @@ class EnvoyerMessageUseCase @Inject constructor(
      * (a missing binding fails the build).
      */
     private val clientSend: ClientSendGateway = NoOpClientSendGateway,
+    /**
+     * Round 49 — the encrypted-group send gate. Default
+     * [E2eGroupSendGate.NoOp] keeps the existing tests compiling
+     * untouched (every group routes as before); Hilt always
+     * provides the real gate (bound in `E2eModule`).
+     */
+    private val groupGate: E2eGroupSendGate = E2eGroupSendGate.NoOp,
+    /**
+     * Round 49 — the 1:1 send gate, for the background probe on a
+     * plain group send: the members' exchanges start here (the
+     * group-MMS transport never reaches the send hook, so the
+     * router probes — [SendSmsUseCase] probes too, for its own
+     * path, and the probe manager gates the duplicate). Default
+     * [E2eSendGate.NoOp].
+     */
+    private val e2eGate: E2eSendGate = E2eSendGate.NoOp,
 ) {
     suspend operator fun invoke(
         recipients: List<PhoneAddress>,
@@ -85,7 +113,29 @@ class EnvoyerMessageUseCase @Inject constructor(
             }
         }
         val groupe = recipients.size > 1
-        val mmsDeGroupe = groupe && (settings.hydratedOrNull() ?: AppSettings()).sending.groupMms
+        // Round 49 — the encrypted-group decision for a group TEXT
+        // send (media in groups stays plain, design §13.7 — the
+        // gate is never consulted when there are attachments). An
+        // encrypted group routes to the SMS fan-out regardless of
+        // the group-MMS setting; a plain group probes its members
+        // in the background (sending to the thread is intent to
+        // talk — the exchange that flips the group starts here).
+        // The decision is re-taken in [SendSmsUseCase] with the
+        // final (signed) body, so this pre-check only routes — but
+        // an over-cap body is refused here, before any row is
+        // written: routing it to group MMS instead would silently
+        // send an encrypted group's message in the clear.
+        val groupDecision = if (groupe && attachments.isEmpty()) {
+            groupGate.decideGroupSend(recipients.map { it.raw }, body)
+        } else {
+            null
+        }
+        if (groupDecision == E2eGroupSendGate.Decision.Plain) {
+            recipients.forEach { e2eGate.probeForSend(it.raw, subId) }
+        }
+        val mmsDeGroupe = groupe &&
+            groupDecision != E2eGroupSendGate.Decision.Encrypted &&
+            (settings.hydratedOrNull() ?: AppSettings()).sending.groupMms
         // Group-send own-number fix — just-in-time detection, then
         // fail-fast: the check sits BEFORE the dispatch, so a
         // still-blank number creates no PENDING mirror row and the
@@ -96,6 +146,9 @@ class EnvoyerMessageUseCase @Inject constructor(
             return Outcome.Failure(AppError.OwnNumberMissing)
         }
         return when {
+            groupDecision == E2eGroupSendGate.Decision.RefuseOverCap -> Outcome.Failure(
+                AppError.Validation("message too long to send encrypted"),
+            )
             mmsDeGroupe -> sendMediaMms.invoke(
                 recipients,
                 attachments,

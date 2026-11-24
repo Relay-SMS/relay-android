@@ -70,6 +70,25 @@ import com.filestech.sms.data.local.db.entity.E2ePeerState as StoredPeerState
  * the stored key on view; a malformed key JSON is dropped
  * silently (a malformed key is not a message).
  *
+ * Round 49 — group messages (message type GROUP, payload
+ * GROUP_TEXT / GROUP_REACTION) branch BEFORE the Olm decryptor:
+ * they are sender-key encrypted, not Olm-encrypted, and the
+ * pairing rule ([E2eWireFormat.isValidPairing]) guarantees a
+ * GROUP message never reaches the decryptor. The group session
+ * manager ([E2eGroupSessionManager]) decrypts (the sender's
+ * sender key), resolves the group conversation from the key
+ * row's member list, and records the group activation; a group
+ * reaction folds onto its target like a 1:1 reaction (the fold
+ * already searches group conversations). An undecryptable group
+ * message becomes a placeholder in the group conversation when
+ * it resolves (the base64 is kept, like a 1:1 placeholder — the
+ * kept-envelope retry does not cover groups in v1, see design
+ * §13.9) plus a key request to the sender. SENDER_KEY and
+ * GROUP_KEY_REQUEST payloads are the control-message halves of
+ * the group protocol: they travel over the pairwise session, so
+ * they decrypt here like any 1:1 payload, then hand off to the
+ * group session manager — silently, like media keys.
+ *
  * Error-log rules (§8.3): message ids (6 hex chars, meaningless alone)
  * and error classes only — never plaintext, ciphertext, or addresses.
  */
@@ -90,6 +109,10 @@ class E2eReceiveManager @Inject constructor(
     // payload branch stores here; the MMS part decrypts against
     // it on view).
     private val mediaKeys: E2eMediaKeyStore,
+    // Round 49 — the group session manager (group decrypt, key
+    // distribution / requests, group notices, conversation
+    // resolution).
+    private val groupSessions: E2eGroupSessionManager,
     @ApplicationContext private val context: Context,
 ) {
     private val processedLock = Any()
@@ -126,6 +149,14 @@ class E2eReceiveManager @Inject constructor(
             probeManager.reprobeAfterDecryptFailure(address, subId)
             return
         }
+        // Round 49 — a group message is sender-key encrypted, not
+        // Olm-encrypted: it branches before the decryptor (which
+        // rejects GROUP outright). The pairing rule guarantees a
+        // GROUP message only ever carries a group payload.
+        if (payload.message.type == OlmMessageType.GROUP) {
+            handleGroupMessage(address, payload, base64, telephonyUri, dateMs, subId, now)
+            return
+        }
         when (val result = decryptor.decrypt(address, payload)) {
             is E2eSessionDecryptor.Outcome.Decrypted -> {
                 val plaintext = result.plaintext.toString(Charsets.UTF_8)
@@ -145,12 +176,27 @@ class E2eReceiveManager @Inject constructor(
                         handleDecryptedReaction(address, plaintext, telephonyUri, dateMs, subId, result.newSession, now)
                     // Round 48 — a media key message: store the
                     // key, nothing else. This branch is
-                    // functionally required: the `when` is a
-                    // statement (not exhaustive), so without it a
-                    // key message would decrypt and fall through
+                    // functionally required: without it a key
+                    // message would decrypt and fall through
                     // silently, and its part would stay pending.
                     E2eWireFormat.PayloadType.MEDIA_KEY ->
                         handleDecryptedMediaKey(plaintext, now)
+                    // Round 49 — a sender-key distribution or a
+                    // key request: hand off to the group session
+                    // manager, silently, like a media key. A
+                    // malformed distribution / request is dropped
+                    // there — it is not a message.
+                    E2eWireFormat.PayloadType.SENDER_KEY ->
+                        groupSessions.onSenderKeyReceived(address, plaintext, subId, now)
+                    E2eWireFormat.PayloadType.GROUP_KEY_REQUEST ->
+                        groupSessions.onKeyRequestReceived(address, plaintext, subId, now)
+                    // Round 49 — GROUP payloads never reach the
+                    // 1:1 decryptor: GROUP messages branch off
+                    // above (handleGroupMessage). Listed so the
+                    // `when` stays exhaustive.
+                    E2eWireFormat.PayloadType.GROUP_TEXT,
+                    E2eWireFormat.PayloadType.GROUP_REACTION,
+                    -> Unit
                 }
                 if (result.newSession) {
                     handshakeHandler.retryDecryptFailed(address)
@@ -260,6 +306,11 @@ class E2eReceiveManager @Inject constructor(
             // stale and downgrading restarts it via the re-probe.
             return
         }
+        // Round 49 — BEFORE the peer flips: the group
+        // deactivation notices need the groups as they were (the
+        // state check reads "was this group encrypted?"), and
+        // after the flip every group with this member reads plain.
+        groupSessions.onPeerLeftRelay(address, now)
         peers.setState(address, StoredPeerState.UNKNOWN, now)
         peers.setVerified(address, false, now)
         notices.record(conversationId, E2eNoticeKind.DEACTIVATED, now)
@@ -303,11 +354,159 @@ class E2eReceiveManager @Inject constructor(
     }
 
     /**
+     * Round 49 — a group message (GROUP_TEXT / GROUP_REACTION):
+     * decrypt with the sender's sender key, then insert or fold.
+     * An undecryptable message becomes a placeholder + a key
+     * request (see [handleUndecryptableGroupMessage]).
+     */
+    private suspend fun handleGroupMessage(
+        address: String,
+        payload: E2eWireFormat.DecodedPayload,
+        base64: String,
+        telephonyUri: String?,
+        dateMs: Long,
+        subId: Int?,
+        now: Long,
+    ) {
+        val decrypted = groupSessions.decryptGroupMessage(address, payload.message.bytes, now)
+        if (decrypted == null) {
+            handleUndecryptableGroupMessage(address, payload, base64, telephonyUri, dateMs, subId, now)
+            return
+        }
+        when (payload.payloadType) {
+            E2eWireFormat.PayloadType.GROUP_TEXT ->
+                insertDecryptedGroupText(
+                    address,
+                    decrypted.plaintext,
+                    decrypted.groupId,
+                    decrypted.members,
+                    telephonyUri,
+                    dateMs,
+                    subId,
+                    now,
+                )
+            E2eWireFormat.PayloadType.GROUP_REACTION ->
+                handleDecryptedReaction(
+                    address,
+                    decrypted.plaintext,
+                    telephonyUri,
+                    dateMs,
+                    subId,
+                    newSession = false,
+                    now = now,
+                    group = decrypted,
+                )
+            // 1:1 payloads never arrive with a GROUP message
+            // type — wire pairing (E2eWireFormat.isValidPairing)
+            // rejects them at parse time. Listed so the `when`
+            // stays exhaustive.
+            E2eWireFormat.PayloadType.TEXT,
+            E2eWireFormat.PayloadType.REACTION,
+            E2eWireFormat.PayloadType.MEDIA_KEY,
+            E2eWireFormat.PayloadType.SENDER_KEY,
+            E2eWireFormat.PayloadType.GROUP_KEY_REQUEST,
+            -> Unit
+        }
+    }
+
+    /**
+     * Round 49 — a decrypted group text: insert into the group
+     * conversation (resolved from the key row's member list),
+     * record the group activation (once per conversation), and
+     * notify like a 1:1 message. When the conversation cannot
+     * resolve (our own number is unknown and no stored group
+     * matches), the message is dropped — a group message has no
+     * 1:1 conversation to fall back to, and showing it in the
+     * sender's 1:1 thread would misattribute it.
+     */
+    private suspend fun insertDecryptedGroupText(
+        address: String,
+        plaintext: String,
+        groupId: String,
+        members: List<String>,
+        telephonyUri: String?,
+        dateMs: Long,
+        subId: Int?,
+        now: Long,
+    ) {
+        val conversationId = groupSessions.conversationIdForGroup(groupId, members) ?: return
+        val msgId = mirror.upsertIncomingGroupSms(
+            conversationId = conversationId,
+            senderAddress = address,
+            body = plaintext,
+            date = dateMs,
+            telephonyUri = telephonyUri,
+            subId = subId,
+            encrypted = true,
+        )
+        groupSessions.recordGroupActivated(conversationId, now)
+        notifier.notifyIncoming(
+            address = address,
+            body = plaintext,
+            messageId = msgId,
+            conversationId = conversationId,
+        )
+    }
+
+    /**
+     * Round 49 — an undecryptable group message (unknown sender
+     * key, or an AEAD open failure): a placeholder in the group
+     * conversation when it resolves from the group id alone, plus
+     * a key request to the sender (rate-limited). When the
+     * conversation cannot resolve, no placeholder is written —
+     * there is no thread to show it in — but the key request
+     * still goes out, so the NEXT message from that sender
+     * decrypts. The base64 is kept on the placeholder like a 1:1
+     * placeholder, but the kept-envelope retry does not cover
+     * groups in v1 (design §13.9): this message stays a
+     * placeholder even after the key arrives.
+     */
+    private suspend fun handleUndecryptableGroupMessage(
+        address: String,
+        payload: E2eWireFormat.DecodedPayload,
+        base64: String,
+        telephonyUri: String?,
+        dateMs: Long,
+        subId: Int?,
+        now: Long,
+    ) {
+        val envelope = E2eGroupWireFormat.parseEnvelope(payload.message.bytes)
+        if (envelope == null) {
+            Timber.i("E2E: group message with a malformed envelope dropped")
+            return
+        }
+        val conversationId = groupSessions.conversationIdForGroup(envelope.groupIdHex, members = null)
+        if (conversationId != null) {
+            val msgId = mirror.upsertIncomingGroupSms(
+                conversationId = conversationId,
+                senderAddress = address,
+                body = "",
+                date = dateMs,
+                telephonyUri = telephonyUri,
+                subId = subId,
+                encrypted = true,
+            )
+            messageDao.markDecryptFailed(msgId, base64)
+            notifier.notifyIncoming(
+                address = address,
+                body = context.getString(R.string.e2e_decrypt_failed_notif),
+                messageId = msgId,
+                conversationId = conversationId,
+            )
+        }
+        groupSessions.requestSenderKey(envelope.groupIdHex, address, subId, now)
+    }
+
+    /**
      * An encrypted reaction: the plaintext is the tapback string (design
      * §3.2 — "the existing reaction payload, encrypted"). Fold it onto
      * its target like a plain tapback; when no target matches, store the
      * decrypted body verbatim (the plain path's fall-through) so nothing
-     * is silently lost.
+     * is silently lost. Round 49 — [group] is the decrypted group
+     * message for a GROUP_REACTION: the fold already searches group
+     * conversations, the fall-through inserts into the GROUP
+     * conversation (never the 1:1), and a folded group reaction
+     * records the group activation instead of the 1:1 one.
      */
     private suspend fun handleDecryptedReaction(
         address: String,
@@ -317,6 +516,7 @@ class E2eReceiveManager @Inject constructor(
         subId: Int?,
         newSession: Boolean,
         now: Long,
+        group: GroupDecrypted? = null,
     ) {
         val decoded = IncomingReactionDecoder.decode(plaintext)
         val applied = decoded?.let {
@@ -334,11 +534,27 @@ class E2eReceiveManager @Inject constructor(
         }
         if (decoded == null || applied == null) {
             // No fold: the decrypted body becomes a message, as on the
-            // plain path when a tapback matches nothing.
-            insertDecryptedText(address, plaintext, telephonyUri, dateMs, subId, newSession, now)
+            // plain path when a tapback matches nothing — in the group
+            // conversation for a group reaction, never the 1:1.
+            if (group != null) {
+                insertDecryptedGroupText(
+                    address,
+                    plaintext,
+                    group.groupId,
+                    group.members,
+                    telephonyUri,
+                    dateMs,
+                    subId,
+                    now,
+                )
+            } else {
+                insertDecryptedText(address, plaintext, telephonyUri, dateMs, subId, newSession, now)
+            }
             return
         }
-        if (newSession) {
+        if (group != null) {
+            groupSessions.recordGroupActivated(applied.conversationId, now)
+        } else if (newSession) {
             notices.recordActivated(applied.conversationId, now)
         }
         if (decoded.isRemoval) return

@@ -73,6 +73,9 @@ import com.filestech.sms.ui.theme.resolveBubbleColors
  *
  * The bubble does NOT instantiate a MediaPlayer itself; it merely emits [onTogglePlay] and
  * [onSeekTo] callbacks. This keeps the composable testable and recomposition-friendly.
+ *
+ * Round 49 — the lock on an encrypted voice clip rides
+ * [BubbleTimestamp] ([shouldShowLock]): no lock code lives here.
  */
 @Composable
 fun AudioMessageBubble(

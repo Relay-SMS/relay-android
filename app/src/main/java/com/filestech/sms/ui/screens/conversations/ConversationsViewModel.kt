@@ -7,6 +7,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.filestech.sms.core.ext.canonicalPhone
 import com.filestech.sms.core.ext.foldForSearch
 import com.filestech.sms.core.ext.normalizePhone
 import com.filestech.sms.core.result.Outcome
@@ -21,6 +22,7 @@ import com.filestech.sms.domain.categories.MessageClassifier
 import com.filestech.sms.domain.model.Conversation
 import com.filestech.sms.domain.model.MessageSearchHit
 import com.filestech.sms.domain.model.Note
+import com.filestech.sms.domain.repository.BlockedNumberRepository
 import com.filestech.sms.domain.repository.ContactRepository
 import com.filestech.sms.domain.repository.ConversationRepository
 import com.filestech.sms.domain.repository.NoteRepository
@@ -130,6 +132,18 @@ class ConversationsViewModel @Inject constructor(
      * addresses whose peer state is ENCRYPTED ([encryptedAddresses]).
      */
     private val e2ePeers: E2ePeerRepository,
+    /**
+     * Round 49 — the blocklist, for the group lock badge: a group
+     * with a blocked member never encrypts (design §13 — the
+     * provider's MEMBER_BLOCKED reason), so the blocked
+     * addresses are subtracted from the group-encrypted set
+     * ([groupEncryptedAddresses]). Nullable with a null default:
+     * Hilt provides it in production; the existing tests keep
+     * compiling untouched (a null repo subtracts nothing — a
+     * blocked member is then a badge-only miss, never a
+     * plaintext leak: the send gate checks the blocklist itself).
+     */
+    private val blockedRepo: BlockedNumberRepository? = null,
 ) : ViewModel() {
 
     private val archivedFlag: Boolean = savedStateHandle.get<Boolean>("archived") ?: false
@@ -161,6 +175,27 @@ class ConversationsViewModel @Inject constructor(
     val encryptedAddresses: StateFlow<Set<String>> = e2ePeers
         .observeEncryptedAddresses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /**
+     * Round 49 (E2E groups, design §13) — the addresses that can
+     * take part in an encrypted group: ENCRYPTED + group-capable,
+     * MINUS the blocked addresses (a group with a blocked member
+     * never encrypts — the provider's MEMBER_BLOCKED). A group is
+     * encrypted when EVERY member is in this set ([isConversationEncrypted]);
+     * the row shows its avatar lock badge then. The blocklist
+     * entries are normalized numbers, canonicalized before the
+     * subtraction (a `+1`-stored block must still subtract the
+     * 10-digit member). No mode branch, like
+     * [encryptedAddresses]: on a linked device the rows are
+     * DERIVED from the synced conversation flag.
+     */
+    val groupEncryptedAddresses: StateFlow<Set<String>> = combine(
+        e2ePeers.observeGroupEncryptedAddresses(),
+        blockedRepo?.observe() ?: flowOf(emptyList()),
+    ) { groupEncrypted, blocked ->
+        val blockedCanonical = blocked.map { it.normalizedNumber.canonicalPhone() }.toSet()
+        groupEncrypted - blockedCanonical
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     /** Client mode C2 — re-issues the sync request after an error (the Retry affordance). */
     fun retryClientSync() {

@@ -29,6 +29,16 @@ import androidx.room.PrimaryKey
  * and no channel was ever recorded). The channel is a raw String, not
  * the `HandshakeChannel` enum: that enum lives in `:app` and this
  * entity in `:data`, and the repository maps between the two.
+ *
+ * Round 49 (schema v24) — group capability (design §13): the same
+ * 0x03 declaration packet carries a second flags bit (bit 1) for
+ * encrypted groups, so [groupCapable] says the peer declared it
+ * handles encrypted groups and [groupAnnounced] says WE already
+ * sent our declaration (both bits) to this peer. A peer whose
+ * declaration predates round 49 announced media only, so its
+ * group flag stays false until the next declaration — the
+ * announce triggers re-send the combined packet when either flag
+ * is unset.
  */
 @Entity(tableName = "e2e_peers")
 data class E2ePeerEntity(
@@ -84,6 +94,24 @@ data class E2ePeerEntity(
      * then goes out on BOTH channels, once.
      */
     @ColumnInfo(name = "handshake_channel") val handshakeChannel: String? = null,
+    /**
+     * Round 49 — true once this peer's phone declared it handles
+     * encrypted groups (the 0x03 capability packet, flags bit 1).
+     * False by default: an old build never declares, so a group
+     * with it stays plain. Set only by the declaration receive
+     * path, never by the sender guessing.
+     */
+    @ColumnInfo(name = "group_capable", defaultValue = "0") val groupCapable: Boolean = false,
+    /**
+     * Round 49 — true once WE sent our capability declaration
+     * (media + group bits) to this peer (and the radio accepted
+     * it). The declaration is one packet carrying both bits, so
+     * one send sets both this and [mediaAnnounced]; a peer
+     * announced before round 49 has [mediaAnnounced] true and
+     * this false, and the next announce trigger re-sends the
+     * combined packet. Set only after a successful send.
+     */
+    @ColumnInfo(name = "group_announced", defaultValue = "0") val groupAnnounced: Boolean = false,
     /** Epoch ms of the last state/key update. */
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )

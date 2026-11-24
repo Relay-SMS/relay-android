@@ -66,6 +66,10 @@ class E2eHandshakeHandlerTest {
         // invisible to the existing assertions.
         val mediaCapability = mockk<E2eMediaCapabilityManager>(relaxed = true)
 
+        // Round 49 — relaxed: the group key-change notices are
+        // covered by the group manager tests, not here.
+        val groupSessions = mockk<E2eGroupSessionManager>(relaxed = true)
+
         val peers = E2ePeerRepository(peerDao)
         val sessions = E2eSessionStore(sessionDao, aliceCrypto, fakeKeyManager())
         val accountManager = E2eAccountManager(accountDao, aliceCrypto, fakeKeyManager())
@@ -89,6 +93,7 @@ class E2eHandshakeHandlerTest {
             blockedRepo = FakeBlockedRepo(),
             recorder = recorder,
             mediaCapability = mediaCapability,
+            groupSessions = groupSessions,
         )
 
         init {
@@ -574,6 +579,20 @@ class E2eHandshakeHandlerTest {
     }
 
     @Test
+    fun `a key change also notifies the group session manager`() = runTest {
+        val harness = Harness()
+        harness.handler.handleDataSms(BOB, harness.bundleFrom(harness.bobCrypto), null, NOW)
+        harness.peers.setVerified(BOB, true, NOW)
+
+        harness.handler.handleDataSms(BOB, harness.probeFrom(harness.carolCrypto), null, NOW)
+
+        // The group half of the key change: GROUP_KEY_CHANGED
+        // notices in every group where the member held a sender
+        // key (the manager's own tests cover the notice itself).
+        coVerify { harness.groupSessions.onPeerKeyChanged(BOB, true, NOW) }
+    }
+
+    @Test
     fun `a bundle with different keys re-establishes and keeps the old session as fallback`() = runTest {
         val harness = Harness()
         harness.handler.handleDataSms(BOB, harness.bundleFrom(harness.bobCrypto), null, NOW)
@@ -670,16 +689,16 @@ class E2eHandshakeHandlerTest {
         coVerify(exactly = 0) { harness.messageDao.refreshConversationPreview(any()) }
     }
 
-    // ──────────────────────────── Round 48: media capability ────────────────────────────
+    // ──────────────── Round 48/49: capability declaration ────────────────
 
     @Test
     fun `a capability packet by data SMS is handled and delegated, with no bundle reply`() = runTest {
         val harness = Harness()
 
-        val handled = harness.handler.handleDataSms(BOB, E2eHandshake.encodeMediaCapable(), 3, NOW)
+        val handled = harness.handler.handleDataSms(BOB, E2eHandshake.encodeCapabilityDeclaration(), 3, NOW)
 
         assertThat(handled).isTrue()
-        coVerify { harness.mediaCapability.onDeclarationReceived(BOB, 3, NOW) }
+        coVerify { harness.mediaCapability.onDeclarationReceived(BOB, 3, NOW, true, true) }
         // A declaration earns no bundle reply — it is not a probe.
         assertThat(harness.sender.sent).isEmpty()
         assertThat(harness.sender.sentTexts).isEmpty()
@@ -688,12 +707,12 @@ class E2eHandshakeHandlerTest {
     @Test
     fun `a capability packet by text SMS is handled and delegated`() = runTest {
         val harness = Harness()
-        val text = E2eHandshakeSms.encode(E2eHandshake.encodeMediaCapable())
+        val text = E2eHandshakeSms.encode(E2eHandshake.encodeCapabilityDeclaration())
 
         val handled = harness.handler.handleSms(BOB, text, null, NOW)
 
         assertThat(handled).isTrue()
-        coVerify { harness.mediaCapability.onDeclarationReceived(BOB, null, NOW) }
+        coVerify { harness.mediaCapability.onDeclarationReceived(BOB, null, NOW, true, true) }
         assertThat(harness.sender.sent).isEmpty()
         assertThat(harness.sender.sentTexts).isEmpty()
     }

@@ -56,6 +56,12 @@ class E2eSessionDecryptor @Inject constructor(
         return when (payload.message.type) {
             OlmMessageType.PRE_KEY -> decryptPreKey(address, payload.message)
             OlmMessageType.NORMAL -> decryptWithSessions(address, payload.message)
+            // Round 49 — a GROUP envelope is a sender-key AEAD blob,
+            // not an Olm message: the receive path routes it to the
+            // group decryptor before any session work, so reaching
+            // here means a crossed payload — undecryptable, never a
+            // session attempt.
+            OlmMessageType.GROUP -> Outcome.Failed
         }
     }
 

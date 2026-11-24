@@ -96,7 +96,7 @@ Slice 2 — no bytes cross the channel yet.
 | Server → client | `sync_complete` | `{"type":"sync_complete","cursor_message_id":"98765"}` |
 | Server → client | `category_mutes` | `{"type":"category_mutes","muted_categories":["otp","promotional"]}` |
 | Server → client | `e2e_safety_numbers` | `{"type":"e2e_safety_numbers","peers":[{"address":"+33612345678","state":"encrypted","safety_number":"12345 67890 …","verified":false}]}` |
-| Server → client | `e2e_notices` | `{"type":"e2e_notices","notices":[{"id":"12","conversation_id":"123","kind":"activated","date":1793000000000}]}` |
+| Server → client | `e2e_notices` | `{"type":"e2e_notices","notices":[{"id":"12","conversation_id":"123","kind":"activated","date":1793000000000},{"id":"13","conversation_id":"124","kind":"group_key_changed","subject":"+33612345678","date":1793000001000}]}` |
 | Client → server | `set_e2e_verified` | `{"type":"set_e2e_verified","address":"+33612345678","verified":true}` |
 | Client → server | `retry_e2e_probe` | `{"type":"retry_e2e_probe","address":"+33612345678"}` |
 | Server → client | `message_new` | `{"type":"message_new","message":MESSAGE}` |
@@ -180,11 +180,15 @@ default to `false` and are omitted on the wire while false (the
 encoder drops defaults), so a frame from an older hub still parses
 on a new client and a new frame still parses on an older client
 (unknown keys are ignored). `encrypted` on a conversation is true
-when the 1:1 peer's state is ENCRYPTED on the hub (groups are never
-encrypted in v1); when a peer's state flips to ENCRYPTED the hub
+when the 1:1 peer's state is ENCRYPTED on the hub; **round 49 — a
+group conversation's flag is true when the group's state is
+Encrypted (every member ENCRYPTED + group-capable — the hub
+computes it from the member peer rows, like the 1:1 flag from the
+peer row; a blocked member keeps the flag false)**. When a peer's state flips to ENCRYPTED the hub
 pushes a `conversation_updated` carrying the new flag, so the
 desktop re-renders the row badge + composer placeholder without a
-re-sync. `encrypted` on a message is true when it was encrypted on
+re-sync; a member's flip that changes a group's state pushes the
+same update for the group conversation. `encrypted` on a message is true when it was encrypted on
 the wire; `decrypt_failed` marks the placeholder row for a message
 whose ciphertext arrived but could not be decrypted (the client
 renders "This message couldn't be decrypted." instead of a bubble).
@@ -931,7 +935,7 @@ addition is additive.
 | Direction | Message | Shape |
 |---|---|---|
 | Server → client | `e2e_safety_numbers` | `{"type":"e2e_safety_numbers","peers":[{"address":"+33612345678","state":"encrypted","safety_number":"12345 67890 …","verified":false}]}` |
-| Server → client | `e2e_notices` | `{"type":"e2e_notices","notices":[{"id":"12","conversation_id":"123","kind":"activated","date":1793000000000}]}` |
+| Server → client | `e2e_notices` | `{"type":"e2e_notices","notices":[{"id":"12","conversation_id":"123","kind":"activated","date":1793000000000},{"id":"13","conversation_id":"124","kind":"group_key_changed","subject":"+33612345678","date":1793000001000}]}` |
 | Client → server | `set_e2e_verified` | `{"type":"set_e2e_verified","address":"+33612345678","verified":true}` |
 | Client → server | `retry_e2e_probe` | `{"type":"retry_e2e_probe","address":"+33612345678"}` |
 
@@ -962,10 +966,17 @@ pays nothing.
 `notices` entries: `id` and `conversation_id` (decimal strings
 of the phone's Room ids, per the protocol v1 convention), `kind`
 (the lowercase notice kind: `"activated"`, `"key_changed"`,
-`"key_changed_verified"`, `"deactivated"`), and `date` (epoch
-millis — the notice's position in the thread). The phone sends
-it after every snapshot and whenever any notice row changes; the
-desktop replaces its local set wholesale and renders each
+`"key_changed_verified"`, `"deactivated"` — **round 49 adds the
+group kinds `"group_activated"`, `"group_deactivated"`,
+`"group_key_changed"`, `"group_key_changed_verified"`**), and
+`date` (epoch millis — the notice's position in the thread).
+**Round 49 adds the optional `subject` field**: the canonical
+address of the member the notice is about (the deactivation /
+key-change notices name their member; the activation notices
+carry no subject). A frame from an older phone build omits it,
+and the client renders the notice without a name. The phone
+sends it after every snapshot and whenever any notice row changes;
+the desktop replaces its local set wholesale and renders each
 notice as a centered system row in its thread. The notice kinds
 carry no wording — the wording lives in each device's own
 strings, so a notice renders in the user's current language.

@@ -203,8 +203,10 @@ class E2eWireFormatTest {
         assertThrows(IllegalArgumentException::class.java) {
             E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x03, 0x01, 0x00))
         }
+        // Round 49 — 0x04 is SENDER_KEY now, so the bad-type case
+        // uses an unassigned byte (0x7F).
         assertThrows(IllegalArgumentException::class.java) {
-            E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x01, 0x04, 0x00))
+            E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x01, 0x7F, 0x00))
         }
         assertThrows(IllegalArgumentException::class.java) {
             E2eWireFormat.parsePayload(byteArrayOf(0x01, 0x01, 0x01))

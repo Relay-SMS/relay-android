@@ -84,6 +84,10 @@ import java.io.File
  * Cohérence visuelle : reuse [outgoingBubbleColor] / [bubbleIncomingColor] et le
  * [BubbleMenu] (delete/reply/react) du pattern existant — l'utilisateur a
  * les mêmes actions que sur les bulles texte/audio.
+ *
+ * Round 49 — the lock on an encrypted photo / video / file rides
+ * [BubbleTimestamp] ([shouldShowLock]): the overlay pill and the
+ * caption block both call it, so no lock code lives in this file.
  */
 // 20 parameters, at the Detekt threshold: the notes round added `previewOverrides`,
 // the encrypted-preview seam — it cannot be dropped, and bundling the menu

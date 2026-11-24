@@ -27,6 +27,8 @@ import com.filestech.sms.domain.usecase.RetrySendUseCase
 import com.filestech.sms.domain.usecase.SendMediaMmsUseCase
 import com.filestech.sms.domain.usecase.SendReactionUseCase
 import com.filestech.sms.domain.usecase.SendVoiceMmsUseCase
+import com.filestech.sms.e2e.GroupEncryptionState
+import com.filestech.sms.e2e.PlainReason
 import com.filestech.sms.e2e.E2eNoticeUi
 import com.filestech.sms.e2e.E2eThreadEntryPoint
 import com.filestech.sms.e2e.E2eWireFormat
@@ -534,13 +536,24 @@ class ThreadViewModel @Inject constructor(
          */
         val attachmentDownloads: Map<Long, com.filestech.sms.sync.client.ClientDownloadState> = emptyMap(),
         /**
-         * E2E — this conversation's peer state (1:1 only; groups stay
-         * UNKNOWN and render plain). Observed live from
-         * [com.filestech.sms.e2e.E2ePeerRepository]: the composer
-         * placeholder and the send icon flip the moment the key
-         * exchange completes, without reopening the thread.
+         * E2E — this conversation's peer state (1:1 only; groups use
+         * [e2eGroupState] and this stays UNKNOWN). Observed live
+         * from [com.filestech.sms.e2e.E2ePeerRepository]: the
+         * composer placeholder and the send icon flip the moment
+         * the key exchange completes, without reopening the thread.
          */
         val e2ePeerState: E2ePeerState = E2ePeerState.UNKNOWN,
+        /**
+         * E2E groups (round 49, design §13) — this conversation's
+         * group encryption state (groups only; 1:1 threads stay on
+         * the [PlainReason.NOT_A_GROUP] default). Observed live
+         * from [com.filestech.sms.e2e.E2eGroupStateProvider]: the
+         * composer placeholder, the send icon and the
+         * details-panel row flip the moment the last member's
+         * exchange completes, without reopening the thread.
+         */
+        val e2eGroupState: GroupEncryptionState =
+            GroupEncryptionState.Plain(PlainReason.NOT_A_GROUP, emptyList()),
         /** E2E — the peer was verified by comparing safety numbers. */
         val e2eVerified: Boolean = false,
         /**
@@ -981,7 +994,8 @@ class ThreadViewModel @Inject constructor(
         // the constructor). A failed resolution (JVM tests with a mocked
         // context) leaves the thread plain: E2E is additive, never
         // load-bearing. Groups have no peer row — the address is null
-        // there and the state stays UNKNOWN.
+        // there and the state stays UNKNOWN; groups observe their own
+        // group state instead (round 49, design §13).
         runCatching { e2eEntryPoint() }.getOrNull()?.let { e2e ->
             convFlow.map { conv ->
                 conv?.takeIf { !it.isGroup }?.firstAddress?.normalized
@@ -1002,6 +1016,20 @@ class ThreadViewModel @Inject constructor(
                     }
                 }
                 .launchIn(viewModelScope)
+            convFlow.map { conv ->
+                conv?.takeIf { it.isGroup }?.addresses?.map { it.raw }
+            }.distinctUntilChanged()
+                .flatMapLatest { members ->
+                    if (members.isNullOrEmpty()) {
+                        flowOf(GroupEncryptionState.Plain(PlainReason.NOT_A_GROUP, emptyList()))
+                    } else {
+                        e2e.groupStateProvider().observeGroupState(members)
+                    }
+                }
+                .onEach { groupState ->
+                    _state.update { it.copy(e2eGroupState = groupState) }
+                }
+                .launchIn(viewModelScope)
             e2e.noticeStore().observeNotices(conversationId)
                 .onEach { notices ->
                     _state.update {
@@ -1011,6 +1039,7 @@ class ThreadViewModel @Inject constructor(
                                     id = notice.id,
                                     kind = notice.kind,
                                     date = notice.date,
+                                    subject = notice.subject,
                                 )
                             },
                         )
@@ -1064,11 +1093,15 @@ class ThreadViewModel @Inject constructor(
      * (design §3.2: 8,000 characters — the fragment budget). MMS is
      * never encrypted, so attachments skip the cap; plain threads do
      * too. The use case enforces the same cap; the composer refuses
-     * first, with the UI message.
+     * first, with the UI message. Round 49: a group in the Encrypted
+     * state is under the same cap (group media stays plain, so an
+     * attachment still skips it).
      */
-    private fun isTooLongForEncrypted(body: String, hasAttachments: Boolean): Boolean =
-        _state.value.e2ePeerState == E2ePeerState.ENCRYPTED &&
-            !hasAttachments && E2eWireFormat.plaintextExceedsCap(body)
+    private fun isTooLongForEncrypted(body: String, hasAttachments: Boolean): Boolean {
+        val encrypted = _state.value.e2ePeerState == E2ePeerState.ENCRYPTED ||
+            _state.value.e2eGroupState == GroupEncryptionState.Encrypted
+        return encrypted && !hasAttachments && E2eWireFormat.plaintextExceedsCap(body)
+    }
 
     /** E2E — the "Too long to send encrypted" refusal (red snackbar). */
     private fun refuseTooLongEncrypted() {

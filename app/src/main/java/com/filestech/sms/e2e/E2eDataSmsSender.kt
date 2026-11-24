@@ -93,16 +93,31 @@ enum class DataSmsKind(val failureTag: String) {
     BUNDLE("e2e-bundle-send"),
 
     /**
-     * Round 48 — a media-capability declaration (the 0x03
-     * handshake packet, either channel).
+     * Round 48 (renamed round 49) — a capability declaration
+     * (the 0x03 handshake packet, either channel): media
+     * capability in round 48, media + group capability from
+     * round 49 — one packet announces both.
      */
-    MEDIA_CAPABLE("e2e-media-capable-send"),
+    CAPABILITY("e2e-capability-send"),
 
     /**
      * Round 48 — one fragment of a media key message (an `RLY1:`
      * fragment of a MEDIA_KEY payload, regular SMS only).
      */
     MEDIA_KEY("e2e-media-key-send"),
+
+    /**
+     * Round 49 — one fragment of a sender-key distribution (an
+     * `RLY1:` fragment of a SENDER_KEY payload, regular SMS
+     * only).
+     */
+    SENDER_KEY("e2e-sender-key-send"),
+
+    /**
+     * Round 49 — one fragment of a group key request (an `RLY1:`
+     * fragment of a GROUP_KEY_REQUEST payload, regular SMS only).
+     */
+    GROUP_KEY_REQUEST("e2e-group-key-request-send"),
 }
 
 /** The real sender over `SmsManager.sendDataMessage` / `sendTextMessage`. */

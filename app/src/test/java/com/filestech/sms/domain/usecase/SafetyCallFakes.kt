@@ -230,6 +230,7 @@ internal class NoopMirror(
         replyToMessageId: Long?,
         attachments: List<MediaAttachmentSpec>,
         clientMessageId: String?,
+        encrypted: Boolean,
     ): Long = error("non utilise")
 }
 

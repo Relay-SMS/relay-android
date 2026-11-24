@@ -218,4 +218,5 @@ private fun E2eNoticeEntity.toSynced(): SyncedE2eNotice = SyncedE2eNotice(
     conversationId = conversationId.toString(),
     kind = kind.name.lowercase(),
     date = date,
+    subject = subject,
 )

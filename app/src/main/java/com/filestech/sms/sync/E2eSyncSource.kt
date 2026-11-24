@@ -123,10 +123,16 @@ data class SyncedE2ePeer(
 /**
  * Round 42 — one notice of the `e2e_notices` frame. [kind] is the
  * lowercase wire string of the notice kind (`"activated"`,
- * `"key_changed"`, `"key_changed_verified"`, `"deactivated"`);
- * [date] is epoch millis — the notice's position in the thread.
- * Ids are decimal strings of the phone's Room ids, per the
- * protocol v1 convention.
+ * `"key_changed"`, `"key_changed_verified"`, `"deactivated"`, and
+ * the round-49 group kinds `"group_activated"`,
+ * `"group_deactivated"`, `"group_key_changed"`,
+ * `"group_key_changed_verified"`); [date] is epoch millis — the
+ * notice's position in the thread. Ids are decimal strings of the
+ * phone's Room ids, per the protocol v1 convention. Round 49 —
+ * [subject] is the canonical address of the member the notice is
+ * about (the group key-change / deactivation notices name their
+ * member); null for notices about the thread itself, and absent
+ * on frames from an older phone build.
  */
 @Serializable
 data class SyncedE2eNotice(
@@ -134,4 +140,5 @@ data class SyncedE2eNotice(
     @SerialName("conversation_id") val conversationId: String,
     @SerialName("kind") val kind: String,
     @SerialName("date") val date: Long,
+    @SerialName("subject") val subject: String? = null,
 )

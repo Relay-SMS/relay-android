@@ -6,13 +6,15 @@ import org.junit.jupiter.api.Test
 import java.util.Base64
 
 /**
- * Media-capability declaration packet tests (round 48, design §2):
- * the 0x03 packet, its exact 70-byte size (the old-build swallow
- * property), and old-build drop behavior for unknown types.
+ * Capability declaration packet tests (round 48 media, round 49
+ * groups, design §2 / §13): the 0x03 packet, its exact 70-byte
+ * size (the old-build swallow property), and old-build drop
+ * behavior for unknown types.
  *
  * Byte layout (the type/flag constants are private to the codec,
  * so the tests use the documented offsets): [0..3] `RLYH` magic,
- * [4] version 1, [5] type 0x03, [6] flags (bit 0 = media capable).
+ * [4] version 1, [5] type 0x03, [6] flags (bit 0 = media capable,
+ * bit 1 = group capable).
  *
  * Every test ends with a void assertion — JUnit silently skips a
  * `@Test` whose body returns a value.
@@ -22,47 +24,61 @@ class E2eHandshakeMediaCapabilityTest {
     private companion object {
         const val TYPE_OFFSET = 5
         const val FLAGS_OFFSET = 6
-        const val MEDIA_CAPABLE_TYPE: Byte = 0x03
+        const val CAPABILITY_TYPE: Byte = 0x03
     }
 
     @Test
     fun `a capability packet encodes to exactly 70 bytes like a probe`() {
-        val bytes = E2eHandshake.encodeMediaCapable()
+        val bytes = E2eHandshake.encodeCapabilityDeclaration()
 
         assertThat(bytes.size).isEqualTo(70)
         assertThat(bytes.size).isEqualTo(E2eHandshake.PROBE_SIZE)
-        assertThat(E2eHandshake.MEDIA_CAPABLE_SIZE).isEqualTo(E2eHandshake.PROBE_SIZE)
+        assertThat(E2eHandshake.CAPABILITY_SIZE).isEqualTo(E2eHandshake.PROBE_SIZE)
     }
 
     @Test
-    fun `a capability packet decodes back with the flag set`() {
-        val bytes = E2eHandshake.encodeMediaCapable()
+    fun `a capability packet decodes back with both flags set`() {
+        val bytes = E2eHandshake.encodeCapabilityDeclaration()
 
         val decoded = E2eHandshake.decode(bytes)
 
-        assertThat(decoded).isInstanceOf(HandshakePacket.MediaCapable::class.java)
-        assertThat((decoded as HandshakePacket.MediaCapable).mediaCapable).isTrue()
+        assertThat(decoded).isInstanceOf(HandshakePacket.Capability::class.java)
+        assertThat((decoded as HandshakePacket.Capability).mediaCapable).isTrue()
+        assertThat((decoded as HandshakePacket.Capability).groupCapable).isTrue()
     }
 
     @Test
-    fun `a capability packet with the flag clear decodes as not capable`() {
-        val bytes = E2eHandshake.encodeMediaCapable()
+    fun `a capability packet with the flags clear decodes as not capable`() {
+        val bytes = E2eHandshake.encodeCapabilityDeclaration()
         bytes[FLAGS_OFFSET] = 0x00
 
-        val decoded = E2eHandshake.decode(bytes) as HandshakePacket.MediaCapable
+        val decoded = E2eHandshake.decode(bytes) as HandshakePacket.Capability
 
         assertThat(decoded.mediaCapable).isFalse()
+        assertThat(decoded.groupCapable).isFalse()
     }
 
     @Test
-    fun `other flag bits are ignored on decode`() {
-        val bitsSet = E2eHandshake.encodeMediaCapable()
-        bitsSet[FLAGS_OFFSET] = 0xFE.toByte() // every bit but bit 0
-        val allSet = E2eHandshake.encodeMediaCapable()
-        allSet[FLAGS_OFFSET] = 0xFF.toByte() // bit 0 + every other bit
+    fun `reserved flag bits are ignored on decode, bit 1 is the group flag`() {
+        // Round 49 — bit 1 is meaningful now (group capable); bits
+        // 2–7 stay reserved and must not break decoding when a
+        // newer build sets them.
+        val reservedOnly = E2eHandshake.encodeCapabilityDeclaration()
+        reservedOnly[FLAGS_OFFSET] = 0xFC.toByte() // bits 2-7, bits 0-1 clear
+        val groupOnly = E2eHandshake.encodeCapabilityDeclaration()
+        groupOnly[FLAGS_OFFSET] = 0xFE.toByte() // bit 1 + bits 2-7, bit 0 clear
+        val allSet = E2eHandshake.encodeCapabilityDeclaration()
+        allSet[FLAGS_OFFSET] = 0xFF.toByte() // both flags + every reserved bit
 
-        assertThat((E2eHandshake.decode(bitsSet) as HandshakePacket.MediaCapable).mediaCapable).isFalse()
-        assertThat((E2eHandshake.decode(allSet) as HandshakePacket.MediaCapable).mediaCapable).isTrue()
+        val reserved = E2eHandshake.decode(reservedOnly) as HandshakePacket.Capability
+        assertThat(reserved.mediaCapable).isFalse()
+        assertThat(reserved.groupCapable).isFalse()
+        val group = E2eHandshake.decode(groupOnly) as HandshakePacket.Capability
+        assertThat(group.mediaCapable).isFalse()
+        assertThat(group.groupCapable).isTrue()
+        val all = E2eHandshake.decode(allSet) as HandshakePacket.Capability
+        assertThat(all.mediaCapable).isTrue()
+        assertThat(all.groupCapable).isTrue()
     }
 
     @Test
@@ -72,7 +88,7 @@ class E2eHandshakeMediaCapabilityTest {
         // 70-byte capability packet is therefore invisible on an
         // old build (it decodes the type, finds 0x03 unknown, and
         // drops it), instead of surfacing as a visible bubble.
-        val text = E2eHandshakeSms.encode(E2eHandshake.encodeMediaCapable())
+        val text = E2eHandshakeSms.encode(E2eHandshake.encodeCapabilityDeclaration())
 
         assertThat(E2eHandshakeSms.isHandshakeSms(text)).isTrue()
         assertThat(E2eHandshakeSms.parse(text)).isNotNull()
@@ -93,7 +109,7 @@ class E2eHandshakeMediaCapabilityTest {
         short[2] = 'Y'.code.toByte()
         short[3] = 'H'.code.toByte()
         short[4] = 0x01
-        short[5] = MEDIA_CAPABLE_TYPE
+        short[5] = CAPABILITY_TYPE
 
         val text = E2eHandshakeSms.MAGIC + Base64.getEncoder().encodeToString(short)
 
@@ -105,7 +121,7 @@ class E2eHandshakeMediaCapabilityTest {
         // Old-build behavior for a type this build does not know:
         // null, no exception — the packet is dropped, never a
         // placeholder, never a crash.
-        val bytes = E2eHandshake.encodeMediaCapable()
+        val bytes = E2eHandshake.encodeCapabilityDeclaration()
         bytes[TYPE_OFFSET] = 0x04
 
         assertThat(E2eHandshake.decode(bytes)).isNull()
@@ -113,7 +129,7 @@ class E2eHandshakeMediaCapabilityTest {
 
     @Test
     fun `decode drops a wrong-size capability packet`() {
-        val bytes = E2eHandshake.encodeMediaCapable()
+        val bytes = E2eHandshake.encodeCapabilityDeclaration()
         val truncated = bytes.copyOf(69)
         val extended = bytes + 0x00.toByte()
 
@@ -127,17 +143,17 @@ class E2eHandshakeMediaCapabilityTest {
         val edKey = ByteArray(32) { (it + 32).toByte() }
         val oneTimeKey = ByteArray(32) { (it + 64).toByte() }
 
-        assertThat(E2eHandshake.encodeMediaCapable()[TYPE_OFFSET]).isEqualTo(MEDIA_CAPABLE_TYPE)
+        assertThat(E2eHandshake.encodeCapabilityDeclaration()[TYPE_OFFSET]).isEqualTo(CAPABILITY_TYPE)
         assertThat(E2eHandshake.encodeProbe(curveKey, edKey)[TYPE_OFFSET]).isEqualTo(0x01.toByte())
         assertThat(E2eHandshake.encodeBundle(curveKey, edKey, oneTimeKey)[TYPE_OFFSET]).isEqualTo(0x02.toByte())
     }
 
     @Test
     fun `the capability packet carries the RLYH magic and version 1`() {
-        val bytes = E2eHandshake.encodeMediaCapable()
+        val bytes = E2eHandshake.encodeCapabilityDeclaration()
 
         assertThat(bytes.sliceArray(0..3).toString(Charsets.UTF_8)).isEqualTo("RLYH")
         assertThat(bytes[4]).isEqualTo(0x01.toByte())
-        assertThat(bytes[TYPE_OFFSET]).isEqualTo(MEDIA_CAPABLE_TYPE)
+        assertThat(bytes[TYPE_OFFSET]).isEqualTo(CAPABILITY_TYPE)
     }
 }

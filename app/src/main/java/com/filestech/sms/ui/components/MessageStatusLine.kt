@@ -89,6 +89,13 @@ import java.util.Date
  * gris de thème y serait illisible (`#404040` 3.35:1, `#C9C9C9` 1.87:1) —
  * le statut garde donc [metaColor] (blanc à 0.85, comme sur le bleu) là
  * aussi, via [isTextOnColoredBubble].
+ *
+ * Round 49 — the lock is no longer text-only: every encrypted message
+ * carries it ([shouldShowLock]), so an encrypted MMS photo, voice clip
+ * or video shows the lock like an encrypted SMS does. Every bubble
+ * renders its timestamp line through [BubbleTimestamp], so the one rule
+ * covers all of them — text, media (overlay pill and caption), voice,
+ * and the incoming encrypted-media wrapper via those two.
  */
 @Composable
 internal fun BubbleTimestamp(
@@ -144,14 +151,13 @@ internal fun BubbleTimestamp(
             // E2E — the lock glyph at the end of an encrypted message's
             // timestamp line (sent and received, e.g. "8:10 PM •
             // Delivered 🔒", per the encrypted-thread reference).
-            // Text-only SMS only: MMS and attachments stay plain and
-            // carry no lock. Decorative for screen readers — the
+            // Round 49 — every encrypted message, not just text-only
+            // SMS: media, voice and video carry the lock too (see
+            // [shouldShowLock]). Decorative for screen readers — the
             // message is announced by its text, and a lock on every
             // message would be noise. Round 41 — 6dp of air before
             // the lock (was 4dp): a touch more left padding.
-            if (message.encrypted &&
-                message.type == Message.Type.SMS && message.attachments.isEmpty()
-            ) {
+            if (shouldShowLock(message)) {
                 Spacer(Modifier.width(6.dp))
                 Icon(
                     painter = painterResource(R.drawable.ic_lock_encrypted),
@@ -163,3 +169,31 @@ internal fun BubbleTimestamp(
         }
     }
 }
+
+/**
+ * Round 49 — the single lock decision for every bubble: the lock rides
+ * [Message.encrypted] alone — text, media, voice, video, outgoing and
+ * incoming. Before, the gate was text-only SMS (`type == SMS &&
+ * attachments.isEmpty()`), so an encrypted MMS photo or voice clip
+ * showed no lock even though the colour already said blue (round 48
+ * ships encrypted media, and its KDoc already promised "the bubble
+ * shows the lock + blue"). Every bubble renders its timestamp line
+ * through [BubbleTimestamp] — [MessageBubble], [MediaAttachmentBubble]
+ * (the overlay pill on a caption-less thumbnail AND the caption block,
+ * so video is covered too: it renders through the media bubble), and
+ * [AudioMessageBubble] — and
+ * [com.filestech.sms.ui.screens.thread.EncryptedMediaBubble] delegates
+ * to the media and audio bubbles, so this one rule covers all four
+ * paths with no per-bubble code.
+ *
+ * Notes — a note entry's display message carries `encrypted = true`
+ * ([com.filestech.sms.domain.model.toDisplayMessage]), so note photos
+ * and voice show the lock too — deliberately: a note entry IS
+ * encrypted (whole-DB SQLCipher + the AES-256-GCM attachment
+ * envelope), and text-only entries already show the lock by design.
+ * The bubbles cannot tell a note from an E2E message anyway (they
+ * share the components, and the display message carries no note
+ * flag), and no distinction is needed: the lock means "this content
+ * is encrypted", which holds for both.
+ */
+internal fun shouldShowLock(message: Message): Boolean = message.encrypted

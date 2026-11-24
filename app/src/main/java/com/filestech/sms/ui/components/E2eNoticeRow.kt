@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.filestech.sms.R
 import com.filestech.sms.data.local.db.entity.E2eNoticeKind
 import com.filestech.sms.e2e.E2eNoticeUi
+import com.filestech.sms.e2e.memberDisplayName
 import com.filestech.sms.ui.theme.FixedTypeSize
 import com.filestech.sms.ui.theme.RelayText
 
@@ -29,7 +30,13 @@ import com.filestech.sms.ui.theme.RelayText
  * fill, 13sp secondary text — so notices read as thread furniture,
  * not as messages. Only [E2eNoticeKind.KEY_CHANGED_VERIFIED] is
  * tappable: it opens the safety-number sheet so the user can
- * re-compare the number.
+ * re-compare the number. The group kinds (round 49, design §13)
+ * are never tappable — there is no group safety sheet in v1 — and
+ * resolve their member name from the notice [E2eNoticeUi.subject]
+ * through [memberDisplayName] (the contact name, the number as
+ * fallback); a group notice with no subject falls back to the
+ * thread's [contactName] (the recorders always set a subject for
+ * the member kinds, so this is a belt-and-braces path).
  */
 @Composable
 fun E2eNoticeRow(
@@ -37,13 +44,22 @@ fun E2eNoticeRow(
     contactName: String,
     onVerify: () -> Unit,
     modifier: Modifier = Modifier,
+    memberNames: Map<String, String> = emptyMap(),
 ) {
+    val memberName = notice.subject?.let { memberDisplayName(it, memberNames) } ?: contactName
     val text = when (notice.kind) {
         E2eNoticeKind.ACTIVATED -> stringResource(R.string.e2e_notice_activated)
         E2eNoticeKind.KEY_CHANGED -> stringResource(R.string.e2e_notice_key_changed, contactName)
         E2eNoticeKind.KEY_CHANGED_VERIFIED ->
             stringResource(R.string.e2e_notice_key_changed_verified, contactName)
         E2eNoticeKind.DEACTIVATED -> stringResource(R.string.e2e_notice_deactivated, contactName)
+        E2eNoticeKind.GROUP_ACTIVATED -> stringResource(R.string.e2e_notice_group_activated)
+        E2eNoticeKind.GROUP_DEACTIVATED ->
+            stringResource(R.string.e2e_notice_group_deactivated, memberName)
+        E2eNoticeKind.GROUP_KEY_CHANGED ->
+            stringResource(R.string.e2e_notice_group_key_changed, memberName)
+        E2eNoticeKind.GROUP_KEY_CHANGED_VERIFIED ->
+            stringResource(R.string.e2e_notice_group_key_changed_verified, memberName)
     }
     E2eSystemRow(
         text = text,

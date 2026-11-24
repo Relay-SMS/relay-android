@@ -143,6 +143,7 @@ import com.filestech.sms.data.voice.VoicePlaybackController
 import com.filestech.sms.domain.model.Message
 import com.filestech.sms.domain.model.PhoneAddress
 import com.filestech.sms.domain.model.SendErrorCode
+import com.filestech.sms.e2e.GroupEncryptionState
 import com.filestech.sms.e2e.E2eNoticesForItem
 import com.filestech.sms.e2e.E2eThreadNotices
 import com.filestech.sms.sync.client.ClientCallState
@@ -356,15 +357,18 @@ fun ThreadScreen(
     // E2E — the safety-number verification sheet, opened from the
     // details-panel encryption row or a key-change notice. One sheet
     // for the thread: the peer is this 1:1 conversation's single
-    // address. Groups never open it (no single peer, no encryption
-    // row) and a linked device never opens it either (no identity
-    // keys on a client — the panel hides the row there).
+    // address. Groups never open it (no single peer, no group
+    // safety sheet in v1) and a linked device never opens it
+    // either (no identity keys on a client — the panel hides the
+    // row there).
     var e2eVerificationOpen by remember { mutableStateOf(false) }
     val e2ePeerAddress = state.conversation?.takeIf { !it.isGroup }?.firstAddress?.normalized
     // E2E — this thread encrypts: the composer placeholder, the send
     // icon, the composer button colours (round 48) and the timestamp
-    // locks all key off this one flag.
-    val isThreadEncrypted = state.e2ePeerState == E2ePeerState.ENCRYPTED
+    // locks all key off this one flag. Round 49: a group in the
+    // Encrypted state encrypts too (design §13).
+    val isThreadEncrypted = state.e2ePeerState == E2ePeerState.ENCRYPTED ||
+        state.e2eGroupState == GroupEncryptionState.Encrypted
     // v1.11.0 — Sujet 5 apparence : dialog ouvert depuis le panneau latéral de détails.
     var appearanceOpen by remember { mutableStateOf(false) }
     // v1.28.3 — nommer le groupe (panneau latéral de détails).
@@ -1420,6 +1424,7 @@ fun ThreadScreen(
                                 notice = notice,
                                 contactName = title,
                                 onVerify = { e2eVerificationOpen = true },
+                                        memberNames = state.memberNames,
                             )
                         }
                     }
@@ -1494,9 +1499,12 @@ fun ThreadScreen(
                     // message, rendered above its bubble (the
                     // contact name is the conversation title: the
                     // name or formatted number the header shows).
+                    // Round 49: the group member names travel too,
+                    // so a group notice can name its subject.
                     e2eNotices = E2eNoticesForItem(
                         notices = e2eNoticePlacement.before.getOrNull(chronoIndex) ?: emptyList(),
                         contactName = title,
+                        memberNames = state.memberNames,
                     ),
                     // Client mode C2 — the thread is read-only: the
                     // bubble menus hide their write actions.
@@ -1941,7 +1949,9 @@ fun ThreadScreen(
                 // E2E — the encryption row: 1:1 hub threads only
                 // (groups have no single peer; a linked device holds
                 // no identity keys, so it never probes or shows its
-                // own encryption state). Null = no row.
+                // own encryption state). Null = no row. Round 49:
+                // the GROUP encryption row rides the actions bundle
+                // below (the panel is at the 20-parameter cap).
                 e2ePeerState = state.e2ePeerState.takeIf {
                     !state.isClientMode && !detailsConversation.isGroup
                 },
@@ -2018,6 +2028,13 @@ fun ThreadScreen(
                     // Round 45 — the regular-SMS handshake retry,
                     // in the encryption box's expanded area.
                     onRetryE2eProbeViaSms = { viewModel.retryE2eProbeViaSms() },
+                    // Round 49 — the group encryption row (design
+                    // §13): group hub threads only (1:1 threads use
+                    // the peer-state row above; a linked device
+                    // holds no identity keys). Null = no row.
+                    e2eGroupState = state.e2eGroupState.takeIf {
+                        !state.isClientMode && detailsConversation.isGroup
+                    },
                 ),
                 onDismiss = { detailsPanelOpen = false },
             )
@@ -4030,6 +4047,7 @@ private fun ThreadMessageItem(
                     notice = notice,
                     contactName = e2e.contactName,
                     onVerify = actions.onE2eNoticeVerify,
+                    memberNames = e2e.memberNames,
                 )
             }
         }

@@ -2,6 +2,7 @@ package com.filestech.sms.domain.usecase
 
 import com.filestech.sms.core.result.AppError
 import com.filestech.sms.core.result.Outcome
+import com.filestech.sms.domain.e2e.E2eGroupSendGate
 import com.filestech.sms.domain.e2e.E2ePayloadType
 import com.filestech.sms.domain.e2e.E2eSendGate
 import com.filestech.sms.domain.model.MessageStatus
@@ -15,6 +16,7 @@ import com.filestech.sms.domain.sender.SmsSender
 import com.filestech.sms.domain.settings.AppSettings
 import com.filestech.sms.domain.settings.AppSettingsSource
 import kotlinx.coroutines.flow.first
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -34,11 +36,21 @@ import javax.inject.Inject
  * `encrypted = 1`, and the fragments go out through the normal
  * [SmsSender] path with the plaintext never touching the system sent
  * box. A 1:1 send to a peer that is not ENCRYPTED triggers a probe in
- * the background and sends plain. Groups and MMS skip encryption
- * entirely; a 1:1 reaction ([e2ePayloadType] is [E2ePayloadType.REACTION])
- * encrypts as a reaction payload instead of leaking as plain SMS.
+ * the background and sends plain. A 1:1 reaction ([e2ePayloadType] is
+ * [E2ePayloadType.REACTION]) encrypts as a reaction payload instead of
+ * leaking as plain SMS.
  * A message over the 8,000-character encrypted cap is REFUSED — never
  * silently sent plain.
+ *
+ * E2E groups (design §13) — a group text encrypts when EVERY member is
+ * ENCRYPTED + group-capable: the same fragment set fans out to each
+ * member as individual SMS (regardless of the group-MMS setting — the
+ * router routes encrypted groups to this path), each member's mirror
+ * row carries `encrypted = 1` with the plaintext, and the group echo
+ * does too. A group that is not fully encrypted sends plain (its
+ * members get a background probe); an over-cap or failed encryption
+ * fails the send — the group thread gets a FAILED echo, never a plain
+ * send. Group MMS, group media, and group reactions stay plain.
  */
 class SendSmsUseCase @Inject constructor(
     private val defaultAppManager: DefaultSmsAppChecker,
@@ -53,6 +65,14 @@ class SendSmsUseCase @Inject constructor(
      * real gate (bound in `E2eModule`).
      */
     private val e2eGate: E2eSendGate = E2eSendGate.NoOp,
+    /**
+     * E2E groups (design §13) — the encrypted-group send gate.
+     * Default [E2eGroupSendGate.NoOp] keeps the existing `:domain`
+     * tests compiling untouched (every group sends plain, exactly
+     * as before); Hilt always provides the real gate (bound in
+     * `E2eModule`).
+     */
+    private val groupGate: E2eGroupSendGate = E2eGroupSendGate.NoOp,
 ) {
     private val envoi = EnvoiParDestinataire(blockedRepo, mirror)
 
@@ -156,8 +176,9 @@ class SendSmsUseCase @Inject constructor(
         // == null`) or a 1:1 reaction (`e2ePayloadType == REACTION`,
         // which only SendReactionUseCase passes, and only once it has
         // established single-target + 1:1 conversation) consults the
-        // gate; multi-recipient sends and any other reaction never
-        // encrypt, but a 1:1 reaction still triggers a probe (sending
+        // gate; multi-recipient sends consult the GROUP gate instead
+        // (below — [groupSendPlan]), and any other reaction never
+        // encrypts, but a 1:1 reaction still triggers a probe (sending
         // to the thread is intent to talk). A peer that is not
         // ENCRYPTED gets a background probe and a plain send; an
         // over-cap encrypted send is refused here, before any row is
@@ -222,16 +243,45 @@ class SendSmsUseCase @Inject constructor(
         // urgence) ne porte jamais de clé — ces appelants n'en passent pas.
         val cleSurLigne = clientMessageId.takeIf { !echoInGroup && recipients.size == 1 }
         val cleSurEcho = clientMessageId.takeIf { echoInGroup && localMirrorBody != "" }
-        return envoi.parDestinataire(
+
+        // E2E groups (design §13) — the encryption decision for a
+        // group text send, taken BEFORE the fan-out like the 1:1
+        // decision above. A refusal (over the cap) or an encrypt
+        // failure returns here, before any row is written or the
+        // radio touched — the plaintext NEVER goes out instead (an
+        // encrypt failure leaves a FAILED echo in the group thread,
+        // written by the plan itself — see [groupSendPlan]).
+        val groupFragments = when (
+            val plan = groupSendPlan(
+                recipients = recipients,
+                finalBody = finalBody,
+                effectiveSubId = effectiveSubId,
+                now = now,
+                echoInGroup = echoInGroup,
+                localMirrorBody = localMirrorBody,
+                clientMessageId = cleSurEcho,
+                replyToMessageId = replyToMessageId,
+                payloadType = e2ePayloadType,
+            )
+        ) {
+            is Outcome.Success -> plan.value
+            is Outcome.Failure -> return Outcome.Failure(plan.error)
+        }
+        val groupEncrypted = groupFragments != null
+        val outcome = envoi.parDestinataire(
             recipients = recipients,
             sansRemise = "no message dispatched",
             miroir = { r, bloque ->
-                if (e2eEncrypted && !bloque) {
+                if ((e2eEncrypted || groupEncrypted) && !bloque) {
                     // E2E — the mirror row holds the PLAINTEXT with
                     // `encrypted = 1`; the plaintext NEVER goes into the
                     // system sent box (the fragment ciphertext rows are
                     // written by the send step, next to the radio send, so
                     // the row has no `telephonyUri` — like a group echo).
+                    // Groups: each member's 1:1 row is the per-member
+                    // tracking row for the shared fragment set (design
+                    // §13.4 — the per-member fragment tracking decision
+                    // lives in [sendGroupFragments]).
                     mirror.upsertOutgoingSms(
                         address = r.raw,
                         body = finalBody,
@@ -268,7 +318,21 @@ class SendSmsUseCase @Inject constructor(
                 }
             },
             envoi = { localId, r ->
-                if (e2eEncrypted) {
+                // The fragments are read into a local first: the
+                // smart cast needs a direct null check — the
+                // `groupEncrypted` flag alone does not narrow the
+                // nullable fragment list.
+                val fragments = groupFragments
+                if (fragments != null) {
+                    sendGroupFragments(
+                        localMessageId = localId,
+                        destination = r.raw,
+                        fragments = fragments,
+                        date = now,
+                        subId = effectiveSubId,
+                        requestDeliveryReport = deliveryReports,
+                    )
+                } else if (e2eEncrypted) {
                     e2eGate.sendEncrypted(
                         localMessageId = localId,
                         address = r.raw,
@@ -294,11 +358,172 @@ class SendSmsUseCase @Inject constructor(
                         status = statut,
                         replyToMessageId = replyToMessageId,
                         clientMessageId = cleSurEcho,
+                        encrypted = groupEncrypted,
                     )
                 }
             } else {
                 null
             },
         )
+        // E2E groups — the first encrypted group message IS the
+        // activation event (design §6.4): record the notice once per
+        // conversation, on the send side (the receive side records it
+        // on the first decrypted group message). Only when at least
+        // one member's fragments dispatched — a wholly failed send
+        // records nothing, and the next successful send records it.
+        // Best-effort: a failure here must never fail a send that
+        // already dispatched.
+        if (groupEncrypted && outcome is Outcome.Success) {
+            runCatching { groupGate.recordGroupActivated(recipients.map { it.raw }, now) }
+                .onFailure { Timber.w(it, "E2E: group activation notice failed") }
+        }
+        return outcome
+    }
+
+    /**
+     * E2E groups (design §13) — the fragment set for an encrypted
+     * group text send, or null when this send is not one.
+     *
+     * Only a send FROM a group thread qualifies: `echoInGroup`
+     * with at least two recipients and a real text body
+     * (`localMirrorBody == null`). A multi-recipient broadcast
+     * (Safety call, emergency mode) is not a group send — each
+     * recipient gets a private SMS, no echo — and a reaction
+     * (`localMirrorBody` is `""`) stays plain: group reactions
+     * encrypt in a follow-up owned by [SendReactionUseCase].
+     *
+     * - [Outcome.Success] with a fragment list: the group is
+     *   encrypted — the caller fans the SAME fragments out to
+     *   every member as individual SMS (the group MMS path has no
+     *   encrypted-text channel).
+     * - [Outcome.Success] with null: plain — the members get a
+     *   background probe (sending to the thread is intent to
+     *   talk; the exchange that flips the group to encrypted
+     *   starts here) and the existing plain path runs. The router
+     *   probes too, for the group-MMS transport — the probe
+     *   manager gates the duplicate (24-hour spacing), so no
+     *   member is probed twice for one send.
+     * - [Outcome.Failure]: a refusal (over the 8,000-character
+     *   cap) or an encrypt failure — nothing is sent, and for an
+     *   encrypt failure the group thread gets a FAILED echo row
+     *   (written here, since the caller has not written any row
+     *   yet) so the user sees the failure where they sent it.
+     *   The plaintext NEVER goes out instead.
+     */
+    private suspend fun groupSendPlan(
+        recipients: List<PhoneAddress>,
+        finalBody: String,
+        effectiveSubId: Int?,
+        now: Long,
+        echoInGroup: Boolean,
+        localMirrorBody: String?,
+        clientMessageId: String?,
+        replyToMessageId: Long?,
+        payloadType: E2ePayloadType,
+    ): Outcome<List<String>?> {
+        if (!echoInGroup || recipients.size < 2 || localMirrorBody != null) {
+            return Outcome.Success(null)
+        }
+        val memberAddresses = recipients.map { it.raw }
+        return when (groupGate.decideGroupSend(memberAddresses, finalBody)) {
+            E2eGroupSendGate.Decision.Encrypted -> {
+                when (
+                    val encrypted = groupGate.encryptGroupMessage(
+                        memberAddresses,
+                        finalBody,
+                        effectiveSubId,
+                        now,
+                        payloadType,
+                    )
+                ) {
+                    is Outcome.Success -> Outcome.Success(encrypted.value.fragments)
+                    is Outcome.Failure -> {
+                        // The encrypt failed (no own number, no key):
+                        // the group thread gets a FAILED echo — never
+                        // a plain send — and the caller reports the
+                        // failure. No per-recipient rows: nothing went
+                        // out to anyone, so there is nothing to track.
+                        mirror.upsertGroupEcho(
+                            addresses = recipients,
+                            body = finalBody,
+                            date = now,
+                            subId = effectiveSubId,
+                            status = MessageStatus.FAILED,
+                            replyToMessageId = replyToMessageId,
+                            clientMessageId = clientMessageId,
+                            encrypted = true,
+                        )
+                        Outcome.Failure(encrypted.error)
+                    }
+                }
+            }
+            E2eGroupSendGate.Decision.RefuseOverCap -> Outcome.Failure(
+                AppError.Validation("message too long to send encrypted"),
+            )
+            E2eGroupSendGate.Decision.Plain -> {
+                recipients.forEach { e2eGate.probeForSend(it.raw, effectiveSubId) }
+                Outcome.Success(null)
+            }
+        }
+    }
+
+    /**
+     * E2E groups (design §13.4) — fans one encrypted fragment set
+     * out to ONE member, tracked against that member's mirror row.
+     *
+     * **Per-member fragment tracking (the open integration
+     * question, decided):** the existing per-recipient 1:1 rows —
+     * the same rows the plain group path already writes ("chaque
+     * ligne d'envoi vit dans la conversation 1-à-1 du
+     * destinataire") — are the tracking rows. Each member's row
+     * carries the plaintext with `encrypted = 1` (exactly like a
+     * 1:1 encrypted row), and its fragments go out through
+     * [SmsSender.sendFragment] tied to that row's id, so the
+     * per-fragment sent/delivery intents update the row and the
+     * delivery receiver holds DELIVERED until ALL of that
+     * member's fragments report — independently per member, since
+     * the tracker is keyed by (message id, attempt). The echo row
+     * in the group thread keeps its existing role: the frozen
+     * whole-send status (SENT when every member's fragments were
+     * accepted by the radio, FAILED otherwise), never updated by
+     * async reports.
+     *
+     * The alternative — diagnostic-only sends with no per-member
+     * rows — would have left the group echo as the only row, with
+     * no delivery status at all: a member's radio failure would
+     * be invisible, and the echo could never say who failed. The
+     * 1:1 rows cost nothing new (the plain path writes them
+     * already) and keep delivery status working exactly as it
+     * does for plain group sends.
+     *
+     * Each fragment is written to the system sent box first (the
+     * ciphertext SMS is stored like any SMS, design §3.1). A
+     * fragment the radio refuses fails the member's send at once;
+     * later fragments are not attempted — a partial set is
+     * undecryptable anyway, and the row's FAILED status is the
+     * signal to retry the whole send.
+     */
+    private fun sendGroupFragments(
+        localMessageId: Long,
+        destination: String,
+        fragments: List<String>,
+        date: Long,
+        subId: Int?,
+        requestDeliveryReport: Boolean,
+    ): Outcome<Unit> {
+        for ((index, fragment) in fragments.withIndex()) {
+            sentSmsRecorder.insertSentSms(destination, fragment, date, subId = subId)
+            val result = sender.sendFragment(
+                localMessageId = localMessageId,
+                destination = destination,
+                text = fragment,
+                fragmentIndex = index,
+                fragmentTotal = fragments.size,
+                subId = subId,
+                requestDeliveryReport = requestDeliveryReport,
+            )
+            if (result is Outcome.Failure) return result
+        }
+        return Outcome.Success(Unit)
     }
 }

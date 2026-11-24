@@ -10,6 +10,8 @@ import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.E2eAccountDao
 import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eGroupDistributionDao
+import com.filestech.sms.data.local.db.dao.E2eGroupKeyDao
 import com.filestech.sms.data.local.db.dao.E2eMediaKeyDao
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
@@ -28,6 +30,8 @@ import com.filestech.sms.data.local.db.entity.ClientSyncStateEntity
 import com.filestech.sms.data.local.db.entity.ConversationEntity
 import com.filestech.sms.data.local.db.entity.E2eAccountEntity
 import com.filestech.sms.data.local.db.entity.E2eFragmentEntity
+import com.filestech.sms.data.local.db.entity.E2eGroupDistributionEntity
+import com.filestech.sms.data.local.db.entity.E2eGroupKeyEntity
 import com.filestech.sms.data.local.db.entity.E2eMediaKeyEntity
 import com.filestech.sms.data.local.db.entity.E2eNoticeEntity
 import com.filestech.sms.data.local.db.entity.E2ePeerEntity
@@ -64,6 +68,8 @@ import com.filestech.sms.data.local.db.entity.SyncedContactEntity
         E2eFragmentEntity::class,
         E2eNoticeEntity::class,
         E2eMediaKeyEntity::class,
+        E2eGroupKeyEntity::class,
+        E2eGroupDistributionEntity::class,
     ],
 )
 // v1.16.0 — TypeConverters pour les 3 enums MessageStatus/Type/Direction ↔ Int.
@@ -88,6 +94,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun e2eFragmentDao(): E2eFragmentDao
     abstract fun e2eNoticeDao(): E2eNoticeDao
     abstract fun e2eMediaKeyDao(): E2eMediaKeyDao
+    abstract fun e2eGroupKeyDao(): E2eGroupKeyDao
+    abstract fun e2eGroupDistributionDao(): E2eGroupDistributionDao
 
     companion object {
         const val DATABASE_NAME = "smstech.db"
@@ -206,6 +214,18 @@ abstract class AppDatabase : RoomDatabase() {
         //   leur partie MMS). Strictement additive : la table naît vide
         //   et les lignes existantes projettent les défauts (pair non
         //   capable, déclaration non envoyée, canal inconnu).
-        const val SCHEMA_VERSION = 23
+        // v24 (2026-11-23, round 49 encrypted groups): deux colonnes
+        //   sur `e2e_peers` — `group_capable` et `group_announced`
+        //   (`INTEGER NOT NULL DEFAULT 0`, le second bit du paquet de
+        //   déclaration 0x03) — plus deux tables neuves,
+        //   `e2e_group_keys` (les clés d'expéditeur par groupe et par
+        //   membre, nôtres et reçues) et `e2e_group_distributions`
+        //   (quels membres ont reçu notre clé courante d'un groupe, et
+        //   quand — l'anti-répétition de l'envoi et la limite de débit
+        //   des demandes de clé). Strictement additive : les tables
+        //   naissent vides et les lignes existantes projettent les
+        //   défauts (pair non capable de groupes, déclaration non
+        //   envoyée — la prochaine annonce emporte les deux bits).
+        const val SCHEMA_VERSION = 24
     }
 }

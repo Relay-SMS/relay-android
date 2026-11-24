@@ -158,6 +158,14 @@ interface OutgoingMessageMirror {
         clientMessageId: String? = null,
     ): Long
 
+    /**
+     * v1.28.3 (groupes) — l'écho, dans le fil du groupe, d'un envoi fait depuis ce groupe
+     * (la KDoc complète est au-dessus, devant [upsertOutgoingGroupMms]).
+     * @param encrypted round 49 — marque l'écho chiffré (la bulle
+     * affiche le cadenas + le bleu). L'écho garde la copie PLAINTEXTE
+     * de l'expéditeur, exactement comme une ligne SMS chiffrée garde
+     * son corps en clair.
+     */
     suspend fun upsertGroupEcho(
         addresses: List<PhoneAddress>,
         body: String,
@@ -167,5 +175,6 @@ interface OutgoingMessageMirror {
         replyToMessageId: Long? = null,
         attachments: List<MediaAttachmentSpec> = emptyList(),
         clientMessageId: String? = null,
+        encrypted: Boolean = false,
     ): Long
 }

@@ -870,6 +870,80 @@ object Migrations {
         }
     }
 
+    /**
+     * E2E encrypted groups (round 49) — two columns on `e2e_peers`
+     * (`group_capable`, `group_announced`) + two new tables
+     * (`e2e_group_keys`, `e2e_group_distributions`).
+     *
+     * Strictly additive: the tables are born empty, and existing
+     * peer rows project the defaults (not group-capable,
+     * declaration not sent — the next announce trigger re-sends
+     * the combined 0x03 packet, both bits set). The `CREATE TABLE`
+     * statements repeat the form Room generates for the entities
+     * (columns, `NOT NULL`, composite `PRIMARY KEY`):
+     * `runMigrationsAndValidate` compares the real tables against
+     * the exported schema and would refuse the slightest gap.
+     *
+     * - `group_capable` (0) says the peer declared it handles
+     *   encrypted groups (the 0x03 capability packet, flags bit
+     *   1). Old builds never declare, so a group with one stays
+     *   plain.
+     * - `group_announced` (0) says WE already sent our capability
+     *   declaration (both bits) to this peer; the thread-open
+     *   hook sends it when either announced flag is unset.
+     * - `e2e_group_keys` holds the sender keys: ours per group,
+     *   and each member's per group (up to 3 generations per
+     *   sender — old generations stay for in-flight decrypt).
+     *   The key is stored base64'd in SQLCipher: the whole
+     *   database is encrypted at rest, so no extra pickle wrap
+     *   is needed.
+     * - `e2e_group_distributions` records which members already
+     *   received our current key for a group (the send-path
+     *   ensure skips them) and when (a key request within 24 h
+     *   of a send is ignored — the rate limit).
+     */
+    val MIGRATION_23_24: Migration = object : Migration(23, 24) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `e2e_peers` ADD COLUMN `group_capable` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE `e2e_peers` ADD COLUMN `group_announced` INTEGER NOT NULL DEFAULT 0",
+            )
+            db.execSQL(
+                "ALTER TABLE `e2e_notices` ADD COLUMN `subject` TEXT",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_group_keys` (
+                    `group_id` TEXT NOT NULL,
+                    `sender_address` TEXT NOT NULL,
+                    `key_id` TEXT NOT NULL,
+                    `key_b64` TEXT NOT NULL,
+                    `members_csv` TEXT NOT NULL,
+                    `key_generation` INTEGER NOT NULL,
+                    `sender_curve_key_b64` TEXT,
+                    `is_own` INTEGER NOT NULL DEFAULT 0,
+                    `is_current` INTEGER NOT NULL DEFAULT 0,
+                    `created_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`group_id`, `sender_address`, `key_id`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `e2e_group_distributions` (
+                    `group_id` TEXT NOT NULL,
+                    `member_address` TEXT NOT NULL,
+                    `key_id` TEXT NOT NULL,
+                    `distributed_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`group_id`, `member_address`, `key_id`)
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     /** All migrations registered in [DatabaseFactory]. Append new ones here in version order. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -894,5 +968,6 @@ object Migrations {
         MIGRATION_20_21,
         MIGRATION_21_22,
         MIGRATION_22_23,
+        MIGRATION_23_24,
     )
 }

@@ -25,6 +25,17 @@ import java.util.Base64
  *
  *     [version: 1 byte = 0x01][msg type: 1 byte][payload type: 1 byte][Olm message bytes]
  *
+ * Round 49 — encrypted groups (design §13) reuse the fragment
+ * transport with a third message type (`0x03` GROUP): the bytes
+ * after the header are NOT an Olm message but a sender-key AEAD
+ * envelope (`[group id: 16][key id: 8][AEAD blob]`, see
+ * [E2eGroupWireFormat]). The group payload types (`0x05` /
+ * `0x06`) only ever travel with the GROUP message type, and the
+ * 1:1 payload types (`0x01`–`0x04`, `0x07`) only with PRE_KEY /
+ * NORMAL — [parsePayload] enforces the pairing, so a group
+ * envelope can never reach the Olm decryptor and a 1:1 payload
+ * can never reach the group decryptor.
+ *
  * Pure Kotlin, no Android APIs — fully unit-testable on the JVM.
  */
 object E2eWireFormat {
@@ -48,6 +59,13 @@ object E2eWireFormat {
     private const val PAYLOAD_HEADER_BYTES: Int = 3
     private const val MSG_TYPE_PRE_KEY: Byte = 0x01
     private const val MSG_TYPE_NORMAL: Byte = 0x02
+
+    /**
+     * Round 49 — a sender-key AEAD envelope (encrypted groups),
+     * not an Olm message. Only valid with the GROUP_TEXT /
+     * GROUP_REACTION payload types.
+     */
+    private const val MSG_TYPE_GROUP: Byte = 0x03
     private val BASE64_CHUNK_REGEX: Regex = Regex("[A-Za-z0-9+/=]+")
     private val HEX_REGEX: Regex = Regex("[0-9a-fA-F]+")
     private val DIGITS_REGEX: Regex = Regex("[0-9]+")
@@ -70,6 +88,46 @@ object E2eWireFormat {
          * happening.
          */
         MEDIA_KEY(0x03),
+
+        /**
+         * Round 49 — a sender-key distribution
+         * ([E2eGroupSenderKeyMessage]): one member's sender key
+         * for one group, sent 1:1 over the pairwise vodozemac
+         * session (msg type PRE_KEY / NORMAL, like any 1:1
+         * payload). Only ever sent to a group-capable peer: an
+         * old build throws on the unknown type and turns it into
+         * a placeholder + re-probe, so the group-capability gate
+         * ([E2eGroupSessionManager]) is what keeps that from
+         * happening.
+         */
+        SENDER_KEY(0x04),
+
+        /**
+         * Round 49 — a group text message: the body encrypted
+         * with the sender's sender key for the group (msg type
+         * GROUP — the bytes are a sender-key AEAD envelope, not
+         * an Olm message). Only ever sent to a group whose every
+         * member is group-capable.
+         */
+        GROUP_TEXT(0x05),
+
+        /**
+         * Round 49 — a group reaction: the tapback string
+         * encrypted with the sender's sender key (msg type
+         * GROUP). The receiver folds it onto its target in the
+         * group thread, like a 1:1 reaction.
+         */
+        GROUP_REACTION(0x06),
+
+        /**
+         * Round 49 — a sender-key request: "re-send your sender
+         * key for this group" ([E2eGroupSenderKeyMessage]),
+         * sent 1:1 over the pairwise vodozemac session when a
+         * group message arrived under an unknown key. The
+         * responder re-distributes, rate-limited to one re-send
+         * per member per day.
+         */
+        GROUP_KEY_REQUEST(0x07),
     }
 
     /** One parsed ciphertext fragment. */
@@ -175,8 +233,16 @@ object E2eWireFormat {
     /**
      * Decode reassembled payload bytes into the Olm message + content kind.
      *
+     * Round 49 — the message type and the payload type must AGREE:
+     * GROUP travels only with GROUP_TEXT / GROUP_REACTION, and
+     * PRE_KEY / NORMAL only with the 1:1 payload types. A crossed
+     * pairing is rejected here, so a group envelope can never
+     * reach the Olm decryptor (and a 1:1 payload never the group
+     * decryptor) however the bytes arrived.
+     *
      * @throws IllegalArgumentException on a bad version, message type, or
-     * payload type, or a payload too short to hold the header.
+     * payload type, a crossed message/payload pairing, or a payload too
+     * short to hold the header.
      */
     fun parsePayload(payload: ByteArray): DecodedPayload {
         require(payload.size > PAYLOAD_HEADER_BYTES) { "payload too short for its header" }
@@ -184,19 +250,45 @@ object E2eWireFormat {
         val type = when (payload[1]) {
             MSG_TYPE_PRE_KEY -> OlmMessageType.PRE_KEY
             MSG_TYPE_NORMAL -> OlmMessageType.NORMAL
+            MSG_TYPE_GROUP -> OlmMessageType.GROUP
             else -> throw IllegalArgumentException("unknown Olm message type ${payload[1]}")
         }
         val payloadType = PayloadType.entries.firstOrNull { it.code == payload[2] }
             ?: throw IllegalArgumentException("unknown payload type ${payload[2]}")
+        require(isValidPairing(type, payloadType)) {
+            "message type $type does not pair with payload type $payloadType"
+        }
         val bytes = payload.copyOfRange(PAYLOAD_HEADER_BYTES, payload.size)
         return DecodedPayload(EncryptedMessage(type, bytes), payloadType)
     }
 
-    /** Build the payload bytes for an encrypted message (header + Olm bytes). */
+    /**
+     * Whether this message type may carry this payload type: the
+     * GROUP envelope only ever holds a group message, and the Olm
+     * message types only ever hold 1:1 payloads (a sender-key
+     * distribution and a key request travel over the pairwise
+     * session, so they are 1:1 payloads despite being about
+     * groups).
+     */
+    fun isValidPairing(type: OlmMessageType, payloadType: PayloadType): Boolean {
+        val groupPayload = payloadType == PayloadType.GROUP_TEXT ||
+            payloadType == PayloadType.GROUP_REACTION
+        return if (type == OlmMessageType.GROUP) groupPayload else !groupPayload
+    }
+
+    /**
+     * Build the payload bytes for an encrypted message (header +
+     * Olm bytes — or, for a GROUP message, header + the
+     * sender-key AEAD envelope).
+     */
     fun encodePayload(message: EncryptedMessage, payloadType: PayloadType): ByteArray {
+        require(isValidPairing(message.type, payloadType)) {
+            "message type ${message.type} does not pair with payload type $payloadType"
+        }
         val typeByte = when (message.type) {
             OlmMessageType.PRE_KEY -> MSG_TYPE_PRE_KEY
             OlmMessageType.NORMAL -> MSG_TYPE_NORMAL
+            OlmMessageType.GROUP -> MSG_TYPE_GROUP
         }
         val payload = ByteArray(PAYLOAD_HEADER_BYTES + message.bytes.size)
         payload[0] = PAYLOAD_VERSION

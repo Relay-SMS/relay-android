@@ -37,9 +37,11 @@ data class Message(
     val clientMessageId: String? = null,
     /**
      * E2E (schema v22) — this message was encrypted on the wire
-     * (Relay-to-Relay 1:1 text). The UI shows a lock on its
-     * timestamp line; plain messages (MMS, attachments, the first
-     * plain message to a new contact) carry no lock. Round 47 —
+     * (Relay-to-Relay text, media, or group message). The UI shows
+     * a lock on its timestamp line; plain messages (a plain MMS,
+     * the first plain message to a new contact) carry no lock.
+     * Round 49 — the lock covers encrypted media, voice, and
+     * video too, not just text. Round 47 —
      * the outgoing bubble colour keys on this flag too (blue when
      * encrypted, green `#3BA803` when plain). Note display
      * projections set it as well: a note entry is encrypted at

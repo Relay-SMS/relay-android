@@ -186,6 +186,10 @@
     <string name="e2e_notice_key_changed">Le code de sécurité de %1$s a changé. Les messages restent chiffrés de bout en bout.</string>
     <string name="e2e_notice_key_changed_verified">Le code de sécurité de %1$s a changé. %1$s était vérifié — compare à nouveau le numéro de sécurité pour confirmer que c’est bien la même personne.</string>
     <string name="e2e_notice_deactivated">Chiffrement terminé — %1$s n’utilise plus Relay</string>
+    <string name="e2e_notice_group_activated">Les messages de ce groupe sont désormais chiffrés de bout en bout.</string>
+    <string name="e2e_notice_group_deactivated">Chiffrement terminé dans ce groupe — %1$s n’utilise plus Relay</string>
+    <string name="e2e_notice_group_key_changed">Le code de sécurité de %1$s a changé. Les messages de ce groupe restent chiffrés de bout en bout.</string>
+    <string name="e2e_notice_group_key_changed_verified">Le code de sécurité de %1$s a changé. %1$s était vérifié — compare à nouveau le numéro de sécurité pour confirmer que c’est bien la même personne.</string>
     <string name="e2e_decrypt_failed">Ce message n’a pas pu être déchiffré.</string>
     <string name="e2e_decrypt_failed_notif">Ce message n’a pas pu être déchiffré.</string>
     <string name="e2e_media_decrypt_pending">En attente de déchiffrement…</string>
@@ -195,6 +199,12 @@
     <string name="e2e_details_verified">Vérifié ✓</string>
     <string name="e2e_details_setting_up">Vérification si %1$s utilise Relay…</string>
     <string name="e2e_details_not_encrypted">Non chiffré</string>
+    <string name="e2e_details_group_every_member">Tous les membres utilisent Relay</string>
+    <string name="e2e_details_group_checking">Vérification si tout le monde utilise Relay…</string>
+    <string name="e2e_details_group_not_relay">%1$s n’utilise pas encore Relay</string>
+    <string name="e2e_details_group_not_relay_more">%1$s n’utilise pas encore Relay, et %2$d autres</string>
+    <string name="e2e_details_group_not_capable">La version de Relay de %1$s est obsolète</string>
+    <string name="e2e_details_group_blocked">%1$s est bloqué</string>
     <string name="e2e_details_auto_start">Le chiffrement démarrera automatiquement quand %1$s utilisera Relay</string>
     <string name="e2e_details_retry_encryption">Réessayer le chiffrement</string>
     <string name="e2e_details_retry_via_sms">Réessayer autrement</string>
@@ -207,7 +217,7 @@
     <string name="e2e_verify_verified">Vérifié</string>
     <string name="e2e_verify_copy">Copier</string>
     <string name="e2e_verify_load_failed">Impossible de charger le numéro de sécurité.</string>
-    <string name="e2e_settings_explainer">De Relay à Relay, le chiffrement est automatique. Quand les deux personnes utilisent Relay, vos messages 1:1 sont chiffrés de bout en bout automatiquement — aucune configuration nécessaire. Les messages aux personnes sans Relay, les discussions de groupe, les photos et les fichiers sont envoyés en SMS/MMS ordinaires. Les messages chiffrés utilisent quelques segments de texte de plus que les messages ordinaires.</string>
+    <string name="e2e_settings_explainer">De Relay à Relay, le chiffrement est automatique. Quand les deux personnes utilisent Relay, vos messages 1:1 sont chiffrés de bout en bout automatiquement — aucune configuration nécessaire. Les messages aux personnes sans Relay, ainsi que les photos et les fichiers dans les groupes, sont envoyés en SMS/MMS ordinaires. Un groupe ne chiffre que lorsque tous ses membres utilisent Relay. Les messages chiffrés utilisent quelques segments de texte de plus que les messages ordinaires.</string>
     <string name="e2e_settings_status_subtitle">Automatique quand les deux personnes utilisent Relay</string>
     <string name="e2e_settings_fingerprint">Ton empreinte</string>
     <string name="e2e_settings_unavailable">Chiffrement indisponible</string>
