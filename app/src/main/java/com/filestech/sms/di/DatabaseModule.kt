@@ -10,6 +10,8 @@ import com.filestech.sms.data.local.db.dao.ClientSyncStateDao
 import com.filestech.sms.data.local.db.dao.ConversationDao
 import com.filestech.sms.data.local.db.dao.E2eAccountDao
 import com.filestech.sms.data.local.db.dao.E2eFragmentDao
+import com.filestech.sms.data.local.db.dao.E2eGroupDistributionDao
+import com.filestech.sms.data.local.db.dao.E2eGroupKeyDao
 import com.filestech.sms.data.local.db.dao.E2eMediaKeyDao
 import com.filestech.sms.data.local.db.dao.E2eNoticeDao
 import com.filestech.sms.data.local.db.dao.E2ePeerDao
@@ -28,6 +30,15 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+/**
+ * Provides the Room database and one DAO per table.
+ *
+ * TooManyFunctions is suppressed: the module is one provider per DAO
+ * by design — every table needs its provider here, so the count grows
+ * with the schema (21 at v24); splitting it would scatter the DAO
+ * providers across modules for no gain.
+ */
+@Suppress("TooManyFunctions")
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -71,4 +82,10 @@ object DatabaseModule {
 
     // E2E media encryption (schema v23, round 48) — the received media keys.
     @Provides fun e2eMediaKeyDao(db: AppDatabase): E2eMediaKeyDao = db.e2eMediaKeyDao()
+
+    // E2E encrypted groups (schema v24, round 49) — the group sender keys and distributions.
+    @Provides fun e2eGroupKeyDao(db: AppDatabase): E2eGroupKeyDao = db.e2eGroupKeyDao()
+
+    @Provides fun e2eGroupDistributionDao(db: AppDatabase): E2eGroupDistributionDao =
+        db.e2eGroupDistributionDao()
 }
